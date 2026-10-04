@@ -8,8 +8,9 @@ const os = require("os");
 const { tailLines } = require(path.join(__dirname, "proteus-lib.js"));
 
 const name = "claude";
-// the default model ladder, lowest first; solo models run once per project
-const models = { ladder: ["haiku", "sonnet", "opus", "fable"], floor: "sonnet", solo: ["fable"] };
+// the default model ladder, lowest first; solo models run once per project. Claude Mythos is
+// Claude Fable offered under another name (Project Glasswing), so it sits on Fable's rung.
+const models = { ladder: ["haiku", "sonnet", "opus", "fable"], floor: "sonnet", solo: ["fable"], aliases: { mythos: "fable" } };
 const bypass = "PROTEUS=0 claude";
 
 const KINDS = {

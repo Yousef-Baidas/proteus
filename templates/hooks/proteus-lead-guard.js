@@ -87,7 +87,7 @@ function modelDenial(c, name) {
   if (!c.ladder.length) return ""; // no ladder and no known lead model
   const use = `use "${c.top}" for hard tickets and every verdict, "${c.mid}" for standard tickets and helpers`;
   if (!name) return `every Agent call names its model (the agent's default may sit above the lead's): ${use}.`;
-  const r = lib.rungOf(c.ladder, name);
+  const r = lib.rungOf(c.ladder, name, c.aliases);
   if (r < 0) return `model "${name}" is not on the ladder (${c.ladder.join(" < ")}); ${use}.`;
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;

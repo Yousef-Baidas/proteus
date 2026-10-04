@@ -702,20 +702,24 @@ function lockDrift(root, fresh = false) {
 const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
 
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
-// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
-// defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
-// floor=haiku`) overrides floor and solo. A solo model never runs as a subagent: at most one per
-// project, and that one is the lead when the session runs on it.
+// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo, aliases } overrides
+// the defaults (aliases, other names of a rung's model, merge over the harness's); a project's
+// `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none floor=haiku`) overrides
+// floor and solo. A solo model never runs as a subagent: at most one per project, and that one
+// is the lead when the session runs on it.
 // the harness's default ladder; none (a CLI whose lineup Proteus does not know) is single-model
 // mode, the lead's own model as the only rung, until models.ladder names one
-const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [] };
+const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [], aliases: {} };
 
-// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins
-function rungOf(ladder, name) {
+// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins,
+// else the longest matching alias names the rung ("claude-mythos-5-1" → fable with { mythos: "fable" })
+function rungOf(ladder, name, aliases = {}) {
   const n = String(name || "").toLowerCase();
-  let best = -1;
-  ladder.forEach((r, i) => { if (n.includes(r) && (best < 0 || r.length > ladder[best].length)) best = i; });
-  return best;
+  const longest = (keys) => keys.filter((k) => k && n.includes(k)).sort((a, b) => b.length - a.length)[0];
+  const r = longest(ladder);
+  if (r) return ladder.indexOf(r);
+  const a = longest(Object.keys(aliases));
+  return a ? ladder.indexOf(aliases[a]) : -1;
 }
 
 // the session's model, as the harness finds it
@@ -737,7 +741,9 @@ function modelPolicy(root) {
   const list = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((x) => String(x).trim().toLowerCase()).filter((x) => x && x !== "none");
   const d = modelDefaults();
   const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? list(cfg.ladder) : d.ladder;
-  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo };
+  const aliases = {}, own = cfg.aliases && typeof cfg.aliases === "object" ? cfg.aliases : {};
+  for (const [k, v] of Object.entries({ ...d.aliases, ...own })) if (typeof v === "string") aliases[k.toLowerCase()] = v.toLowerCase();
+  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo, aliases };
   let agents = "";
   try { agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"); } catch {}
   const line = /^models:(.*)$/m.exec(agents);
@@ -755,15 +761,15 @@ function modelCaps(ev, root) {
   const pol = modelPolicy(root);
   const lead = leadModel(ev) || savedLead(ev, root);
   const ladder = pol.ladder.length ? pol.ladder : lead ? [String(lead).toLowerCase()] : [];
-  const { solo } = pol;
-  if (!ladder.length) return { ladder, solo, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "" }; // nothing known to enforce
-  const L = rungOf(ladder, lead);
+  const { solo, aliases } = pol;
+  if (!ladder.length) return { ladder, solo, aliases, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "" }; // nothing known to enforce
+  const L = rungOf(ladder, lead, aliases);
   // highest rung at or under the lead that is not solo (the lead is that one instance); unknown lead: the whole ladder
   let cap = L < 0 ? ladder.length - 1 : L;
   while (cap > 0 && solo.includes(ladder[cap])) cap--;
-  const fl = rungOf(ladder, pol.floor);
+  const fl = rungOf(ladder, pol.floor, aliases);
   const floor = Math.min(fl < 0 ? 0 : fl, cap); // a lead below the floor takes the floor down with it
-  return { ladder, solo, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
+  return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
 }
 
 // gh query → cache; on any gh failure the old cache stays and null is returned
