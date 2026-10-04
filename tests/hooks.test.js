@@ -938,7 +938,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "check shot_0042.png please" }] } }),
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>other.png</environment_context>" }] } }),
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "on it" }] } }),
-    JSON.stringify({ timestamp: "t", type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { total_tokens: 185000 }, total_token_usage: { total_tokens: 900000 }, model_context_window: 272000 } } }),
+    JSON.stringify({ timestamp: "t", type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { total_tokens: 250000 }, total_token_usage: { total_tokens: 900000 }, model_context_window: 272000 } } }),
   ]);
   const cpre = (tool, ti, extra = {}) => ({ hook_event_name: "PreToolUse", session_id: "c1", transcript_path: TCX, cwd: CX, model: "gpt-6-sol", permission_mode: "default", turn_id: "t1", tool_name: tool, tool_input: ti, tool_use_id: "u1", ...extra });
   const patch = (...files) => ({ command: ["*** Begin Patch", ...files.map((x) => `*** Update File: ${x}\n@@\n-a\n+b`), "*** End Patch"].join("\n") });
@@ -961,7 +961,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("codex guard: with models.ladder set, the lower rung is allowed", cg(cpre("spawn_agent", { message: "x", model: "gpt-6-luna" }, { transcript_path: null })).code === 0);
   fs.writeFileSync(HCX, JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
   r = cg(cpre("spawn_agent", { message: "x", model: "gpt-6-sol" }));
-  ok("codex guard: spawns refused at the handoff line from the rollout's token_count", r.code === 2 && /context at 185k/.test(r.err), r.err);
+  ok("codex guard: spawns refused at the handoff line from the rollout's token_count", r.code === 2 && /context at 250k/.test(r.err), r.err);
   ok("codex guard: view_image of a file the human named is allowed", cg(cpre("view_image", { path: "renders/shot_0042.png" })).out === "");
   r = cg(cpre("view_image", { path: "renders/other.png" }));
   ok("codex guard: view_image of an unnamed image is denied (injected context does not count)", /permissionDecision":"deny"/.test(r.out), r.out + r.err);
@@ -999,7 +999,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     fs.writeFileSync(path.join(CXH, ".claude", "proteus.json"), JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
   }
   r = run(path.join(CX, ".codex", "hooks", "proteus-journal.js"), { hook_event_name: "UserPromptSubmit", session_id: "c1", cwd: CX, model: "gpt-6-sol", transcript_path: TCX, prompt: "go" }, { cwd: CX, env: cenvx });
-  ok("codex journal: context as UserPromptSubmit additionalContext", /"hookEventName":"UserPromptSubmit"/.test(r.out) && /185k/.test(r.out), r.out + r.err);
+  ok("codex journal: context as UserPromptSubmit additionalContext", /"hookEventName":"UserPromptSubmit"/.test(r.out) && /250k/.test(r.out), r.out + r.err);
   r = run(path.join(CX, ".codex", "hooks", "proteus-stall.js"), { hook_event_name: "SubagentStop", session_id: "c1", cwd: CX, model: "gpt-6-sol", agent_id: "t-2", agent_type: "proteus-worker", stop_hook_active: false, last_assistant_message: "Waiting for the background build to finish.", transcript_path: TCX }, { cwd: CX, env: cenvx });
   ok("codex stall: a subagent stopping to wait keeps going, as JSON", /"decision":"block"/.test(r.out) && r.code === 0, r.out + r.err);
 

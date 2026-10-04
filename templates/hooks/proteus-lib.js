@@ -772,6 +772,25 @@ function modelCaps(ev, root) {
   return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
 }
 
+// ---- context window: the handoff lines are fractions of the lead's window, the smallest of the
+// model's nominal window (adapter modelWindow), the cap the human set in the harness (adapter
+// contextCap: Claude Code's autoCompactWindow, Codex's model_auto_compact_token_limit) and
+// "contextWindow" in ~/.claude/proteus.json; 200k when none is known. A configured cap wins over
+// a 1M model, so a 200k cap keeps the lines at 150k and 180k.
+const DEFAULT_WINDOW = 200000;
+function contextWindow(ev, root) {
+  const h = harness();
+  const model = leadModel(ev) || savedLead(ev, root);
+  const known = [h.modelWindow ? h.modelWindow(model, ev) : 0, h.contextCap ? h.contextCap(ev, model) : 0, +proteusConfig().contextWindow].filter((n) => n > 0);
+  return known.length ? Math.min(...known) : DEFAULT_WINDOW;
+}
+// at: the journal tells the lead to hand off; hard: the guard refuses new spawns. PROTEUS_HANDOFF_AT
+// and PROTEUS_HANDOFF_HARD (tokens) override them.
+function handoffLines(ev, root) {
+  const w = contextWindow(ev, root);
+  return { window: w, at: envInt("PROTEUS_HANDOFF_AT", Math.round(w * 0.75)), hard: envInt("PROTEUS_HANDOFF_HARD", Math.round(w * 0.9)) };
+}
+
 // gh query → cache; on any gh failure the old cache stays and null is returned
 function refreshInbox(root, common, timeout = 10000) {
   let list;
@@ -790,6 +809,6 @@ module.exports = {
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

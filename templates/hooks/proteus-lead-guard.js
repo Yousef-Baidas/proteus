@@ -6,9 +6,9 @@
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Sonnet by default, so Haiku) is refused.
-// 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns. While a linked
-//    skill has drifted from teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier
-//    spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
+// 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
+//    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
+//    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
@@ -61,7 +61,7 @@ lib.run((ev, ad) => {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
-    if (ctx >= lib.envInt("PROTEUS_HANDOFF_HARD", 180000)) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
+    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
     if (PIPELINE.test(ev.spawnType)) {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);

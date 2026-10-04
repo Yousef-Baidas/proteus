@@ -162,6 +162,29 @@ function sessionModel(ev) {
   return "";
 }
 
+// the window Codex reports for the session's model (the newest token_count's model_context_window), or 0
+function modelWindow(model, ev) {
+  const lines = tailLines(ev && ev.raw && ev.raw.transcript_path).filter((l) => l.includes('"model_context_window"'));
+  for (const e of entriesBackward(lines)) {
+    const n = e.type === "event_msg" && e.payload.type === "token_count" && e.payload.info && +e.payload.info.model_context_window;
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+// the window the human capped Codex at, or 0: model_auto_compact_token_limit or model_context_window
+// at the root of the project's .codex/config.toml, else of $CODEX_HOME/config.toml
+function contextCap(ev) {
+  const root = (ev && ev.root) || process.cwd();
+  for (const f of [path.join(root, ".codex", "config.toml"), path.join(home, "config.toml")]) {
+    let t;
+    try { t = tomlTables(fs.readFileSync(f, "utf8"))[""]; } catch { continue; }
+    const n = [t.model_auto_compact_token_limit, t.model_context_window].flatMap((v) => { const x = parseInt(String(v || "").replace(/_/g, ""), 10); return x > 0 ? [x] : []; });
+    if (n.length) return Math.min(...n);
+  }
+  return 0;
+}
+
 // ---- install
 
 const home = process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
@@ -449,7 +472,7 @@ function exportEnv(root, vars) {
 
 module.exports = {
   name, bypass, models, projectRoot, event, deny, context, keepGoing,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, sandboxRoots, exportEnv,
 };

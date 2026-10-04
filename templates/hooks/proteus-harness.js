@@ -20,6 +20,8 @@
 // Adapter contract (see proteus-harness-claude.js for the reference):
 //   answers      deny(why, {json}) · context(ev, text, kind) · keepGoing(ev, reason)
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
+//   window       modelWindow(model, ev) (the model's nominal context window) · contextCap(ev, model) (the
+//                cap the human configured); each 0 when unknown, and both optional
 //   models       the default ladder {ladder, floor, solo, aliases}, or null for single-model mode
 //   install      name · bypass · projectRoot(raw) · home · skillDirs(root) · agentsDir · agentFile(file, text)
 //                hooksDir(root) · teamSkills(teamDir) (where link-skills.js links a team's skills for this CLI)

@@ -53,7 +53,7 @@ The human may type these at any time; handle them before anything else, in `oper
 
 ## Surviving compaction
 
-Hooks carry what memory cannot. `proteus-journal.js` records every human message verbatim, secrets replaced by `[redacted]`, and re-injects the last ten after a compaction; the autostart re-injects this skill and the run-log tail; the meter warns at 150k context and the guard refuses new dispatch at 180k. So: log each decision when it happens, one line on the run-log issue: grilled decisions before `/to-spec` exists, an `UNATTENDED` grant and its limit, every deviation allowed, a parked `NEEDS`, the fork point, and every human hand edit to an artifact (it exists nowhere else until a ticket ports it to a script). After a compaction trust tracker, run log, and journal over the summary. Meter warning → finish the step, log the position, `/handoff`, fresh lead.
+Hooks carry what memory cannot. `proteus-journal.js` records every human message verbatim, secrets replaced by `[redacted]`, and re-injects the last ten after a compaction; the autostart re-injects this skill and the run-log tail; the meter warns at 75% of your context window and the guard refuses new dispatch at 90% (150k and 180k on a 200k window). So: log each decision when it happens, one line on the run-log issue: grilled decisions before `/to-spec` exists, an `UNATTENDED` grant and its limit, every deviation allowed, a parked `NEEDS`, the fork point, and every human hand edit to an artifact (it exists nowhere else until a ticket ports it to a script). After a compaction trust tracker, run log, and journal over the summary. Meter warning → finish the step, log the position, `/handoff`, fresh lead.
 
 ## Flow
 
