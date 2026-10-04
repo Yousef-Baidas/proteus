@@ -10,23 +10,27 @@ Every worker and verifier prompt ends with the three rules below; the agent file
 
 A brief carries pointers (issue, `file:line`, command), never raw logs or long output; the agent reads those through context-mode.
 
+Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes each spawn pay for the whole brief again.
+
 ## Worker
 ```
-Ticket #<n> (gh issue view <n> --json body -q .body), team <team>, worktree <absolute path>, branch proteus-work/<run>/<id>, scratch key <run>-<id>. Nothing outside this ticket exists.
+Nothing outside your ticket exists; the closing lines name it, your team, worktree and owned paths.
 Work only in the worktree: every shell call runs with it as the working directory (the shell tool's workdir where it has one), every command starts with the tool it runs (`git commit …`, never `cd <wt> && git …` or `git -C`), every edit names a path under it.
-Contract: commit <sha>, the first on your branch; never change the check's files: <file:line pointers>
-Check: <file::name or command>
-You own: <paths>. Anything else is read-only and the edit hook refuses it; need it → `gh issue comment <n> --body "NEEDS <file>: <why>"` and stop. New package or tool → `NEEDS dependency <ecosystem>/<name>@<version>: <why>` and stop; never install one.
-Read teams/<team>/PROFILE.md first, teams/<team>/CRAFT.md if it exists, CONVENTIONS.md and the taste docs it names third. A rule in CONVENTIONS.md beats a rule in any skill.
-<Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
-<needs-research: run /research first; primary sources; cite each one you relied on in the report.>
+The contract commit is the first on your branch; never change the check's files. Anything outside your owned paths is read-only and the edit hook refuses it; need it → comment `NEEDS <file>: <why>` on the ticket and stop. New package or tool → `NEEDS dependency <ecosystem>/<name>@<version>: <why>` and stop; never install one.
+Read your team's PROFILE.md first, its CRAFT.md if it exists, CONVENTIONS.md and the taste docs it names third. A rule in CONVENTIONS.md beats a rule in any skill.
 Code: run /implement (drives /tdd at the seam) but skip its closing /code-review: the verifier runs it in fresh context, and a second pass by the author only repeats it. Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths, never a file only in out/, /tmp, or a GUI session. Probes print path, hash or size, and count of what they opened.
 Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths.
-Two retries after first red. Third red → comment `RED` + `git diff <fork>` + exact failing output on the issue and stop. Never restart, never widen.
-Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`, with a body line `Owned: <the ticket's owned paths and globs, space-separated>`: CI checks the PR's changed paths against it.
-Done → one comment on the issue: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
+Two retries after first red. Third red → comment `RED` + `git diff <contract sha>~1` + exact failing output on the ticket and stop. Never restart, never widen.
+Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`, with a body line `Owned: ` plus your owned paths and globs, space-separated: CI checks the PR's changed paths against it.
+Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
+Team <team>: teams/<team>/PROFILE.md, teams/<team>/CRAFT.md.
+<Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
+Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, branch proteus-work/<run>/<id>, scratch key <run>-<id>.
+Contract: commit <contract sha>; check files: <file:line pointers>. Check: <file::name or command>.
+You own: <paths>.
+<needs-research: run /research first; primary sources; cite each one you relied on in the report.>
 ```
 
 ## Contracts worker (step 3, one per team with ready tickets, all teams at once)
