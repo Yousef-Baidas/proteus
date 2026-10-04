@@ -114,4 +114,41 @@ else {
   ok("signed release that does not contain HEAD: no update", head() === mine && /proteus: not updating to v1\.4\.0: v1\.4\.0 does not contain this checkout's HEAD/.test(r.out), r.out.slice(0, 1500));
 }
 
+
+// README's PowerShell block that trusts the maintainer's key, run as written on Windows PowerShell 5.1, whose
+// ConvertFrom-Json passes the API's array on as one object (issue #92). gh is a .cmd printing a canned API reply.
+const ps = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+if (process.platform === "win32" && signer && fs.existsSync(ps)) {
+  const { spawnSync } = require("child_process");
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8").replace(/\r\n/g, "\n");
+  const block = readme.slice(readme.indexOf("The maintainer's key")).match(/```powershell\n([\s\S]*?)```/)[1];
+  const pub = fs.readFileSync(path.join(W, "keys", "maintainer.pub"), "utf8").trim();
+  const trust = (name, keys) => {
+    const home = path.join(W, `ps-${name}`);
+    const repo = path.join(home, "proteus");
+    fs.mkdirSync(path.join(home, "bin"), { recursive: true });
+    g(W, "init", "-q", "-b", "main", repo);
+    g(repo, "commit", "-q", "--allow-empty", "-m", "release");
+    signer.tag(repo, "v1.0.0");
+    fs.writeFileSync(path.join(home, "keys.json"), JSON.stringify(keys));
+    fs.writeFileSync(path.join(home, "bin", "gh.cmd"), `@type "${path.join(home, "keys.json")}"\r\n`);
+    fs.writeFileSync(path.join(home, "trust.ps1"), block.split("$HOME").join(home));
+    const env = { ...process.env, PATH: [path.join(home, "bin"), process.env.PATH].join(path.delimiter), GIT_CONFIG_GLOBAL: "NUL", GIT_CONFIG_NOSYSTEM: "1" };
+    const r = spawnSync(ps, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(home, "trust.ps1")], { env, encoding: "utf8", windowsHide: true });
+    const v = spawnSync("git", ["-C", repo, "verify-tag", "v1.0.0"], { env, encoding: "utf8", windowsHide: true });
+    return { r, v, signers: path.join(home, ".config", "proteus", "allowed_signers") };
+  };
+  let t = trust("found", [{ id: 1, title: "laptop", key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBNotTheMaintainerKeyNotTheMaintainerKey0 x" }, { id: 2, title: "proteus tag signing", key: pub }]);
+  ok("README PowerShell trust block (5.1): picks the signing key out of the array, and verify-tag accepts the release",
+    t.r.status === 0 && fs.readFileSync(t.signers, "utf8").includes(pub.split(" ")[1]) && t.v.status === 0, `${t.r.stdout}${t.r.stderr}${t.v.stderr}`.slice(0, 1500));
+  // the harness reproduces #92: without the unrolling, 5.1 finds no key in the same reply
+  const old = path.join(W, "ps-found", "old.ps1");
+  fs.writeFileSync(old, "$key = (gh api users/Yousef-Baidas/ssh_signing_keys | ConvertFrom-Json | Where-Object title -eq 'proteus tag signing').key\r\nif ($key) { 'found' } else { 'empty' }\r\n");
+  const o = spawnSync(ps, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", old], { env: { ...process.env, PATH: [path.join(W, "ps-found", "bin"), process.env.PATH].join(path.delimiter) }, encoding: "utf8", windowsHide: true });
+  ok("Windows PowerShell 5.1 without the unrolling finds no key (issue #92's cause)", o.stdout.trim() === "empty", o.stdout + o.stderr);
+  t = trust("missing", [{ id: 1, title: "laptop", key: pub }]);
+  ok("README PowerShell trust block: no key with that title stops before writing allowed_signers",
+    t.r.status !== 0 && /signing key not found/.test(t.r.stdout + t.r.stderr) && !fs.existsSync(t.signers), `${t.r.stdout}${t.r.stderr}`.slice(0, 1500));
+}
+
 lib.summary();
