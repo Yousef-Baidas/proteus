@@ -1,4 +1,4 @@
-// Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh, spawn helpers.
+// Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers.
 // summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0.
 // workdir() exits 1 with a message, before writing anything, when os.tmpdir() is in the user's home or a git worktree.
 "use strict";
@@ -7,8 +7,38 @@ const os = require("os");
 const path = require("path");
 const { spawnSync, execFileSync } = require("child_process");
 
+const WIN = process.platform === "win32";
 let pass = 0, fail = 0;
 let W, HOME, BIN, ENV;
+
+// dirs a stripped PATH still needs: git, and on win32 cmd.exe for shell: true
+const SYS_PATH = WIN
+  ? [...new Set([...(spawnSync("where", ["git"], { encoding: "utf8" }).stdout || "").split(/\r?\n/).filter(Boolean).map((p) => path.dirname(p)), path.join(process.env.SystemRoot || "C:\\Windows", "System32")])]
+  : ["/usr/bin", "/bin"];
+
+// a fake HOME: os.homedir() reads USERPROFILE on win32, and node there needs SystemRoot, ComSpec and a temp dir in a stripped env
+function homeEnv(home) {
+  const e = { HOME: home, USERPROFILE: home };
+  if (WIN) {
+    for (const k of ["SystemRoot", "ComSpec", "PATHEXT", "TEMP", "TMP"]) if (process.env[k]) e[k] = process.env[k];
+    // forward slashes: NODE_OPTIONS reads a backslash inside quotes as an escape
+    e.NODE_OPTIONS = `--require "${path.join(__dirname, "fixtures", "fake-cli-shim.js").replace(/\\/g, "/")}"`;
+  }
+  return e;
+}
+
+// the script a fake CLI made by fakeCli runs, for a fake that hands calls on with process.execPath
+const fakeScript = (dir, name) => path.join(dir, WIN ? `${name}.fake.js` : name);
+
+// a fake CLI named name in dir running the node source: a shebang script on POSIX; on win32 a copy of node.exe
+// that fixtures/fake-cli-shim.js (preloaded by homeEnv) points at name.fake.js, so it runs without a shell
+function fakeCli(dir, name, source) {
+  const body = source.replace(/^#!.*\n/, "");
+  if (!WIN) { fs.writeFileSync(path.join(dir, name), `#!${process.execPath}\n${body}`, { mode: 0o755 }); return; }
+  fs.writeFileSync(path.join(dir, `${name}.fake.js`), body);
+  const exe = path.join(dir, `${name}.exe`);
+  try { fs.linkSync(process.execPath, exe); } catch { fs.copyFileSync(process.execPath, exe); }
+}
 
 function need() {
   if (!W) throw new Error("call workdir(name) first");
@@ -32,16 +62,16 @@ function refuseTmpdir() {
 
 function workdir(name) {
   refuseTmpdir();
-  W = path.join(os.tmpdir(), "proteus-test", name);
+  // the real path: macOS reaches the temp dir through the /var symlink, and git reports /private/var
+  W = path.join(fs.realpathSync(os.tmpdir()), "proteus-test", name);
   fs.rmSync(W, { recursive: true, force: true });
   fs.mkdirSync(W, { recursive: true });
   HOME = path.join(W, "home");
   BIN = path.join(W, "bin");
   fs.mkdirSync(path.join(HOME, ".claude"), { recursive: true });
   fs.mkdirSync(BIN);
-  fs.copyFileSync(path.join(__dirname, "fakegh.js"), path.join(BIN, "gh"));
-  fs.chmodSync(path.join(BIN, "gh"), 0o755);
-  ENV = { PATH: [BIN, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter), HOME, GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  fakeCli(BIN, "gh", fs.readFileSync(path.join(__dirname, "fakegh.js"), "utf8"));
+  ENV = { PATH: [BIN, path.dirname(process.execPath), ...SYS_PATH].join(path.delimiter), ...homeEnv(HOME), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
   return W;
 }
 
@@ -67,7 +97,7 @@ function summary() {
 }
 
 module.exports = {
-  ok, run, g, workdir, summary,
+  ok, run, g, workdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH,
   get ENV() { need(); return ENV; },
   get BIN() { need(); return BIN; },
   get HOME() { need(); return HOME; },
