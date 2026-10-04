@@ -3,8 +3,8 @@
 // as if the human had typed /proteus. Prints the skill body plus a local state line
 // so the lead knows what bootstrap can skip without spending a tool call.
 // Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile),
-// checks it for updates (background fetch at most daily, fast-forward to it when autoUpdate; the
-// behind-count feeds the status line), offers the tour while it is pending (tour=…), and after
+// checks it for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
+// to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
 // (proteus-scratch.js --sweep --stale) detached, so it never slows the start. Moves the state a
@@ -31,9 +31,9 @@ lib.run((ev, ad) => {
   const notes = [];
   const cfg = lib.proteusConfig();
   const home = typeof cfg.home === "string" && fs.existsSync(cfg.home) ? path.resolve(cfg.home) : null;
-  let behind = 0;
+  let pending = "";
   if (home) {
-    behind = safe(() => update(home, cfg, notes), 0);
+    pending = safe(() => update(home, cfg, notes), "");
     safe(() => sync(ad, home, root, notes));
   }
   safe(() => migrateState(root, home, notes));
@@ -42,7 +42,7 @@ lib.run((ev, ad) => {
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);
   const src = ev.source;
   const tour = home && (src === "startup" || src === "clear") ? safe(() => tourState(home, cfg), "") : "";
-  const state = localState(ad, root, runs, home, behind) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
+  const state = localState(ad, root, runs, home, pending) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchSweep(root));
 
@@ -77,28 +77,35 @@ lib.run((ev, ad) => {
 
 function safe(fn, dflt) { try { return fn(); } catch { return dflt; } }
 
-// background fetch at most once a day; behind-count from the already-fetched upstream ref.
-// The count goes to proteus.json for the status line, so an update shows even with autoUpdate off.
+// background fetch (with tags) at most once a day; the update is the newest release tag past HEAD
+// (lib.release). Its commit count goes to proteus.json for the status line, so a release shows even
+// with autoUpdate off. With it on, the checkout fast-forwards to that tag only once verifyRelease
+// accepts its signature; otherwise one note says why and how to update by hand.
 function update(home, cfg, notes) {
   const patch = {};
   const last = typeof cfg.lastFetch === "number" ? cfg.lastFetch : Date.parse(cfg.lastFetch) || 0;
   if (Date.now() - last > 24 * 3600e3) {
     try {
-      const c = spawn("git", ["-C", home, "fetch", "--quiet"], { detached: true, stdio: "ignore", windowsHide: true });
+      const c = spawn("git", ["-C", home, "fetch", "--quiet", "--tags"], { detached: true, stdio: "ignore", windowsHide: true });
       c.on("error", () => {});
       c.unref();
     } catch {}
     patch.lastFetch = Date.now();
   }
-  let behind = parseInt(lib.git(["-C", home, "rev-list", "--count", "HEAD..@{u}"], home), 10) || 0;
+  const rel = lib.release(home);
+  let behind = rel.ahead;
   if (behind && cfg.autoUpdate === true) {
     try {
+      const v = lib.verifyRelease(home, rel.tag);
       const dirty = execFileSync("git", ["-C", home, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-      if (!dirty.trim()) {
+      if (v.error) {
+        notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "README.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
+      } else if (!dirty.trim()) {
         const before = lib.git(["-C", home, "rev-parse", "HEAD"], home);
-        // fast-forward to the already-fetched upstream: no network wait, no race with the background fetch
-        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", "@{u}"], { timeout: 15000, windowsHide: true, stdio: "ignore" });
-        notes.push(`proteus: updated to ${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)}`);
+        // the verified commit, already fetched: no network wait, no race with the background fetch
+        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", v.commit], { timeout: 15000, windowsHide: true, stdio: "ignore" });
+        const log = lib.changelog(home, v.commit, rel.current, rel.tag);
+        notes.push(`proteus: updated to ${rel.tag} (${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)})${rel.current ? ` from ${rel.current}` : ""}, signature verified${log.length ? "; CHANGELOG.md:" : ""}`, ...log.map((l) => `  ${l}`));
         behind = 0;
         // an install from before the tour existed gets a what's-new tour from here, not a first-time one
         if (cfg.toured === undefined && before) patch.toured = before;
@@ -107,7 +114,7 @@ function update(home, cfg, notes) {
   }
   if ((cfg.behind || 0) !== behind) patch.behind = behind;
   if (Object.keys(patch).length) patchConfig(cfg, patch);
-  return behind;
+  return behind ? rel.tag : "";
 }
 
 function patchConfig(cfg, patch) {
@@ -279,7 +286,7 @@ function models(ev, root) {
   return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
 }
 
-function localState(ad, root, runs, home, behind) {
+function localState(ad, root, runs, home, pending) {
   const has = (f) => fs.existsSync(path.join(root, f));
   const read = (f) => { try { return fs.readFileSync(path.join(root, f), "utf8"); } catch { return ""; } };
   const ls = (d) => { try { return fs.readdirSync(path.join(root, d)); } catch { return []; } };
@@ -316,7 +323,7 @@ function localState(ad, root, runs, home, behind) {
       ...(scratch > 1024 ? [`scratch=${scratch}MB`] : []),
       ...(ad.contextModeOn() ? [] : ["context-mode=missing"]),
       `proteus-src=${home || "none"}`,
-      ...(behind ? [`proteus-update=${behind}-behind (node ${path.join(home, "install.js")} --update)`] : []),
+      ...(pending ? [`proteus-update=${pending} (node ${path.join(home, "install.js")} --update)`] : []),
     ].join(" ")
   );
 }

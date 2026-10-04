@@ -31,6 +31,6 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | Stall-check timer | `CronCreate` every 20 minutes | none; `wait_agent` with `timeout_ms: 1200000` (10 s to 1 h, default 30 s) returns early when an agent finishes, else at the timeout; each return without a report is a fire |
 | Hooks that cannot fire | – | failed-tool and teammate-idle events; a background shell is invisible to the hooks, so the long-jobs rule is prompt-only |
 | Model ladder | default `haiku < sonnet < opus < fable`, floor Haiku, Fable once per project | none: `models=unknown`, every spawn names your own model, until `models.ladder` in `~/.claude/proteus.json` or a `models:` line in `AGENTS.md` names the rungs |
-| Cost at close | `npx ccusage@latest session --json` | `npx @ccusage/codex@latest session --json` |
+| Cost at close | `npx ccusage@20.0.26 session --json` | `npx @ccusage/codex@19.0.0 session --json` |
 | AI commit trailer | off via `attribution` in `~/.claude/settings.json` (`commits.md`) | no setting (a ChatGPT account option may add one); the commit-msg hook is the gate |
 | Review from the phone | `/remote-control` | none; the GitHub app |

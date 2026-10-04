@@ -324,6 +324,66 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 function git(args, cwd, timeout = 3000) {
   try { return execFileSync("git", args, execOpts(cwd, timeout)).trim(); } catch { return ""; }
 }
+// Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
+// accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
+// The autostart (autoUpdate) and install.js --update share these.
+const RELEASE = /^v(\d+)\.(\d+)\.(\d+)$/;
+const semver = (v) => (String(v).match(/^v?(\d+)\.(\d+)\.(\d+)$/) || []).slice(1).map(Number);
+// a > b; any version is newer than "" (no release yet)
+function newerThan(a, b) {
+  const x = semver(a), y = semver(b);
+  if (x.length !== 3) return false;
+  if (y.length !== 3) return true;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+const releaseTags = (home, ...filter) => git(["-C", home, "tag", "-l", ...filter, "v*"], home).split("\n").filter((t) => RELEASE.test(t));
+const newest = (tags) => tags.reduce((m, t) => (newerThan(t, m) ? t : m), "");
+
+// { current, tag, ahead }: current is the newest release in HEAD's history ("" when none), tag the
+// newest release past it that HEAD lacks ("" when none), ahead the count of commits HEAD lacks from tag
+function release(home) {
+  const current = newest(releaseTags(home, "--merged", "HEAD"));
+  const tag = newest(releaseTags(home, "--no-merged", "HEAD").filter((t) => newerThan(t, current)));
+  const ahead = tag ? parseInt(git(["-C", home, "rev-list", "--count", `HEAD..refs/tags/${tag}`], home), 10) || 0 : 0;
+  return { current, tag, ahead };
+}
+
+// { commit, error }: commit is what home may fast-forward to; error says in one line why it may not
+// (lightweight or unsigned tag, unknown signer, no fast-forward)
+function verifyRelease(home, tag) {
+  const no = (error) => ({ commit: "", error });
+  const obj = RELEASE.test(tag) ? git(["-C", home, "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], home) : "";
+  if (!obj) return no(`${tag} is not a release tag here`);
+  if (git(["-C", home, "cat-file", "-t", obj], home) !== "tag") return no(`${tag} is a lightweight tag, so it carries no signature`);
+  // a signed tag published again under a newer name still names its own version inside
+  const header = git(["-C", home, "cat-file", "tag", obj], home).split("\n\n")[0];
+  if (!header.split("\n").includes(`tag ${tag}`)) return no(`${tag} points at a tag object made for another name`);
+  if (!releaseTags(home, "--contains", "HEAD").includes(tag)) return no(`${tag} does not contain this checkout's HEAD (local commits?), so it is no fast-forward`);
+  try {
+    execFileSync("git", ["-C", home, "verify-tag", obj], { encoding: "utf8", timeout: 10000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    const last = String(e.stderr || "").split("\n").map((l) => l.trim()).filter(Boolean).pop() || "git verify-tag failed";
+    return no(`git verify-tag ${tag}: ${last.replace(/^error: /, "").replace(/\.$/, "").slice(0, 200)}`);
+  }
+  const commit = git(["-C", home, "rev-parse", `${obj}^{commit}`], home);
+  return commit ? { commit, error: "" } : no(`${tag} does not resolve to a commit`);
+}
+
+// the CHANGELOG.md sections at commit for the versions after from, up to and including to; at most max lines
+function changelog(home, commit, from, to, max = 8) {
+  const out = [];
+  let on = false;
+  for (const l of git(["-C", home, "show", `${commit}:CHANGELOG.md`], home).split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(l)) {
+      const h = l.match(/^##\s+\[?(v?\d+\.\d+\.\d+)\]?/);
+      on = !!h && newerThan(h[1], from) && !newerThan(h[1], to);
+    }
+    if (on && l.trim()) out.push(l.trim());
+  }
+  return out.length > max ? [...out.slice(0, max - 1), `… ${out.length - max + 1} more lines in CHANGELOG.md`] : out;
+}
+
 // configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login
 function gh(args, cwd, timeout = 6000, configDir = "") {
   const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
@@ -638,6 +698,7 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
+  release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
