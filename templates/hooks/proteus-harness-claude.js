@@ -48,6 +48,7 @@ function event(raw) {
     command: typeof ti.command === "string" ? ti.command : "",
     background: ti.run_in_background === true,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
+    spawnType: typeof ti.subagent_type === "string" ? ti.subagent_type : "",
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     // a prompt from anything but the human: task notifications, loop wakeups, peer messages
     fromHuman: !r.source || r.source === "user" || r.source === "sdk",

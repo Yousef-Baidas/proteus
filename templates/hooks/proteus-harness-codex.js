@@ -73,6 +73,7 @@ function event(raw) {
     command: tool === "shell" ? cmd : "",
     background: false,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
+    spawnType: typeof ti.agent_type === "string" ? ti.agent_type : "",
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     fromHuman: true, // UserPromptSubmit fires for submitted user input only
     output: outputText(r.tool_response),

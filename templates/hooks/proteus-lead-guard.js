@@ -6,7 +6,9 @@
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Haiku by default) is refused.
-// 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns.
+// 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns. While a linked
+//    skill has drifted from teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier
+//    spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
@@ -28,6 +30,8 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 // docs the lead may write: the repo docs, ADRs, lessons, nothing else
 const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^CLAUDE\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/];
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp|tiff?|exr|hdr)$/i;
+// the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
+const PIPELINE = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
 
 if (process.env.PROTEUS === "0") process.exit(0);
 
@@ -55,6 +59,10 @@ lib.run((ev, ad) => {
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
     if (ctx >= lib.envInt("PROTEUS_HANDOFF_HARD", 180000)) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
+    if (PIPELINE.test(ev.spawnType)) {
+      const drift = lib.lockDrift(root);
+      if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
+    }
     return;
   }
 

@@ -556,6 +556,63 @@ function readInbox(common) {
   const c = readJSON(inboxFile(common), null);
   return c && Array.isArray(c.questions) && Array.isArray(c.reviews) ? c : null;
 }
+
+// ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
+// A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
+// differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
+const lockFile = (root) => path.join(root, "teams", "skills-lock.json");
+const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
+const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
+
+// byte-identical to link-skills.js hashDir (sha256 over relative path + content of every file), or every lock drifts
+const walkSkill = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+  e.name === "node_modules" || e.name === ".git" ? [] : e.isDirectory() ? walkSkill(path.join(d, e.name)) : [path.join(d, e.name)]);
+function hashSkill(d) {
+  const h = require("crypto").createHash("sha256");
+  for (const f of walkSkill(d).sort()) {
+    h.update(path.relative(d, f).split(path.sep).join("/") + "\0");
+    h.update(fs.readFileSync(f));
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
+function skillsDrift(root) {
+  const lock = readJSON(lockFile(root), null);
+  const pins = lock && lock.skills && typeof lock.skills === "object" ? lock.skills : {};
+  const names = Object.keys(pins).filter((n) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(n) && pins[n] && typeof pins[n].hash === "string");
+  let teams = [];
+  try { teams = fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
+  const hashes = new Map(); // real skill dir -> hash, so a skill linked into several teams is hashed once
+  const drift = [];
+  for (const name of names) {
+    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(root, "teams", t, ...s, name)))) {
+      let src;
+      try { src = fs.realpathSync(dir); if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
+      if (!hashes.has(src)) hashes.set(src, hashSkill(src));
+      if (hashes.get(src) !== pins[name].hash) { drift.push(name); break; }
+    }
+  }
+  return drift.sort();
+}
+
+// the drifted skills, cached in <common>/proteus/skills-drift.json per lock content: a clean result
+// stands until the lock changes (the autostart passes fresh on every session start), a drift is
+// re-checked on every call so a re-lock or an update counts at once
+function lockDrift(root, fresh = false) {
+  let key;
+  try { key = require("crypto").createHash("sha256").update(fs.readFileSync(lockFile(root))).digest("hex"); } catch { return []; }
+  const common = gitCommonDir(root);
+  const cache = common && !fresh ? readJSON(driftFile(common), null) : null;
+  if (cache && cache.lock === key && Array.isArray(cache.drift) && !cache.drift.length) return [];
+  const drift = skillsDrift(root);
+  if (common) { try { writeJSON(driftFile(common), { lock: key, drift }); } catch {} }
+  return drift;
+}
+
+// how to clear a drift; the lead does not re-lock on its own: third-party skill text runs in every worker
+const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
+
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
 // Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
 // defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
@@ -634,7 +691,7 @@ function refreshInbox(root, common, timeout = 10000) {
 }
 
 module.exports = {
-  readInbox, refreshInbox, inboxFile,
+  readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,

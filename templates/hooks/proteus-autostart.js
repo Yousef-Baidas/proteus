@@ -10,6 +10,8 @@
 // (proteus-scratch.js --sweep --stale) detached, so it never slows the start. Moves the state a
 // pre-rename install left in the legacy state dir into <git-common-dir>/proteus (lib.migrateState),
 // and lists open runs on either branch prefix: a legacy run keeps its names until it closes.
+// Re-hashes the linked team skills against teams/skills-lock.json (lib.lockDrift): a drift shows as
+// skills-lock=drift:<names> plus a note, and the lead guard refuses worker and verifier spawns until it clears.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -42,7 +44,10 @@ lib.run((ev, ad) => {
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);
   const src = ev.source;
   const tour = home && (src === "startup" || src === "clear") ? safe(() => tourState(home, cfg), "") : "";
-  const state = localState(ad, root, runs, home, behind) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
+  // hashed afresh each session start; the guard reuses the result until the lock changes
+  const drift = safe(() => lib.lockDrift(root, true), []);
+  if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
+  const state = localState(ad, root, runs, home, behind, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchSweep(root));
 
@@ -279,7 +284,7 @@ function models(ev, root) {
   return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
 }
 
-function localState(ad, root, runs, home, behind) {
+function localState(ad, root, runs, home, behind, drift) {
   const has = (f) => fs.existsSync(path.join(root, f));
   const read = (f) => { try { return fs.readFileSync(path.join(root, f), "utf8"); } catch { return ""; } };
   const ls = (d) => { try { return fs.readdirSync(path.join(root, d)); } catch { return []; } };
@@ -306,7 +311,7 @@ function localState(ad, root, runs, home, behind) {
       `teams=${profiles.length ? profiles.join(",") : "NO"}`,
       `skills-unscouted=${shipped.join(",") || "none"}`,
       `skills-unlinked=${unlinked.join(",") || "none"}`,
-      `skills-lock=${yn(has("teams/skills-lock.json"))}`,
+      `skills-lock=${drift.length ? `drift:${drift.join(",")}` : yn(has("teams/skills-lock.json"))}`,
       `ci-gates=${yn(has(".github/workflows/proteus-gates.yml"))}`,
       `lefthook=${yn(has("lefthook.yml"))}`,
       `protection=${/protection:\s*none/.test(agents) ? "none" : "on"}`,
