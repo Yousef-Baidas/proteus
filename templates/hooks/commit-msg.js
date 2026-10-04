@@ -18,5 +18,10 @@ if (subject.endsWith(".")) fail("no trailing period");
 if (lines[1] && lines[1].trim() !== "") fail("blank line required after subject");
 for (const l of lines.slice(2)) if (l.length > 72 && !/https?:\/\//.test(l)) fail("body line over 72 chars");
 
-const banned = /^(Co-Authored-By|Co-authored-by|Generated with|Generated-by|Assisted-by|Signed-off-by: .*\b(claude|anthropic|ai)\b|🤖)/im;
-if (banned.test(msg)) fail("AI attribution trailer is not allowed");
+// AI attribution is a trailer: only the message's last paragraph is checked, so body prose that
+// mentions "Generated with" or a human's Signed-off-by (any email domain) passes.
+const ai = /\b(claude|anthropic|openai|chatgpt|gpt-?\d*|codex|copilot|gemini|cursor|aider|ai)\b/i;
+const banned = (l) => l.startsWith("🤖") || /^Generated with \[/i.test(l)
+  || (/^(Co-Authored-By|Generated-by|Assisted-by|Signed-off-by):/i.test(l) && ai.test(l.replace(/<[^>]*>/g, "")));
+const paras = lines.join("\n").trim().split(/\n\s*\n/);
+if (paras.length > 1 && paras[paras.length - 1].split("\n").some(banned)) fail("AI attribution trailer is not allowed");

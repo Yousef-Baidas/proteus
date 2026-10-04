@@ -304,7 +304,9 @@ ok("lessons: prompt match lead scope", /lead-only/.test(ctxOf(r)), r.out + r.err
 ok("lessons: lead scope hidden from worker", run(LS, pre("Bash", { command: "release" }, { ...sub, session_id: "s9" })).out === "");
 ok("lessons: worker path scope (worktree)", /paths\.md/.test(ctxOf(run(WH("proteus-lessons.js"), wpre("Edit", { file_path: path.join(WT, "src/lighting/x.ts") }), { cwd: WT }))));
 ok("lessons: worker path hidden from lead", run(LS, pre("Read", { file_path: path.join(REPO, "src/lighting/x.ts") }, { session_id: "s3" })).out === "");
-const hits = JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.json"), "utf8"));
+const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const hits = {};
+for (const h of hitLines) hits[h.file] = { hits: ((hits[h.file] || {}).hits || 0) + 1, last: h.at };
 ok("lessons: hits recorded", hits["npm-build.md"].hits === 3 && hits["enospc.md"].hits === 1, JSON.stringify(hits));
 ok("lessons: cache written", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "lessons-cache.json"), "utf8")).lessons.length === 5);
 for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(LD, `many${i}.md`), `---\ntrigger: deploy\n---\nmany ${i}\n`);
@@ -313,7 +315,7 @@ ok("lessons: max 2 per event, cache invalidated", (ctxOf(r).match(/proteus lesso
 ok("lessons: third arrives next event", /many2/.test(ctxOf(run(LS, pre("Bash", { command: "deploy" }, { session_id: "s4" })))));
 ok("lessons: no match no output", run(LS, pre("Bash", { command: "ls" }, { session_id: "s5" })).out === "");
 
-ok("lessons: hits stored as plain hits/last", JSON.stringify(Object.keys(hits["npm-build.md"])) === '["hits","last"]', JSON.stringify(hits));
+ok("lessons: hits stored one {file, at} line each", hitLines.every((h) => JSON.stringify(Object.keys(h)) === '["file","at"]' && !Number.isNaN(Date.parse(h.at))), JSON.stringify(hitLines));
 r = run(LS, { hook_event_name: "PostToolUse", session_id: "s6", cwd: REPO, tool_name: "Bash", tool_input: { command: "gradle build" }, tool_response: { stdout: "", stderr: "FATAL: daemon crashed", interrupted: false } });
 ok("lessons: failing output with no trigger match injects nothing", r.out === "" && r.code === 0, r.out + r.err);
 

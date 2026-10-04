@@ -5,7 +5,7 @@
 // 1. The lead writes no code: Edit/Write inside the repo is refused except the docs it owns.
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
-//    floor (Haiku by default) is refused.
+//    floor (Sonnet by default, so Haiku) is refused.
 // 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
@@ -26,8 +26,10 @@ const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
-// docs the lead may write: the repo docs, ADRs, lessons, nothing else
-const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^CLAUDE\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/];
+// docs the lead may write: CONTEXT.md, AGENTS.md, ADRs, lessons, and CONVENTIONS.md (bootstrap writes it; after
+// that it is the human's, and the lead adds a line only on the human's approval, which a hook cannot see).
+// CLAUDE.md is not listed: it is the human's, and a docs-diet ticket edits it through a worker.
+const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/];
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp|tiff?|exr|hdr)$/i;
 
 if (process.env.PROTEUS === "0") process.exit(0);
@@ -85,11 +87,14 @@ function modelDenial(c, name) {
   return "";
 }
 
-// the escape hatch: the human's latest prompt names the file; any doubt denies
+// the escape hatch: the human's latest prompt names the file as a whole token; any doubt denies
 function humanNamed(ev, ad, target) {
   try {
     const prompt = ad.lastHumanPrompt(ev);
-    return !!prompt && prompt.includes(path.basename(String(target).replace(/\\/g, "/")));
+    if (!prompt) return false;
+    const base = path.basename(String(target).replace(/\\/g, "/")).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // a whole token: not inside a longer name (data.png) or extension (a.png.bak); a sentence's full stop is fine
+    return new RegExp(`(?<![\\w.-])${base}(?![\\w-]|\\.\\w)`).test(prompt);
   } catch { return false; }
 }
 
