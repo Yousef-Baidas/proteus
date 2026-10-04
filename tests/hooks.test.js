@@ -32,8 +32,8 @@ g(HSRC, "add", "-A"); g(HSRC, "commit", "-qm", "init"); g(HSRC, "push", "-q", "-
 const OTHER = path.join(W, "other");
 g(W, "clone", "-q", BARE, OTHER);
 fs.writeFileSync(path.join(OTHER, "agents", "proteus-worker.md"), "worker v2\n");
-g(OTHER, "commit", "-qam", "v2"); g(OTHER, "push", "-q");
-g(HSRC, "fetch", "-q"); // HSRC is now 1 behind @{u}
+g(OTHER, "commit", "-qam", "v2"); g(OTHER, "tag", "-a", "v0.2.0", "-m", "v0.2.0"); g(OTHER, "push", "-q", "origin", "HEAD", "v0.2.0");
+g(HSRC, "fetch", "-q", "--tags"); // HSRC is now 1 behind @{u}, at which sits the unsigned release v0.2.0
 
 // ---- target repo, lead hooks installed from the Proteus checkout
 const REPO = path.join(W, "repo");
@@ -209,8 +209,33 @@ ok("guard sub: exact owned file + NotebookEdit", run(LG, sp("NotebookEdit", { no
 r = run(LG, sp("Edit", { file_path: "src/lighting/../other.ts" }));
 ok("guard sub: .. inside worktree normalised", r.code === 2 && /NEEDS src\/other\.ts/.test(r.err), r.err);
 r = run(LG, sp("Edit", { file_path: "../repo/src/x.ts" }));
-ok("guard sub: .. escape into main checkout denied with worktree hint", r.code === 2 && r.err.includes(`yours is ${WT}: edit ${path.join(WT, "src/x.ts")}`), r.err);
+const fw = (p) => p.split(path.sep).join("/");
+ok("guard sub: .. escape into main checkout denied with worktree hint", r.code === 2 && r.err.includes(`yours is ${fw(WT)}: edit ${fw(path.join(WT, "src/x.ts"))}`), r.err);
 ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.join(W, "scratch.txt") })).code === 0);
+// one worker, one worktree: a sibling's worktree is refused even on a path its own list owns
+{
+  const RB = path.join(W, "repo-bind"), WA = path.join(W, "bind-a"), WB = path.join(W, "bind-b");
+  fs.mkdirSync(RB); g(RB, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(RB, "a.txt"), "a\n"); g(RB, "add", "-A"); g(RB, "commit", "-qm", "init");
+  g(RB, "branch", "proteus/rb");
+  g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/1", WA, "proteus/rb"); g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/2", WB, "proteus/rb");
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"] });
+  const inA = path.join(WA, "src", "lighting", "a.ts"), inB = path.join(WB, "src", "lighting", "a.ts"), rec = (id) => { try { return fs.readFileSync(path.join(RB, ".git", "proteus", "agents", `agent-${id}`), "utf8").trim(); } catch { return ""; } };
+  const ed = (id, file, cwd = RB) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd, transcript_path: undefined }), { cwd: RB });
+  r = ed("c1", inB, WA);
+  ok("guard bind: agent whose cwd is a prepared worktree is refused in a sibling's owned path",
+    r.code === 2 && r.err.includes(`src/lighting/a.ts is in ${fw(WB)}, another worker's worktree; yours is ${fw(WA)} (your cwd)`) && ed("c1", inA, WA).code === 0, r.err);
+  // a subagent's cwd stays the lead's: its first edit in a prepared worktree binds it there
+  ok("guard bind: first edit binds the agent to that worktree", ed("b1", inA).code === 0 && rec("b1") === WA);
+  fs.mkdirSync(path.dirname(inA), { recursive: true }); fs.writeFileSync(inA, "x\n");
+  r = ed("b1", inB);
+  ok("guard bind: bound agent with uncommitted work is refused in a sibling worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)} (uncommitted work there)`) && /NEEDS src\/lighting\/a\.ts/.test(r.err), r.err);
+  r = ed("b1", path.join(RB, "src", "x.ts"));
+  ok("guard bind: main-checkout refusal names the bound worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)}: edit ${fw(path.join(WA, "src", "x.ts"))}`), r.err);
+  ok("guard bind: another agent binds to the sibling", ed("b2", inB).code === 0 && ed("b2", inB).code === 0);
+  g(WA, "add", "-A"); g(WA, "commit", "-qm", "contract");
+  ok("guard bind: committed in its own, the agent moves on (contracts worker)", ed("b1", inB).code === 0 && rec("b1") === WB);
+  ok("guard bind: owned list still applies in the bound worktree", ed("b3", path.join(WB, "src", "other.ts")).code === 2);
+}
 ok("guard sub: scout skills.txt allowed, other file denied", run(LG, pre("Write", { file_path: "teams/backend/skills.txt" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 0 &&
   run(LG, pre("Write", { file_path: "teams/backend/PROFILE.md" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 2);
 ok("guard sub: Read and Bash not path-checked", run(LG, sp("Read", { file_path: path.join(REPO, "src/a.ts") })).code === 0);
@@ -280,7 +305,9 @@ ok("lessons: prompt match lead scope", /lead-only/.test(ctxOf(r)), r.out + r.err
 ok("lessons: lead scope hidden from worker", run(LS, pre("Bash", { command: "release" }, { ...sub, session_id: "s9" })).out === "");
 ok("lessons: worker path scope (worktree)", /paths\.md/.test(ctxOf(run(WH("proteus-lessons.js"), wpre("Edit", { file_path: path.join(WT, "src/lighting/x.ts") }), { cwd: WT }))));
 ok("lessons: worker path hidden from lead", run(LS, pre("Read", { file_path: path.join(REPO, "src/lighting/x.ts") }, { session_id: "s3" })).out === "");
-const hits = JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.json"), "utf8"));
+const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const hits = {};
+for (const h of hitLines) hits[h.file] = { hits: ((hits[h.file] || {}).hits || 0) + 1, last: h.at };
 ok("lessons: hits recorded", hits["npm-build.md"].hits === 3 && hits["enospc.md"].hits === 1, JSON.stringify(hits));
 ok("lessons: cache written", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "lessons-cache.json"), "utf8")).lessons.length === 5);
 for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(LD, `many${i}.md`), `---\ntrigger: deploy\n---\nmany ${i}\n`);
@@ -289,7 +316,7 @@ ok("lessons: max 2 per event, cache invalidated", (ctxOf(r).match(/proteus lesso
 ok("lessons: third arrives next event", /many2/.test(ctxOf(run(LS, pre("Bash", { command: "deploy" }, { session_id: "s4" })))));
 ok("lessons: no match no output", run(LS, pre("Bash", { command: "ls" }, { session_id: "s5" })).out === "");
 
-ok("lessons: hits stored as plain hits/last", JSON.stringify(Object.keys(hits["npm-build.md"])) === '["hits","last"]', JSON.stringify(hits));
+ok("lessons: hits stored one {file, at} line each", hitLines.every((h) => JSON.stringify(Object.keys(h)) === '["file","at"]' && !Number.isNaN(Date.parse(h.at))), JSON.stringify(hitLines));
 r = run(LS, { hook_event_name: "PostToolUse", session_id: "s6", cwd: REPO, tool_name: "Bash", tool_input: { command: "gradle build" }, tool_response: { stdout: "", stderr: "FATAL: daemon crashed", interrupted: false } });
 ok("lessons: failing output with no trigger match injects nothing", r.out === "" && r.code === 0, r.out + r.err);
 
@@ -405,7 +432,7 @@ fs.writeFileSync(path.join(HOME, ".claude", "proteus.json"), JSON.stringify({ ho
 fs.writeFileSync(path.join(HSRC, "templates", "hooks", "proteus-status.js"), fs.readFileSync(path.join(SRC, "proteus-status.js"), "utf8") + "// changed upstream\n");
 r = run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "s1", cwd: REPO });
 let L = r.out.split("\n");
-ok("autostart: state on line 4", L[3].startsWith("proteus-state") && /doc-bloat=CLAUDE-extra\.md:1,CLAUDE\.md:200/.test(L[3]) && /lessons=9/.test(L[3]) && L[3].includes(`proteus-src=${HSRC}`) && /proteus-update=1-behind \(node .*install\.js --update\)/.test(L[3]) && /inbox=2q\/1r/.test(L[3]) && /proteus-branches=proteus\/bl1077( |$)/.test(L[3]), L[3]);
+ok("autostart: state on line 4", L[3].startsWith("proteus-state") && /doc-bloat=CLAUDE-extra\.md:1,CLAUDE\.md:200/.test(L[3]) && /lessons=9/.test(L[3]) && L[3].includes(`proteus-src=${HSRC}`) && /proteus-update=v0\.2\.0 \(node .*install\.js --update\)/.test(L[3]) && /inbox=2q\/1r/.test(L[3]) && /proteus-branches=proteus\/bl1077( |$)/.test(L[3]), L[3]);
 ok("autostart: synced line", r.out.includes(`proteus: synced 2 files from ${HSRC}`) && fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v1\n" && fs.readFileSync(hook("proteus-status.js"), "utf8").includes("changed upstream"), L.slice(4, 7).join(" | ").slice(0, 400));
 ok("autostart: run-log tail on startup with branch", /run-log #7 tail \(newest last\):/.test(r.out) && /decision 15:/.test(r.out) && !/decision 3:/.test(r.out), r.out);
 const tailBlock = r.out.slice(r.out.indexOf("run-log #7"), r.out.indexOf("SKILL BODY"));
@@ -429,12 +456,17 @@ r = run(AS, { source: "compact", cwd: REPO }, { env: { FAKE_GH: "fail" } });
 ok("autostart: gh fail silent", r.code === 0 && !/run-log #/.test(r.out) && r.err === "" && /SKILL BODY/.test(r.out), r.err);
 ok("autostart: subagent silent", run(AS, { source: "startup", agent_id: "x" }).out === "");
 ok("autostart: worktree silent", run(WH("proteus-stall.js").replace("proteus-stall.js", "../../.claude/hooks/proteus-stall.js") && AS, { source: "startup" }, { cwd: WT }).out === "");
-// autoUpdate on a clean checkout pulls
+// autoUpdate on a clean checkout: an unsigned release tag is not applied (tests/update.test.js has the signed cases)
 fs.writeFileSync(path.join(HOME, ".claude", "proteus.json"), JSON.stringify({ home: HSRC, autoUpdate: true, lastFetch: 0 }));
 g(HSRC, "checkout", "-q", "--", ".");
+const unmoved = g(HSRC, "rev-parse", "HEAD");
 r = run(AS, { source: "startup", cwd: REPO });
-const sha = g(HSRC, "rev-parse", "--short", "HEAD");
-ok("autostart: autoUpdate pulls", r.out.includes(`proteus: updated to ${sha}`) && fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v2\n" && !/proteus-update=/.test(r.out), r.out.slice(0, 1500));
+ok("autostart: autoUpdate skips an unsigned release with one note", g(HSRC, "rev-parse", "HEAD") === unmoved && /^proteus: not updating to v0\.2\.0: git verify-tag v0\.2\.0: no signature found\. /m.test(r.out) &&
+  fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v1\n" && /proteus-update=v0\.2\.0/.test(r.out), r.out.slice(0, 1500));
+// the manual way the note names: the human merges the tag, the next start syncs it
+g(HSRC, "merge", "-q", "--ff-only", "v0.2.0");
+r = run(AS, { source: "startup", cwd: REPO });
+ok("autostart: a hand-merged release is synced, no update pending", fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v2\n" && !/proteus-update=|not updating/.test(r.out), r.out.slice(0, 1500));
 const cfg = JSON.parse(fs.readFileSync(path.join(HOME, ".claude", "proteus.json"), "utf8"));
 ok("autostart: lastFetch updated", cfg.lastFetch > Date.now() - 60e3 && cfg.autoUpdate === true);
 
@@ -667,10 +699,14 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   for (const [m, f] of [["feat: shiny", "a"], ["fix: small", "b"], ["chore: tidy", "c"], ["refactor!: rename flag", "d"]]) {
     g(OTHER, "pull", "-q"); fs.writeFileSync(path.join(OTHER, f), f); g(OTHER, "add", "-A"); g(OTHER, "commit", "-qm", m); g(OTHER, "push", "-q");
   }
-  g(HSRC, "fetch", "-q");
+  // the release at the tip: SSH-signed when this machine can, so auto-update may apply it below
+  const signer = lib.sshSigner(path.join(W, "keys"));
+  if (signer) { signer.tag(OTHER, "v0.3.0"); g(HSRC, "config", "gpg.ssh.allowedSignersFile", signer.allowed); } else g(OTHER, "tag", "-a", "v0.3.0", "-m", "v0.3.0");
+  g(OTHER, "push", "-q", "origin", "v0.3.0");
+  g(HSRC, "fetch", "-q", "--tags");
   setCfg({ toured: was });
   r = start();
-  ok("update notice: behind-count stored for the status line", tcfg().behind === 4 && /proteus-update=4-behind/.test(r.out.split("\n")[3]), JSON.stringify(tcfg()));
+  ok("update notice: commits to the release stored for the status line", tcfg().behind === 4 && /proteus-update=v0\.3\.0 /.test(r.out.split("\n")[3]), JSON.stringify(tcfg()));
   ok("tour: nothing new in the checkout yet → silent", !/tour=/.test(r.out));
   const slRun = () => run(SL, JSON.stringify({ cwd: CWD }), { cwd: CWD, env: lib.homeEnv(TH) }).out.trim();
   ok("statusline: update ready while behind", slRun().endsWith(" · proteus: update ready (install.js --update)"), slRun());
@@ -680,16 +716,19 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   ok("update notice: behind cleared once up to date", !("behind" in tcfg()) && !/proteus-update=/.test(r.out) && !slRun().includes("update ready"), JSON.stringify(tcfg()) + slRun());
   setCfg({ toured: "0123456789abcdef0123456789abcdef01234567" });
   ok("tour: unknown toured commit → silent", !/tour=/.test(start().out));
-  // auto-update: an install from before the tour gets a what's-new baseline, a first-time one keeps its first tour
-  g(HSRC, "reset", "-q", "--hard", "HEAD~2");
-  const pre = head();
-  setCfg({ autoUpdate: true });
-  r = start();
-  ok("autoUpdate: pre-tour install gets the pre-update commit as tour baseline", /proteus: updated to/.test(r.out) && tcfg().toured === pre && /tour=whats-new:1/.test(r.out), JSON.stringify(tcfg()) + r.out.slice(0, 800));
-  g(HSRC, "reset", "-q", "--hard", "HEAD~1");
-  setCfg({ autoUpdate: true, toured: "" });
-  r = start();
-  ok("autoUpdate: first-time install keeps tour=new", tcfg().toured === "" && /tour=new/.test(r.out), JSON.stringify(tcfg()));
+  // auto-update to the signed release: an install from before the tour gets a what's-new baseline, a first-time one keeps its first tour
+  if (!signer) console.log("skip: auto-update tour baseline (ssh-keygen missing or cannot sign here)");
+  else {
+    g(HSRC, "reset", "-q", "--hard", "HEAD~2");
+    const pre = head();
+    setCfg({ autoUpdate: true });
+    r = start();
+    ok("autoUpdate: pre-tour install gets the pre-update commit as tour baseline", /proteus: updated to v0\.3\.0 /.test(r.out) && tcfg().toured === pre && /tour=whats-new:1/.test(r.out), JSON.stringify(tcfg()) + r.out.slice(0, 800));
+    g(HSRC, "reset", "-q", "--hard", "HEAD~1");
+    setCfg({ autoUpdate: true, toured: "" });
+    r = start();
+    ok("autoUpdate: first-time install keeps tour=new", tcfg().toured === "" && /tour=new/.test(r.out), JSON.stringify(tcfg()));
+  }
 }
 // installer: first install marks the first-time tour and says so; --tour-done records it
 {
@@ -708,7 +747,7 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   ok("--tour-done: records HEAD, drops the offer count", r.code === 0 && cjson(IH, "proteus.json").toured === realHead && !("tourOffers" in cjson(IH, "proteus.json")) && /tour     -> done at/.test(r.out), r.out + r.err);
   ok("--tour-done: takes no other flag", run(INST, "", { args: ["--tour-done", "--project"], cwd: CWD, env: cenv(IH) }).code === 2);
 }
-// --update prints what's new and sets a what's-new baseline for a pre-tour config
+// --update moves only to a verified release tag, prints what's new and sets a what's-new baseline for a pre-tour config
 {
   const UB = path.join(W, "upd.git"), UA = path.join(W, "upd-a"), UC = path.join(W, "upd-c");
   const HM = path.dirname(INST);
@@ -717,17 +756,30 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   for (const f of execFileSync("git", ["ls-files"], { cwd: HM, encoding: "utf8" }).split("\n").filter(Boolean)) {
     fs.mkdirSync(path.dirname(path.join(UA, f)), { recursive: true }); fs.copyFileSync(path.join(HM, f), path.join(UA, f));
   }
-  g(UA, "add", "-A"); g(UA, "commit", "-qm", "chore: snapshot"); g(UA, "push", "-q", "-u", "origin", "HEAD:main");
+  g(UA, "add", "-A"); g(UA, "commit", "-qm", "chore: snapshot"); g(UA, "tag", "-a", "v0.0.1", "-m", "v0.0.1"); g(UA, "push", "-q", "-u", "origin", "HEAD:main", "v0.0.1");
   g(W, "clone", "-q", UB, UC);
   const before = g(UC, "rev-parse", "HEAD");
   for (const m of ["feat: shiny thing", "docs: words", "fix: a bug"]) { fs.appendFileSync(path.join(UA, "README.md"), m + "\n"); g(UA, "commit", "-qam", m); }
-  g(UA, "push", "-q");
+  g(UA, "tag", "-a", "v0.0.2", "-m", "v0.0.2"); g(UA, "push", "-q", "origin", "HEAD:main", "v0.0.2");
   const UH = chome("upd");
   fs.writeFileSync(path.join(UH, ".claude", "proteus.json"), JSON.stringify({ home: UC, autoUpdate: false, behind: 3 }));
-  r = run(path.join(UC, "install.js"), "", { args: ["--update"], cwd: CWD, env: { ...cenv(UH), ...ENV, ...lib.homeEnv(UH), PATH: cenv(UH).PATH } });
-  const uj = cjson(UH, "proteus.json");
-  ok("--update: lists feat and fix subjects, not docs", r.code === 0 && /\n  feat: shiny thing\n  fix: a bug\n/.test(r.out) && !/docs: words/.test(r.out), r.out + r.err);
-  ok("--update: pre-tour config gets the old HEAD as tour baseline, behind cleared", uj.toured === before && !("behind" in uj) && uj.home === UC, JSON.stringify(uj));
+  const upd = () => run(path.join(UC, "install.js"), "", { args: ["--update"], cwd: CWD, env: { ...cenv(UH), ...ENV, ...lib.homeEnv(UH), PATH: cenv(UH).PATH } });
+  r = upd();
+  ok("--update: an unsigned release is refused with the reason and the manual way", r.code === 1 && g(UC, "rev-parse", "HEAD") === before &&
+    /not updating .* to v0\.0\.2: git verify-tag v0\.0\.2: no signature found\n.*"Releases".*\n  git -C ".*" merge --ff-only v0\.0\.2\n/.test(r.err), r.out + r.err);
+  const signer = lib.sshSigner(path.join(W, "upd-keys"));
+  if (!signer) console.log("skip: --update to a signed release (ssh-keygen missing or cannot sign here)");
+  else {
+    signer.tag(UA, "v0.0.3"); g(UA, "push", "-q", "origin", "v0.0.3");
+    g(UC, "config", "gpg.ssh.allowedSignersFile", signer.allowed);
+    r = upd();
+    const uj = cjson(UH, "proteus.json");
+    ok("--update: a trusted signed release is applied, feat and fix subjects listed, not docs", r.code === 0 && g(UC, "rev-parse", "HEAD") === g(UA, "rev-parse", "HEAD") &&
+      /update   -> .* v0\.0\.1\.\.v0\.0\.3 \(signature verified\)\n  feat: shiny thing\n  fix: a bug\n/.test(r.out) && !/docs: words/.test(r.out), r.out + r.err);
+    ok("--update: pre-tour config gets the old HEAD as tour baseline, behind cleared", uj.toured === before && !("behind" in uj) && uj.home === UC, JSON.stringify(uj));
+    r = upd();
+    ok("--update: at the newest release it only reinstalls", r.code === 0 && /update   -> .* has no newer release than v0\.0\.3\n/.test(r.out), r.out + r.err);
+  }
 }
 
 // ---- commit-msg
@@ -933,6 +985,19 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   r = run(path.join(CX, ".codex", "hooks", "proteus-autostart.js"), { hook_event_name: "SessionStart", session_id: "c1", cwd: CX, model: "gpt-6-sol", source: "startup", transcript_path: null }, { cwd: CX, env: cenvx });
   ok("codex autostart: skill body from .agents/skills as plain stdout, models= from the event", r.code === 0 && r.out.trim().endsWith("CODEX SKILL BODY") && !r.out.startsWith("{") &&
     /models=lead:gpt-6-sol,top:gpt-6-sol,mid:gpt-6-sol/.test(r.out), r.out.slice(0, 800) + r.err);
+  { // the sync of agents into CODEX_HOME refreshes a generated role and leaves the user's own
+    const SH = path.join(W, "cx-sync"); fs.mkdirSync(path.join(SH, "agents"), { recursive: true });
+    for (const n of ["proteus-worker", "proteus-guide"]) fs.writeFileSync(path.join(SH, "agents", `${n}.md`), `---\nname: ${n}\ndescription: d\n---\nbody ${n}\n`);
+    const TW = path.join(CXH, ".codex", "agents", "proteus-worker.toml"), TG = path.join(CXH, ".codex", "agents", "proteus-guide.toml");
+    fs.mkdirSync(path.dirname(TW), { recursive: true });
+    fs.writeFileSync(TW, "# generated by proteus from proteus-worker.md; edits are overwritten\nname = \"stale\"\n");
+    fs.writeFileSync(TG, 'name = "proteus-guide"\ndeveloper_instructions = "mine"\n');
+    fs.writeFileSync(path.join(CXH, ".claude", "proteus.json"), JSON.stringify({ home: SH, autoUpdate: false, lastFetch: Date.now() }));
+    r = run(path.join(CX, ".codex", "hooks", "proteus-autostart.js"), { hook_event_name: "SessionStart", session_id: "c2", cwd: CX, model: "gpt-6-sol", source: "startup", transcript_path: null }, { cwd: CX, env: cenvx });
+    ok("codex autostart: a generated role is refreshed, a custom one without the header survives", r.code === 0 && /name = "proteus-worker"/.test(fs.readFileSync(TW, "utf8")) &&
+      fs.readFileSync(TG, "utf8") === 'name = "proteus-guide"\ndeveloper_instructions = "mine"\n' && /synced 1 files/.test(r.out), r.out.slice(0, 600) + r.err);
+    fs.writeFileSync(path.join(CXH, ".claude", "proteus.json"), JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
+  }
   r = run(path.join(CX, ".codex", "hooks", "proteus-journal.js"), { hook_event_name: "UserPromptSubmit", session_id: "c1", cwd: CX, model: "gpt-6-sol", transcript_path: TCX, prompt: "go" }, { cwd: CX, env: cenvx });
   ok("codex journal: context as UserPromptSubmit additionalContext", /"hookEventName":"UserPromptSubmit"/.test(r.out) && /185k/.test(r.out), r.out + r.err);
   r = run(path.join(CX, ".codex", "hooks", "proteus-stall.js"), { hook_event_name: "SubagentStop", session_id: "c1", cwd: CX, model: "gpt-6-sol", agent_id: "t-2", agent_type: "proteus-worker", stop_hook_active: false, last_assistant_message: "Waiting for the background build to finish.", transcript_path: TCX }, { cwd: CX, env: cenvx });
@@ -1098,6 +1163,16 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("commit-msg gate: the template lefthook.yml names the tracked teams/ copy, which accepts a conventional message and rejects others",
     /^ok   commit-msg gate runs a tracked file$/m.test(d) && gate && msg("feat: add a thing\n") === 0 && msg("added stuff\n") !== 0 &&
     /node teams\/templates\/hooks\/commit-msg\.js \/tmp\/msg/.test(fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8")), d);
+
+  // the shipped CI template fails until filled in; doctor names a workflow that still has a placeholder
+  fs.mkdirSync(path.join(XP, ".github", "workflows"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), path.join(XP, ".github", "workflows", "proteus-gates.yml"));
+  d = xdoc();
+  ok("gates doctor: the unfilled template WARNs, naming each placeholder",
+    /^WARN \.github\/workflows\/proteus-gates\.yml still has unfilled placeholders \(EDIT-install, EDIT-typecheck, EDIT-lint, EDIT-test, EDIT-deadcode\)/m.test(d), d);
+  fs.writeFileSync(path.join(XP, ".github", "workflows", "proteus-gates.yml"), "jobs:\n  gates:\n    steps:\n      # EDIT-x was here\n      - run: npm test\n");
+  ok("gates doctor: a filled workflow is ok", /^ok   proteus-gates\.yml has no unfilled placeholder$/m.test(xdoc()));
+  fs.rmSync(path.join(XP, ".github"), { recursive: true });
 
   // a config.toml the repo tracks is edited in place and never git-excluded
   const XQ = path.join(W, "cx-tracked");

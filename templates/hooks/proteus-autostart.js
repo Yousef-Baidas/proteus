@@ -3,13 +3,16 @@
 // as if the human had typed /proteus. Prints the skill body plus a local state line
 // so the lead knows what bootstrap can skip without spending a tool call.
 // Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile),
-// checks it for updates (background fetch at most daily, fast-forward to it when autoUpdate; the
-// behind-count feeds the status line), offers the tour while it is pending (tour=…), and after
+// checks it for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
+// to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
 // (proteus-scratch.js --sweep --stale) detached, so it never slows the start. Moves the state a
 // pre-rename install left in the legacy state dir into <git-common-dir>/proteus (lib.migrateState),
 // and lists open runs on either branch prefix: a legacy run keeps its names until it closes.
+// On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
+// Re-hashes the linked team skills against teams/skills-lock.json (lib.lockDrift): a drift shows as
+// skills-lock=drift:<names> plus a note, and the lead guard refuses worker and verifier spawns until it clears.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -31,18 +34,22 @@ lib.run((ev, ad) => {
   const notes = [];
   const cfg = lib.proteusConfig();
   const home = typeof cfg.home === "string" && fs.existsSync(cfg.home) ? path.resolve(cfg.home) : null;
-  let behind = 0;
+  let pending = "";
   if (home) {
-    behind = safe(() => update(home, cfg, notes), 0);
+    pending = safe(() => update(home, cfg, notes), "");
     safe(() => sync(ad, home, root, notes));
   }
   safe(() => migrateState(root, home, notes));
   safe(() => codexRoots(ad, root, home, notes));
+  safe(() => publicNote(root, notes));
   const identity = safe(() => agentIdentity(ad, root, home, notes), "identity=unknown");
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);
   const src = ev.source;
   const tour = home && (src === "startup" || src === "clear") ? safe(() => tourState(home, cfg), "") : "";
-  const state = localState(ad, root, runs, home, behind) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
+  // hashed afresh each session start; the guard reuses the result until the lock changes
+  const drift = safe(() => lib.lockDrift(root, true), []);
+  if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
+  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchSweep(root));
 
@@ -77,28 +84,35 @@ lib.run((ev, ad) => {
 
 function safe(fn, dflt) { try { return fn(); } catch { return dflt; } }
 
-// background fetch at most once a day; behind-count from the already-fetched upstream ref.
-// The count goes to proteus.json for the status line, so an update shows even with autoUpdate off.
+// background fetch (with tags) at most once a day; the update is the newest release tag past HEAD
+// (lib.release). Its commit count goes to proteus.json for the status line, so a release shows even
+// with autoUpdate off. With it on, the checkout fast-forwards to that tag only once verifyRelease
+// accepts its signature; otherwise one note says why and how to update by hand.
 function update(home, cfg, notes) {
   const patch = {};
   const last = typeof cfg.lastFetch === "number" ? cfg.lastFetch : Date.parse(cfg.lastFetch) || 0;
   if (Date.now() - last > 24 * 3600e3) {
     try {
-      const c = spawn("git", ["-C", home, "fetch", "--quiet"], { detached: true, stdio: "ignore", windowsHide: true });
+      const c = spawn("git", ["-C", home, "fetch", "--quiet", "--tags"], { detached: true, stdio: "ignore", windowsHide: true });
       c.on("error", () => {});
       c.unref();
     } catch {}
     patch.lastFetch = Date.now();
   }
-  let behind = parseInt(lib.git(["-C", home, "rev-list", "--count", "HEAD..@{u}"], home), 10) || 0;
+  const rel = lib.release(home);
+  let behind = rel.ahead;
   if (behind && cfg.autoUpdate === true) {
     try {
+      const v = lib.verifyRelease(home, rel.tag);
       const dirty = execFileSync("git", ["-C", home, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-      if (!dirty.trim()) {
+      if (v.error) {
+        notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "README.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
+      } else if (!dirty.trim()) {
         const before = lib.git(["-C", home, "rev-parse", "HEAD"], home);
-        // fast-forward to the already-fetched upstream: no network wait, no race with the background fetch
-        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", "@{u}"], { timeout: 15000, windowsHide: true, stdio: "ignore" });
-        notes.push(`proteus: updated to ${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)}`);
+        // the verified commit, already fetched: no network wait, no race with the background fetch
+        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", v.commit], { timeout: 15000, windowsHide: true, stdio: "ignore" });
+        const log = lib.changelog(home, v.commit, rel.current, rel.tag);
+        notes.push(`proteus: updated to ${rel.tag} (${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)})${rel.current ? ` from ${rel.current}` : ""}, signature verified${log.length ? "; CHANGELOG.md:" : ""}`, ...log.map((l) => `  ${l}`));
         behind = 0;
         // an install from before the tour existed gets a what's-new tour from here, not a first-time one
         if (cfg.toured === undefined && before) patch.toured = before;
@@ -107,7 +121,7 @@ function update(home, cfg, notes) {
   }
   if ((cfg.behind || 0) !== behind) patch.behind = behind;
   if (Object.keys(patch).length) patchConfig(cfg, patch);
-  return behind;
+  return behind ? rel.tag : "";
 }
 
 function patchConfig(cfg, patch) {
@@ -144,7 +158,8 @@ function tourState(home, cfg) {
   return field;
 }
 
-// agents and hooks to where the harness keeps them, only when bytes differ; never deletes
+// agents and hooks to where the harness keeps them, only when bytes differ; never deletes, and a
+// Codex role without the generated header (the user's own) is skipped
 // (install-lead-hooks removes the files the adapter skips)
 function sync(ad, home, root, notes) {
   let n = 0;
@@ -154,7 +169,7 @@ function sync(ad, home, root, notes) {
     if (!f.endsWith(".md")) continue;
     let a = null;
     try { a = ad.agentFile(f, fs.readFileSync(path.join(home, "agents", f), "utf8")); } catch {}
-    if (a && lib.syncText(a.text, path.join(ad.agentsDir, a.name))) n++;
+    if (a && lib.syncText(a.text, path.join(ad.agentsDir, a.name), ad.generated)) n++;
   }
   const hooksSrc = path.join(home, "templates", "hooks");
   for (const f of ls(hooksSrc)) {
@@ -165,6 +180,28 @@ function sync(ad, home, root, notes) {
   // a new hook file may need a new registration
   if (hooks) ad.registerLead(root);
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
+}
+
+// A public repo publishes the run log, briefs, contracts, evidence and questions: said once per repo,
+// recorded in <common>/proteus/visibility.json. Until then gh is asked at most once a day (3 s
+// timeout; any failure, no remote or offline, just waits for the next day).
+const DAY = 24 * 3600e3;
+function publicNote(root, notes) {
+  const common = lib.gitCommonDir(root);
+  if (!common) return;
+  const file = path.join(lib.stateDir(common), "visibility.json");
+  const seen = lib.readJSON(file, null) || {};
+  if (seen.warned) return;
+  let vis = typeof seen.visibility === "string" ? seen.visibility : "";
+  let at = typeof seen.at === "number" ? seen.at : 0;
+  if (Date.now() - at >= DAY) {
+    vis = lib.gh(["repo", "view", "--json", "visibility", "-q", ".visibility"], root, 3000).toUpperCase();
+    at = Date.now();
+    lib.writeJSON(file, { at, visibility: vis });
+  }
+  if (vis !== "PUBLIC") return;
+  notes.push("proteus: this repo is public on GitHub. The run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone. Tell the human once, in your first reply, so nothing private goes into a work order, an answer or an evidence file. (Shown once per repo.)");
+  lib.writeJSON(file, { at, visibility: vis, warned: new Date().toISOString() });
 }
 
 // only when the run has scratch state; the sweep caches the size the next state line reads
@@ -264,7 +301,8 @@ function humanSaid(root) {
   const files = [lib.legacyStateDir(common), lib.stateDir(common)].flatMap((d) => { const f = path.join(d, "journal.jsonl"); return fs.existsSync(f) ? [f] : []; });
   const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024)))].slice(-10);
   const said = lines.flatMap((l) => {
-    const p = safe(() => JSON.parse(l).prompt, "");
+    // redacted again on the way out: a journal written before redaction existed may hold secrets
+    const p = safe(() => { const raw = JSON.parse(l).prompt; return typeof raw === "string" ? lib.redact(raw) : ""; }, "");
     return typeof p === "string" && p.trim() ? ["- " + (p.length > 400 ? p.slice(0, 400) + "…" : p).replace(/\n/g, "\n  ")] : [];
   });
   return said.length ? ["human said (verbatim, newest last):", ...said].join("\n") : "";
@@ -279,7 +317,7 @@ function models(ev, root) {
   return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
 }
 
-function localState(ad, root, runs, home, behind) {
+function localState(ad, root, runs, home, pending, drift) {
   const has = (f) => fs.existsSync(path.join(root, f));
   const read = (f) => { try { return fs.readFileSync(path.join(root, f), "utf8"); } catch { return ""; } };
   const ls = (d) => { try { return fs.readdirSync(path.join(root, d)); } catch { return []; } };
@@ -306,7 +344,7 @@ function localState(ad, root, runs, home, behind) {
       `teams=${profiles.length ? profiles.join(",") : "NO"}`,
       `skills-unscouted=${shipped.join(",") || "none"}`,
       `skills-unlinked=${unlinked.join(",") || "none"}`,
-      `skills-lock=${yn(has("teams/skills-lock.json"))}`,
+      `skills-lock=${drift.length ? `drift:${drift.join(",")}` : yn(has("teams/skills-lock.json"))}`,
       `ci-gates=${yn(has(".github/workflows/proteus-gates.yml"))}`,
       `lefthook=${yn(has("lefthook.yml"))}`,
       `protection=${/protection:\s*none/.test(agents) ? "none" : "on"}`,
@@ -316,7 +354,7 @@ function localState(ad, root, runs, home, behind) {
       ...(scratch > 1024 ? [`scratch=${scratch}MB`] : []),
       ...(ad.contextModeOn() ? [] : ["context-mode=missing"]),
       `proteus-src=${home || "none"}`,
-      ...(behind ? [`proteus-update=${behind}-behind (node ${path.join(home, "install.js")} --update)`] : []),
+      ...(pending ? [`proteus-update=${pending} (node ${path.join(home, "install.js")} --update)`] : []),
     ].join(" ")
   );
 }

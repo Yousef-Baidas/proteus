@@ -28,12 +28,12 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 `install.js --project` registers the lead's hooks in the repo's `.claude/settings.local.json` (machine-local, untracked):
 
 - **Autostart.** Every session opened in the repo begins as the lead, skill loaded, no `/proteus` typed. It prints a `proteus-state` line from local files (docs present, skills scouted and linked, gates installed, open `proteus/*` branches, root docs over budget, lessons, Proteus updates), so the lead skips what is already set up.
-- **Lead guard.** On the main thread, edits inside the repo are refused except `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, and lessons; an Agent call with no model, above the lead's, on a once-per-project model, or under the floor is refused; `gh … --edit-last` is refused (every agent posts as you, so an edit can overwrite a ruling), and so is an agent's comment opening with `ACCEPT`, `CHANGES` or `ANSWER`: those are your words. In the lead and every subagent it refuses `gh pr merge --admin`, a push to `main` or to an existing run branch (creating `proteus/<run>` passes), deleting either, and any change to branch protection or a ruleset other than the per-run protection PUT. The lead does not open images itself (each render costs it ~1.5k tokens; a subagent or you judge it) unless you name the file. Inside subagents it refuses `run_in_background` and `Monitor` (a worker that waits on a background notification never wakes up) and any edit outside the worker's owned paths.
-- **Journal and meter.** Every message you type is kept verbatim in `.git/proteus/`; context is metered from the transcript, with a warning at 150k and a hard stop on new dispatch at 180k.
+- **Lead guard.** On the main thread, edits inside the repo are refused except `CONTEXT.md`, `CONVENTIONS.md` (written at bootstrap; later only with your approval), `AGENTS.md`, ADRs, and lessons (never `CLAUDE.md`: that is yours, and a docs-diet worker edits it); an Agent call with no model, above the lead's, on a once-per-project model, or under the floor is refused; `gh … --edit-last` is refused (every agent posts as you, so an edit can overwrite a ruling), and so is an agent's comment opening with `ACCEPT`, `CHANGES` or `ANSWER`: those are your words. In the lead and every subagent it refuses `gh pr merge --admin`, a push to `main` or to an existing run branch (creating `proteus/<run>` passes), deleting either, and any change to branch protection or a ruleset other than the per-run protection PUT. The lead does not open images itself (each render costs it ~1.5k tokens; a subagent or you judge it) unless you name the file. Inside subagents it refuses `run_in_background` and `Monitor` (a worker that waits on a background notification never wakes up) and any edit outside the worker's owned paths or in another worker's worktree.
+- **Journal and meter.** Every message you type is kept verbatim in `.git/proteus/`, except that secrets (GitHub, Anthropic, OpenAI, AWS and Slack tokens, JWTs, private key blocks, `Authorization:` headers, `password=`/`token=`-style assignments) are stored as `[redacted]`, so a pasted key is not re-injected after a compaction; context is metered from the transcript, with a warning at 150k and a hard stop on new dispatch at 180k.
 - **Lessons.** Solved problems are recalled only when their trigger fires (below).
 - **Stall check.** A worker that ends its turn "waiting" instead of reporting is sent back to finish.
 - **Scratch.** Agents keep temp files, renders and worktrees in a per-ticket dir under `.git/proteus/scratch/`, and anything they leave directly in `/tmp` is ledgered. Both are deleted when the ticket merges or the run closes, with a background sweep for what is left behind; nothing Proteus did not create is touched.
-- **Status line.** `proteus: 2 questions · 1 review` at the bottom of the terminal while anything waits on you, and `proteus: update ready` when the checkout is behind, appended to your own status line.
+- **Status line.** `proteus: 2 questions · 1 review` at the bottom of the terminal while anything waits on you, and `proteus: update ready` when a newer release is out, appended to your own status line.
 
 `PROTEUS=0 claude` opens a plain session with none of them, for the review session or for working by hand.
 
@@ -49,7 +49,7 @@ The session you start is the lead, on whatever model you started it with, and it
 
 - Nothing runs above the lead. A worker may run on the lead's own model.
 - Fable is once per project: the lead is its one instance, so a Fable lead staffs Opus and below. Lift it with a line in `AGENTS.md` under `## Learned`: `models: solo=none`.
-- Haiku is under the floor: it does not produce or review work until it earns it. `models: floor=haiku` in `AGENTS.md` lowers the floor for a project; a Haiku lead lowers it on its own, so everything runs on Haiku.
+- The floor is Sonnet, so Haiku is under it: it does not produce or review work until it earns it. `models: floor=haiku` in `AGENTS.md` lowers the floor for a project; a Haiku lead lowers it on its own, so everything runs on Haiku.
 - Machine-wide defaults live in `~/.claude/proteus.json`: `"models": { "ladder": ["haiku", "sonnet", "opus", "fable"], "floor": "sonnet", "solo": ["fable"] }`. Claude Code passes a subagent's model as one of these aliases, so a rung is a family, not a version.
 
 ## Asks before it guesses
@@ -89,6 +89,8 @@ Step 0 of every run reads `references/bootstrap.md` and detects where the repo i
 - **Blank** — grills the idea, runs `/setup-matt-pocock-skills` with GitHub as the tracker, writes `CONTEXT.md`, designs the roster, and ships a single scaffold ticket (on code: manifest, typecheck, lint, test runner, smoke test; otherwise: build scripts and one headless check per team) before any feature wave.
 - **Mid-project** — runs every gate on `main`; red gates and dead code become a stabilise ticket that runs alone first. Never dispatches features onto a red baseline. Root docs over budget (a 1,000-line `CLAUDE.md`, a `CLAUDE_1.md`) get a docs-diet ticket: each line moves to where it is cheapest (nested `CLAUDE.md`, a lesson, an ADR, the tracker) or is deleted; landmarks stay as one-line links (`references/docs-diet.md`).
 - **Ready** — confirms gates, `CONTEXT.md`, `AGENTS.md ## Learned` in one line and goes.
+
+On a public GitHub repo the session start also says so, once per repo: the run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone, so keep anything private out of work orders and answers. The visibility comes from `gh repo view` (3 s timeout, asked at most once a day until the note has shown) and is recorded in `.git/proteus/visibility.json`.
 
 ## Teams
 
@@ -144,14 +146,14 @@ The tracker is GitHub via `gh` today. `references/tracker.md` is an operations t
 
 Rules in prompts drift; these are mechanical.
 
-- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69).
+- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
-- **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the verifier also refuses a diff outside the team's `Owns`.
+- **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; the lead arms a stall timer per wave.
 - **Commit messages.** lefthook runs a commit-msg check: Conventional Commits, 72 chars, no AI trailer. CI re-checks every commit in the PR, so `--no-verify` does not help.
 - **Security.** The security verifier runs semgrep on the diff first and queries OSV for every `NEEDS dependency` before the human sees the request.
 - **Mutation testing.** Once per milestone, the QA pass mutates the changed files; a surviving mutant is a `WAVE-RED` ticket.
-- **Skill pinning.** `teams/skills-lock.json` pins every linked skill's content hash; the link script warns `drift:` when a machine differs.
+- **Skill pinning.** `teams/skills-lock.json` pins every linked skill's content hash; the link script warns `drift:` when a machine differs, and the lead guard refuses to spawn workers and verifiers until the copy matches again or you re-lock with `node teams/link-skills.js --relock`.
 - **Cost.** Close reports cost per merged ticket from `ccusage`; OpenTelemetry export is one env var away for trends.
 
 Details and the exact commands: `skills/proteus/references/enforcement.md`.
@@ -228,7 +230,7 @@ cd /path/to/your/repo
 node ~/proteus/install.js --harness codex --project   # teams/, ROUTING.md, the lead's hooks in .codex/
 ```
 
-Codex reads skills from `~/.agents/skills`, so the two skills are linked there. The agents become TOML roles in `$CODEX_HOME/agents` (default `~/.codex/agents`); a role file without the `# generated by proteus` first line is yours and is never overwritten. `--project` registers the lead's hooks in `.codex/hooks.json` and lets git and `gh` run outside the sandbox through `.codex/rules/proteus.rules`; both, and the copied hooks, are excluded from git. It also adds `../<repo>-proteus/`, where worker worktrees live, to `writable_roots` in `.codex/config.toml`, so the sandbox lets workers write there. It edits an existing file in place and excludes the file from git only if it created it. The Claude-only hook files (status line, worker settings, commit-msg check) are not copied into `.codex/hooks`. Team skills are also linked into `teams/<team>/.agents/skills/`, and a Codex worker reads them from there itself, since Codex only loads skills between the repo root and the session's cwd. `--confine` does not apply: Codex loads `~/.agents/skills` for every session, so it cannot hide a team skill from the lead.
+Codex reads skills from `~/.agents/skills`, so the two skills are linked there. The agents become TOML roles in `$CODEX_HOME/agents` (default `~/.codex/agents`); a role file without the `# generated by proteus` first line is yours and is never overwritten, by the installer or by the session-start sync. `--project` registers the lead's hooks in `.codex/hooks.json` and lets git and `gh` run outside the sandbox through `.codex/rules/proteus.rules`; both, and the copied hooks, are excluded from git. It also adds `../<repo>-proteus/`, where worker worktrees live, to `writable_roots` in `.codex/config.toml`, so the sandbox lets workers write there. It edits an existing file in place and excludes the file from git only if it created it. The Claude-only hook files (status line, worker settings, commit-msg check) are not copied into `.codex/hooks`. Team skills are also linked into `teams/<team>/.agents/skills/`, and a Codex worker reads them from there itself, since Codex only loads skills between the repo root and the session's cwd. `--confine` does not apply: Codex loads `~/.agents/skills` for every session, so it cannot hide a team skill from the lead.
 
 Three steps the installer cannot do for you, once per repo:
 
@@ -244,9 +246,28 @@ Codex has no status line hook and no attribution setting; the commit-msg check s
 node ~/proteus/install.js --update     # from inside a Proteus repo also refreshes that repo
 ```
 
-`--update` pulls the checkout (fast-forward only; it refuses a dirty or diverged checkout), then re-runs the freshly pulled installer, adding `--project` when the current repo has Proteus hooks. `--project` never overwrites your `PROFILE.md`, `ROUTING.md`, or `skills.txt`; it refreshes the link scripts, templates, `required.txt`, and the hooks. Commit the `teams/` changes.
+`--update` fetches the checkout's tags and moves it to the newest release tag (`vX.Y.Z`) past it, only by fast-forward and only once `git verify-tag` accepts the tag's signature (see [Releases](#releases)); it refuses an unsigned or untrusted tag, a dirty checkout, and a tag that does not contain your checkout's HEAD. It never moves to the tip of a branch. It prints the `CHANGELOG.md` sections between the two versions (or, without any, the new `feat` and `fix` commits), then re-runs the updated installer, adding `--project` when the current repo has Proteus hooks; with no newer release it only re-runs the installer. `--project` never overwrites your `PROFILE.md`, `ROUTING.md`, or `skills.txt`; it refreshes the link scripts, templates, `required.txt`, and the hooks. Commit the `teams/` changes.
 
-Prefer not to think about it: `node ~/proteus/install.js --auto-update`. The session-start hook then fetches the checkout at most once a day and fast-forwards it when clean; `--no-auto-update` turns it off. With it off, the status line shows `proteus: update ready` once the daily fetch finds new commits, and the lead mentions it once. `--update` lists the new `feat` and `fix` commits.
+Prefer not to think about it: `node ~/proteus/install.js --auto-update`. The session-start hook then fetches the checkout and its tags at most once a day, and when a newer release tag passes the same checks it fast-forwards a clean checkout to it, re-syncs the hooks and agents, and shows the changelog for the versions in between in a few lines. A tag that fails a check is not applied: one line in the session says why and how to update by hand. `--no-auto-update` turns it off. With it off, the status line shows `proteus: update ready` once the daily fetch finds a newer release, and the lead mentions it once. Following `main` instead is a manual choice: `git -C ~/proteus pull --ff-only`, then `node ~/proteus/install.js --update`.
+
+### Releases
+
+A release is a signed annotated tag `vX.Y.Z` on `main`, with its notes under `## [X.Y.Z]` in `CHANGELOG.md`. The maintainer moves the `## [Unreleased]` notes under the new version, commits, and tags that commit:
+
+```bash
+git tag -s v1.2.0 -m "v1.2.0"          # GPG: signs with user.signingkey from your keyring
+git -c gpg.format=ssh -c user.signingkey=$HOME/.ssh/id_ed25519.pub tag -s v1.2.0 -m "v1.2.0"   # SSH key instead
+git push origin main v1.2.0
+```
+
+To sign every tag with SSH, set it once: `git config --global gpg.format ssh` and `git config --global user.signingkey "$HOME/.ssh/id_ed25519.pub"`. Lightweight tags (`git tag v1.2.0`) carry no signature, so no install takes them.
+
+Updates use your own git's trust, so nothing updates until you opt in to the maintainer's key. Fetch the key from a source you trust (not from the checkout it will verify), then, scoped to the Proteus checkout:
+
+- SSH signatures: put one line `<email> <key type> <key>` (for example `maintainer@example.com ssh-ed25519 AAAA…`) in a file outside the checkout, then `git -C ~/proteus config gpg.ssh.allowedSignersFile ~/.config/proteus/allowed_signers`.
+- GPG signatures: `gpg --import maintainer.asc`. git accepts a good signature from any key in your keyring; `git -C ~/proteus config gpg.minTrustLevel fully` limits it to keys you have certified (`gpg --lsign-key <fingerprint>`).
+
+Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
 ### Coming from hivemind
 
@@ -269,7 +290,7 @@ node ~/proteus/install.js --doctor         # from a repo root: global and projec
 node ~/proteus/install.js --doctor --fix   # repair links, duplicates, context-mode, hook registration, team skills
 ```
 
-Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (installed and enabled), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (installed and enabled), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
 
 ### Agents under their own login (recommended)
 
@@ -341,10 +362,11 @@ templates/
     proteus-lessons.js      trigger-based lesson recall
     proteus-stall.js  proteus-worker-guard.js  no waiting on background jobs, one report per agent
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
+    proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-scratch.js      ledgers and sweeps agents' temp files
-    proteus-owned-paths.js  commit-msg.js  proteus-lib.js   shared core
+    proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
 tests/hooks.test.js          node tests/hooks.test.js: hooks and installer against temp repos and a fake gh

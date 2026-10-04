@@ -7,8 +7,8 @@
 #                                  also set up the current repo: teams\ with linked skills and
 #                                  the lead's autostart + guard hooks
 #   ... -Project -Install -Confine fetch missing skills, hide them from the lead
-#   ... -Update                    git pull this checkout, reinstall, refresh the current repo
-#   ... -AutoUpdate                let sessions pull this checkout (-NoAutoUpdate: stop)
+#   ... -Update                    move this checkout to the newest verified signed release, reinstall, refresh the current repo
+#   ... -AutoUpdate                let sessions do that update (-NoAutoUpdate: stop)
 #   ... -Doctor [-Fix]             check the setup; -Fix applies the safe local fixes
 #   ... -Harness codex             any of the above for Codex CLI instead of Claude Code
 #   ... -MigrateAll [-Scan <dir>]  also move every repo still on hivemind (the old name) to Proteus

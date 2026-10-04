@@ -318,12 +318,94 @@ function tailLines(file, bytes = 256 * 1024) {
   } catch { return []; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
 }
 
+// ---- secrets: text kept on disk or re-injected into context (the journal) has these replaced by
+// [redacted]. Every pattern is linear: bounded or disjoint quantifiers, nothing nested.
+const REDACTED = "[redacted]";
+const SECRETS = [
+  [/-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|$)/g, REDACTED], // to the end when unterminated
+  [/\b(authorization["']?\s{0,5}[:=]\s{0,5}["']?)(?:(?:bearer|basic|token)\s{1,5})?[^\s"',;]+/gi, `$1${REDACTED}`],
+  [/\b(bearer\s{1,5})[A-Za-z0-9._~+/=-]{16,}/gi, `$1${REDACTED}`],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, REDACTED], // GitHub tokens, classic and fine-grained
+  [/\bsk-[A-Za-z0-9_-]{20,}/g, REDACTED], // Anthropic (sk-ant-…) and OpenAI style keys
+  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, REDACTED], // AWS access key ids
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, REDACTED], // Slack
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, REDACTED], // JWT
+];
+// key = value, key: value, "key": "value" where the key ends in a secret's name (DB_PASSWORD, client_secret, apiKey)
+const ASSIGN = /\b([A-Za-z_][\w-]{0,63})(["']?\s{0,5}[:=]\s{0,5}["']?)([^\s"'`,;&]+)/g;
+const SECRET_KEY = /(?:passw(?:or)?d|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)$/i;
+function redact(text) {
+  let s = String(text);
+  for (const [re, to] of SECRETS) s = s.replace(re, to);
+  return s.replace(ASSIGN, (m, key, sep) => (SECRET_KEY.test(key) ? key + sep + REDACTED : m));
+}
+
 const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windowsHide: true, stdio: ["ignore", "pipe", "ignore"], env });
 
 // git / gh with a hard timeout; "" on any failure (not installed, no auth, no remote, offline)
 function git(args, cwd, timeout = 3000) {
   try { return execFileSync("git", args, execOpts(cwd, timeout)).trim(); } catch { return ""; }
 }
+// Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
+// accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
+// The autostart (autoUpdate) and install.js --update share these.
+const RELEASE = /^v(\d+)\.(\d+)\.(\d+)$/;
+const semver = (v) => (String(v).match(/^v?(\d+)\.(\d+)\.(\d+)$/) || []).slice(1).map(Number);
+// a > b; any version is newer than "" (no release yet)
+function newerThan(a, b) {
+  const x = semver(a), y = semver(b);
+  if (x.length !== 3) return false;
+  if (y.length !== 3) return true;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+const releaseTags = (home, ...filter) => git(["-C", home, "tag", "-l", ...filter, "v*"], home).split("\n").filter((t) => RELEASE.test(t));
+const newest = (tags) => tags.reduce((m, t) => (newerThan(t, m) ? t : m), "");
+
+// { current, tag, ahead }: current is the newest release in HEAD's history ("" when none), tag the
+// newest release past it that HEAD lacks ("" when none), ahead the count of commits HEAD lacks from tag
+function release(home) {
+  const current = newest(releaseTags(home, "--merged", "HEAD"));
+  const tag = newest(releaseTags(home, "--no-merged", "HEAD").filter((t) => newerThan(t, current)));
+  const ahead = tag ? parseInt(git(["-C", home, "rev-list", "--count", `HEAD..refs/tags/${tag}`], home), 10) || 0 : 0;
+  return { current, tag, ahead };
+}
+
+// { commit, error }: commit is what home may fast-forward to; error says in one line why it may not
+// (lightweight or unsigned tag, unknown signer, no fast-forward)
+function verifyRelease(home, tag) {
+  const no = (error) => ({ commit: "", error });
+  const obj = RELEASE.test(tag) ? git(["-C", home, "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], home) : "";
+  if (!obj) return no(`${tag} is not a release tag here`);
+  if (git(["-C", home, "cat-file", "-t", obj], home) !== "tag") return no(`${tag} is a lightweight tag, so it carries no signature`);
+  // a signed tag published again under a newer name still names its own version inside
+  const header = git(["-C", home, "cat-file", "tag", obj], home).split("\n\n")[0];
+  if (!header.split("\n").includes(`tag ${tag}`)) return no(`${tag} points at a tag object made for another name`);
+  if (!releaseTags(home, "--contains", "HEAD").includes(tag)) return no(`${tag} does not contain this checkout's HEAD (local commits?), so it is no fast-forward`);
+  try {
+    execFileSync("git", ["-C", home, "verify-tag", obj], { encoding: "utf8", timeout: 10000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) {
+    const last = String(e.stderr || "").split("\n").map((l) => l.trim()).filter(Boolean).pop() || "git verify-tag failed";
+    return no(`git verify-tag ${tag}: ${last.replace(/^error: /, "").replace(/\.$/, "").slice(0, 200)}`);
+  }
+  const commit = git(["-C", home, "rev-parse", `${obj}^{commit}`], home);
+  return commit ? { commit, error: "" } : no(`${tag} does not resolve to a commit`);
+}
+
+// the CHANGELOG.md sections at commit for the versions after from, up to and including to; at most max lines
+function changelog(home, commit, from, to, max = 8) {
+  const out = [];
+  let on = false;
+  for (const l of git(["-C", home, "show", `${commit}:CHANGELOG.md`], home).split(/\r?\n/)) {
+    if (/^#{1,2}\s/.test(l)) {
+      const h = l.match(/^##\s+\[?(v?\d+\.\d+\.\d+)\]?/);
+      on = !!h && newerThan(h[1], from) && !newerThan(h[1], to);
+    }
+    if (on && l.trim()) out.push(l.trim());
+  }
+  return out.length > max ? [...out.slice(0, max - 1), `… ${out.length - max + 1} more lines in CHANGELOG.md`] : out;
+}
+
 // configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login
 function gh(args, cwd, timeout = 6000, configDir = "") {
   const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
@@ -351,7 +433,7 @@ const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`.";
 function verdictPost(command, cwd) {
   const cmd = String(command || "");
-  if (!/\bgh\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
+  if (!/\b(?:gh|proteus-gh\.js)\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
   const unq = (v) => v.replace(/^\$?(["'])([\s\S]*)\1$/, "$2").replace(/\\(["\\$`])/g, "$1").replace(/\\n/g, "\n");
   const bodies = [];
   for (const m of cmd.matchAll(/(?:--body|-b|(?:-f|-F|--field|--raw-field)\s+body)(?:\s+|=)("(?:[^"\\]|\\.)*"|\$?'[^']*'|\S+)/g)) bodies.push(unq(m[1]));
@@ -445,8 +527,10 @@ function branchDenial(command, cwd) {
   for (const all of shellCommands(cmd)) {
     let i = 0;
     while (i < all.length && (WRAPPERS.has(all[i]) || /^[A-Za-z_]\w*=/.test(all[i]))) i++;
-    const words = all.slice(i);
-    const prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    let words = all.slice(i);
+    let prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
+    if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
     const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || ".")) : null;
     if (why) return why;
   }
@@ -540,10 +624,14 @@ function syncFile(src, dst) {
   try { a = fs.readFileSync(src); } catch { return false; }
   return syncText(a, dst);
 }
-// write dst only when its bytes differ; true when written
-function syncText(a, dst) {
+// write dst only when its bytes differ; true when written. With a marker, a dst that exists
+// without it as its first text is the user's own and is left alone (install.js keeps it too).
+function syncText(a, dst, marker) {
   a = Buffer.isBuffer(a) ? a : Buffer.from(String(a));
-  try { if (a.equals(fs.readFileSync(dst))) return false; } catch {}
+  let cur = null;
+  try { cur = fs.readFileSync(dst); } catch {}
+  if (cur && a.equals(cur)) return false;
+  if (cur && marker && !cur.toString("utf8").startsWith(marker)) return false;
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.writeFileSync(dst, a);
   return true;
@@ -556,6 +644,63 @@ function readInbox(common) {
   const c = readJSON(inboxFile(common), null);
   return c && Array.isArray(c.questions) && Array.isArray(c.reviews) ? c : null;
 }
+
+// ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
+// A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
+// differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
+const lockFile = (root) => path.join(root, "teams", "skills-lock.json");
+const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
+const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
+
+// byte-identical to link-skills.js hashDir (sha256 over relative path + content of every file), or every lock drifts
+const walkSkill = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+  e.name === "node_modules" || e.name === ".git" ? [] : e.isDirectory() ? walkSkill(path.join(d, e.name)) : [path.join(d, e.name)]);
+function hashSkill(d) {
+  const h = require("crypto").createHash("sha256");
+  for (const f of walkSkill(d).sort()) {
+    h.update(path.relative(d, f).split(path.sep).join("/") + "\0");
+    h.update(fs.readFileSync(f));
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
+function skillsDrift(root) {
+  const lock = readJSON(lockFile(root), null);
+  const pins = lock && lock.skills && typeof lock.skills === "object" ? lock.skills : {};
+  const names = Object.keys(pins).filter((n) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(n) && pins[n] && typeof pins[n].hash === "string");
+  let teams = [];
+  try { teams = fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
+  const hashes = new Map(); // real skill dir -> hash, so a skill linked into several teams is hashed once
+  const drift = [];
+  for (const name of names) {
+    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(root, "teams", t, ...s, name)))) {
+      let src;
+      try { src = fs.realpathSync(dir); if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
+      if (!hashes.has(src)) hashes.set(src, hashSkill(src));
+      if (hashes.get(src) !== pins[name].hash) { drift.push(name); break; }
+    }
+  }
+  return drift.sort();
+}
+
+// the drifted skills, cached in <common>/proteus/skills-drift.json per lock content: a clean result
+// stands until the lock changes (the autostart passes fresh on every session start), a drift is
+// re-checked on every call so a re-lock or an update counts at once
+function lockDrift(root, fresh = false) {
+  let key;
+  try { key = require("crypto").createHash("sha256").update(fs.readFileSync(lockFile(root))).digest("hex"); } catch { return []; }
+  const common = gitCommonDir(root);
+  const cache = common && !fresh ? readJSON(driftFile(common), null) : null;
+  if (cache && cache.lock === key && Array.isArray(cache.drift) && !cache.drift.length) return [];
+  const drift = skillsDrift(root);
+  if (common) { try { writeJSON(driftFile(common), { lock: key, drift }); } catch {} }
+  return drift;
+}
+
+// how to clear a drift; the lead does not re-lock on its own: third-party skill text runs in every worker
+const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
+
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
 // Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
 // defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
@@ -634,10 +779,11 @@ function refreshInbox(root, common, timeout = 10000) {
 }
 
 module.exports = {
-  readInbox, refreshInbox, inboxFile,
+  readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
+  release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

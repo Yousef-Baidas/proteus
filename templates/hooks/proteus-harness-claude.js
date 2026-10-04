@@ -48,6 +48,7 @@ function event(raw) {
     command: typeof ti.command === "string" ? ti.command : "",
     background: ti.run_in_background === true,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
+    spawnType: typeof ti.subagent_type === "string" ? ti.subagent_type : "",
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     // a prompt from anything but the human: task notifications, loop wakeups, peer messages
     fromHuman: !r.source || r.source === "user" || r.source === "sdk",
@@ -243,7 +244,7 @@ function registerLead(root) {
 }
 
 // a worker's worktree: its hooks, registered by the worktree settings template beside this file
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js"];
 const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);

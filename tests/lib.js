@@ -1,4 +1,4 @@
-// Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers.
+// Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers, an SSH tag signer.
 // summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0.
 // workdir() exits 1 with a message, before writing anything, when os.tmpdir() is in the user's home or a git worktree.
 "use strict";
@@ -91,13 +91,31 @@ function g(cwd, ...args) {
   return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
+// a throwaway SSH signing key in dir for signed release tags: { allowed, tag(cwd, name) }, where allowed is an
+// allowed-signers file trusting it; null when ssh-keygen is missing or cannot sign here (some Windows runners)
+function sshSigner(dir, name = "maintainer") {
+  need();
+  fs.mkdirSync(dir, { recursive: true });
+  const key = path.join(dir, name);
+  const ssh = (args) => spawnSync("ssh-keygen", args, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  let r = ssh(["-q", "-t", "ed25519", "-N", "", "-C", name, "-f", key]);
+  if (r.error || r.status !== 0) return null;
+  const probe = path.join(dir, `${name}.probe`);
+  fs.writeFileSync(probe, "probe\n");
+  r = ssh(["-Y", "sign", "-q", "-n", "git", "-f", key, probe]);
+  if (r.error || r.status !== 0) return null;
+  const allowed = path.join(dir, `${name}.allowed_signers`);
+  fs.writeFileSync(allowed, `${name}@example.com ${fs.readFileSync(key + ".pub", "utf8").trim()}\n`);
+  return { allowed, tag: (cwd, tag) => g(cwd, "-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "tag", "-s", tag, "-m", `release ${tag}`) };
+}
+
 function summary() {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 }
 
 module.exports = {
-  ok, run, g, workdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH,
+  ok, run, g, workdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH, sshSigner,
   get ENV() { need(); return ENV; },
   get BIN() { need(); return BIN; },
   get HOME() { need(); return HOME; },

@@ -23,18 +23,18 @@ Fix: set `scene.camera` in the pass script before `bpy.ops.render.render`; the p
 Why: the GUI falls back to the active view; background mode does not.
 ```
 
-- `trigger`: a JavaScript regex, case-insensitive. Specific enough to fire on the problem and not on every command; test it against the text that showed the failure.
+- `trigger`: a JavaScript regex, case-insensitive. Specific enough to fire on the problem and not on every command; test it against the text that showed the failure. Avoid nested repetition such as `(a+)+`, `(a*)*` or `(a|ab)*`: the hook skips such a trigger with a note on stderr because it can backtrack without end, and it matches only the first 20 KB of any input.
 - `on`: which text is tested: `command` (a shell command about to run), `output` (shell output after it ran), `prompt` (a human message), `path` (a file about to be read or edited).
 - `scope`: `lead`, `worker`, or `all`.
 - Body: symptom, fix, why. Five lines at most. Name the command or file, not the story.
 
 ## How recall works
 
-`proteus-lessons.js` runs on shell calls, file access, and human messages, in the lead and in every worker worktree. On a trigger match it injects the lesson once per session, two at most per event, and counts the hit in `.git/proteus/lesson-hits.json`. Workers get lessons without the lead passing them.
+`proteus-lessons.js` runs on shell calls, file access, and human messages, in the lead and in every worker worktree. On a trigger match it injects the lesson once per session, two at most per event, and appends the hit (`{file, at}`, one line each) to `.git/proteus/lesson-hits.jsonl`. Workers get lessons without the lead passing them.
 
 ## At step 8 (close)
 
-One subagent reads `lesson-hits.json` and `docs/lessons/` and reports one line per lesson: hits this run, last hit. Then:
+One subagent reads `lesson-hits.jsonl` (count lines per file; last `at` is the last hit) and `docs/lessons/` and reports one line per lesson: hits this run, last hit. Then:
 
 - A lesson that fired and the problem did not recur: keep.
 - A lesson that fired and the problem recurred anyway: rewrite its fix, or turn it into a gate (a check, a hook, a guard rule) through a ticket; a gate beats a lesson.

@@ -23,8 +23,9 @@ Read teams/<team>/PROFILE.md first, teams/<team>/CRAFT.md if it exists, CONVENTI
 Code: run /implement (drives /tdd at the seam, ends with /code-review). Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths, never a file only in out/, /tmp, or a GUI session. Probes print path, hash or size, and count of what they opened.
 Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths.
 Two retries after first red. Third red → comment `RED` + `git diff <fork>` + exact failing output on the issue and stop. Never restart, never widen.
-Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`.
+Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`, with a body line `Owned: <the ticket's owned paths and globs, space-separated>`: CI checks the PR's changed paths against it.
 Done → one comment on the issue: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
+Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 ```
 
@@ -52,7 +53,7 @@ One verdict, as a PR review (`gh pr review <pr> --comment|--request-changes --bo
 MERGE #<n>
 BACK-TO-WORKER #<n>  1. <file:line> wrong → green looks like  2. ...
 CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
-Blocker → BACK-TO-WORKER. Anything that can wait → one comment per item on debt issue #<d>: `#<n> <file:line or part> <what> — <why it can wait>`. Never open a ticket. Fix nothing. Never edit a comment.
+Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on debt issue #<d>, one line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Never open a ticket. Fix nothing. Never edit a comment.
 Long jobs, report-once and scratch rules as above. Caveman lite.
 ```
 

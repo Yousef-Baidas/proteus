@@ -3,9 +3,21 @@
 // login (default human), FAKE_GH_COMMENTS the comments of issue 30; with FAKE_GH_COUNTER (a file) its first view has none.
 // Under GH_CONFIG_DIR the login is the one `auth login` wrote there (FAKE_GH_BOT_LOGIN, default bot), else none.
 // FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets.
+// FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
 const a = process.argv.slice(2).join(" ");
+if (process.env.FAKE_GH_LOG) require("fs").appendFileSync(process.env.FAKE_GH_LOG, a + "\n");
 if (process.env.FAKE_GH === "fail") { process.stderr.write("gh: no remote\n"); process.exit(1); }
+// FAKE_GH_LIMIT=N (with FAKE_GH_LIMIT_FILE, a counter file): the first N calls fail like a secondary rate limit, then succeed;
+// FAKE_GH_LIMIT_MSG overrides the message ("403" is a plain permission error). An `issue comment` success prints a URL.
+if (process.env.FAKE_GH_LIMIT) {
+  const fs = require("fs"), f = process.env.FAKE_GH_LIMIT_FILE;
+  const n = (parseInt(fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "0", 10) || 0) + 1;
+  fs.writeFileSync(f, String(n));
+  if (n <= +process.env.FAKE_GH_LIMIT) { process.stderr.write((process.env.FAKE_GH_LIMIT_MSG || "gh: You have exceeded a secondary rate limit. Please wait a few minutes before you try again. (HTTP 403)") + "\n"); process.exit(1); }
+  if (/^(issue|pr) comment /.test(a)) { process.stdout.write("https://github.com/o/r/issues/1#issuecomment-1\n"); process.exit(0); }
+}
 const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
+if (process.env.FAKE_GH_VISIBILITY && a === "repo view --json visibility -q .visibility") { process.stdout.write(process.env.FAKE_GH_VISIBILITY + "\n"); process.exit(0); }
 if (a === "--version" || a === "auth status") { process.stdout.write("gh fake\n"); process.exit(0); }
 const CD = process.env.GH_CONFIG_DIR;
 if (CD) {
