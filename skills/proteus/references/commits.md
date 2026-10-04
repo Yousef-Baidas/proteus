@@ -20,7 +20,7 @@ Every Proteus agent commits the same way. Terse, exact, professional. The diff s
 
 ## Never
 
-- `Co-Authored-By`, `Generated with`, `Assisted-by`, session links, or any AI attribution. Not as a trailer, not in the body. If the harness offers to append one, leave it out.
+- `Co-Authored-By`, `Generated with`, `Assisted-by`, session links, or any AI attribution. Not as a trailer, not in the body. If the harness offers to append one, leave it out. The commit-msg hook checks the trailer block (the last paragraph): an AI `Co-Authored-By`, `Assisted-by`, `Generated-by` or `Signed-off-by`, a `Generated with [` line, or a robot emoji. A human's name in those trailers, and body prose that mentions the words, pass.
 - "This commit", "I", "we", "now", "currently"
 - Emoji, unless the repo convention requires it
 - Restating the file name when the scope already names it
