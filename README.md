@@ -279,6 +279,16 @@ Updates use your own git's trust, so nothing updates until you opt in to the mai
 
 Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
+The maintainer's key: Proteus releases are signed with SSH key `SHA256:A3x02EpaNSOo27K8lsm8H3M2hhUpAeGGvoobs8NOsss` (ED25519), published as a signing key of the GitHub account [Yousef-Baidas](https://api.github.com/users/Yousef-Baidas/ssh_signing_keys). To trust it (bash; check the fingerprint it prints against the one above before you run the `git config` line):
+
+```bash
+mkdir -p ~/.config/proteus
+key=$(gh api users/Yousef-Baidas/ssh_signing_keys -q '.[] | select(.title == "proteus tag signing") | .key')
+echo "proteus namespaces=\"git\" $key" > ~/.config/proteus/allowed_signers
+ssh-keygen -lf <(echo "$key")
+git -C ~/proteus config gpg.ssh.allowedSignersFile ~/.config/proteus/allowed_signers
+```
+
 ### Coming from hivemind
 
 Proteus was called hivemind. Install Proteus as above, or run `install.js --update` in your hivemind checkout (it pulls Proteus and runs the new installer); either way the install takes over:
