@@ -61,8 +61,8 @@ ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
 const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
-ok("template: five placeholders, each exits 1; job id is gates; owned-paths step runs on worker PRs",
-  steps.length === 5 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
+ok("template: six placeholders (five code gates, the Direct job's docs gate), each exits 1; job id is gates; owned-paths step runs on worker PRs",
+  steps.length === 6 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
   /startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-owned-check\.js --ci/.test(tpl) && !/required review|one approving review/.test(tpl));
 
 summary();

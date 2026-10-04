@@ -3,12 +3,15 @@
 # (install.js --protect) requires a check named exactly `gates` green; keep the job id.
 # The verifier's MERGE is a review comment, not a required approval.
 # Each EDIT-* step below fails until you replace it, so an unfilled template is never green.
+# PRs into main come from the Direct and Quick tiers (SKILL.md rule 3); rename main if the default branch differs.
 name: proteus-gates
 on:
   pull_request:
-    branches: ["proteus/**"]
+    branches: ["proteus/**", "main"]
 jobs:
   gates:
+    # every PR into a run branch; into main only a Quick ticket's (the human's own PRs are not Proteus's to gate)
+    if: startsWith(github.base_ref, 'proteus/') || startsWith(github.head_ref, 'proteus-work/quick/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +35,37 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+      # the change must fit its declared tier (the PR body's "Tier:" line, standard without one) by the
+      # tiers block of teams/ROUTING.md as of the base; a change that outgrew it is re-run at the tier named
+      - name: tier
+        if: startsWith(github.head_ref, 'proteus-work/')
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
+      - name: commit messages
+        run: |
+          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
+            git log -1 --format=%B "$c" > /tmp/msg && node teams/templates/hooks/commit-msg.js /tmp/msg || exit 1
+          done
+  # Direct tier: a batched docs PR from proteus-work/direct/<batch> into main runs the mechanical gates only;
+  # the tier step fails it once the batch outgrows Direct
+  direct:
+    if: startsWith(github.head_ref, 'proteus-work/direct/') && !startsWith(github.base_ref, 'proteus/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - run: echo "EDIT-docs not filled in" >&2; exit 1  # markdown lint, link check, spelling, e.g. npx markdownlint-cli2 && lychee . && npx cspell .
+      - name: owned paths
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+      - name: tier
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
       - name: commit messages
         run: |
           for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do

@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Prepare a worker's worktree before dispatch (replaces the manual mkdir/cp/printf):
-//   node .claude/hooks/proteus-worktree.js <worktree> <owned path or glob>...
+//   node .claude/hooks/proteus-worktree.js <worktree> [--tier <tier> [--human]] <owned path or glob>...
 // The harness adapter copies the worker hooks in and registers them (Claude Code: .claude/hooks/ and
 // .claude/settings.local.json from worktree-settings.local.json); this writes the owned-path list
 // (one entry per line), keeps those local files out of `git add` via <git-common-dir>/info/exclude, and installs
 // a pre-commit hook in this worktree only that checks staged paths against the list (proteus-owned-check.js).
+// --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
+// the list, which the same pre-commit hook checks with proteus-tier.js --staged; --human marks a human's quick:.
+// A re-run keeps the first base, so a Direct batch is measured as a whole.
 "use strict";
 const fs = require("fs");
 const { execFileSync } = require("child_process");
@@ -12,9 +15,17 @@ const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 
-const [wtArg, ...owned] = process.argv.slice(2);
-if (!wtArg || !owned.length) {
-  console.error("usage: node proteus-worktree.js <worktree> <owned path or glob>...");
+const [wtArg, ...rest] = process.argv.slice(2);
+const entries = [];
+let tier = "", human = false, badTier = false;
+for (let i = 0; i < rest.length; i++) {
+  const p = rest[i].replace(/\\/g, "/").replace(/^\.\//, "");
+  if (p === "--tier") { tier = String(rest[++i] || ""); badTier = !lib.TIERS.includes(tier); }
+  else if (p === "--human") human = true;
+  else if (p) entries.push(p);
+}
+if (!wtArg || !entries.length || badTier) {
+  console.error(`usage: node proteus-worktree.js <worktree> [--tier ${lib.TIERS.join("|")} [--human]] <owned path or glob>...`);
   process.exitCode = 1;
   return;
 }
@@ -26,9 +37,21 @@ if (!fs.existsSync(path.join(wt, ".git"))) {
 }
 
 const EXCLUDE = ad.prepareWorker(wt, __dirname);
-const entries = owned.map((p) => p.replace(/\\/g, "/").replace(/^\.\//, "")).filter(Boolean);
+let head = entries;
+if (tier) {
+  let prev = null;
+  try { prev = lib.TIER_LINE.exec(fs.readFileSync(lib.ownedFile(wt), "utf8")); } catch {}
+  let base = prev ? prev[3] : "";
+  try { base = base || execFileSync("git", ["-C", wt, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch {}
+  if (!base) {
+    console.error(`proteus-worktree: ${wt} has no commit to measure the tier from`);
+    process.exitCode = 1;
+    return;
+  }
+  head = [`# tier ${tier}${human ? " human" : ""} ${base}`, ...entries];
+}
 fs.mkdirSync(path.dirname(lib.ownedFile(wt)), { recursive: true });
-fs.writeFileSync(lib.ownedFile(wt), entries.join("\n") + "\n");
+fs.writeFileSync(lib.ownedFile(wt), head.join("\n") + "\n");
 
 try {
   const common = lib.gitCommonDir(wt);
@@ -65,15 +88,16 @@ function installPreCommit() {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(kept, orig);
   const check = path.join(ad.hooksDir(wt), "proteus-owned-check.js");
+  const tierCheck = path.join(ad.hooksDir(wt), "proteus-tier.js");
   const write = (name, body) => fs.writeFileSync(path.join(dir, name), "#!/bin/sh\n" + body, { mode: 0o755 });
   let have = [];
   try { have = fs.readdirSync(orig).filter((f) => !f.endsWith(".sample") && f !== "pre-commit"); } catch {}
   for (const f of have) write(f, `exec ${sq(path.join(orig, f))} "$@"\n`);
-  write("pre-commit", `node ${sq(check)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
+  write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
   if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--worktree", "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";
 }
 const hookErr = installPreCommit();
 if (hookErr) console.error(`proteus-worktree: pre-commit owned-path check not installed (${hookErr}); CI still checks the PR`);
 
-console.log(`worktree ${wt}: hooks + ${entries.length} owned paths`);
+console.log(`worktree ${wt}: hooks + ${entries.length} owned paths${tier ? `, tier ${tier}${human ? " (human)" : ""}` : ""}`);
