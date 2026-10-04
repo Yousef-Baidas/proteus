@@ -144,7 +144,7 @@ The tracker is GitHub via `gh` today. `references/tracker.md` is an operations t
 
 Rules in prompts drift; these are mechanical.
 
-- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69).
+- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; the lead arms a stall timer per wave.
@@ -269,7 +269,7 @@ node ~/proteus/install.js --doctor         # from a repo root: global and projec
 node ~/proteus/install.js --doctor --fix   # repair links, duplicates, context-mode, hook registration, team skills
 ```
 
-Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (installed and enabled), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (installed and enabled), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
 
 ### Agents under their own login (recommended)
 
@@ -344,7 +344,7 @@ templates/
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-scratch.js      ledgers and sweeps agents' temp files
-    proteus-owned-paths.js  commit-msg.js  proteus-lib.js   shared core
+    proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
 tests/hooks.test.js          node tests/hooks.test.js: hooks and installer against temp repos and a fake gh

@@ -1099,6 +1099,16 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     /^ok   commit-msg gate runs a tracked file$/m.test(d) && gate && msg("feat: add a thing\n") === 0 && msg("added stuff\n") !== 0 &&
     /node teams\/templates\/hooks\/commit-msg\.js \/tmp\/msg/.test(fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8")), d);
 
+  // the shipped CI template fails until filled in; doctor names a workflow that still has a placeholder
+  fs.mkdirSync(path.join(XP, ".github", "workflows"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), path.join(XP, ".github", "workflows", "proteus-gates.yml"));
+  d = xdoc();
+  ok("gates doctor: the unfilled template WARNs, naming each placeholder",
+    /^WARN \.github\/workflows\/proteus-gates\.yml still has unfilled placeholders \(EDIT-install, EDIT-typecheck, EDIT-lint, EDIT-test, EDIT-deadcode\)/m.test(d), d);
+  fs.writeFileSync(path.join(XP, ".github", "workflows", "proteus-gates.yml"), "jobs:\n  gates:\n    steps:\n      # EDIT-x was here\n      - run: npm test\n");
+  ok("gates doctor: a filled workflow is ok", /^ok   proteus-gates\.yml has no unfilled placeholder$/m.test(xdoc()));
+  fs.rmSync(path.join(XP, ".github"), { recursive: true });
+
   // a config.toml the repo tracks is edited in place and never git-excluded
   const XQ = path.join(W, "cx-tracked");
   g(W, "init", "-q", "-b", "main", XQ);
