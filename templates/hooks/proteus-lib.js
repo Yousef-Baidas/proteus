@@ -540,10 +540,14 @@ function syncFile(src, dst) {
   try { a = fs.readFileSync(src); } catch { return false; }
   return syncText(a, dst);
 }
-// write dst only when its bytes differ; true when written
-function syncText(a, dst) {
+// write dst only when its bytes differ; true when written. With a marker, a dst that exists
+// without it as its first text is the user's own and is left alone (install.js keeps it too).
+function syncText(a, dst, marker) {
   a = Buffer.isBuffer(a) ? a : Buffer.from(String(a));
-  try { if (a.equals(fs.readFileSync(dst))) return false; } catch {}
+  let cur = null;
+  try { cur = fs.readFileSync(dst); } catch {}
+  if (cur && a.equals(cur)) return false;
+  if (cur && marker && !cur.toString("utf8").startsWith(marker)) return false;
   fs.mkdirSync(path.dirname(dst), { recursive: true });
   fs.writeFileSync(dst, a);
   return true;
