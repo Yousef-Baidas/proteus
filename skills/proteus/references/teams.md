@@ -33,7 +33,7 @@ Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, r
 
 `teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout never rewrites it, it does not count against the eight, and `install.js --project` refreshes it. A missing required skill stops the run.
 
-Models, from the ladder (`models=` in `proteus-state`): workers are `build` (`standard` and `hard`), contracts, escalation and conflict workers `judge`; team and security verifiers are `judge`; the scout is `judge`; QA is `helper` per wave, `judge` per milestone and at close; the guide is `helper`. On a Sonnet lead all three are Sonnet; nothing runs above the lead, and a once-per-project model (Fable by default) is only ever the lead. With no ladder (`models=unknown`, Codex by default) every role runs on the lead's model.
+Models, from the ladder (`models=` in `proteus-state`): workers are `build` (`standard` and `hard`), contracts, escalation and conflict workers `judge`; team and security verifiers are `judge`; the scout and the unattended grader are `judge`; QA is `helper` per wave, `judge` per milestone and at close; the guide is `helper`. On a Sonnet lead all three are Sonnet; nothing runs above the lead, and a once-per-project model (Fable by default) is only ever the lead. With no ladder (`models=unknown`, Codex by default) every role runs on the lead's model.
 
 ## Routing
 
