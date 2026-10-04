@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Install, update or check the Proteus skill for Claude Code or Codex, on any OS (Node 22.5+, which context-mode needs).
+// Install, update or check the Proteus skill for Claude Code or Codex, on any OS (Node 22.5+, which the context-mode plugin needs).
 // install.sh and install.ps1 are thin wrappers around this file.
 //
 //   node install.js                   link skills/{proteus,proteus-review} into ~/.claude/skills
 //                                     (every repo; `git pull` here updates them), copy agents/*.md
 //                                     to ~/.claude/agents, record this checkout in ~/.claude/proteus.json,
-//                                     install the required context-mode plugin through the claude CLI
+//                                     install the optional context-mode plugin through the claude CLI
 //   node install.js --project         also set up the current repo: teams/<profile>/ with skills
 //                                     linked per skills.txt, the lead's hooks in
 //                                     .claude/settings.local.json (PROTEUS=0 claude skips them);
@@ -284,7 +284,7 @@ function globalInstall(config) {
   const ok = linkSkills();
   copyAgents();
   writeConfig(config);
-  installContextMode(); // required, but a missing claude CLI is not fatal: --doctor keeps failing until it is there
+  installContextMode(); // optional (agents fall back to a scratch file and grep); a missing claude CLI is not fatal
   return setAttribution() && ok;
 }
 
@@ -337,7 +337,7 @@ function codexSteps(root, project) {
   const steps = [];
   if (project && !codexTrusted(root)) steps.push("open codex in this repo and trust it: project .codex/ config and hooks load only in a trusted project");
   if (project) steps.push("approve the Proteus hooks in /hooks (Codex asks again only when a hook entry changes)");
-  if (!cx().contextModeOn()) steps.push(`add the required context-mode MCP server: ${CODEX_CTX}`);
+  if (!cx().contextModeOn()) steps.push(`optional, saves context: add the context-mode MCP server: ${CODEX_CTX}`);
   if (!steps.length) return;
   log("");
   log("Once, in Codex:");
@@ -376,7 +376,7 @@ function installContextMode() {
   }
   const after = contextMode();
   if (after.installed && after.enabled) { log(`plugin   -> ${CTX_PLUGIN} installed`); return true; }
-  warn(`warning: the required context-mode plugin is not ${after.installed ? "enabled" : "installed"}. Run:`);
+  warn(`warning: the optional context-mode plugin is not ${after.installed ? "enabled" : "installed"}; agents fall back to a scratch file and grep. To use it, run:`);
   for (const args of steps) warn(`  claude ${args.join(" ")}`);
   return false;
 }
@@ -782,7 +782,7 @@ function oldRepos(all) {
 }
 
 function install(opt) {
-  if (!nodeOk()) die(`node ${process.versions.node} is older than ${NODE_MIN}, which the required context-mode plugin needs. Upgrade: ${nodeFix()}, then re-run`);
+  if (!nodeOk()) die(`node ${process.versions.node} is older than ${NODE_MIN}, which the context-mode plugin needs. Upgrade: ${nodeFix()}, then re-run`);
   const autoUpdate = opt.autoUpdate ? true : opt.noAutoUpdate ? false : undefined;
   const root = process.cwd();
   if (opt.project && samePath(real(root), real(HOME))) die("--project sets up a repo; run it from the repo root, not from your home directory");
@@ -1001,7 +1001,7 @@ async function doctor(fix) {
   const hd = cxh ? ".codex" : ".claude";
   const checks = [];
   // test() returns [status, what, fix command]
-  const check = (test, fixFn) => checks.push({ test, fixFn });
+  const check = (test, fixFn, fixOnWarn) => checks.push({ test, fixFn, fixOnWarn });
 
   check(() => {
     const v = process.versions.node;
@@ -1039,7 +1039,7 @@ async function doctor(fix) {
   });
   if (cxh) {
     check(() => cx().contextModeOn() ? ["ok", "context-mode (MCP server or plugin)"]
-      : ["WARN", `context-mode (required) is neither an MCP server nor an installed, enabled plugin in ${path.join(cx().home, "config.toml")}`, CODEX_CTX]);
+      : ["WARN", `context-mode (optional; agents fall back to a scratch file and grep) is neither an MCP server nor an installed, enabled plugin in ${path.join(cx().home, "config.toml")}`, CODEX_CTX]);
     check(() => {
       const bad = SKILLS.filter((s) => {
         const link = path.join(AGENTS_SKILLS, s);
@@ -1076,8 +1076,8 @@ async function doctor(fix) {
     check(() => {
       const c = contextMode();
       return c.installed && c.enabled ? ["ok", `${CTX_PLUGIN} plugin`]
-        : ["FIX", `${CTX_PLUGIN} plugin (required) ${c.installed ? "disabled" : "missing"}`, contextModeSteps(c).map((a) => `claude ${a.join(" ")}`).join(" && ")];
-    }, () => installContextMode());
+        : ["WARN", `${CTX_PLUGIN} plugin (optional; agents fall back to a scratch file and grep) ${c.installed ? "disabled" : "missing"}`, contextModeSteps(c).map((a) => `claude ${a.join(" ")}`).join(" && ")];
+    }, () => installContextMode(), true);
     check(() => {
       const bad = SKILLS.filter((s) => {
         const link = path.join(CLAUDE, "skills", s);
@@ -1237,11 +1237,11 @@ async function doctor(fix) {
   let failing = 0;
   for (const c of checks) {
     let r = await c.test();
-    if (r[0] === "FIX" && fix && c.fixFn) {
+    if ((r[0] === "FIX" || (r[0] === "WARN" && c.fixOnWarn)) && fix && c.fixFn) {
       quiet = true;
       try { c.fixFn(); } catch (e) { warn(`fix failed: ${e.message}`); } finally { quiet = false; }
       r = await c.test();
-      if (r[0] !== "FIX") r[1] += " (fixed)";
+      if (r[0] === "ok") r[1] += " (fixed)";
     }
     if (r[0] === "FIX") failing++;
     console.log(`${r[0].padEnd(4)} ${r[1]}${r[0] === "ok" ? "" : ` — ${r[2]}`}`);

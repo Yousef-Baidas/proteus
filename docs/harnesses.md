@@ -16,7 +16,7 @@ Versions read: Claude Code 2.1.282 docs, Codex CLI rust-v0.159.0, Gemini CLI v0.
 | Agent definitions in files, with tool limits | workers and verifiers that never edit |
 | Structured question tool | the six-blank intake, reviews, the tour |
 | Scriptable status line | inbox counts, update notice |
-| MCP | context-mode |
+| MCP | context-mode (optional; the fallback is a scratch file and `grep`) |
 | Session model visible to hooks | the ladder's `top` |
 
 ## Matrix
@@ -70,7 +70,7 @@ Aider (no hooks, subagents, MCP or AGENTS.md; slow releases), Crush (no real sub
 - The adapter's `skipHooks` keeps the Claude-only files (the status line, the worker's `worktree-settings.local.json`, `commit-msg.js`) out of `.codex/hooks`. The installer removes copies left by an older install, and the doctor flags any that remain.
 - The commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs `teams/templates/hooks/commit-msg.js`. That copy is committed with `teams/` and refreshed by `--project`, so a clean clone has it on either CLI. Existing Claude repos whose gates name `.claude/hooks/commit-msg.js` keep working because that file is committed there. The doctor flags a gate that names a file git does not track.
 - Team skills: `link-skills.js` links each skill into both `teams/<p>/.claude/skills` and `teams/<p>/.agents/skills`, and `--project` appends the new ignore pattern to an older `teams/.gitignore`. Codex loads `.agents/skills` only between the repo root and the session cwd, and a spawned worker keeps the lead's cwd. A Codex worker therefore never loads its team's skills on its own: it lists `teams/<p>/.agents/skills/` and reads each fitting `SKILL.md`. `npx skills add` puts the canonical copy in `~/.agents/skills`, which Codex loads for every session, so `--confine` cannot hide team skills from a Codex lead.
-- The doctor accepts context-mode as an MCP server (`[mcp_servers.context-mode]`) or as a plugin. For a plugin it needs an enabled `[plugins."context-mode@<marketplace>"]` entry, a cached version under `$CODEX_HOME/plugins/cache/<marketplace>/context-mode/`, and `[features] plugins` left on. Unverified: the marketplace context-mode actually ships under, since any `context-mode@*` matches.
+- Context-mode is optional. The doctor accepts it as an MCP server (`[mcp_servers.context-mode]`) or as a plugin. For a plugin it needs an enabled `[plugins."context-mode@<marketplace>"]` entry, a cached version under `$CODEX_HOME/plugins/cache/<marketplace>/context-mode/`, and `[features] plugins` left on. Unverified: the marketplace context-mode actually ships under, since any `context-mode@*` matches.
 - Still to do: skill prose that names Codex's tools, including how a Codex worker reads its team skills.
 
 ## Local models, honestly

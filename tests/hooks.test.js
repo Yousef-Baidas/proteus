@@ -625,7 +625,7 @@ const ctxLine = (out) => (out.split("\n").find((l) => l.includes(`${CTX} plugin`
 const cjson = (h, ...f) => JSON.parse(fs.readFileSync(path.join(h, ".claude", ...f), "utf8"));
 let CH = chome("none");
 r = run(INST, "", { cwd: CWD, env: lib.homeEnv(CH) });
-ok("context-mode: no claude CLI → commands printed, install still done", r.code === 0 && /warning: the required context-mode plugin is not installed\. Run:\n  claude plugin marketplace add mksglu\/context-mode\n  claude plugin install context-mode@context-mode --scope user\n/.test(r.err) &&
+ok("context-mode: no claude CLI → commands printed, install still done", r.code === 0 && /warning: the optional context-mode plugin is not installed; agents fall back to a scratch file and grep\. To use it, run:\n  claude plugin marketplace add mksglu\/context-mode\n  claude plugin install context-mode@context-mode --scope user\n/.test(r.err) &&
   /Done\. \/proteus/.test(r.out) && fs.existsSync(path.join(CH, ".claude", "agents", "proteus-worker.md")), r.out + r.err);
 r = run(INST, "", { cwd: CWD, env: cenv(CH) });
 ok("context-mode: installer runs marketplace add, then install at user scope", r.code === 0 && JSON.stringify(clog()) === JSON.stringify(["plugin marketplace add mksglu/context-mode", `plugin install ${CTX} --scope user`]) &&
@@ -638,21 +638,21 @@ r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
 ok("doctor: context-mode installed and enabled → ok", ctxLine(r.out) === `ok   ${CTX} plugin`, r.out);
 fs.writeFileSync(path.join(CH, ".claude", "settings.json"), JSON.stringify({ ...cs, enabledPlugins: { [CTX]: false } }));
 r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
-ok("doctor: context-mode disabled → FIX with the enable command, exit 1", r.code === 1 && ctxLine(r.out) === `FIX  ${CTX} plugin (required) disabled — claude plugin enable ${CTX} --scope user`, r.out);
+ok("doctor: context-mode disabled → WARN with the enable command, ",  ctxLine(r.out) === `WARN ${CTX} plugin (optional; agents fall back to a scratch file and grep) disabled — claude plugin enable ${CTX} --scope user`, r.out);
 r = run(INST, "", { args: ["--doctor", "--fix"], cwd: CWD, env: cenv(CH) });
 ok("doctor --fix: enables through the CLI only", clog().slice(2).join("|") === `plugin enable ${CTX} --scope user` && ctxLine(r.out) === `ok   ${CTX} plugin (fixed)`, clog().join(" | ") + r.out);
 CH = chome("missing");
 r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
-ok("doctor: context-mode missing → FIX with both commands", r.code === 1 && ctxLine(r.out) === `FIX  ${CTX} plugin (required) missing — claude plugin marketplace add mksglu/context-mode && claude plugin install ${CTX} --scope user`, r.out);
+ok("doctor: context-mode missing → WARN with both commands (not a FIX line)", ctxLine(r.out) === `WARN ${CTX} plugin (optional; agents fall back to a scratch file and grep) missing — claude plugin marketplace add mksglu/context-mode && claude plugin install ${CTX} --scope user`, r.out);
 ok("doctor: read only (no CLI call, nothing written)", clog().length === 3 && !fs.existsSync(path.join(CH, ".claude", "plugins")) && !fs.existsSync(path.join(CH, ".claude", "settings.json")));
 fs.writeFileSync(CLOG, "");
 r = run(INST, "", { cwd: CWD, env: cenv(CH, { FAKE_CLAUDE: "fail" }) });
 ok("context-mode: CLI failure stops at the failed step, prints the commands, not fatal", r.code === 0 && clog().join("|") === "plugin marketplace add mksglu/context-mode" &&
-  /not installed\. Run:\n  claude plugin marketplace add .*\n  claude plugin install /.test(r.err), clog().join(" | ") + r.err);
+  /not installed; agents fall back to a scratch file and grep\. To use it, run:\n  claude plugin marketplace add .*\n  claude plugin install /.test(r.err), clog().join(" | ") + r.err);
 // node version, mocked through a preload
 CH = chome("oldnode");
 r = run(INST, "", { cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: "22.4.9" }) });
-ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the required context-mode plugin needs\. Upgrade: .*(nodejs\.org|OpenJS\.NodeJS\.LTS), then re-run/.test(r.err) &&
+ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the context-mode plugin needs\. Upgrade: .*(nodejs\.org|OpenJS\.NodeJS\.LTS), then re-run/.test(r.err) &&
   fs.readdirSync(path.join(CH, ".claude")).length === 0 && clog().length === 1, r.err);
 const nodeLine = (v) => run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: v }) }).out.split("\n")[0];
 ok("doctor: node 20.11.0 → FIX", /^FIX  node 20\.11\.0 is older than 22\.5\.0 \(context-mode needs it\) — .*(nodejs\.org|OpenJS\.NodeJS\.LTS)$/.test(nodeLine("20.11.0")), nodeLine("20.11.0"));
@@ -1143,7 +1143,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     /^FIX  ~\/\.agents\/skills\/\{proteus\} not linked/m.test(d) && /^FIX  lead hooks not registered: proteus-lead-guard\.js/m.test(d) && /^FIX  \.codex\/rules\/proteus\.rules missing/m.test(d) &&
     /^FIX  Claude-only files in \.codex\/hooks: proteus-statusline\.js /m.test(d) && /^FIX  workers cannot write in .*cx-proj-proteus: \.codex\/config\.toml does not list it/m.test(d) &&
     /^FIX  commit-msg gate: lefthook\.yml runs \.claude\/hooks\/commit-msg\.js, which git does not track — point it at teams\/templates\/hooks\/commit-msg\.js/m.test(d) &&
-    /^WARN context-mode \(required\) is neither an MCP server nor .* — codex mcp add context-mode /m.test(d) && /^ok   project trusted in codex$/m.test(d), d);
+    /^WARN context-mode \(optional; agents fall back to a scratch file and grep\) is neither an MCP server nor .* — codex mcp add context-mode /m.test(d) && /^ok   project trusted in codex$/m.test(d), d);
   d = xdoc("--fix");
   ok("codex doctor --fix: relinks, re-registers, rewrites the rules; the header-less agent stays",
     /^ok   ~\/\.agents\/skills link .*\(fixed\)$/m.test(d) && /^ok   lead hooks registered \(fixed\)$/m.test(d) && /^ok   \.codex\/rules\/proteus\.rules( \(fixed\))?$/m.test(d) && fs.existsSync(path.join(XP, ".codex", "rules", "proteus.rules")) &&

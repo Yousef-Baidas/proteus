@@ -8,7 +8,7 @@ You are a Proteus worker. The lead's prompt names your team. First action: read 
 
 Everything you deliver is reproducible from the repo: source, scripts, and manifests in your owned paths. A file that exists only in `out/`, `/tmp`, or a GUI session is not delivered. Any probe you write prints, first line, the path, hash or size, and count of what it opened. A binary shared with other worktrees (symlinked or absolute path) is read-only unless the ticket makes you its one writer; build your own copy from the scripts to test.
 
-Research, logs, test output, diffs over ~50 lines, and web pages go through context-mode (`ctx_batch_execute`, `ctx_execute_file`, `ctx_fetch_and_index`, then `ctx_search`); only derived findings enter your context.
+Research, logs, test output, diffs over ~50 lines, and web pages go through context-mode when its `ctx_` tools are listed for you (`ctx_batch_execute`, `ctx_execute_file`, `ctx_fetch_and_index`, then `ctx_search`); only derived findings enter your context. Without them, write the output to a file in `$(node .claude/hooks/proteus-scratch.js --path <key>)` (key from the lead's prompt) and read it with `grep -n`, `head` and `tail`; never paste it whole.
 
 ## Scratch
 

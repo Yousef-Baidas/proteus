@@ -5,7 +5,7 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | Thing | Claude Code | Codex CLI |
 |---|---|---|
 | Invoke a skill | `/proteus`, `/proteus-review`, `/<skill>` | `$proteus`, `$proteus-review`, `$<skill>` |
-| Skills folders | `~/.claude/skills`, `.claude/skills`, plugin caches | `~/.agents/skills`, `.agents/skills`; no Skill tool, every skill is read from its `SKILL.md` and followed. Codex ignores `disable-model-invocation`; its equivalent, `policy.allow_implicit_invocation: false` in the skill's `agents/openai.yaml` (Proteus and proteus-review ship one), only hides a skill from the model's list. Team skills: `teams/<team>/.agents/skills/`, read by the worker itself (`teams.md`) |
+| Skills folders | `~/.claude/skills`, `.claude/skills`, plugin caches (`node <hooks>/proteus-skillpath.js <skill>` finds a plugin's `SKILL.md` on either CLI) | `~/.agents/skills`, `.agents/skills`; no Skill tool, every skill is read from its `SKILL.md` and followed. Codex ignores `disable-model-invocation`; its equivalent, `policy.allow_implicit_invocation: false` in the skill's `agents/openai.yaml` (Proteus and proteus-review ship one), only hides a skill from the model's list. Team skills: `teams/<team>/.agents/skills/`, read by the worker itself (`teams.md`) |
 | Project instructions | `CLAUDE.md` (and `AGENTS.md`) | `AGENTS.md` only; `docs-diet.md`'s `CLAUDE.md` rules apply to it |
 | `<hooks>`: hooks and lead scripts | `.claude/hooks` | `.codex/hooks` |
 | Owned-paths file | `<wt>/.claude/proteus-owned` | `<wt>/.codex/proteus-owned` (read-only to the worker's sandbox) |
