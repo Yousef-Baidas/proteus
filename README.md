@@ -33,7 +33,7 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 - **Lessons.** Solved problems are recalled only when their trigger fires (below).
 - **Stall check.** A worker that ends its turn "waiting" instead of reporting is sent back to finish.
 - **Scratch.** Agents keep temp files, renders and worktrees in a per-ticket dir under `.git/proteus/scratch/`, and anything they leave directly in `/tmp` is ledgered. Both are deleted when the ticket merges or the run closes, with a background sweep for what is left behind; nothing Proteus did not create is touched.
-- **Status line.** `proteus: 2 questions · 1 review` at the bottom of the terminal while anything waits on you, and `proteus: update ready` when the checkout is behind, appended to your own status line.
+- **Status line.** `proteus: 2 questions · 1 review` at the bottom of the terminal while anything waits on you, and `proteus: update ready` when a newer release is out, appended to your own status line.
 
 `PROTEUS=0 claude` opens a plain session with none of them, for the review session or for working by hand.
 
@@ -244,9 +244,28 @@ Codex has no status line hook and no attribution setting; the commit-msg check s
 node ~/proteus/install.js --update     # from inside a Proteus repo also refreshes that repo
 ```
 
-`--update` pulls the checkout (fast-forward only; it refuses a dirty or diverged checkout), then re-runs the freshly pulled installer, adding `--project` when the current repo has Proteus hooks. `--project` never overwrites your `PROFILE.md`, `ROUTING.md`, or `skills.txt`; it refreshes the link scripts, templates, `required.txt`, and the hooks. Commit the `teams/` changes.
+`--update` fetches the checkout's tags and moves it to the newest release tag (`vX.Y.Z`) past it, only by fast-forward and only once `git verify-tag` accepts the tag's signature (see [Releases](#releases)); it refuses an unsigned or untrusted tag, a dirty checkout, and a tag that does not contain your checkout's HEAD. It never moves to the tip of a branch. It prints the `CHANGELOG.md` sections between the two versions (or, without any, the new `feat` and `fix` commits), then re-runs the updated installer, adding `--project` when the current repo has Proteus hooks; with no newer release it only re-runs the installer. `--project` never overwrites your `PROFILE.md`, `ROUTING.md`, or `skills.txt`; it refreshes the link scripts, templates, `required.txt`, and the hooks. Commit the `teams/` changes.
 
-Prefer not to think about it: `node ~/proteus/install.js --auto-update`. The session-start hook then fetches the checkout at most once a day and fast-forwards it when clean; `--no-auto-update` turns it off. With it off, the status line shows `proteus: update ready` once the daily fetch finds new commits, and the lead mentions it once. `--update` lists the new `feat` and `fix` commits.
+Prefer not to think about it: `node ~/proteus/install.js --auto-update`. The session-start hook then fetches the checkout and its tags at most once a day, and when a newer release tag passes the same checks it fast-forwards a clean checkout to it, re-syncs the hooks and agents, and shows the changelog for the versions in between in a few lines. A tag that fails a check is not applied: one line in the session says why and how to update by hand. `--no-auto-update` turns it off. With it off, the status line shows `proteus: update ready` once the daily fetch finds a newer release, and the lead mentions it once. Following `main` instead is a manual choice: `git -C ~/proteus pull --ff-only`, then `node ~/proteus/install.js --update`.
+
+### Releases
+
+A release is a signed annotated tag `vX.Y.Z` on `main`, with its notes under `## [X.Y.Z]` in `CHANGELOG.md`. The maintainer moves the `## [Unreleased]` notes under the new version, commits, and tags that commit:
+
+```bash
+git tag -s v1.2.0 -m "v1.2.0"          # GPG: signs with user.signingkey from your keyring
+git -c gpg.format=ssh -c user.signingkey=$HOME/.ssh/id_ed25519.pub tag -s v1.2.0 -m "v1.2.0"   # SSH key instead
+git push origin main v1.2.0
+```
+
+To sign every tag with SSH, set it once: `git config --global gpg.format ssh` and `git config --global user.signingkey "$HOME/.ssh/id_ed25519.pub"`. Lightweight tags (`git tag v1.2.0`) carry no signature, so no install takes them.
+
+Updates use your own git's trust, so nothing updates until you opt in to the maintainer's key. Fetch the key from a source you trust (not from the checkout it will verify), then, scoped to the Proteus checkout:
+
+- SSH signatures: put one line `<email> <key type> <key>` (for example `maintainer@example.com ssh-ed25519 AAAA…`) in a file outside the checkout, then `git -C ~/proteus config gpg.ssh.allowedSignersFile ~/.config/proteus/allowed_signers`.
+- GPG signatures: `gpg --import maintainer.asc`. git accepts a good signature from any key in your keyring; `git -C ~/proteus config gpg.minTrustLevel fully` limits it to keys you have certified (`gpg --lsign-key <fingerprint>`).
+
+Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
 ### Coming from hivemind
 

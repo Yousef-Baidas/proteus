@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Claude Code statusLine command: the user's own status line (from <harness home>/settings.json,
 // run with the same stdin), then " · proteus: N questions · M reviews" when either is above 0, and
-// " · proteus: update ready" when the autostart found the Proteus checkout behind.
+// " · proteus: update ready" when the autostart found a newer Proteus release.
 // Reads only the inbox cache; a cache older than 60 s triggers one detached
 // `proteus-inbox.js --refresh` per 60 s (lock: <common>/proteus/inbox.refresh). Never throws.
 "use strict";
@@ -44,7 +44,7 @@ try {
   }
 } catch {}
 
-// the Proteus checkout is behind its upstream (counted by the autostart); shown until --update
+// a release tag newer than the Proteus checkout (counted by the autostart); shown until --update
 try {
   const b = (JSON.parse(fs.readFileSync(lib.configFile(), "utf8")) || {}).behind;
   if (b > 0) out += `${out ? " · " : ""}proteus: update ready (install.js --update)`;

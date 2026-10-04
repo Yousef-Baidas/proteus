@@ -6,7 +6,7 @@
 #   ./install.sh --project           also set up the current repo: teams/ with linked skills and
 #                                    the lead's autostart + guard hooks (PROTEUS=0 claude skips them)
 #   ./install.sh --project --install --confine   fetch missing skills, hide them from the lead
-#   ./install.sh --update            git pull this checkout, reinstall, refresh the current repo
+#   ./install.sh --update            move this checkout to the newest verified signed release, reinstall, refresh the current repo
 #   ./install.sh --auto-update       let sessions pull this checkout (--no-auto-update: stop)
 #   ./install.sh --doctor [--fix]    check the setup; --fix applies the safe local fixes
 set -euo pipefail

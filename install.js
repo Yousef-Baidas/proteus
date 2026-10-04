@@ -13,9 +13,10 @@
 //   node install.js --project --install   also `npx skills add` any skill not on this machine
 //   node install.js --project --confine   also remove the global ~/.claude/skills/<name> link
 //                                         for every linked skill, so the lead never sees it
-//   node install.js --update          git pull --ff-only this checkout, reinstall, and refresh the
-//                                     current repo too if it is a Proteus project
-//   node install.js --auto-update     let the SessionStart hook pull this checkout (off by default);
+//   node install.js --update          fast-forward this checkout to the newest release tag whose
+//                                     signature git verifies (README "Releases"), reinstall, and
+//                                     refresh the current repo too if it is a Proteus project
+//   node install.js --auto-update     let the SessionStart hook do that update (off by default);
 //   node install.js --no-auto-update  both run the global install and persist the choice
 //   node install.js --doctor [--fix]  check the setup; --fix applies the safe local fixes
 //   node install.js --tour-done       record the tour as taken (the lead runs it when the tour ends
@@ -819,26 +820,39 @@ function update(argv) {
   const home = real(HERE);
   const top = git(["rev-parse", "--show-toplevel"], home);
   if (!top.ok || !samePath(real(top.out), home)) die(`${home} is not a git checkout; re-clone Proteus to update it`);
-  if (git(["status", "--porcelain", "--untracked-files=no"], home).out) {
-    die(`${home} has local changes; commit or stash them, then re-run (git -C "${home}" status)`);
-  }
+  // only a signed release tag moves the checkout (hl().release): never the tip of a branch
+  const fetch = git(["fetch", "--quiet", "--tags"], home);
+  if (!fetch.ok) die(`git fetch --tags failed in ${home}:\n${fetch.err}\nresolve it by hand (git -C "${home}" fetch --tags), then re-run`);
+  const rel = hl().release(home);
   const before = git(["rev-parse", "HEAD"], home).out;
-  const pull = git(["pull", "--ff-only"], home);
-  if (!pull.ok) die(`git pull --ff-only failed in ${home}:\n${pull.err}\nresolve it by hand (git -C "${home}" status), then re-run`);
-  const after = git(["rev-parse", "HEAD"], home).out;
-  log(`update   -> ${home} ${before === after ? "already up to date" : `${before.slice(0, 7)}..${after.slice(0, 7)}`}`);
-  if (before !== after) {
-    const news = git(["log", "--reverse", "--format=%s", `${before}..${after}`], home).out.split("\n").filter((l) => CHANGE.test(l));
-    for (const l of news.slice(0, 12)) log(`  ${l}`);
-    if (news.length > 12) log(`  … ${news.length - 12} more: git -C "${home}" log ${before.slice(0, 7)}..`);
+  if (!rel.tag) log(`update   -> ${home} has no newer release${rel.current ? ` than ${rel.current}` : ""}`);
+  else {
+    const v = hl().verifyRelease(home, rel.tag);
+    if (v.error) {
+      die(`not updating ${home} to ${rel.tag}: ${v.error}\n` +
+        `trust the maintainer's key ("Releases" in ${path.join(home, "README.md")}) and re-run, or review the tag and run\n` +
+        `  git -C "${home}" merge --ff-only ${rel.tag}\nthen re-run this command`);
+    }
+    if (git(["status", "--porcelain", "--untracked-files=no"], home).out) {
+      die(`${home} has local changes; commit or stash them, then re-run (git -C "${home}" status)`);
+    }
+    const ff = git(["merge", "--ff-only", "--quiet", v.commit], home);
+    if (!ff.ok) die(`git merge --ff-only ${rel.tag} failed in ${home}:\n${ff.err}\nresolve it by hand (git -C "${home}" status), then re-run`);
+    log(`update   -> ${home} ${rel.current || before.slice(0, 7)}..${rel.tag} (signature verified)`);
+    const notes = hl().changelog(home, v.commit, rel.current, rel.tag, 12);
+    if (notes.length) for (const l of notes) log(`  ${l}`);
+    else {
+      const news = git(["log", "--reverse", "--format=%s", `${before}..${v.commit}`], home).out.split("\n").filter((l) => CHANGE.test(l));
+      for (const l of news.slice(0, 12)) log(`  ${l}`);
+      if (news.length > 12) log(`  … ${news.length - 12} more: git -C "${home}" log ${before.slice(0, 7)}..${rel.tag}`);
+    }
     // an install from before the tour existed gets a what's-new tour from here, not a first-time one
     const c = readConfig();
-    const next = { ...c };
-    if (c.toured === undefined) next.toured = before;
-    delete next.behind;
-    writeJson(CONFIG, next);
+    if (c.toured === undefined) writeJson(CONFIG, { ...c, toured: before });
   }
-  // the pull may have changed this file: the new code does the install, once per recorded harness
+  const c = readJson(CONFIG);
+  if (c && "behind" in c) { delete c.behind; writeJson(CONFIG, c); }
+  // the update may have changed this file: the new code does the install, once per recorded harness
   // unless --harness or PROTEUS_HARNESS names one
   const rest = argv.filter((a) => a !== "--update");
   const named = harnessArg || process.env.PROTEUS_HARNESS;
