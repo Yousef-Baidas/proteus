@@ -13,6 +13,10 @@
 //   node install.js --project --install   also `npx skills add` any skill not on this machine
 //   node install.js --project --confine   also remove the global ~/.claude/skills/<name> link
 //                                         for every linked skill, so the lead never sees it
+//   node install.js --project --guest [dir]   guest mode, for a repo you do not own: teams/ and the lead's
+//                                     docs go to dir (default ~/.proteus/guest/<repo>-<hash>), not the repo;
+//                                     no CI, lefthook or root docs. Chosen without the flag when gh says you
+//                                     cannot push here and the repo has no teams/; --no-guest turns it off
 //   node install.js --update          fast-forward this checkout to the newest release tag whose
 //                                     signature git verifies (README "Releases"), reinstall, and
 //                                     refresh the current repo too if it is a Proteus project
@@ -148,15 +152,16 @@ function safeRemove(p, roots) {
   }
 }
 
-// the git toplevel of the repo being set up, set by withProject; null outside one
-let PROJECT = null;
-const ownedRoots = () => allowedRoots(HOME, CODEX_HOME, PROJECT);
+// the git toplevel of the repo being set up, set by withProject; null outside one. GUEST: its guest dir, if any
+let PROJECT = null, GUEST = "";
+const ownedRoots = () => [...allowedRoots(HOME, CODEX_HOME, PROJECT), ...(GUEST ? [realish(GUEST)] : [])];
 // link-skills.js's removals, when this process drives them (#13)
 const guardedRemove = (p) => safeRemove(p, ownedRoots());
 function withProject(dir, fn) {
-  const was = PROJECT, top = git(["rev-parse", "--show-toplevel"], dir);
+  const was = [PROJECT, GUEST], top = git(["rev-parse", "--show-toplevel"], dir);
   PROJECT = top.ok && top.out ? top.out : null;
-  try { return fn(); } finally { PROJECT = was; }
+  GUEST = PROJECT ? hl().guestDir(PROJECT) : "";
+  try { return fn(); } finally { [PROJECT, GUEST] = was; }
 }
 
 // {} when missing or empty, null when not a JSON object
@@ -198,7 +203,9 @@ function copyTree(src, dest, skip = []) {
 }
 
 const shippedAgents = () => fs.readdirSync(path.join(HERE, "agents")).filter((f) => f.endsWith(".md")).sort();
-const isProteusProject = (dir, h = "claude") => isDir(path.join(dir, "teams")) && isFile(path.join(dir, `.${h}`, "hooks", "proteus-autostart.js"));
+// where a project keeps teams/ and the lead's docs: its guest dir in guest mode, else the checkout
+const docBase = (dir) => hl().docRoot(dir);
+const isProteusProject = (dir, h = "claude") => isDir(path.join(docBase(dir), "teams")) && isFile(path.join(dir, `.${h}`, "hooks", "proteus-autostart.js"));
 
 function envCommand() {
   if (WIN) return `[Environment]::SetEnvironmentVariable("${TEAMS_ENV}", "1", "User")`;
@@ -482,6 +489,7 @@ function teamsIgnore(teams, act) {
   return add;
 }
 
+// root: where teams/ goes (the checkout, or its guest dir)
 function copyTeams(root) {
   const teams = path.join(root, "teams");
   // self-host: the checkout's own templates/ and link scripts are the source, never copied into git
@@ -513,21 +521,73 @@ function copyTeams(root) {
 }
 
 function projectInstall(root, opt) {
-  const { dupes, overrides } = projectDupes(root, true);
-  for (const p of dupes) log(`removed  ${path.relative(root, p).split(path.sep).join("/")} (duplicate of the global install)`);
+  const guest = guestSetup(root, opt), base = guest || root;
+  // a guest leaves the repo's files alone, its copies of the skill included
+  const { dupes, overrides } = projectDupes(root, !guest);
+  for (const p of dupes) log(`${guest ? "kept    " : "removed "} ${path.relative(root, p).split(path.sep).join("/")} (duplicate of the global install${guest ? "; guest mode leaves it" : ""})`);
   for (const p of overrides) log(`local override kept: ${path.relative(root, p).split(path.sep).join("/")} (differs from shipped; delete it to use the shipped one)`);
-  copyTeams(root);
-  L.run({ root, install: !!opt.install, confine: !!opt.confine, log, remove: guardedRemove });
+  withProject(root, () => {
+    copyTeams(base);
+    L.run({ root: base, install: !!opt.install, confine: !!opt.confine, log, remove: guardedRemove });
+  });
   // lead autostart + guard: machine-local, never tracked, so worker worktrees do not inherit them
-  const ok = registerHooks(root);
+  let ok = registerHooks(root);
   if (codex()) {
+    const tracked = git(["ls-files", "--error-unmatch", "--", ".codex/config.toml"], root).ok;
+    if (guest && tracked) {
+      warn(`warning: guest mode leaves the repo's tracked .codex/config.toml alone; add ${path.join(path.dirname(path.resolve(root)), `${path.basename(path.resolve(root))}-proteus`)} and ${guest} to writable_roots under [sandbox_workspace_write] in your Codex config`);
+      excludeLocal(root, CODEX_EXCLUDE, "hooks.json, Proteus hooks, rules, proteus-owned");
+      return ok;
+    }
     const w = sandboxRoots(root);
+    if (guest) ok = allowGuest(root, guest) && ok;
     // a config.toml the repo already had may be tracked or the user's: never exclude it
     excludeLocal(root, w.created ? [...CODEX_EXCLUDE, ".codex/config.toml"] : CODEX_EXCLUDE, `hooks.json, Proteus hooks, rules, proteus-owned${w.created ? ", config.toml" : ""}`);
     return ok && !w.error;
   }
-  excludeLocal(root);
+  if (guest) ok = allowGuest(root, guest) && ok;
+  // a guest's .claude/hooks/commit-msg.js is no gate the repo runs: excluded with the rest
+  if (guest) excludeLocal(root, [...EXCLUDE, ".claude/hooks/commit-msg.js"], "settings.local.json, Proteus hooks, commit-msg.js, proteus-owned");
+  else excludeLocal(root);
   return ok;
+}
+
+// guest mode: --guest [dir], or none given and gh says the human cannot push here (READ or TRIAGE) on a repo
+// with no teams/ of its own. Writes <git-common-dir>/proteus/guest.json {dir}; a marker already there is kept,
+// and --no-guest removes it (the guest dir's files stay). Returns the guest dir, or "" for a normal install.
+function guestSetup(root, opt) {
+  const common = commonDir(root);
+  if (!common) return "";
+  const lib = hl(), file = lib.guestFile(common), have = lib.guestDir(root);
+  if (opt.noGuest) {
+    if (lstat(file) && safeRemove(file, ownedRoots())) { log(`guest    -> off; ${have || "the guest dir"} keeps its files (copy what you want into the repo)`); }
+    return "";
+  }
+  let dir;
+  if (typeof opt.guest === "string") dir = path.resolve(opt.guest.replace(/^~(?=$|[\\/])/, () => HOME));
+  else if (have) return have;
+  else if (opt.guest) dir = lib.defaultGuestDir(common);
+  else {
+    if (isDir(path.join(root, "teams"))) return "";
+    const perm = ghAs("", ["repo", "view", "--json", "viewerPermission", "-q", ".viewerPermission"], { cwd: root });
+    if (!perm.ok || !/^(READ|TRIAGE)$/.test(perm.out)) return "";
+    log(`guest    -> gh reports ${perm.out} access to this repo, so Proteus keeps its files outside it (--no-guest: install into the repo)`);
+    dir = lib.defaultGuestDir(common);
+  }
+  if (inside(dir, path.resolve(root))) die(`--guest ${dir} is inside the repo; guest mode keeps its files outside it`, 2);
+  fs.mkdirSync(dir, { recursive: true });
+  writeJson(file, { guest: true, dir });
+  log(`guest    -> ${dir} (teams/, CONTEXT.md, CONVENTIONS.md, AGENTS.md, docs/adr, docs/lessons); no CI, lefthook or root docs in the repo`);
+  return dir;
+}
+
+// the session reaches the guest dir: Claude Code's additionalDirectories, Codex's writable_roots
+function allowGuest(root, dir) {
+  const ad = codex() ? cx() : require(path.join(HERE, "templates", "hooks", "proteus-harness-claude.js"));
+  const w = ad.allowDir(root, dir);
+  if (w.error) { warn(`warning: ${w.error}; let the session write in ${dir} yourself`); return false; }
+  log(`guest    -> ${path.relative(root, w.file).split(path.sep).join("/")} (${w.changed ? `${dir} added` : `${dir} already listed`})`);
+  return true;
 }
 
 // workspace-write keeps a Codex worker out of ../<repo>-proteus/ unless the project names it
@@ -996,7 +1056,9 @@ async function doctor(fix) {
   // the checkout gets project checks once --project has set it up (self-host)
   const checkout = top.ok && samePath(real(top.out), real(HERE));
   const inRepo = top.ok && (!checkout || isProteusProject(top.out, cxh ? "codex" : "claude"));
-  const isProject = inRepo && isDir(path.join(root, "teams"));
+  // guest mode: teams/ lives in the guest dir, and the repo's CI and lefthook are not Proteus's to check
+  const guest = inRepo ? hl().guestDir(root) : "", base = guest || root;
+  const isProject = inRepo && isDir(path.join(base, "teams"));
   const self = `node "${path.join(HERE, "install.js")}"${cxh ? " --harness codex" : ""}`;
   const hd = cxh ? ".codex" : ".claude";
   const checks = [];
@@ -1172,8 +1234,17 @@ async function doctor(fix) {
     if (!isProject) {
       check(() => ["WARN", "not a Proteus project (no teams/)", `${self} --project`]);
     } else {
-      check(() => isFile(path.join(root, "teams", "ROUTING.md")) ? ["ok", "teams/ROUTING.md"]
+      check(() => isFile(path.join(base, "teams", "ROUTING.md")) ? ["ok", "teams/ROUTING.md"]
         : ["WARN", "teams/ROUTING.md missing", `${self} --project`]);
+      if (guest) {
+        const ad = () => (cxh ? cx() : require(path.join(HERE, "templates", "hooks", "proteus-harness-claude.js")));
+        check(() => {
+          const w = ad().allowDir(root, guest, false);
+          if (w.error) return ["FIX", w.error, `let the session write in ${guest}`];
+          return w.missing ? ["FIX", `guest mode, but ${path.relative(root, w.file).split(path.sep).join("/")} does not open ${guest} to the session`, `${self} --project`]
+            : ["ok", `guest mode: Proteus files in ${guest}`];
+        }, () => allowGuest(root, guest));
+      }
       check(() => {
         const s = readJson(path.join(root, ...(cxh ? [".codex", "hooks.json"] : [".claude", "settings.local.json"])));
         const hooks = JSON.stringify((s && s.hooks) || {});
@@ -1204,7 +1275,7 @@ async function doctor(fix) {
         return mb > 1024 ? ["WARN", `scratch holds ${mb} MB`, `node ${hd}/hooks/proteus-scratch.js --sweep --all-done`] : ["ok", `scratch ${mb} MB`];
       });
       check(() => {
-        const teams = path.join(root, "teams");
+        const teams = path.join(base, "teams");
         const dir = (p) => (cxh ? cx().teamSkills(path.join(teams, p)) : path.join(teams, p, ".claude", "skills"));
         const unlinked = L.profiles(teams).map((p) => [p, L.listFiles(path.join(teams, p)).flatMap(L.readList)
           .filter(([, name]) => L.validName(name) && !real(path.join(dir(p), name))).length]).filter(([, n]) => n);
@@ -1212,10 +1283,10 @@ async function doctor(fix) {
         if (ign.length) return ["FIX", `teams/.gitignore lacks ${ign.join(", ")} (skill links would be committed)`, `${self} --project`];
         return unlinked.length ? ["FIX", `team skills not linked (${unlinked.map(([p, n]) => `${p} ${n}`).join(", ")})`, `node "${path.join(SHIPPED_TEAMS, "link-skills.js")}" --install`]
           : ["ok", "team skills linked"];
-      }, () => { teamsIgnore(path.join(root, "teams"), true); withProject(root, () => L.run({ root, log, remove: guardedRemove })); });
+      }, () => { teamsIgnore(path.join(base, "teams"), true); withProject(root, () => L.run({ root: base, log, remove: guardedRemove })); });
       // CI runs the gate on a clean checkout: the file it names must be tracked (a Codex-only repo
       // has no .claude/hooks/commit-msg.js, and .codex/hooks is machine-local)
-      check(() => {
+      if (!guest) check(() => {
         const found = [], bad = [];
         for (const f of ["lefthook.yml", ".github/workflows/proteus-gates.yml"]) {
           for (const m of (readText(path.join(root, f)) || "").matchAll(/\bnode\s+["']?([^\s"']*commit-msg\.js)/g)) {
@@ -1227,7 +1298,7 @@ async function doctor(fix) {
         return ["ok", found.length ? "commit-msg gate runs a tracked file" : "commit-msg gate not installed yet (the scaffold ticket adds it)"];
       });
       // the template's EDIT-* steps fail on purpose; a workflow that still has one keeps every PR red
-      check(() => {
+      if (!guest) check(() => {
         const left = [...(readText(path.join(root, ".github", "workflows", "proteus-gates.yml")) || "").matchAll(/^[^#\n]*\b(EDIT-\w+)/gm)].map((m) => m[1]);
         return left.length ? ["WARN", `.github/workflows/proteus-gates.yml still has unfilled placeholders (${[...new Set(left)].join(", ")}): its gates fail every PR until they run real commands`, "replace each EDIT-* step with the project's command and commit"] : ["ok", "proteus-gates.yml has no unfilled placeholder"];
       });
@@ -1255,7 +1326,7 @@ async function doctor(fix) {
 const FLAGS = {
   "--project": "project", "--install": "install", "--confine": "confine", "--update": "update",
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
-  "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect",
+  "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect", "--no-guest": "noGuest",
 };
 let harnessArg = null;
 
@@ -1279,6 +1350,10 @@ function main() {
       opt.agentLogin = a === "--agent-login" ? (argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : true) : a.slice("--agent-login=".length) || true;
       continue;
     }
+    if (a === "--guest" || a.startsWith("--guest=")) {
+      opt.guest = a === "--guest" ? (argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[++i] : true) : a.slice("--guest=".length) || true;
+      continue;
+    }
     if (a === "-h" || a === "--help") {
       const lines = fs.readFileSync(__filename, "utf8").split(/\r?\n/).slice(1);
       console.log(lines.slice(0, lines.findIndex((l) => !l.startsWith("//"))).map((l) => l.slice(3)).join("\n"));
@@ -1290,6 +1365,8 @@ function main() {
   HARNESS = String(harnessArg || process.env.PROTEUS_HARNESS || "claude").toLowerCase();
   if (!HARNESSES.includes(HARNESS)) die(`unknown harness: ${HARNESS} (${HARNESSES.join(" or ")})`, 2);
   if ((opt.install || opt.confine) && !opt.project) die("--install/--confine need --project", 2);
+  if ((opt.guest || opt.noGuest) && !opt.project) die("--guest/--no-guest need --project", 2);
+  if (opt.guest && opt.noGuest) die("--guest and --no-guest conflict", 2);
   if (opt.confine && codex()) die("--confine hides skills from Claude Code only; Codex reads ~/.agents/skills itself", 2);
   if (opt.fix && !opt.doctor) die("--fix needs --doctor", 2);
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);

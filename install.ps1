@@ -7,6 +7,8 @@
 #                                  also set up the current repo: teams\ with linked skills and
 #                                  the lead's autostart + guard hooks
 #   ... -Project -Install -Confine fetch missing skills, hide them from the lead
+#   ... -Project -Guest            guest mode, for a repo you do not own: teams\ and the lead's docs
+#                                  outside the repo (-NoGuest: install into the repo)
 #   ... -Update                    move this checkout to the newest verified signed release, reinstall, refresh the current repo
 #   ... -AutoUpdate                let sessions do that update (-NoAutoUpdate: stop)
 #   ... -Doctor [-Fix]             check the setup; -Fix applies the safe local fixes
@@ -16,7 +18,7 @@
 # Or skip PowerShell entirely: node C:\path\to\proteus\install.js --project
 param([switch]$Project, [switch]$Install, [switch]$Confine, [switch]$Update,
       [switch]$Doctor, [switch]$Fix, [switch]$AutoUpdate, [switch]$NoAutoUpdate, [string]$Harness,
-      [switch]$MigrateAll, [string]$Scan)
+      [switch]$MigrateAll, [string]$Scan, [switch]$Guest, [switch]$NoGuest)
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "node not found; install Node 22.5+, open a new terminal, and re-run:"
@@ -35,5 +37,7 @@ if ($NoAutoUpdate) { $flags += "--no-auto-update" }
 if ($Harness)      { $flags += "--harness", $Harness }
 if ($MigrateAll)   { $flags += "--migrate-all" }
 if ($Scan)         { $flags += "--scan", $Scan }
+if ($Guest)        { $flags += "--guest" }
+if ($NoGuest)      { $flags += "--no-guest" }
 & node (Join-Path $PSScriptRoot "install.js") @flags
 exit $LASTEXITCODE

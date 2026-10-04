@@ -29,6 +29,7 @@
 //                hooksDir(root) · teamSkills(teamDir) (where link-skills.js links a team's skills for this CLI)
 //                skipHooks (template files this CLI never uses: not copied into hooksDir)
 //                contextModeOn() · registerLead(root) · prepareWorker(wt, src) · ownedFile(wt)
+//                allowDir(root, dir, write) (guest mode: the session may read and write dir, outside the project)
 //                exportEnv(root, vars) (env for the agents' shell commands; SessionStart only on claude)
 "use strict";
 const path = require("path");

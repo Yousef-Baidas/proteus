@@ -89,7 +89,7 @@ The status line at the bottom of the terminal shows `proteus: 2 questions · 1 r
 Step 0 of every run reads `references/bootstrap.md` and detects where the repo is:
 
 - **Blank** — grills the idea, runs `/setup-matt-pocock-skills` with GitHub as the tracker, writes `CONTEXT.md`, designs the roster, and ships a single scaffold ticket (on code: manifest, typecheck, lint, test runner, smoke test; otherwise: build scripts and one headless check per team) before any feature wave.
-- **Mid-project** — runs every gate on `main`; red gates and dead code become a stabilise ticket that runs alone first. Never dispatches features onto a red baseline. Root docs over budget (a 1,000-line `CLAUDE.md`, a `CLAUDE_1.md`) get a docs-diet ticket: each line moves to where it is cheapest (nested `CLAUDE.md`, a lesson, an ADR, the tracker) or is deleted; landmarks stay as one-line links (`references/docs-diet.md`).
+- **Mid-project** — runs every gate on `main`; red gates and dead code become a stabilise ticket that runs alone first. That ticket records the existing failures in `teams/baseline.json` and runs those gates through a ratchet (`proteus-baseline.js`) that fails only on new findings, so features can start before the old failures are fixed; a red gate with no baseline still blocks them. Root docs over budget (a 1,000-line `CLAUDE.md`, a `CLAUDE_1.md`) get a docs-diet ticket: each line moves to where it is cheapest (nested `CLAUDE.md`, a lesson, an ADR, the tracker) or is deleted; landmarks stay as one-line links (`references/docs-diet.md`).
 - **Ready** — confirms gates, `CONTEXT.md`, `AGENTS.md ## Learned` in one line and goes.
 
 On a public GitHub repo the session start also says so, once per repo: the run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone, so keep anything private out of work orders and answers. The visibility comes from `gh repo view` (3 s timeout, asked at most once a day until the note has shown) and is recorded in `.git/proteus/visibility.json`.
@@ -144,6 +144,12 @@ Proteus writes nothing to your repo but deliverables, checks, contract stubs, le
 
 The tracker is GitHub via `gh` today. `references/tracker.md` is an operations table with one column per tracker; Jira or anything else slots in by filling the column.
 
+### Guest mode: repos you do not own
+
+In a repo you contribute to but do not own, even those docs and `teams/` are not yours to add. `install.js --project --guest` keeps them out of the tree: `teams/`, `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, `docs/adr/` and `docs/lessons/` go to a guest dir, by default `~/.proteus/guest/<repo>-<hash>/` (`--guest <dir>` picks another), named in `.git/proteus/guest.json`. Bootstrap writes no CI workflow, no lefthook and no root doc, and the repo's own copies of those files stay untouched. The only files in the tree are the CLI's own hook files under `.claude/` or `.codex/`, untracked and excluded from git as in every install. The session gets access to the guest dir through `permissions.additionalDirectories` (Claude Code) or `writable_roots` (Codex). A tracked `.codex/config.toml` is never edited; the installer says what to add instead. The lead guard, the session-start state line, lessons, the skills lock and the baseline ratchet all read the guest dir.
+
+`--project` picks guest mode without the flag when `gh repo view` reports READ or TRIAGE access and the repo has no `teams/` of its own; `--no-guest` turns it off (the guest dir keeps its files). Gates still run, but locally and through tickets, not through CI you add. Tickets, PRs and the run log still need a GitHub repo you can write to: in a clone of your fork, `gh` reports your own rights, so pass `--guest` yourself.
+
 ## Enforcement, not promises
 
 Rules in prompts drift; these are mechanical.
@@ -153,6 +159,7 @@ Rules in prompts drift; these are mechanical.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; a script watchdog reads each worker's last tool call and wakes the lead only when one has been silent for 40 minutes or stopped without a report.
 - **One suite run per tree.** Worker, lefthook's pre-push, verifier, the lead after a merge, QA and the guide run each gate through `proteus-gates-cache.js`, which keys a pass on the commit's tree and the command and replays it instead of running the suite again. Only a clean checkout is cached; a failure never is.
+- **Baseline ratchet.** On a repo whose gates were already red, `teams/templates/hooks/proteus-baseline.js` records each red gate's findings in `teams/baseline.json` and fails a later run only on findings that are not there, so the old failures do not block every ticket and new ones still do. Findings are output lines matching a per-gate regex (digits and the checkout path normalised away) or a count; `--record` only ever tightens the file.
 - **Commit messages.** lefthook runs a commit-msg check: Conventional Commits, 72 chars, no AI trailer. CI re-checks every commit in the PR, so `--no-verify` does not help.
 - **Security.** The security verifier runs semgrep on the diff first and queries OSV for every `NEEDS dependency` before the human sees the request.
 - **Mechanical QA in CI.** Every merge into `proteus/<run>` pushes it, and the workflow runs the suite, then e2e, a smoke test from a fresh install, a rebuild of the deliverables, and mutation testing on the files the merge changed. The QA pass reads those results (`gh run view`) instead of re-running them; a surviving mutant or a red step is a `WAVE-RED` ticket.
@@ -198,7 +205,7 @@ cd /path/to/your/repo
 node ~/proteus/install.js --project    # teams/, ROUTING.md, the lead's hooks and status line
 ```
 
-`--project --install --confine` also fetches skills this machine lacks and hides them from the lead. After `proteus-scout` rewrites a list, run `node teams/link-skills.js --install --confine` from the repo root.
+`--project --install --confine` also fetches skills this machine lacks and hides them from the lead. After `proteus-scout` rewrites a list, run `node teams/link-skills.js --install --confine` from the repo root. In a repo you do not own, `--project --guest` keeps all of it outside the tree ([Guest mode](#guest-mode-repos-you-do-not-own)); there the script is `<guest dir>/teams/link-skills.js`.
 
 The global install links `~/.claude/skills/proteus` and `proteus-review` to this checkout (a symlink on Linux and macOS, a junction on Windows, no admin rights needed), so there is exactly one copy of each skill and `git pull` updates every repo at once. `--project` removes old per-repo copies of the two skills and of unmodified agents; that is why `/proteus` used to show up twice. An agent you changed is kept and reported as a local override: delete it to take the shipped one.
 
@@ -208,7 +215,7 @@ On Windows, PowerShell blocks unsigned scripts by default. Run the wrapper as:
 powershell -ExecutionPolicy Bypass -File C:\path\to\proteus\install.ps1 -Project
 ```
 
-or skip PowerShell: `node C:\path\to\proteus\install.js --project`. The switches are `-Project -Install -Confine -Update -AutoUpdate -NoAutoUpdate -Doctor -Fix -Harness codex`.
+or skip PowerShell: `node C:\path\to\proteus\install.js --project`. The switches are `-Project -Install -Confine -Guest -NoGuest -Update -AutoUpdate -NoAutoUpdate -Doctor -Fix -Harness codex`.
 
 Agent teams must be on. `--doctor` prints the exact line for your shell; for reference:
 
@@ -338,7 +345,7 @@ skills/proteus/
   references/docs-diet.md    root-doc budget and where everything else goes
   references/tracker.md      where state lives: GitHub operations table, Jira slot
   references/stack.md        who loads which tool, context meter, worktree lifecycle
-  references/enforcement.md  CI, branch protection, hooks, lefthook, semgrep, mutation, OSV, skill lock
+  references/enforcement.md  CI, branch protection, hooks, lefthook, semgrep, mutation, OSV, skill lock, baseline ratchet
   references/commits.md      commit message rules
 skills/proteus-review/
   SKILL.md                   the human's inbox: questions as pickers, then milestone reviews
@@ -356,6 +363,7 @@ templates/teams/             the shipped roster, copied into your repo's teams/ 
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
   <team>/required.txt        pipeline-required skills; the scout never edits it
   skills-lock.json           content hash per linked skill
+  baseline.json              per-gate findings recorded by proteus-baseline.js (only when a gate started red)
 templates/
   ci/proteus-gates.yml  lefthook.yml   the gates run teams/templates/hooks/commit-msg.js
   hooks/                     copied to .claude/hooks/ by install-lead-hooks.js:
@@ -374,6 +382,7 @@ templates/
     proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
+    proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)

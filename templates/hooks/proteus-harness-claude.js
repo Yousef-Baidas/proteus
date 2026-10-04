@@ -284,6 +284,27 @@ function registerLead(root) {
   return { file, changed: true };
 }
 
+// guest mode: the guest dir outside the project, open to the session without a prompt per file
+// (permissions.additionalDirectories in .claude/settings.local.json). write=false only checks.
+// Returns {file, dir, changed}, {file, dir, missing} or {file, dir, error}.
+function allowDir(root, dir, write = true) {
+  const file = leadSettings(root), want = path.resolve(dir);
+  let s = {};
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    if (raw.trim()) s = JSON.parse(raw);
+  } catch (e) { if (e.code !== "ENOENT") return { file, dir: want, error: `${file} is not valid JSON (${e.message})` }; }
+  if (!s || typeof s !== "object" || Array.isArray(s)) return { file, dir: want, error: `${file} is not a JSON object` };
+  const perms = s.permissions && typeof s.permissions === "object" && !Array.isArray(s.permissions) ? s.permissions : {};
+  const list = Array.isArray(perms.additionalDirectories) ? perms.additionalDirectories : [];
+  if (list.some((d) => typeof d === "string" && path.resolve(d) === want)) return { file, dir: want, changed: false };
+  if (!write) return { file, dir: want, missing: true };
+  s.permissions = { ...perms, additionalDirectories: [...list, want] };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(s, null, 2) + "\n");
+  return { file, dir: want, changed: true };
+}
+
 // a worker's worktree: its hooks, registered by the worktree settings template beside this file
 const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js"];
 const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js"];
@@ -318,5 +339,5 @@ function exportEnv(root, vars) {
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

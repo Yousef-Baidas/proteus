@@ -5,6 +5,7 @@
 // FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets.
 // FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
 // FAKE_GH_RUN (a JSON file) holds a run's issues, PRs and run logs for the close report.
+// FAKE_GH_PERMISSION answers `repo view --json viewerPermission` (install.js --project's guest-mode check).
 const a = process.argv.slice(2).join(" ");
 if (process.env.FAKE_GH_LOG) require("fs").appendFileSync(process.env.FAKE_GH_LOG, a + "\n");
 if (process.env.FAKE_GH === "fail") { process.stderr.write("gh: no remote\n"); process.exit(1); }
@@ -19,6 +20,7 @@ if (process.env.FAKE_GH_LIMIT) {
 }
 const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
 if (process.env.FAKE_GH_VISIBILITY && a === "repo view --json visibility -q .visibility") { process.stdout.write(process.env.FAKE_GH_VISIBILITY + "\n"); process.exit(0); }
+if (process.env.FAKE_GH_PERMISSION && a === "repo view --json viewerPermission -q .viewerPermission") { process.stdout.write(process.env.FAKE_GH_PERMISSION + "\n"); process.exit(0); }
 if (a === "--version" || a === "auth status") { process.stdout.write("gh fake\n"); process.exit(0); }
 const CD = process.env.GH_CONFIG_DIR;
 if (CD) {

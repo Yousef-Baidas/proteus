@@ -29,6 +29,9 @@ jobs:
       #   - uses: astral-sh/setup-uv@v5
       #   - uses: dtolnay/rust-toolchain@stable
       - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci | uv sync | cargo fetch
+      # a gate that was red before Proteus runs through the baseline ratchet (teams/baseline.json), which fails
+      # only on findings the recorded baseline lacks, e.g.
+      #   - run: node teams/templates/hooks/proteus-baseline.js test -- npx vitest run
       - run: echo "EDIT-typecheck not filled in" >&2; exit 1
       - run: echo "EDIT-lint not filled in" >&2; exit 1
       - run: echo "EDIT-test not filled in" >&2; exit 1
