@@ -8,27 +8,38 @@
 # re-running them (teams/qa/PROFILE.md); keep the step names, it reads failures by them.
 # Each EDIT-* step below fails until you replace it, so an unfilled template is never green.
 # PRs into main come from the Direct and Quick tiers (SKILL.md rule 3); rename main if the default branch differs.
+# Keep it hardened as you fill it in. PR code runs here, and a fork names its own head branch:
+# - a ${{ }} value a script needs goes through env: and is read as "$VAR", never written inside run:;
+# - the token is read-only (permissions:) and not left in .git/config (persist-credentials: false);
+#   add a scope only to the job whose step needs it;
+# - every action is pinned to a full commit SHA with its version as a comment. To find one:
+#   gh api repos/OWNER/ACTION/git/ref/tags/TAG; if its object.type is "tag", follow it with
+#   gh api repos/OWNER/ACTION/git/tags/SHA to reach the commit;
+# - installs skip lifecycle scripts where the tool allows (npm ci --ignore-scripts).
 name: proteus-gates
 on:
   pull_request:
     branches: ["proteus/**", "main"]
   push:
     branches: ["proteus/**"]
+permissions:
+  contents: read
 jobs:
   gates:
     # every push to and PR into a run branch; into main only a Quick ticket's (the human's own PRs are not Proteus's to gate)
     if: github.event_name == 'push' || startsWith(github.base_ref, 'proteus/') || startsWith(github.head_ref, 'proteus-work/quick/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}   # the PR head, not the synthetic merge commit; on a push, the pushed commit
           fetch-depth: 0
-      # EDIT: one setup action for the stack, e.g.
-      #   - uses: actions/setup-node@v4   with: { node-version: 22, cache: npm }
-      #   - uses: astral-sh/setup-uv@v5
-      #   - uses: dtolnay/rust-toolchain@stable
-      - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci | uv sync | cargo fetch
+          persist-credentials: false
+      # EDIT: one setup action for the stack, pinned to a full commit SHA, e.g.
+      #   - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0   with: { node-version: 22, cache: npm }
+      #   - uses: astral-sh/setup-uv@<commit SHA of the tag> # vX.Y.Z
+      #   - uses: dtolnay/rust-toolchain@<commit SHA of the stable branch's head> # stable
+      - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci --ignore-scripts | uv sync | cargo fetch
       # a gate that was red before Proteus runs through the baseline ratchet (teams/baseline.json), which fails
       # only on findings the recorded baseline lacks, e.g.
       #   - run: node teams/templates/hooks/proteus-baseline.js test -- npx vitest run
@@ -43,19 +54,23 @@ jobs:
         if: startsWith(github.head_ref, 'proteus-work/')
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
       # the change must fit its declared tier (the PR body's "Tier:" line, standard without one) by the
       # tiers block of teams/ROUTING.md as of the base; a change that outgrew it is re-run at the tier named
       - name: tier
         if: startsWith(github.head_ref, 'proteus-work/')
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node teams/templates/hooks/proteus-tier.js --ci "origin/$BASE_REF"
       - name: commit messages
         if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
-            git log -1 --format=%B "$c" > /tmp/msg && node teams/templates/hooks/commit-msg.js /tmp/msg || exit 1
+          for c in $(git rev-list "origin/$BASE_REF..HEAD"); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg" && node teams/templates/hooks/commit-msg.js "$RUNNER_TEMP/msg" || exit 1
           done
   # Direct tier: a batched docs PR from proteus-work/direct/<batch> into main runs the mechanical gates only;
   # the tier step fails it once the batch outgrows Direct
@@ -63,32 +78,38 @@ jobs:
     if: startsWith(github.head_ref, 'proteus-work/direct/') && !startsWith(github.base_ref, 'proteus/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - run: echo "EDIT-docs not filled in" >&2; exit 1  # markdown lint, link check, spelling, e.g. npx markdownlint-cli2 && lychee . && npx cspell .
       - name: owned paths
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
       - name: tier
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: node teams/templates/hooks/proteus-tier.js --ci "origin/$BASE_REF"
       - name: commit messages
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
-            git log -1 --format=%B "$c" > /tmp/msg && node teams/templates/hooks/commit-msg.js /tmp/msg || exit 1
+          for c in $(git rev-list "origin/$BASE_REF..HEAD"); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg" && node teams/templates/hooks/commit-msg.js "$RUNNER_TEMP/msg" || exit 1
           done
   qa:
     if: github.event_name == 'push'
     needs: gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       # EDIT: the same setup action and install as the gates job
       # A step this project has no use for (no e2e suite, no non-code deliverable) is deleted, not
       # left green; a rebuild that needs hardware CI lacks (a GPU render) is deleted too and QA runs it locally.

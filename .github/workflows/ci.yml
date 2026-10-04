@@ -1,12 +1,16 @@
-# Gates for main, hive/** and proteus/**: npm ci, npm run lint, node tests/run.js on Linux, macOS and Windows, on push and pull_request;
+# Gates for main and proteus/**: npm ci --ignore-scripts, npm run lint, node tests/run.js on Linux, macOS and Windows, on push and pull_request;
 # on pull_request the Linux job also lints every commit message with templates/hooks/commit-msg.js. The `gates` job
 # passes only when every OS does: it is the one check name branch rules and rulesets require.
+# Hardened like templates/ci/proteus-gates.yml: a read-only token that is not left in .git/config, actions pinned to
+# a commit SHA, no install scripts, and every ${{ }} value a run: script needs passed through env:, never inline.
 name: ci
 on:
   push:
-    branches: [main, "hive/**", "proteus/**"]
+    branches: [main, "proteus/**"]
   pull_request:
-    branches: [main, "hive/**", "proteus/**"]
+    branches: [main, "proteus/**"]
+permissions:
+  contents: read
 jobs:
   test:
     strategy:
@@ -15,14 +19,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}   # the PR head, not the synthetic merge commit
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - name: tests
         run: node tests/run.js
@@ -32,8 +37,10 @@ jobs:
           TMP: ${{ runner.os == 'Windows' && runner.temp || '' }}
       - name: commit messages
         if: github.event_name == 'pull_request' && runner.os == 'Linux'
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
+          for c in $(git rev-list "origin/$BASE_REF..HEAD"); do
             git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg" && node templates/hooks/commit-msg.js "$RUNNER_TEMP/msg" || exit 1
           done
   gates:
@@ -41,4 +48,6 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - run: test "${{ needs.test.result }}" = success
+      - env:
+          RESULT: ${{ needs.test.result }}
+        run: test "$RESULT" = success
