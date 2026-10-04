@@ -2,6 +2,7 @@
 name: proteus-security-verifier
 description: Proteus second verifier for tickets touching auth, input parsing, secrets, file or network I/O, money, personal data, or anything published. Reviews a diff; never edits.
 model: opus
+effort: high
 tools:
   - Read
   - Grep

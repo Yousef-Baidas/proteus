@@ -10,7 +10,7 @@ Cross-cutting agents, every domain: `proteus-security-verifier` (second verifier
 
 ## The roster
 
-Software repos start from the shipped teams `frontend`, `backend`, `devops`, `security`, `qa` (`templates/teams/` in the Proteus checkout, copied to the repo's `teams/` by `install.js --project`). Any other project, or a software project the shipped teams do not fit, gets a roster designed for it: `proteus-scout` (`top`) reads the repo, `CONTEXT.md`, and the work order, and proposes teams as the real-world roles a studio or firm would staff (`domains.md`). The human approves the roster before anything is written. A worker then writes each `PROFILE.md` and, where the craft needs one, `CRAFT.md`.
+Software repos start from the shipped teams `frontend`, `backend`, `devops`, `security`, `qa` (`templates/teams/` in the Proteus checkout, copied to the repo's `teams/` by `install.js --project`). Any other project, or a software project the shipped teams do not fit, gets a roster designed for it: `proteus-scout` (`judge`) reads the repo, `CONTEXT.md`, and the work order, and proposes teams as the real-world roles a studio or firm would staff (`domains.md`). The human approves the roster before anything is written. A worker then writes each `PROFILE.md` and, where the craft needs one, `CRAFT.md`.
 
 `PROFILE.md` shape, 40 lines at most:
 
@@ -33,7 +33,7 @@ Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, r
 
 `teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout never rewrites it, it does not count against the eight, and `install.js --project` refreshes it. A missing required skill stops the run.
 
-Models, from the ladder (`models=` in `proteus-state`): workers are `mid` (`standard`) or `top` (`hard`); team and security verifiers are `top`; the scout is `top`; QA is `mid` per wave, `top` per milestone and at close; the guide is `mid`. On a Sonnet lead both are Sonnet; nothing runs above the lead, and a once-per-project model (Fable by default) is only ever the lead. With no ladder (`models=unknown`, Codex by default) every role runs on the lead's model.
+Models, from the ladder (`models=` in `proteus-state`): workers are `build` (`standard` and `hard`), contracts, escalation and conflict workers `judge`; team and security verifiers are `judge`; the scout is `judge`; QA is `helper` per wave, `judge` per milestone and at close; the guide is `helper`. On a Sonnet lead all three are Sonnet; nothing runs above the lead, and a once-per-project model (Fable by default) is only ever the lead. With no ladder (`models=unknown`, Codex by default) every role runs on the lead's model.
 
 ## Routing
 

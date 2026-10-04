@@ -39,9 +39,9 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 
 ## Models
 
-The session you start is the lead, on whatever model you started it with, and it staffs down from there on a ladder, cheapest first: `haiku < sonnet < opus < fable`. The autostart prints `models=lead:…,top:…,mid:…`; the guard enforces it on every spawn.
+The session you start is the lead, on whatever model you started it with, and it staffs down from there on a ladder, cheapest first: `haiku < sonnet < opus < fable`. Roles map to three tiers. `judge` takes the work that needs sustained judgment: verifiers, the scout, contracts, escalations, merge conflicts, and QA at milestone and close. `build` implements every ticket. `helper` runs QA per wave, the guide, research and small reads. The autostart prints `models=lead:…,judge:…,build:…,helper:…`; the guard enforces the ladder on every spawn.
 
-| You start on | Lead | Hard tickets, verdicts, scout (`top`) | Standard tickets, helpers (`mid`) |
+| You start on | Lead | `judge` | `build` and `helper` |
 |---|---|---|---|
 | Fable | Fable | Opus | Sonnet |
 | Opus | Opus | Opus | Sonnet |
@@ -50,7 +50,9 @@ The session you start is the lead, on whatever model you started it with, and it
 - Nothing runs above the lead. A worker may run on the lead's own model.
 - Fable is once per project: the lead is its one instance, so a Fable lead staffs Opus and below. Claude Mythos is Fable offered under another name (Project Glasswing), so a `claude-mythos-*` id sits on Fable's rung. Lift it with a line in `AGENTS.md` under `## Learned`: `models: solo=none`.
 - The floor is Sonnet, so Haiku is under it: it does not produce or review work until it earns it. `models: floor=haiku` in `AGENTS.md` lowers the floor for a project; a Haiku lead lowers it on its own, so everything runs on Haiku.
-- Machine-wide defaults live in `~/.claude/proteus.json`: `"models": { "ladder": ["haiku", "sonnet", "opus", "fable"], "floor": "sonnet", "solo": ["fable"], "aliases": { "mythos": "fable" } }` (aliases are other names of a rung's model, merged over the defaults). Claude Code passes a subagent's model as one of these aliases, so a rung is a family, not a version.
+- Machine-wide defaults live in `~/.claude/proteus.json`: `"models": { "ladder": ["haiku", "sonnet", "opus", "fable"], "floor": "sonnet", "solo": ["fable"], "aliases": { "mythos": "fable" }, "tiers": { "judge": "top", "build": "mid", "helper": "mid" } }` (aliases are other names of a rung's model, merged over the defaults). Claude Code passes a subagent's model as one of these aliases, so a rung is a family, not a version.
+- A tier is `top` (the highest rung the lead may staff), `mid` (one under it), a rung or a full model id, optionally with `@effort`; it is kept between the floor and `top`. `models: build=opus judge=opus` in `AGENTS.md` sets them for a project. Tiers are independent, so a verifier can run on a different family from the worker, including a different vendor's when the ladder names both.
+- Effort: Claude Code's Agent tool takes no effort per spawn, so the verifiers and the scout carry `effort: high` in their agent files and the rest run at the session's effort. Codex passes it per spawn (`reasoning_effort`): with no ladder every tier runs on the lead's model, `judge` at high, `build` at medium, `helper` at low.
 
 ## Asks before it guesses
 

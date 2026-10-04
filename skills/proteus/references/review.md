@@ -44,7 +44,7 @@ Only the literal word confirms. Then, per gate:
 1. Guide runs as usual **plus** executes its own verify steps: Playwright MCP or `playwright-cli` screenshots per step where a UI exists, CLI transcripts otherwise. A step it cannot execute goes under `## Not verified`.
 2. Guide comments the verdict itself: `AUTO-ACCEPT` if every executed step matched and `## Not verified` is empty; else `AUTO-HOLD` with reasons. Lead: `AUTO-ACCEPT` → close the milestone, keep `needs-human`, continue. `AUTO-HOLD` → open review; stop; `PushNotification`; wait.
 3. When unattended ends (time, count, or the human speaks): list `gh issue list --label needs-human` and stop; nothing dispatches until each has a human `ACCEPT` or `CHANGES` via `/proteus-review`. Retroactive `CHANGES` become tickets like any other.
-4. Never in unattended mode: auto-accept a test piece, merge into `main`, approve a new dependency, install a skill, rewrite `CONVENTIONS.md`, escalate past two `top` fails (park as `CONTRACT-WRONG`, continue with independent tickets).
+4. Never in unattended mode: auto-accept a test piece, merge into `main`, approve a new dependency, install a skill, rewrite `CONVENTIONS.md`, escalate past two `judge` fails (park as `CONTRACT-WRONG`, continue with independent tickets).
 5. Hard stop: token budget or milestone count if given; otherwise at 5 open `needs-human` issues. `PushNotification` on stop.
 
 ## What the human owns

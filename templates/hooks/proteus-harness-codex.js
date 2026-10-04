@@ -15,8 +15,11 @@ const { tailLines, legacyWorktreeDir, legacyWorktrees, git } = require(path.join
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
 
 const name = "codex";
-// no default ladder: single-model mode (the lead's model) until models.ladder names the rungs
-const models = null;
+// no default ladder: single-model mode (the lead's model) until models.ladder names the rungs.
+// The tiers differ by effort instead: spawn_agent takes reasoning_effort per spawn (a custom
+// agent file's model_reasoning_effort would override it, so agentFile writes none).
+const models = { ladder: [], floor: "", solo: [], aliases: {}, tiers: { judge: "top@high", build: "top@medium", helper: "top@low" } };
+const spawnEffort = "reasoning_effort";
 const bypass = "PROTEUS=0 codex";
 
 const KINDS = {
@@ -471,7 +474,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, projectRoot, event, deny, context, keepGoing,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, sandboxRoots, exportEnv,

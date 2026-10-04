@@ -2,6 +2,7 @@
 name: proteus-scout
 description: Proteus team designer and skill scout. Reads the project and its domain, proposes the team roster (real-world roles, ownership, checks, routing) when the shipped software teams do not fit, and picks the best skills per team for the human to approve. Spawned by the /proteus lead at bootstrap, on "refresh skills", or on "redesign teams".
 model: opus
+effort: high
 tools:
   - Read
   - Grep

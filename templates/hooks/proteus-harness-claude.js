@@ -11,6 +11,9 @@ const name = "claude";
 // the default model ladder, lowest first; solo models run once per project. Claude Mythos is
 // Claude Fable offered under another name (Project Glasswing), so it sits on Fable's rung.
 const models = { ladder: ["haiku", "sonnet", "opus", "fable"], floor: "sonnet", solo: ["fable"], aliases: { mythos: "fable" } };
+// the Agent tool takes a model per spawn but no effort; a subagent's effort is its frontmatter
+// `effort:` (the judge agents carry high), else the session's
+const spawnEffort = "";
 const bypass = "PROTEUS=0 claude";
 
 const KINDS = {
@@ -310,7 +313,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, projectRoot, event, deny, context, keepGoing,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

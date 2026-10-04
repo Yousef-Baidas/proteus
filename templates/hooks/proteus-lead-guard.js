@@ -73,7 +73,7 @@ lib.run((ev, ad) => {
   if (!target) return;
   if (ev.tool === "read") {
     if (IMAGE.test(target) && !humanNamed(ev, ad, target))
-      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the ladder's mid model: "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
+      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the helper model (helper: in models=): "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
     return; // lib.run exits 0 once stdout drains
   }
   if (ev.tool !== "edit") return;
@@ -85,7 +85,8 @@ lib.run((ev, ad) => {
 // the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
 function modelDenial(c, name) {
   if (!c.ladder.length) return ""; // no ladder and no known lead model
-  const use = `use "${c.top}" for hard tickets and every verdict, "${c.mid}" for standard tickets and helpers`;
+  const t = (x) => `"${x.model}"${x.effort ? ` with ${c.effortParam} "${x.effort}"` : ""}`;
+  const use = `use ${t(c.tiers.judge)} for verdicts, contracts, escalations, conflicts and the scout, ${t(c.tiers.build)} for tickets, ${t(c.tiers.helper)} for wave QA, the guide and helpers`;
   if (!name) return `every Agent call names its model (the agent's default may sit above the lead's): ${use}.`;
   const r = lib.rungOf(c.ladder, name, c.aliases);
   if (r < 0) return `model "${name}" is not on the ladder (${c.ladder.join(" < ")}); ${use}.`;

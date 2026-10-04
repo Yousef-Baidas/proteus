@@ -22,7 +22,8 @@
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
 //   window       modelWindow(model, ev) (the model's nominal context window) · contextCap(ev, model) (the
 //                cap the human configured); each 0 when unknown, and both optional
-//   models       the default ladder {ladder, floor, solo, aliases}, or null for single-model mode
+//   models       the default ladder {ladder, floor, solo, aliases, tiers}, or null for single-model mode
+//   spawnEffort  the spawn tool's per-spawn effort parameter, "" when it has none
 //   install      name · bypass · projectRoot(raw) · home · skillDirs(root) · agentsDir · agentFile(file, text)
 //                hooksDir(root) · teamSkills(teamDir) (where link-skills.js links a team's skills for this CLI)
 //                skipHooks (template files this CLI never uses: not copied into hooksDir)

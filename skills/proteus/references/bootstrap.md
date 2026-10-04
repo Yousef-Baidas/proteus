@@ -28,7 +28,7 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 
 1. `/setup-matt-pocock-skills` with GitHub as the tracker if not run. `/domain-modeling` for `CONTEXT.md` if missing; `/wayfinder` first if the project is large enough that one session cannot hold it (its map goes to the tracker as a `wayfinder:map` issue, never a file).
 2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them. Do not dispatch features onto a red baseline; workers cannot tell their red from yours.
-3. Code: `fallow health` / `vulture`, run by a `mid` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, never into a feature ticket.
+3. Code: `fallow health` / `vulture`, run by a `helper` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, never into a feature ticket.
 4. Root docs over budget (`doc-bloat` in `proteus-state`) → a docs-diet ticket (`docs-diet.md`) in wave one. Plans, maps, or logs committed as files → the same ticket moves them to the tracker.
 5. Add `## Learned` to `AGENTS.md`. Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
 6. Existing branches or worktrees: list them, ask the human which are live, leave the rest alone. Never delete a branch you did not create.

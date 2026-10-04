@@ -1,5 +1,5 @@
 // Model routing tests: node tests/models.test.js (needs git). The ladder's aliases (Mythos on Fable's rung)
-// and the handoff lines scaled to the lead's context window.
+// the role tiers, and the handoff lines scaled to the lead's context window.
 // Temp HOME and repo; never touches ~/.claude or the network.
 "use strict";
 const fs = require("fs");
@@ -47,6 +47,36 @@ ok("rungOf: an alias to a rung the ladder lacks matches nothing", plib.rungOf(["
   ok("ladder: machine config aliases merge over the harness's", spawn("claude-mythos-5-1", TO, { env: lib.homeEnv(MH) }).code === 0);
 }
 
+// ---- role tiers: judge, build and helper, each a model and an effort
+{
+  process.env.HOME = path.join(W, "tier-home"); // modelCaps in this process reads ~/.claude/proteus.json
+  const TH = path.join(process.env.HOME, ".claude"); fs.mkdirSync(TH, { recursive: true });
+  const conf = (o) => fs.writeFileSync(path.join(TH, "proteus.json"), JSON.stringify(o));
+  const caps = (m) => plib.modelCaps({ raw: { transcript_path: tr(m) }, session: "s1" }, REPO).tiers;
+  const names = (t) => [t.judge.model, t.build.model, t.helper.model].join(",");
+  ok("tiers: defaults are judge top, build and helper mid; no effort on Claude Code", names(caps("claude-fable-5-1")) === "opus,sonnet,sonnet" && names(caps("claude-opus-5-5")) === "opus,sonnet,sonnet" &&
+    names(caps("claude-sonnet-5-5")) === "sonnet,sonnet,sonnet" && caps("claude-opus-5-5").judge.effort === "");
+  conf({ models: { tiers: { judge: "opus@max", build: "claude-sonnet-5-5", helper: "haiku" } } });
+  const t = caps("claude-opus-5-5");
+  ok("tiers: config names a rung or a full id; held between the floor and the lead", t.judge.model === "opus" && t.build.model === "claude-sonnet-5-5" && t.helper.model === "sonnet", JSON.stringify(t));
+  ok("tiers: held to the lead's rung on a Sonnet lead", names(caps("claude-sonnet-5-5")) === "sonnet,claude-sonnet-5-5,sonnet");
+  conf({ models: { tiers: { judge: "fable", build: { model: "gpt-6" } } } });
+  ok("tiers: a solo or unknown model falls back to the tier's default", names(caps("claude-fable-5-1")) === "opus,sonnet,sonnet");
+  conf({ models: { ladder: ["sonnet", "gpt-6", "opus"], floor: "sonnet", solo: [], tiers: { judge: "opus", build: "gpt-6", helper: "sonnet" } } });
+  ok("tiers: a mixed-family ladder puts the verifier and the worker on different families", names(caps("claude-opus-5-5")) === "opus,gpt-6,sonnet");
+  fs.rmSync(path.join(TH, "proteus.json"));
+  const A = path.join(REPO, "AGENTS.md"), before = fs.readFileSync(A, "utf8");
+  fs.writeFileSync(A, before + "models: build=opus helper=sonnet@low\n");
+  ok("tiers: the AGENTS.md models: line sets them", names(caps("claude-opus-5-5")) === "opus,opus,sonnet");
+  const r = spawn("haiku", tr("claude-opus-5-5"));
+  ok("tiers: the guard's refusal names each tier", r.code === 2 && /use "opus" for verdicts, contracts, escalations, conflicts and the scout, "opus" for tickets, "sonnet" for wave QA/.test(r.err), r.err);
+  fs.writeFileSync(A, before);
+  const agent = (n) => fs.readFileSync(path.join(ROOT, "agents", `${n}.md`), "utf8");
+  ok("tiers: the judge agents carry effort: high in their frontmatter, the workers inherit",
+    ["proteus-verifier", "proteus-backend-verifier", "proteus-frontend-verifier", "proteus-security-verifier", "proteus-scout"].every((n) => /^effort: high$/m.test(agent(n))) &&
+    !/^effort:/m.test(agent("proteus-worker")));
+}
+
 // ---- context window: the handoff lines are 75% and 90% of the lead's window, a configured cap first
 const cl = require(path.join(SRC, "proteus-harness-claude.js"));
 ok("modelWindow: 1M for [1m], Fable, Mythos, Opus 4.7+, Sonnet 5+ and bare aliases", ["claude-opus-5-5", "claude-sonnet-4-6[1m]", "claude-fable-5-1", "claude-mythos-5-1", "claude-opus-4-7", "claude-sonnet-5", "opus", "sonnet"].every((m) => cl.modelWindow(m) === 1000000));
@@ -86,6 +116,9 @@ ok("modelWindow: 200k for Haiku and older Opus and Sonnet, 0 for an unknown id",
 { // Codex: the rollout's model_context_window, and the caps in config.toml
   process.env.CODEX_HOME = path.join(W, "codex-home"); fs.mkdirSync(process.env.CODEX_HOME, { recursive: true });
   const cx = require(path.join(SRC, "proteus-harness-codex.js"));
+  const AS = path.join(SRC, "proteus-autostart.js");
+  ok("codex tiers: single-model mode, the effort per tier on spawn_agent's reasoning_effort", cx.spawnEffort === "reasoning_effort" &&
+    /^top@high$/.test(cx.models.tiers.judge) && /^top@medium$/.test(cx.models.tiers.build) && /^top@low$/.test(cx.models.tiers.helper) && fs.existsSync(AS));
   const RO = path.join(T, "rollout.jsonl");
   fs.writeFileSync(RO, JSON.stringify({ timestamp: "t", type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { total_tokens: 5 }, model_context_window: 272000 } } }) + "\n");
   ok("codex modelWindow: the newest token_count's model_context_window", cx.modelWindow("gpt-6", { raw: { transcript_path: RO } }) === 272000 && cx.modelWindow("gpt-6", { raw: {} }) === 0);
