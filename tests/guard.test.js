@@ -49,6 +49,9 @@ ok("push: a wrapper's own options, and a value they take, skipped (#23)",
   !all((c) => denied(c, /never push to/), ["rtk -v git push origin trunk", "rtk proxy git push origin trunk", "env -i git push origin trunk", "env FOO=1 git push origin trunk",
     "env -u HOME -C . git push origin trunk", "env --chdir=. git push origin trunk", "env -S 'git push origin trunk'", "sudo -u x git push origin trunk", "sudo --user=x -E git push origin trunk",
     "sudo -g wheel -- git push origin trunk", "command -p git push origin trunk", "/usr/bin/env -i nohup time -p git push origin trunk", "exec -a x git push origin trunk"]).length);
+ok("push: through timeout, nice, nohup, stdbuf, time and xargs denied",
+  !all((c) => denied(c, /never push to/), ["timeout 10 git push origin trunk", "nice -n 5 git push origin trunk", "nohup git push origin trunk", "timeout -s KILL -k 5 --foreground 1m git push origin trunk",
+    "timeout --signal=TERM -- 10 git push origin trunk", "nice --adjustment=5 git push origin trunk", "stdbuf -oL -e 0 git push origin trunk", "time -f %e -o t.txt git push origin trunk", "xargs -n 1 -P 2 git push origin trunk"]).length);
 ok("push: a worker branch through a wrapper with options still allowed",
   !all(allowed, ["rtk git push origin proteus-work/r1/5", "rtk -v git push -u origin HEAD:proteus-work/r1/5", "sudo -u x env -i git push origin proteus-work/r1/5"]).length);
 ok("gh: --admin and a human's word through a wrapper with options denied",
