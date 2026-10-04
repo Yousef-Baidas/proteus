@@ -590,8 +590,9 @@ function copyTeams(root) {
   fs.mkdirSync(teams, { recursive: true });
   teamsIgnore(teams, true);
   if (!self) for (const f of LINK_SCRIPTS) copyFile(path.join(SHIPPED_TEAMS, f), path.join(teams, f));
-  copyTree(path.join(HERE, "templates"), path.join(teams, "templates"), [SHIPPED_TEAMS]);
+  // excluded first: a run that stops partway never leaves the copy showing in git status
   if (self) excludeLocal(root, ["teams/templates/"], "teams/templates, a copy of this checkout's templates/");
+  copyTree(path.join(HERE, "templates"), path.join(teams, "templates"), [SHIPPED_TEAMS]);
   // renamed to worktree-settings.local.json; drop the old copy only if nobody edited it
   const stale = path.join(teams, "templates", "hooks", "settings.local.json");
   const t = readText(stale);
@@ -939,7 +940,10 @@ function oldRepos(all) {
 function install(opt) {
   if (!nodeOk()) die(`node ${process.versions.node} is older than ${NODE_MIN}, which the context-mode plugin needs. Upgrade: ${nodeFix()}, then re-run`);
   const autoUpdate = opt.autoUpdate ? true : opt.noAutoUpdate ? false : undefined;
-  const root = process.cwd();
+  // --project from a subdir sets up the repo it is in, not a .claude/ in the subdir; never a toplevel holding HOME
+  const top = opt.project ? git(["rev-parse", "--show-toplevel"], process.cwd()) : { ok: false };
+  const root = top.ok && top.out && !inside(realish(HOME), realish(top.out)) ? path.resolve(top.out) : process.cwd();
+  if (!samePath(real(root), real(process.cwd()))) log(`project  -> ${root} (the repo's root; run from ${process.cwd()})`);
   if (opt.project && samePath(real(root), real(HOME))) die("--project sets up a repo; run it from the repo root, not from your home directory");
   const fresh = !lstat(CONFIG) && !lstat(OLD_CONFIG);
   const repoOld = opt.project ? [...migrateProject(root, false).harnesses] : [];
@@ -1019,7 +1023,8 @@ function update(argv) {
   for (const h of list) {
     const args = named || h === "claude" ? [...rest] : [...rest, "--harness", h];
     const cwd = process.cwd(), wasHive = isDir(path.join(cwd, "teams")) && HARNESSES.some((x) => isFile(path.join(cwd, `.${x}`, "hooks", "hive-autostart.js")));
-    if (!args.includes("--project") && (isProteusProject(cwd, h) || wasHive) && !samePath(real(cwd), home)) args.push("--project");
+    // the checkout itself counts once self-hosted: isProteusProject needs its teams/ and hooks, which only --project makes
+    if (!args.includes("--project") && (isProteusProject(cwd, h) || wasHive)) args.push("--project");
     const r = spawnSync(process.execPath, [path.join(HERE, "install.js"), ...args], { stdio: "inherit" });
     status = status || (r.status ?? 1);
   }
@@ -1402,7 +1407,7 @@ async function doctor(fix) {
         if (ign.length) return ["FIX", `teams/.gitignore lacks ${ign.join(", ")} (skill links would be committed)`, `${self} --project`];
         return unlinked.length ? ["FIX", `team skills not linked (${unlinked.map(([p, n]) => `${p} ${n}`).join(", ")})`, `node "${path.join(SHIPPED_TEAMS, "link-skills.js")}" --install`]
           : ["ok", "team skills linked"];
-      }, () => { teamsIgnore(path.join(base, "teams"), true); withProject(root, () => L.run({ root: base, log, remove: guardedRemove })); });
+      }, () => { teamsIgnore(path.join(base, "teams"), true); withProject(root, () => L.run({ root: base, install: true, log, remove: guardedRemove })); });
       // CI runs the gate on a clean checkout: the file it names must be tracked (a Codex-only repo
       // has no .claude/hooks/commit-msg.js, and .codex/hooks is machine-local), and so must the
       // package.json that keeps it CommonJS when the repo's says "type": "module" (#77)

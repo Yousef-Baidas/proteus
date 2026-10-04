@@ -2,6 +2,8 @@
 // Clones the checkout (PROTEUS_SELFHOST_SRC overrides the repo cloned, for tests only) under os.tmpdir(), commits its uncommitted
 // edits to tracked files there, then installs with a temp HOME and fake gh and claude; untracked files are not carried over.
 // Never the network, the real ~/.claude, ~/.codex or ~/.pi, or a write to the checkout itself.
+// Then (#22): --project from a subdir, --update re-running --project, --doctor --fix installing team skills (a fake
+// npx), and the teams/templates exclude landing before the copy.
 // Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
 const fs = require("fs");
@@ -62,5 +64,44 @@ const want = ["ROUTING.md", ...["backend", "devops", "frontend", "qa", "security
 ok("git ls-files templates/teams lists ROUTING.md and each team's PROFILE.md", want.every((f) => shipped.includes(f)), want.filter((f) => !shipped.includes(f)).join(", "));
 const own = git(["ls-files", "teams"]);
 ok("git ls-files teams is empty", own.status === 0 && !own.stdout.trim(), own.stdout || own.stderr);
+
+// #22: --project from a subdir sets up the repo root; a .claude/ planted in templates/ would ship to every project
+const sub = lib.run(path.join(CLONE, "install.js"), "", { cwd: path.join(CLONE, "templates"), args: ["--project"] });
+ok("install.js --project from templates/ exits 0", sub.code === 0, `${sub.code} ${sub.err}${sub.out}`);
+ok("install.js --project from templates/ creates no templates/.claude", !fs.existsSync(path.join(CLONE, "templates", ".claude")));
+ok("install.js --project from templates/ says it used the repo root", sub.out.includes("the repo's root"), sub.out);
+
+// #22: --update in the self-hosted checkout re-runs --project, which restores a deleted teams/ROUTING.md
+fs.rmSync(path.join(CLONE, "teams", "ROUTING.md"));
+const upd = lib.run(path.join(CLONE, "install.js"), "", { cwd: CLONE, args: ["--update"] });
+ok("install.js --update in the self-hosted checkout exits 0", upd.code === 0, `${upd.code} ${upd.err}${upd.out}`);
+ok("install.js --update in the self-hosted checkout re-runs --project", fs.existsSync(path.join(CLONE, "teams", "ROUTING.md")), upd.out);
+
+// #22: --doctor --fix links team skills this machine lacks, as its remedy (link-skills.js --install) says; a fake npx
+// "installs" each into HOME/.agents/skills. On win32 it is an npx.cmd shim, as the real one is there
+const NPX = `const a = process.argv.slice(2), n = a[a.indexOf("--skill") + 1], fs = require("fs"), path = require("path");
+const d = path.join(require("os").homedir(), ".agents", "skills", n);
+fs.mkdirSync(d, { recursive: true });
+fs.writeFileSync(path.join(d, "SKILL.md"), \`---\\nname: \${n}\\ndescription: fake\\n---\\n\`);`;
+if (process.platform === "win32") {
+  fs.writeFileSync(path.join(W, "npx.js"), NPX);
+  fs.writeFileSync(path.join(lib.BIN, "npx.cmd"), `@"${process.execPath}" "${path.join(W, "npx.js")}" %*\r\n`);
+} else lib.fakeCli(lib.BIN, "npx", NPX);
+fs.mkdirSync(path.join(CLONE, "teams", "zz"), { recursive: true });
+fs.writeFileSync(path.join(CLONE, "teams", "zz", "skills.txt"), "o/r fake-zz-skill\n");
+const doc = lib.run(path.join(CLONE, "install.js"), "", { cwd: CLONE, args: ["--doctor", "--fix"] });
+const linked = path.join(CLONE, "teams", "zz", ".claude", "skills", "fake-zz-skill");
+ok("install.js --doctor --fix installs and links a missing team skill", fs.existsSync(path.join(linked, "SKILL.md")), `${doc.code} ${doc.out}${doc.err}`);
+
+// #22: the teams/templates exclude is written before the copy, so a run that stops partway leaves nothing showing in git
+// status; a directory where the copy wants a file stops it
+const exclude = path.join(CLONE, ".git", "info", "exclude");
+fs.writeFileSync(exclude, fs.readFileSync(exclude, "utf8").split("\n").filter((l) => l !== "teams/templates/").join("\n"));
+fs.rmSync(path.join(CLONE, "teams", "templates"), { recursive: true, force: true });
+fs.mkdirSync(path.join(CLONE, "teams", "templates", "hooks", "proteus-lib.js"), { recursive: true });
+fs.writeFileSync(path.join(CLONE, "teams", "templates", "hooks", "proteus-lib.js", "x"), "x\n");
+const stop = lib.run(path.join(CLONE, "install.js"), "", { cwd: CLONE, args: ["--project"] });
+ok("install.js --project stops on a directory where a copied file goes", stop.code !== 0, `${stop.code} ${stop.out}`);
+ok("teams/templates is ignored by git even though the copy stopped", git(["check-ignore", "-q", "teams/templates"]).status === 0, stop.err);
 
 summary();
