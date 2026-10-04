@@ -74,10 +74,15 @@ fs.writeFileSync(COST, JSON.stringify({ sessions: [{ sessionId: "s2", totalCost:
 r = report(["r9", "--cost-json", COST]);
 ok("cost: an older ccusage shape (sessions[].sessionId) reads too; the run named explicitly", r.code === 0 && /cost \$0\.50 over 1 session, \$0\.17 per closed ticket/.test(r.out), line(/^Run: /));
 
-// ccusage itself: a fake npx on PATH records its arguments and prints a report
+// ccusage itself: a fake npx on PATH records its arguments and prints a report. On win32 it is an npx.cmd shim, as
+// the real one is there (a fakeCli node.exe copy would take -y as a node option)
 const NPXLOG = path.join(W, "npx.log");
-lib.fakeCli(lib.BIN, "npx", `require("fs").appendFileSync(${JSON.stringify(NPXLOG)}, process.argv.slice(2).join(" ") + "\\n");
-process.stdout.write(JSON.stringify({ session: [{ period: "s1", totalCost: 3 }] }));`);
+const NPX = `require("fs").appendFileSync(${JSON.stringify(NPXLOG)}, process.argv.slice(2).join(" ") + "\\n");
+process.stdout.write(JSON.stringify({ session: [{ period: "s1", totalCost: 3 }] }));`;
+if (process.platform === "win32") {
+  fs.writeFileSync(path.join(W, "npx.js"), NPX);
+  fs.writeFileSync(path.join(lib.BIN, "npx.cmd"), `@"${process.execPath}" "${path.join(W, "npx.js")}" %*\r\n`);
+} else lib.fakeCli(lib.BIN, "npx", NPX);
 r = report([]);
 ok("cost: runs the pinned ccusage through npx by default", r.code === 0 && /cost \$3\.00 over 1 session/.test(r.out) && fs.readFileSync(NPXLOG, "utf8").trim() === "-y ccusage@20.0.26 session --json", r.out + r.err);
 r = report([], { PROTEUS_HARNESS: "codex" });
