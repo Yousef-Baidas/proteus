@@ -1,5 +1,6 @@
 // Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers, an SSH tag signer.
-// summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0.
+// summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0; a green run
+// removes the process's temp root (workdir() makes one per process), a red one keeps it.
 // workdir() exits 1 with a message, before writing anything, when os.tmpdir() is in the user's home or a git worktree.
 "use strict";
 const fs = require("fs");
@@ -9,7 +10,7 @@ const { spawnSync, execFileSync } = require("child_process");
 
 const WIN = process.platform === "win32";
 let pass = 0, fail = 0;
-let W, HOME, BIN, ENV;
+let W, HOME, BIN, ENV, ROOT;
 
 // dirs a stripped PATH still needs: git, and on win32 cmd.exe for shell: true
 const SYS_PATH = WIN
@@ -62,8 +63,10 @@ function refuseTmpdir() {
 
 function workdir(name) {
   refuseTmpdir();
-  // the real path: macOS reaches the temp dir through the /var symlink, and git reports /private/var
-  W = path.join(fs.realpathSync(os.tmpdir()), "proteus-test", name);
+  // one root per process, so two checkouts running the suite at once never share fixtures; the real path:
+  // macOS reaches the temp dir through the /var symlink, and git reports /private/var
+  ROOT = ROOT || fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "proteus-test-"));
+  W = path.join(ROOT, name);
   fs.rmSync(W, { recursive: true, force: true });
   fs.mkdirSync(W, { recursive: true });
   HOME = path.join(W, "home");
@@ -112,6 +115,8 @@ function sshSigner(dir, name = "maintainer") {
 function summary() {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
+  // a red run keeps its fixtures to inspect; the path is in the FAIL lines
+  if (ROOT && !fail) fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 3 });
 }
 
 module.exports = {
