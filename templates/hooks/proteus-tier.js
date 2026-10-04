@@ -18,6 +18,8 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ROUTING = "teams/ROUTING.md";
 const git = (args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
 const atRef = (ref) => { try { return git(["show", `${ref}:${ROUTING}`]); } catch { return ""; } };
+// guest mode keeps teams/ outside git (proteus-lib docRoot), so there is no committed copy to read
+const guestRouting = (root) => { const d = lib.guestDir(root); try { return d ? fs.readFileSync(path.join(d, ROUTING), "utf8") : ""; } catch { return ""; } };
 // numstat, NUL-separated so any path comes back as written: "added\tdeleted\tpath"; a binary counts "-", here 0
 const changed = (args) => git(["diff", "--numstat", "--no-renames", "-z", ...args]).split("\0").filter(Boolean).map((rec) => {
   const [a, d, ...p] = rec.split("\t");
@@ -47,7 +49,7 @@ if (args[0] === "--staged") {
   try { list = fs.readFileSync(lib.ownedFile(root), "utf8"); } catch {}
   const m = lib.TIER_LINE.exec(list);
   if (!m) process.exit(0); // not prepared with --tier
-  judge({ tier: m[1], human: Boolean(m[2]) }, block(atRef(m[3])), changed(["--cached", m[3]]));
+  judge({ tier: m[1], human: Boolean(m[2]) }, block(atRef(m[3]) || guestRouting(root)), changed(["--cached", m[3]]));
 } else if (args[0] === "--ci" && args[1]) {
   const head = process.env.GITHUB_HEAD_REF || "";
   const line = /^Tier:[ \t]*(.+)$/im.exec(process.env.PR_BODY || "");
@@ -63,7 +65,7 @@ if (args[0] === "--staged") {
   let root = process.cwd();
   try { root = git(["rev-parse", "--show-toplevel"]).trim(); } catch {}
   let text = "";
-  try { text = fs.readFileSync(path.join(root, ROUTING), "utf8"); } catch {}
+  try { text = fs.readFileSync(path.join(lib.docRoot(root), ROUTING), "utf8"); } catch {}
   const r = lib.classifyTier(block(text), args.map((p) => ({ path: p.replace(/\\/g, "/").replace(/^\.\//, ""), lines: 0 })));
   console.log(`${r.tier}\n  ${r.why.join("\n  ")}`);
 } else {

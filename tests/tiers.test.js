@@ -124,6 +124,24 @@ g(NOR, "checkout", "-q", "-b", "proteus-work/r/1"); put(NOR, "b.txt", "b\n"); g(
 ok("ci: a repo with no tiers block is unchanged: everything is standard and passes",
   tier(NOR, ["--ci", "main"], { PR_BODY: "Owned: b.txt" }).code === 0 && tier(NOR, ["a.txt"]).out.startsWith("standard\n"));
 
+// guest mode: teams/ lives in the guest dir, outside git; the lead's command and the pre-commit hook read it there
+const GR = path.join(W, "guest");
+g(W, "init", "-q", "-b", "main", GR);
+put(GR, "docs/a.md", "a\n");
+g(GR, "add", "-A"); g(GR, "commit", "-qm", "init");
+const GD = path.join(W, "guest-dir");
+put(GD, "teams/ROUTING.md", block("docs/**  direct  lines=5"));
+put(GR, ".git/proteus/guest.json", JSON.stringify({ dir: GD }));
+r = tier(GR, ["docs/a.md"]);
+ok("guest: the lead's command reads ROUTING.md from the guest dir", r.code === 0 && r.out.startsWith("direct\n  docs/a.md: direct (docs/**)"), r.out + r.err);
+const GW = path.join(W, "guest-wt");
+g(GR, "worktree", "add", "-q", "-b", "proteus-work/direct/g", GW, "main");
+T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: GR, args: [GW, "--tier", "direct", "docs/"] });
+r = commit(GW, "docs/a.md", "b\n");
+ok("guest: pre-commit measures against the guest dir's rules, so a Direct change commits", r.status === 0, r.stderr);
+r = commit(GW, "docs/a.md", lines(9));
+ok("guest: and still refuses one over them", r.status !== 0 && /needs the quick tier, declared direct/.test(r.stderr), r.stderr);
+
 // the shipped CI template wires the tier step on worker PRs and a docs-only job for Direct batches into main
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
 ok("template: PRs into main run, gates on run branches and Quick, a direct job with the docs gate and the tier check",
