@@ -143,7 +143,7 @@ r = commit(GW, "docs/a.md", lines(9));
 ok("guest: and still refuses one over them", r.status !== 0 && /needs the quick tier, declared direct/.test(r.stderr), r.stderr);
 
 // the shipped CI template wires the tier step on worker PRs and a docs-only job for Direct batches into main
-const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
+const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
 ok("template: PRs into main run, gates on run branches and Quick, a direct job with the docs gate and the tier check",
   /branches: \["proteus\/\*\*", "main"\]/.test(tpl) && /^  gates:\n    # [^\n]*\n    if: github\.event_name == 'push' \|\| startsWith\(github\.base_ref, 'proteus\/'\) \|\| startsWith\(github\.head_ref, 'proteus-work\/quick\/'\)/m.test(tpl) &&
   /- name: tier\n\s+if: startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-tier\.js --ci/.test(tpl) &&

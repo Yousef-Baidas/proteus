@@ -49,7 +49,7 @@ ok("rungOf: an alias to a rung the ladder lacks matches nothing", plib.rungOf(["
 
 // ---- role tiers: judge, build and helper, each a model and an effort
 {
-  process.env.HOME = path.join(W, "tier-home"); // modelCaps in this process reads ~/.claude/proteus.json
+  process.env.HOME = process.env.USERPROFILE = path.join(W, "tier-home"); // modelCaps here reads ~/.claude/proteus.json (USERPROFILE on win32)
   const TH = path.join(process.env.HOME, ".claude"); fs.mkdirSync(TH, { recursive: true });
   const conf = (o) => fs.writeFileSync(path.join(TH, "proteus.json"), JSON.stringify(o));
   const caps = (m) => plib.modelCaps({ raw: { transcript_path: tr(m) }, session: "s1" }, REPO).tiers;

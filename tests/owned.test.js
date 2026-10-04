@@ -59,7 +59,7 @@ ok("ci: no Owned: line fails rather than passing everything", r.status === 1 && 
 ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
-const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
+const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
 const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
 ok("template: six placeholders (five code gates, the Direct job's docs gate), each exits 1; job id is gates; owned-paths step runs on worker PRs",
   steps.length === 6 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
