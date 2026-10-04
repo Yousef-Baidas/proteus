@@ -630,7 +630,38 @@ const BRANCH_MSG = {
   del: (b) => `proteus: agents never delete ${b}; the human does at close.`,
   run: (b, remote) => `proteus: ${b} changes only by a PR with \`gates\` green: push your own branch (proteus-work/<run>/<id>) and open a PR into ${b}. The one push to a run branch creates it at the start of the run (no ${remote}/${b} yet; \`git fetch --prune\` if it was deleted).`,
 };
-const WRAPPERS = new Set(["rtk", "proxy", "env", "command", "builtin", "exec", "nohup", "time", "sudo"]);
+// words that run the rest of the line as a command, each with its options that take the next word as a value;
+// timeout also takes a DURATION before the command. xargs appends words from stdin, which no guard can see.
+const WRAPPERS = new Map(Object.entries({
+  rtk: [], proxy: [], command: [], builtin: [], nohup: [], exec: ["-a"], time: ["-f", "--format", "-o", "--output"],
+  env: ["-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"],
+  sudo: ["-u", "--user", "-g", "--group", "-C", "--close-from", "-D", "--chdir", "-h", "--host", "-p", "--prompt", "-r", "--role", "-t", "--type", "-U", "--other-user", "-T", "--command-timeout", "-R", "--chroot"],
+  timeout: ["-s", "--signal", "-k", "--kill-after"], nice: ["-n", "--adjustment"], stdbuf: ["-i", "--input", "-o", "--output", "-e", "--error"],
+  xargs: ["-a", "--arg-file", "-d", "--delimiter", "-E", "-I", "-L", "--max-lines", "-n", "--max-args", "-P", "--max-procs", "-s", "--max-chars", "--process-slot-var"],
+}));
+const WRAPPER_POSITIONAL = new Map([["timeout", 1]]);
+const progName = (w) => String(w || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+// a simple command's words from the program it runs: past wrappers, their options and positionals, and NAME=value
+// assignments. env -S STRING runs STRING split at whitespace, so it is spliced back in.
+function unwrap(all) {
+  const words = all.slice();
+  let i = 0, opts = null, pos = 0;
+  while (i < words.length) {
+    const a = words[i], name = progName(a);
+    if (WRAPPERS.has(name)) { opts = WRAPPERS.get(name); pos = WRAPPER_POSITIONAL.get(name) || 0; i++; }
+    else if (!pos && /^[A-Za-z_]\w*=/.test(a)) i++;
+    else if (opts && a === "--") { opts = null; i++; }
+    else if (opts && a.startsWith("-")) {
+      const eq = a.startsWith("--") ? a.indexOf("=") : -1;
+      const flag = eq > 0 ? a.slice(0, eq) : a;
+      const takes = opts.includes(flag), n = !takes || eq > 0 ? 1 : 2;
+      if (takes && (flag === "-S" || flag === "--split-string")) words.splice(i, n, ...String(eq > 0 ? a.slice(eq + 1) : words[i + 1] || "").split(/\s+/).filter(Boolean));
+      else i += n;
+    } else if (pos) { pos--; i++; }
+    else break;
+  }
+  return words.slice(i);
+}
 const GH_API_VALUE = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq", "-t", "--template", "--hostname", "--cache", "-p", "--preview"]);
 const GIT_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
 const PUSH_VALUE = new Set(["--repo", "-o", "--push-option", "--receive-pack", "--exec"]);
@@ -639,10 +670,8 @@ function branchDenial(command, cwd) {
   const cmd = String(command || "");
   if (!/\b(gh|git)\b/.test(cmd)) return null;
   for (const all of shellCommands(cmd)) {
-    let i = 0;
-    while (i < all.length && (WRAPPERS.has(all[i]) || /^[A-Za-z_]\w*=/.test(all[i]))) i++;
-    let words = all.slice(i);
-    let prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    let words = unwrap(all);
+    let prog = progName(words[0]);
     // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
     if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
     const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || ".")) : null;

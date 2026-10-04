@@ -45,6 +45,17 @@ ok("push: a run branch to a remote this repo does not name denied", denied("git 
 ok("push: --all, --branches, --mirror and --prune denied", !all((c) => denied(c, /push one branch by name/), ["git push --all", "git push origin --branches", "git push --mirror", "git push --prune origin proteus-work/r1/5"]).length);
 ok("push: through rtk, env, an assignment or after cd denied",
   !all((c) => denied(c), ["rtk git push origin trunk", "env GIT_TRACE=0 git push origin trunk", "X=1 git push origin trunk", "cd . && git push origin trunk", "git status; git push origin trunk"]).length);
+ok("push: a wrapper's own options, and a value they take, skipped (#23)",
+  !all((c) => denied(c, /never push to/), ["rtk -v git push origin trunk", "rtk proxy git push origin trunk", "env -i git push origin trunk", "env FOO=1 git push origin trunk",
+    "env -u HOME -C . git push origin trunk", "env --chdir=. git push origin trunk", "env -S 'git push origin trunk'", "sudo -u x git push origin trunk", "sudo --user=x -E git push origin trunk",
+    "sudo -g wheel -- git push origin trunk", "command -p git push origin trunk", "/usr/bin/env -i nohup time -p git push origin trunk", "exec -a x git push origin trunk"]).length);
+ok("push: through timeout, nice, nohup, stdbuf, time and xargs denied",
+  !all((c) => denied(c, /never push to/), ["timeout 10 git push origin trunk", "nice -n 5 git push origin trunk", "nohup git push origin trunk", "timeout -s KILL -k 5 --foreground 1m git push origin trunk",
+    "timeout --signal=TERM -- 10 git push origin trunk", "nice --adjustment=5 git push origin trunk", "stdbuf -oL -e 0 git push origin trunk", "time -f %e -o t.txt git push origin trunk", "xargs -n 1 -P 2 git push origin trunk"]).length);
+ok("push: a worker branch through a wrapper with options still allowed",
+  !all(allowed, ["rtk git push origin proteus-work/r1/5", "rtk -v git push -u origin HEAD:proteus-work/r1/5", "sudo -u x env -i git push origin proteus-work/r1/5"]).length);
+ok("gh: --admin and a human's word through a wrapper with options denied",
+  denied("rtk -v gh pr merge 4 --admin", /--admin/) && denied("sudo -u x gh pr merge 4 --admin", /--admin/) && denied("env -i gh issue comment 4 --body 'ACCEPT'", /human's words/));
 ok("push: the words only in text, a heredoc body or a comment allowed",
   !all(allowed, ['echo "git push origin trunk"', "gh issue create --title x --body-file - <<'EOF'\ngit push origin trunk\ngh pr merge 3 --admin\nEOF", "git status # git push origin trunk"]).length);
 
