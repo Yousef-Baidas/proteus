@@ -444,7 +444,7 @@ function registerHooks(root) {
   withProject(root, () => {
     for (const f of codex() ? cx().skipHooks : []) {
       const p = path.join(cx().hooksDir(root), f), st = lstat(p);
-      if (st && st.isFile() && safeRemove(p, ownedRoots())) log(`removed  ${path.relative(root, p)} (unused by ${HARNESS})`);
+      if (st && st.isFile() && safeRemove(p, ownedRoots())) log(`removed  ${path.relative(root, p).split(path.sep).join("/")} (unused by ${HARNESS})`);
     }
   });
   const env = { ...process.env, PROTEUS_HARNESS: HARNESS, PROTEUS_KEEP_SKIPPED: "1" };
@@ -513,7 +513,7 @@ function copyTeams(root) {
 
 function projectInstall(root, opt) {
   const { dupes, overrides } = projectDupes(root, true);
-  for (const p of dupes) log(`removed  ${path.relative(root, p)} (duplicate of the global install)`);
+  for (const p of dupes) log(`removed  ${path.relative(root, p).split(path.sep).join("/")} (duplicate of the global install)`);
   for (const p of overrides) log(`local override kept: ${path.relative(root, p).split(path.sep).join("/")} (differs from shipped; delete it to use the shipped one)`);
   copyTeams(root);
   L.run({ root, install: !!opt.install, confine: !!opt.confine, log, remove: guardedRemove });
@@ -533,7 +533,7 @@ function projectInstall(root, opt) {
 function sandboxRoots(root) {
   const w = cx().sandboxRoots(root);
   if (w.error) warn(`warning: ${w.error}`);
-  else log(`sandbox  -> ${path.relative(root, w.file)} (${w.changed ? `${w.created ? "created, " : ""}worker worktrees in ${w.dir} writable` : "worktree folder already writable"})`);
+  else log(`sandbox  -> ${path.relative(root, w.file).split(path.sep).join("/")} (${w.changed ? `${w.created ? "created, " : ""}worker worktrees in ${w.dir} writable` : "worktree folder already writable"})`);
   if (w.stale) log(`sandbox  -> ${w.stale} dropped from writable_roots (no worktree of a pre-rename run is left in it)`);
   if (w.legacy) log(`sandbox  -> ${w.legacy.dir} kept in writable_roots: a pre-rename run still has worktrees there (${w.legacy.worktrees.join(", ")}); the next --project drops it once they are gone`);
   return w;

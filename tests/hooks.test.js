@@ -1,4 +1,4 @@
-// Proteus hooks and installer tests: node tests/hooks.test.js (Linux or macOS, needs git).
+// Proteus hooks and installer tests: node tests/hooks.test.js (Linux, macOS or Windows, needs git).
 // Temp HOME, temp repos, fake gh; never touches ~/.claude or the network.
 "use strict";
 const fs = require("fs");
@@ -63,7 +63,7 @@ ok("install upgrades old guard matcher", j1.hooks.PreToolUse[0].matcher === "Edi
 ok("install keeps user hook + permissions", s1.includes("my-own-hook") && j1.permissions.allow[0] === "Bash(ls)");
 ok("install registers all events", ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "TeammateIdle"].every((e) => j1.hooks[e] && j1.hooks[e].length));
 ok("install one guard entry", j1.hooks.PreToolUse.filter((e) => JSON.stringify(e).includes("proteus-lead-guard")).length === 1);
-ok("install statusLine absolute", j1.statusLine && j1.statusLine.command === `node "${H}/proteus-statusline.js"`, JSON.stringify(j1.statusLine));
+ok("install statusLine absolute", j1.statusLine && j1.statusLine.command === `node "${H.replace(/\\/g, "/")}/proteus-statusline.js"`, JSON.stringify(j1.statusLine));
 ok("install copies all but itself", fs.readdirSync(SRC).filter((f) => f !== "install-lead-hooks.js").every((f) => fs.existsSync(hook(f))) && !fs.existsSync(hook("install-lead-hooks.js")));
 r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO });
 ok("install idempotent", fs.readFileSync(SET, "utf8") === s1 && r.code === 0);
@@ -158,7 +158,7 @@ const spawn = (model, tp, opts) => run(LG, pre("Agent", { ...(model && { model }
   fs.writeFileSync(AG, agBefore);
   const MH = path.join(W, "ladder-home"); fs.mkdirSync(path.join(MH, ".claude"), { recursive: true });
   fs.writeFileSync(path.join(MH, ".claude", "proteus.json"), JSON.stringify({ models: { ladder: ["sonnet", "opus", "fable"], floor: "sonnet", solo: [] } }));
-  ok("ladder: machine config replaces ladder and solo", spawn("fable", TF, { env: { HOME: MH } }).code === 0 && /not on the ladder \(sonnet < opus < fable\)/.test(spawn("haiku", TF, { env: { HOME: MH } }).err));
+  ok("ladder: machine config replaces ladder and solo", spawn("fable", TF, { env: lib.homeEnv(MH) }).code === 0 && /not on the ladder \(sonnet < opus < fable\)/.test(spawn("haiku", TF, { env: lib.homeEnv(MH) }).err));
 }
 // image reads: lead denied unless the human's latest prompt names the file
 const hu = (text, extra = {}) => JSON.stringify({ type: "user", message: { role: "user", content: text }, ...extra });
@@ -168,7 +168,7 @@ const TIMG = tr("img.jsonl", [hu("check render_0042.png please", { origin: { kin
 const TOLD = tr("img-old.jsonl", [hu("look at Shot_7.JPG"), asst(5000), hu("<task-notification>x.png</task-notification>")]);
 const imgDenied = (res) => { try { const h = JSON.parse(res.out).hookSpecificOutput; return res.code === 0 && h.permissionDecision === "deny" && /the lead does not open images .*PROTEUS=0 claude skips this guard\.$/.test(h.permissionDecisionReason); } catch { return false; } };
 r = run(LG, pre("Read", { file_path: path.join(REPO, "renders/render_0001.png") }, { transcript_path: TIMG }));
-ok("guard: lead image read denied", imgDenied(r) && r.out.includes(`Read ${path.join(REPO, "renders/render_0001.png")}; answer in 5 lines`), r.out + r.err);
+ok("guard: lead image read denied", imgDenied(r) && JSON.parse(r.out).hookSpecificOutput.permissionDecisionReason.includes(`Read ${path.join(REPO, "renders/render_0001.png")}; answer in 5 lines`), r.out + r.err);
 ok("guard: image deny case-insensitive + outside repo", imgDenied(run(LG, pre("Read", { file_path: "/tmp/out/FRAME.EXR" }, { transcript_path: TIMG }))));
 ok("guard: image named by human allowed", run(LG, pre("Read", { file_path: path.join(REPO, "renders/render_0042.png") }, { transcript_path: TIMG })).out === "");
 ok("guard: name from task-notification/tool result not counted", imgDenied(run(LG, pre("Read", { file_path: "/r/render_0099.png" }, { transcript_path: TIMG }))) && imgDenied(run(LG, pre("Read", { file_path: "/r/shot_7.png" }, { transcript_path: TIMG }))));
@@ -232,18 +232,21 @@ ok("guard sub: packed proteus/* ref counts as a run", run(LG, pre("Edit", { file
   ok("lib: a worker branch is never a run branch", JSON.stringify(HL.runBranches(C5)) === JSON.stringify(["proteus/bl9"]));
   ok("lib: proteus-work/<run>/<id> names <run>-<id> on the current scheme", HL.runName("proteus-work/bl9/3") === "bl9-3" && HL.schemeOf("proteus-work/bl9/3") === HL.CURRENT && HL.runName("proteus/bl9-3") === "bl9-3" && HL.schemeOf("main") === null);
 }
-// Windows semantics, in-process: path swapped to win32, a list file named with backslashes in a temp cwd
-const WIN = path.join(W, "win"); fs.mkdirSync(WIN);
-fs.writeFileSync(path.join(WIN, "C:\\wt\\.claude\\proteus-owned"), "src/lighting/\r\ntests\\lighting.test.ts\r\n");
-const winJs = path.join(W, "win.js");
-fs.writeFileSync(winJs, `const lib = require(${JSON.stringify(path.join(H, "proteus-lib.js"))}); process.chdir(${JSON.stringify(WIN)});
-const p = require("path"); Object.assign(p, p.win32); Object.defineProperty(process, "platform", { value: "win32" });
-console.log(JSON.stringify([lib.ownedDenial("C:\\\\wt", "C:\\\\wt\\\\src\\\\lighting\\\\a.ts"), lib.ownedDenial("C:\\\\wt", "c:\\\\WT\\\\SRC\\\\Lighting\\\\a.ts"),
-  lib.ownedDenial("C:\\\\wt", "tests\\\\lighting.test.ts"), lib.ownedDenial("C:\\\\wt", "D:\\\\wt\\\\src\\\\lighting\\\\a.ts"),
-  lib.ownedDenial("C:\\\\wt", "..\\\\x.ts"), lib.relPath("C:\\\\wt", "D:\\\\x.ts"), lib.relPath("C:\\\\wt", "C:\\\\wt\\\\..foo")]));`);
-const wr = JSON.parse(spawnSync(process.execPath, [winJs], { encoding: "utf8" }).stdout || "null") || [];
-ok("win: owned allowed, case-insensitive, backslash glob", wr[0] === "" && wr[1] === "" && wr[2] === "", JSON.stringify(wr));
-ok("win: other drive + ..\\ escape denied, relPath cross-drive null, ..foo inside", wr[3].startsWith("D:/wt/src/lighting/a.ts is outside the worktree") && wr[4].startsWith("../x.ts is outside") && wr[5] === null && wr[6] === "..foo", JSON.stringify(wr));
+// Windows semantics, in-process: path swapped to win32, a list file named with backslashes in a temp cwd.
+// POSIX hosts only: a real win32 host cannot name a file with backslashes, and runs the owned tests below natively
+if (process.platform !== "win32") {
+  const WIN = path.join(W, "win"); fs.mkdirSync(WIN);
+  fs.writeFileSync(path.join(WIN, "C:\\wt\\.claude\\proteus-owned"), "src/lighting/\r\ntests\\lighting.test.ts\r\n");
+  const winJs = path.join(W, "win.js");
+  fs.writeFileSync(winJs, `const lib = require(${JSON.stringify(path.join(H, "proteus-lib.js"))}); process.chdir(${JSON.stringify(WIN)});
+  const p = require("path"); Object.assign(p, p.win32); Object.defineProperty(process, "platform", { value: "win32" });
+  console.log(JSON.stringify([lib.ownedDenial("C:\\\\wt", "C:\\\\wt\\\\src\\\\lighting\\\\a.ts"), lib.ownedDenial("C:\\\\wt", "c:\\\\WT\\\\SRC\\\\Lighting\\\\a.ts"),
+    lib.ownedDenial("C:\\\\wt", "tests\\\\lighting.test.ts"), lib.ownedDenial("C:\\\\wt", "D:\\\\wt\\\\src\\\\lighting\\\\a.ts"),
+    lib.ownedDenial("C:\\\\wt", "..\\\\x.ts"), lib.relPath("C:\\\\wt", "D:\\\\x.ts"), lib.relPath("C:\\\\wt", "C:\\\\wt\\\\..foo")]));`);
+  const wr = JSON.parse(spawnSync(process.execPath, [winJs], { encoding: "utf8" }).stdout || "null") || [];
+  ok("win: owned allowed, case-insensitive, backslash glob", wr[0] === "" && wr[1] === "" && wr[2] === "", JSON.stringify(wr));
+  ok("win: other drive + ..\\ escape denied, relPath cross-drive null, ..foo inside", wr[3].startsWith("D:/wt/src/lighting/a.ts is outside the worktree") && wr[4].startsWith("../x.ts is outside") && wr[5] === null && wr[6] === "..foo", JSON.stringify(wr));
+}
 ok("worker guard: bg denied", run(WH("proteus-worker-guard.js"), wpre("Bash", { command: "x", run_in_background: true }), { cwd: WT }).code === 2);
 ok("worker guard: Monitor denied", run(WH("proteus-worker-guard.js"), wpre("Monitor", {}), { cwd: WT }).code === 2);
 ok("worker guard: fg allowed", run(WH("proteus-worker-guard.js"), wpre("Bash", { command: "npm test" }), { cwd: WT }).code === 0);
@@ -439,14 +442,15 @@ ok("autostart: lastFetch updated", cfg.lastFetch > Date.now() - 60e3 && cfg.auto
 const TMPD = path.join(W, "tmp"); fs.mkdirSync(TMPD);
 const OUTSIDE = path.join(W, "outside"); fs.mkdirSync(OUTSIDE); fs.writeFileSync(path.join(OUTSIDE, "keep.txt"), "k");
 const SC = hook("proteus-scratch.js");
-const TENV = { TMPDIR: TMPD };
+const TENV = { TMPDIR: TMPD, TEMP: TMPD, TMP: TMPD }; // os.tmpdir() reads TEMP/TMP on win32
 const LEDGER = path.join(REPO, ".git", "proteus", "scratch-ledger.jsonl");
 const SCR = path.join(REPO, ".git", "proteus", "scratch");
 const ledger = () => { try { return fs.readFileSync(LEDGER, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 const entry = (name) => ledger().find((e) => e.path === path.join(TMPD, name));
 const t = (name) => path.join(TMPD, name);
 const has = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
-const wtList = () => g(REPO, "worktree", "list", "--porcelain");
+// paths in the native form: git for Windows prints D:/a/... where node builds D:\\a\\...
+const wtList = () => g(REPO, "worktree", "list", "--porcelain").replace(/^worktree (.+)$/gm, (_, p) => `worktree ${path.resolve(p)}`);
 let tu = 0;
 // one Bash call: PreToolUse snapshot, make() plays the command, PostToolUse (or Failure) diffs
 function bash(command, make, { extra = {}, stdout = "", event = "PostToolUse", script = SC, error } = {}) {
@@ -521,7 +525,8 @@ bash(`touch ${t("hs-owned")}`, () => fs.writeFileSync(t("hs-owned"), "x"));
 const OWNED = path.join(W, "owned.js");
 fs.writeFileSync(OWNED, `const fs = require("fs"); const l = fs.lstatSync; fs.lstatSync = (p, o) => { const st = l(p, o); if (String(p).endsWith("hs-owned")) st.uid += 1; return st; }; require(${JSON.stringify(SC)});`);
 r = run(OWNED, "", { args: ["--sweep", "bl1077"], env: TENV });
-ok("scratch sweep: an entry now owned by another user is dropped untouched", has(t("hs-owned")) && !entry("hs-owned") && !has(t("hs-lead")), r.out + r.err);
+// owners are POSIX-only: on Windows the temp dir is per user and proteus-scratch.js skips the uid check
+if (process.platform !== "win32") ok("scratch sweep: an entry now owned by another user is dropped untouched", has(t("hs-owned")) && !entry("hs-owned") && !has(t("hs-lead")), r.out + r.err);
 ok("scratch sweep run: deletes only ledgered entries", !has(t("tmp.AbC123")) && !has(t("hs-fail")) && !has(t("hs-dir")) &&
   ["hs-unnamed", "hs-sub-long", "hs-sub-2", "hs-foreign", "hs-other", "hs-replaced"].every((n) => has(t(n))), fs.readdirSync(TMPD).join(","));
 ok("scratch sweep: symlinks removed as links, targets untouched", !has(t("hs-link")) && fs.readFileSync(path.join(OUTSIDE, "keep.txt"), "utf8") === "k" && fs.readdirSync(OUTSIDE).length === 1);
@@ -566,8 +571,7 @@ const INST = path.join(ROOT, "install.js");
 const CTX = "context-mode@context-mode";
 const CBIN = path.join(W, "cbin"); fs.mkdirSync(CBIN);
 const CLOG = path.join(W, "claude.log");
-fs.writeFileSync(path.join(CBIN, "claude"), `#!${process.execPath}
-const fs = require("fs"), path = require("path"), os = require("os");
+lib.fakeCli(CBIN, "claude", `const fs = require("fs"), path = require("path"), os = require("os");
 const a = process.argv.slice(2).join(" ");
 fs.appendFileSync(process.env.CLAUDE_LOG, a + "\\n");
 if (process.env.FAKE_CLAUDE === "fail") process.exit(1);
@@ -578,17 +582,17 @@ if (a === "plugin install ${CTX} --scope user") fs.writeFileSync(path.join(d, "p
 if (a === "plugin install ${CTX} --scope user" || a === "plugin enable ${CTX} --scope user") {
   const s = rd(path.join(d, "settings.json")); s.enabledPlugins = { ...s.enabledPlugins, "${CTX}": true }; fs.writeFileSync(path.join(d, "settings.json"), JSON.stringify(s));
 }
-`, { mode: 0o755 });
+`);
 const OLDNODE = path.join(W, "oldnode.js");
 fs.writeFileSync(OLDNODE, `Object.defineProperty(process, "versions", { value: { ...process.versions, node: process.env.FAKE_NODE } });\n`);
 const CWD = path.join(W, "plain"); fs.mkdirSync(CWD);
 const chome = (n) => { const h = path.join(W, "ch-" + n); fs.mkdirSync(path.join(h, ".claude"), { recursive: true }); return h; };
-const cenv = (h, extra = {}) => ({ HOME: h, CLAUDE_LOG: CLOG, PATH: [CBIN, BIN, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter), ...extra });
+const cenv = (h, extra = {}) => ({ ...lib.homeEnv(h), CLAUDE_LOG: CLOG, PATH: [CBIN, BIN, path.dirname(process.execPath), ...lib.SYS_PATH].join(path.delimiter), ...extra });
 const clog = () => { try { return fs.readFileSync(CLOG, "utf8").split("\n").filter(Boolean); } catch { return []; } };
 const ctxLine = (out) => (out.split("\n").find((l) => l.includes(`${CTX} plugin`)) || "");
 const cjson = (h, ...f) => JSON.parse(fs.readFileSync(path.join(h, ".claude", ...f), "utf8"));
 let CH = chome("none");
-r = run(INST, "", { cwd: CWD, env: { HOME: CH } });
+r = run(INST, "", { cwd: CWD, env: lib.homeEnv(CH) });
 ok("context-mode: no claude CLI → commands printed, install still done", r.code === 0 && /warning: the required context-mode plugin is not installed\. Run:\n  claude plugin marketplace add mksglu\/context-mode\n  claude plugin install context-mode@context-mode --scope user\n/.test(r.err) &&
   /Done\. \/proteus/.test(r.out) && fs.existsSync(path.join(CH, ".claude", "agents", "proteus-worker.md")), r.out + r.err);
 r = run(INST, "", { cwd: CWD, env: cenv(CH) });
@@ -616,10 +620,10 @@ ok("context-mode: CLI failure stops at the failed step, prints the commands, not
 // node version, mocked through a preload
 CH = chome("oldnode");
 r = run(INST, "", { cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: "22.4.9" }) });
-ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the required context-mode plugin needs\. Upgrade: .*nodejs\.org, then re-run/.test(r.err) &&
+ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the required context-mode plugin needs\. Upgrade: .*(nodejs\.org|OpenJS\.NodeJS\.LTS), then re-run/.test(r.err) &&
   fs.readdirSync(path.join(CH, ".claude")).length === 0 && clog().length === 1, r.err);
 const nodeLine = (v) => run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: v }) }).out.split("\n")[0];
-ok("doctor: node 20.11.0 → FIX", /^FIX  node 20\.11\.0 is older than 22\.5\.0 \(context-mode needs it\) — .*nodejs\.org$/.test(nodeLine("20.11.0")), nodeLine("20.11.0"));
+ok("doctor: node 20.11.0 → FIX", /^FIX  node 20\.11\.0 is older than 22\.5\.0 \(context-mode needs it\) — .*(nodejs\.org|OpenJS\.NodeJS\.LTS)$/.test(nodeLine("20.11.0")), nodeLine("20.11.0"));
 ok("doctor: node 22.5.0 and 23.0.1 → ok", nodeLine("22.5.0") === "ok   node 22.5.0" && nodeLine("23.0.1") === "ok   node 23.0.1");
 // autostart: context-mode=missing on the state line, a cheap read of the same two files
 const PLUG = path.join(HOME, ".claude", "plugins", "installed_plugins.json"), HSET = path.join(HOME, ".claude", "settings.json");
@@ -646,7 +650,7 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   const TH = chome("tour");
   const tcfg = () => cjson(TH, "proteus.json");
   const setCfg = (o) => fs.writeFileSync(path.join(TH, ".claude", "proteus.json"), JSON.stringify({ home: HSRC, autoUpdate: false, lastFetch: Date.now(), ...o }));
-  const start = (source = "startup") => run(AS, { hook_event_name: "SessionStart", source, session_id: "t1", cwd: REPO }, { env: { HOME: TH } });
+  const start = (source = "startup") => run(AS, { hook_event_name: "SessionStart", source, session_id: "t1", cwd: REPO }, { env: lib.homeEnv(TH) });
   const head = () => g(HSRC, "rev-parse", "HEAD");
   setCfg({ toured: "" });
   r = start();
@@ -668,7 +672,7 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   r = start();
   ok("update notice: behind-count stored for the status line", tcfg().behind === 4 && /proteus-update=4-behind/.test(r.out.split("\n")[3]), JSON.stringify(tcfg()));
   ok("tour: nothing new in the checkout yet → silent", !/tour=/.test(r.out));
-  const slRun = () => run(SL, JSON.stringify({ cwd: CWD }), { cwd: CWD, env: { HOME: TH } }).out.trim();
+  const slRun = () => run(SL, JSON.stringify({ cwd: CWD }), { cwd: CWD, env: lib.homeEnv(TH) }).out.trim();
   ok("statusline: update ready while behind", slRun().endsWith(" · proteus: update ready (install.js --update)"), slRun());
   g(HSRC, "merge", "-q", "--ff-only", "@{u}");
   r = start();
@@ -720,7 +724,7 @@ ok("install: strips laya and layaOffered from proteus.json", r.code === 0 && !("
   g(UA, "push", "-q");
   const UH = chome("upd");
   fs.writeFileSync(path.join(UH, ".claude", "proteus.json"), JSON.stringify({ home: UC, autoUpdate: false, behind: 3 }));
-  r = run(path.join(UC, "install.js"), "", { args: ["--update"], cwd: CWD, env: { ...cenv(UH), ...ENV, HOME: UH, PATH: cenv(UH).PATH } });
+  r = run(path.join(UC, "install.js"), "", { args: ["--update"], cwd: CWD, env: { ...cenv(UH), ...ENV, ...lib.homeEnv(UH), PATH: cenv(UH).PATH } });
   const uj = cjson(UH, "proteus.json");
   ok("--update: lists feat and fix subjects, not docs", r.code === 0 && /\n  feat: shiny thing\n  fix: a bug\n/.test(r.out) && !/docs: words/.test(r.out), r.out + r.err);
   ok("--update: pre-tour config gets the old HEAD as tour baseline, behind cleared", uj.toured === before && !("behind" in uj) && uj.home === UC, JSON.stringify(uj));
@@ -752,7 +756,8 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
 // ---- takeover: a real hivemind install (b309837, both CLIs) replaced by Proteus
 {
   const OLD = path.join(W, "hivemind-old"); fs.mkdirSync(OLD);
-  execFileSync("sh", ["-c", `git -C "${path.dirname(INST)}" archive b309837 | tar -x -C "${OLD}"`]);
+  // cwd, not -C: GNU tar on Windows reads D:\... as a remote host
+  execFileSync("tar", ["-x"], { cwd: OLD, input: execFileSync("git", ["-C", path.dirname(INST), "archive", "b309837"], { maxBuffer: 64 << 20 }) });
   const TH = chome("takeover"), TX = path.join(TH, ".codex"), PJ = path.join(TH, "Projects");
   const tenv = (extra = {}) => cenv(TH, { CODEX_HOME: TX, ...extra });
   const repo = (n) => {
@@ -783,7 +788,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     fs.existsSync(path.join(P1, ".codex", "rules", "hivemind.rules")) && /hive-statusline\.js/.test(sj.statusLine.command));
   const oldDoc = run(INST, "", { args: ["--doctor"], cwd: P2, env: tenv() });
   ok("takeover: doctor names global and repo leftovers", /^FIX  hivemind leftovers: .*hivemind\.json/m.test(oldDoc.out) && /^FIX  hivemind's pieces in this repo: .*\.claude\/hooks\/hive-autostart\.js/m.test(oldDoc.out) &&
-    new RegExp(`^WARN still on hivemind under ${PJ}: .*app`, "m").test(oldDoc.out), oldDoc.out);
+    new RegExp(`^WARN still on hivemind under ${PJ.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}: .*app`, "m").test(oldDoc.out), oldDoc.out);
 
   r = run(INST, "", { args: ["--project"], cwd: P1, env: tenv() });
   const has = (...p) => fs.existsSync(path.join(...p));
@@ -858,12 +863,12 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   g(CX, "add", "-A"); g(CX, "commit", "-qm", "init");
   const CXH = path.join(W, "cxhome"); fs.mkdirSync(path.join(CXH, ".claude"), { recursive: true }); fs.mkdirSync(path.join(CXH, ".codex"));
   fs.writeFileSync(path.join(CXH, ".claude", "proteus.json"), JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
-  const cenvx = { HOME: CXH, CODEX_HOME: path.join(CXH, ".codex") };
+  const cenvx = { ...lib.homeEnv(CXH), CODEX_HOME: path.join(CXH, ".codex") };
   r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: CX, env: { ...cenvx, PROTEUS_HARNESS: "codex" } });
   const hj = JSON.parse(fs.readFileSync(path.join(CX, ".codex", "hooks.json"), "utf8"));
   const guardCmd = (hj.hooks.PreToolUse || []).find((e) => /proteus-lead-guard/.test(JSON.stringify(e)));
   ok("codex install: .codex/hooks.json with absolute hook paths, exact-name guard matcher, rules file", r.code === 0 && /PROTEUS=0 codex skips them/.test(r.out) &&
-    guardCmd && guardCmd.matcher === "^(apply_patch|Bash|view_image|[a-z_]*spawn_agent)$" && guardCmd.hooks[0].command === `node "${path.join(CX, ".codex", "hooks", "proteus-lead-guard.js")}"` &&
+    guardCmd && guardCmd.matcher === "^(apply_patch|Bash|view_image|[a-z_]*spawn_agent)$" && guardCmd.hooks[0].command === `node "${path.join(CX, ".codex", "hooks", "proteus-lead-guard.js").split(path.sep).join("/")}"` &&
     hj.hooks.SessionStart[0].hooks[0].timeout === 60 && !hj.hooks.PostToolUseFailure && !hj.hooks.TeammateIdle &&
     /prefix_rule\(pattern=\["gh"\]/.test(fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8")) && fs.existsSync(path.join(CX, ".codex", "hooks", "proteus-harness-codex.js")), r.out + r.err);
   r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: CX, env: { ...cenvx, PROTEUS_HARNESS: "codex" } });
@@ -959,7 +964,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   const kinds = { type: "response_item", payload: { type: "message", role: "user", internal_chat_message_metadata_passthrough: { content_item_kinds: ["hooks.additional_context"] }, content: [{ type: "input_text", text: "looks human" }] } };
   ok("codex readers: user-role items tagged as injected are skipped", cx.lastHumanPrompt({ raw: { transcript_path: tr("cx-k.jsonl", [JSON.stringify({ type: "event_msg", payload: { type: "user_message", message: "typed" } }), JSON.stringify(kinds)]) } }) === "typed");
   const e = cx.event({ hook_event_name: "PreToolUse", cwd: "/r", tool_name: "apply_patch", tool_input: { command: "*** Begin Patch\n*** Add File: a/new.ts\n+x\n*** Update File: b.ts\n*** Move to: c.ts\n*** Delete File: /abs/d.ts\n*** End Patch" } });
-  ok("codex event: every patch path, resolved against cwd; the patch is not a shell command", JSON.stringify(e.paths) === JSON.stringify(["/r/a/new.ts", "/r/b.ts", "/r/c.ts", "/abs/d.ts"]) && e.tool === "edit" && e.command === "" && e.path === "/r/a/new.ts", JSON.stringify(e.paths));
+  ok("codex event: every patch path, resolved against cwd; the patch is not a shell command", JSON.stringify(e.paths) === JSON.stringify(["/r/a/new.ts", "/r/b.ts", "/r/c.ts", "/abs/d.ts"].map((p) => path.resolve(p))) && e.tool === "edit" && e.command === "" && e.path === path.resolve("/r/a/new.ts"), JSON.stringify(e.paths));
 
   // .codex/config.toml: ../<repo>-proteus/ joins writable_roots without disturbing the rest
   const SB = path.join(W, "sb", "app"), SBD = JSON.stringify(path.join(W, "sb", "app-proteus")), SBF = path.join(SB, ".codex", "config.toml");

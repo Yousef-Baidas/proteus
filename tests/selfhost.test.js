@@ -16,8 +16,7 @@ const CLONE = path.join(W, "clone");
 const CTX = "context-mode@context-mode";
 
 // fake claude: records the context-mode plugin the way the real CLI does, in the temp HOME
-fs.writeFileSync(path.join(lib.BIN, "claude"), `#!${process.execPath}
-const fs = require("fs"), path = require("path"), os = require("os");
+lib.fakeCli(lib.BIN, "claude", `const fs = require("fs"), path = require("path"), os = require("os");
 const a = process.argv.slice(2).join(" ");
 const d = path.join(os.homedir(), ".claude"), rd = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return {}; } };
 fs.mkdirSync(path.join(d, "plugins"), { recursive: true });
@@ -26,7 +25,7 @@ if (a === "plugin install ${CTX} --scope user") fs.writeFileSync(path.join(d, "p
 if (a === "plugin install ${CTX} --scope user" || a === "plugin enable ${CTX} --scope user") {
   const s = rd(path.join(d, "settings.json")); s.enabledPlugins = { ...s.enabledPlugins, "${CTX}": true }; fs.writeFileSync(path.join(d, "settings.json"), JSON.stringify(s));
 }
-`, { mode: 0o755 });
+`);
 
 const git = (args, cwd = CLONE, input) => spawnSync("git", args, { cwd, env: lib.ENV, encoding: "utf8", input, maxBuffer: 1 << 28 });
 
