@@ -25,6 +25,7 @@ Green = the check, the team's green adds, and every repo gate (<gate commands>) 
 Two retries after first red. Third red → comment `RED` + `git diff <fork>` + exact failing output on the issue and stop. Never restart, never widen.
 Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`.
 Done → one comment on the issue: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
+Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 ```
 
@@ -52,7 +53,7 @@ One verdict, as a PR review (`gh pr review <pr> --comment|--request-changes --bo
 MERGE #<n>
 BACK-TO-WORKER #<n>  1. <file:line> wrong → green looks like  2. ...
 CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
-Blocker → BACK-TO-WORKER. Anything that can wait → one comment per item on debt issue #<d>: `#<n> <file:line or part> <what> — <why it can wait>`. Never open a ticket. Fix nothing. Never edit a comment.
+Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on debt issue #<d>, one line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Never open a ticket. Fix nothing. Never edit a comment.
 Long jobs, report-once and scratch rules as above. Caveman lite.
 ```
 
