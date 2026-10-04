@@ -6,6 +6,41 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-04
+
+### Added
+
+- Agent patches: a project changes a shipped agent by writing only the change in
+  `.claude/proteus-agents.json` (`tools` add/remove, `model`, `effort`, `append`). `--project`, `--update`
+  and the session-start sync regenerate the agent from the shipped file plus the patch, so later releases
+  still reach it; `--doctor` names the fields a hand-made copy changes (#97).
+- When a release changes a shipped `ROUTING.md`, `PROFILE.md` or `skills.txt` that the repo has edited,
+  `--project` writes the new text beside it as `<file>.upstream` (and the old shipped text as `<file>.base`)
+  and prints the `git merge-file` line; `teams/.proteus-base.json` records where each copy came from, and
+  `--doctor` lists merges still pending (#97).
+
+### Fixed
+
+- The branch guard skips a wrapper's own options before the command, so `rtk -v git push`,
+  `env -i git push`, `sudo -u x git push`, `timeout 10 git push`, `nice -n 5 git push`, `nohup`, `stdbuf`,
+  `time` and `xargs` no longer hide a push to the default branch (#23).
+- The installer and the session-start sync never write or delete through a link the repo planted: a
+  linked `teams/` dir or file, `.claude`, `.claude/agents`, `.codex`, a skills lock file, a generated
+  agent, `.proteus-base.json` or an `.upstream`/`.base` file is refused with its path. Before, a committed
+  `.claude -> ~/.claude` could delete global agents and skill links (#22).
+- `--doctor --fix` fetches a missing team skill, as its remedy line says; `--update` refreshes a
+  self-hosted checkout as a project; `--project` from a subdirectory sets up the repo root; the self-host
+  exclude is written before the copy (#22).
+
+### Changed
+
+- CI: `ci.yml` and the shipped gates template get a read-only token, check out without persisted
+  credentials, pin `actions/checkout` and `actions/setup-node` to commit SHAs, and pass refs to scripts
+  through `env:`, never `${{ }}` inside `run:`; `ci.yml` installs with `npm ci --ignore-scripts`. The
+  vendored anti-slop rules record their upstream and licence (#22).
+- The lead commits its own docs on local `main` until `proteus/<run>` exists, then through a lead-docs PR
+  into it; Quick and Direct branches are cut from `origin/main` (#24).
+
 ## [1.0.1] - 2026-10-04
 
 ### Added
