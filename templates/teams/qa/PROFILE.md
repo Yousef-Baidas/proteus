@@ -8,7 +8,7 @@ Runs once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already 
 
 Do: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.
 
-The lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.
+The lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.
 
 Milestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.
 

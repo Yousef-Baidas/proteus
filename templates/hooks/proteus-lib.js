@@ -302,6 +302,76 @@ function ownedDenial(wt, target) {
   return owned.some((g) => ownedMatch(g, rel)) ? "" : needs(`not in ${path.relative(wt, ownedFile(wt)).split(path.sep).join("/")}`);
 }
 
+// ---- change tiers (SKILL.md rule 3): the tier decides the pipeline's steps, cheapest first
+const TIERS = ["direct", "quick", "standard", "full"];
+// the tiers block of teams/ROUTING.md, a ```tiers fence with one rule per line: <glob> <tier> [lines=<n>] [files=<n>].
+// null when there is none; a bad line is an error, never a silent default.
+function parseTiers(text) {
+  const m = /^```tiers[ \t]*\r?\n([\s\S]*?)^```/m.exec(String(text || ""));
+  if (!m) return null;
+  const rules = [], errors = [];
+  for (const line of m[1].split(/\r?\n/)) {
+    const words = line.replace(/(^|\s)#.*$/, "").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const [glob, tier, ...opts] = words;
+    const rule = { glob, tier, lines: Infinity, files: Infinity };
+    const bad = !TIERS.includes(tier) || opts.some((o) => {
+      const kv = /^(lines|files)=(\d+)$/.exec(o);
+      if (kv) rule[kv[1]] = Number(kv[2]);
+      return !kv;
+    });
+    if (bad) errors.push(`bad tiers line "${line.trim()}" (want <glob> ${TIERS.join("|")} [lines=<n>] [files=<n>])`);
+    else rules.push(rule);
+  }
+  return { rules, errors };
+}
+
+// ownedMatch, where a leading **/ also matches at the root (**/auth/** covers auth/x and src/auth/x)
+const tierMatch = (glob, rel) => ownedMatch(glob, rel) || (glob.startsWith("**/") && ownedMatch(glob.slice(3), rel));
+// The cheapest tier a change may run at. changes: [{ path, lines }] (lines 0 for a planned path or a binary).
+// Each path takes the first rule whose glob matches (tierMatch), else standard. A rule whose paths together
+// pass its lines= or files= limit costs one tier more. By path only: an extension says nothing about what a
+// file is (a skill repo's markdown is its product). No block → standard for everything, today's pipeline.
+function classifyTier(block, changes) {
+  if (!block) return { tier: "standard", why: ["no tiers block in teams/ROUTING.md"] };
+  const groups = new Map();
+  for (const c of changes) {
+    const rule = block.rules.find((r) => tierMatch(r.glob, c.path)) || null;
+    const g = groups.get(rule) || { rule, paths: [], lines: 0 };
+    g.paths.push(c.path);
+    g.lines += c.lines || 0;
+    groups.set(rule, g);
+  }
+  let rank = 0, why = [];
+  for (const { rule, paths, lines } of groups.values()) {
+    let r = TIERS.indexOf(rule ? rule.tier : "standard");
+    let line = `${paths.join(", ")}: ${rule ? `${rule.tier} (${rule.glob})` : "standard (no tier rule)"}`;
+    if (rule && (lines > rule.lines || paths.length > rule.files) && r < TIERS.length - 1) {
+      line += `, over ${lines > rule.lines ? `lines=${rule.lines} (${lines})` : `files=${rule.files} (${paths.length})`} → ${TIERS[++r]}`;
+    }
+    if (r > rank) { rank = r; why = []; }
+    if (r === rank) why.push(line);
+  }
+  return { tier: TIERS[rank], why };
+}
+
+// the tier proteus-worktree.js --tier records in a worktree's owned-path list, as a comment ownedDenial skips:
+// "# tier <tier> [human] <base sha>"
+const TIER_LINE = /^#[ \t]*tier[ \t]+(direct|quick|standard|full)([ \t]+human)?[ \t]+([0-9a-f]{4,64})[ \t]*$/m;
+// a declared tier: "quick", or "quick (human)" when the human's quick: prefix lowered a Standard change
+function parseDeclared(text) {
+  const m = /^\s*(direct|quick|standard|full)\b(\s*\(?human\)?)?/i.exec(String(text || ""));
+  return m ? { tier: m[1].toLowerCase(), human: Boolean(m[2]) } : null;
+}
+// "" when the change fits the declared tier, else why not and what to do. A human quick: covers Standard work,
+// never Full; a ceiling is never widened by an agent.
+function tierOverrun(declared, result) {
+  const cap = declared.human && declared.tier === "quick" ? "standard" : declared.tier;
+  if (TIERS.indexOf(result.tier) <= TIERS.indexOf(cap)) return "";
+  return `this change needs the ${result.tier} tier, declared ${declared.tier}${declared.human ? " (human)" : ""}:\n  ${result.why.join("\n  ")}\n` +
+    `The lead re-runs the work order at ${result.tier} from its first step (SKILL.md rule 3); never widen the tier.`;
+}
+
 // last `bytes` of a file as complete lines (first partial line dropped)
 function tailLines(file, bytes = 256 * 1024) {
   if (!file) return [];
@@ -837,7 +907,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

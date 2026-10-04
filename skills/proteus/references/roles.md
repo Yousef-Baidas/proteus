@@ -21,16 +21,25 @@ Read your team's PROFILE.md first, its CRAFT.md if it exists, CONVENTIONS.md and
 Code: run /implement (drives /tdd at the seam) but skip its closing /code-review: the verifier runs it in fresh context, and a second pass by the author only repeats it. Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths, never a file only in out/, /tmp, or a GUI session. Probes print path, hash or size, and count of what they opened.
 Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths.
 Two retries after first red. Third red → comment `RED` + `git diff <contract sha>~1` + exact failing output on the ticket and stop. Never restart, never widen.
-Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`, with a body line `Owned: ` plus your owned paths and globs, space-separated: CI checks the PR's changed paths against it.
+Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill` (Quick: `--base main`), with body lines `Owned: <the ticket's owned paths and globs, space-separated>` and `Tier: <the ticket's tier>`: CI checks the PR's changed paths against the first and its size against the second. The commit hook refusing a change as over its tier → comment `NEEDS tier <the tier it named>` and stop; never trim the work to fit.
 Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 Team <team>: teams/<team>/PROFILE.md, teams/<team>/CRAFT.md.
 <Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
-Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, branch proteus-work/<run>/<id>, scratch key <run>-<id>.
+Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, branch proteus-work/<run>/<id> (Quick: proteus-work/quick/<n>), scratch key <run>-<id>.
 Contract: commit <contract sha>; check files: <file:line pointers>. Check: <file::name or command>.
 You own: <paths>.
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
+```
+
+## Direct helper (Direct tier, `helper`)
+```
+Direct batch <batch>, worktree <absolute path>, branch proteus-work/direct/<batch>, scratch key direct-<batch>. Change: <file, what, why, in one paragraph>.
+Work only in the worktree, as the worker prompt says. You own: <this change's paths>; anything else → final line `BLOCKED <why>` and stop.
+Make exactly this change. Run <docs gate commands> on the files you touched. Commit per references/commits.md; the commit hook refuses a change that outgrew Direct: then final line `BLOCKED tier <the tier it named>` and stop, never trim the change to fit.
+Push the branch. The PR body is the digest: one line per change, `- <file>: <what> (<short sha>)`, then `Owned: <every path in the batch: <paths>>`. No PR yet (<none | #pr>) → `node <hooks>/proteus-gh.js pr create --base main --title "docs: direct batch <batch>" --body-file <file under your scratch>`; else add your line with `node <hooks>/proteus-gh.js pr edit <pr> --body-file …`.
+Final turn text: `DONE direct <batch> <sha>` or `BLOCKED <why>`. Then stop. Long jobs and scratch rules as above. Caveman full.
 ```
 
 ## Contracts worker (step 3, one per team with ready tickets, all teams at once)
@@ -88,4 +97,4 @@ Skills from skills.sh and installed plugins, ranked by installs and fit to this 
 ```
 
 ## Lead pre-dispatch check
-Every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names the role's tier from `models=` (`judge`, `build`, or `helper`) (your own model when `models=unknown`); never a missing, higher, once-per-project, or under-floor model. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open, or the ticket is `speculative` (`review.md`). `proteus/<run>` protected. Each worktree prepared by `proteus-worktree.js`. Stall check armed. I produced no deliverable and resolved no conflict; every fix I decided went out as a ticket or a `BACK-TO-WORKER`.
+The tier is classified with `proteus-tier.js` and each worktree prepared with `--tier`. From Standard up: every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names the role's tier from `models=` (`judge`, `build`, or `helper`) (your own model when `models=unknown`); never a missing, higher, once-per-project, or under-floor model. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open, or the ticket is `speculative` (`review.md`). `proteus/<run>` protected. Each worktree prepared by `proteus-worktree.js`. Stall check armed. I produced no deliverable and resolved no conflict; every fix I decided went out as a ticket or a `BACK-TO-WORKER`.

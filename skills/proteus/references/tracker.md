@@ -18,6 +18,8 @@ Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the secon
 | milestone | `gh api repos/{owner}/{repo}/milestones -f title="<run>/<milestone>"` |
 | ticket | `gh issue create --title "<id>: <intent line>" --label proteus,profile:<team>,difficulty:<d> --milestone "<run>/<m>" --body-file -` (body: intent, interface, the check as name + input + expected result, owned paths, depends-on; `needs-research` label when it rests on outside facts) |
 | protect branch (per run) | after `git push -u origin proteus/<run>`: `gh api "repos/{owner}/{repo}/rules/branches/proteus%2F<run>"` shows the human's ruleset → done; else `gh api -X PUT "repos/{owner}/{repo}/branches/proteus%2F<run>/protection" --input -` with the JSON in `enforcement.md` §1. 403 or 404 → the human runs `install.js --protect`, or `protection: none` in `## Learned`; continue |
+| quick ticket | the ticket above without `--milestone`; its PR from `proteus-work/quick/<n>` into `main` carries `Owned:` and `Tier: quick` lines; no debt or review issue; the human merges (`SKILL.md` rule 3) |
+| direct batch | no issue: one PR from `proteus-work/direct/<batch>` into `main`, its body the digest (one line per change, then `Owned:`); while it is open, later Direct changes join it; the human merges |
 | ticket url → worker | the issue number is the ticket id; the worker gets the number, not the body pasted |
 | worker report | `gh issue comment <n> --body "DONE …"` / `NEEDS …` / `RED …` + diff and failing output |
 | CI status | `gh pr checks <pr> --json name,state`; verifier reads it, re-runs only to reproduce a finding |

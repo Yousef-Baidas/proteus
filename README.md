@@ -13,7 +13,7 @@ The usual multi-agent loop bleeds tokens in three places: the lead sits inside t
 - Escalation sends only the diff plus failing output to a fresh-context verifier. One pass.
 - Tickets dispatch as soon as their dependencies merge, in parallel, one git worktree each, merged in batches with one suite run per batch and a bisect when it goes red.
 - The lead is whatever model you start the session on, and nothing runs above it (see [Models](#models)). Hard tickets and every verdict run on the lead's tier, standard tickets one rung down. A hook refuses any other spawn.
-- The pipeline is fixed. A step is skipped or added only when you say so or a `/research` finding does.
+- The change's tier decides the pipeline. A docs typo (Direct) is one cheap helper, mechanical docs gates and a batched PR you merge; a small one-team change (Quick) is one worker; Standard and Full run the whole loop. Paths decide the tier, by the `tiers` block in `teams/ROUTING.md`; the pre-commit hook and CI refuse a change that outgrew it. `quick:` or `full:` in front of a work order overrides. Within a tier no step is skipped or added unless you say so or a `/research` finding does.
 
 Context cost: the name and description are ~110 tokens per session. The body loads on `/proteus` (~4,800 tokens; `SKILL.md` as a whole file is ~4,900). The autostart hook injects the body plus a state line on every start and again after a compaction: ~5,000 tokens on a fresh repo (startup 5,016, compact 5,081; the run-log tail and journal lines of a live run add to that). Measured 2026-10-04 with `claude -p --model haiku` (claude-haiku-4-5-20251001), `PROTEUS=0`, `--tools ""`, as the difference in total input tokens (input + cache creation + cache read) from a fixed short prompt with and without the text, minus an 8-token wrapper; other models tokenize differently. `references/roles.md` loads at spawn time, `references/stack.md` on first run in a repo, `references/commits.md` when an agent commits. Every other reference loads only at the step that names it, so the lead pays for what the run actually uses.
 
@@ -148,7 +148,7 @@ The tracker is GitHub via `gh` today. `references/tracker.md` is an operations t
 
 Rules in prompts drift; these are mechanical.
 
-- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see.
+- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see. The same hook and a CI `tier` step fail a change larger than its declared tier.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; the lead arms a stall timer while workers run.
@@ -349,7 +349,7 @@ agents/
   proteus-guide.md              review brief + evidence per milestone
   proteus-scout.md              designs the roster and picks skills (lead's tier)
 templates/teams/             the shipped roster, copied into your repo's teams/ by install.js --project
-  ROUTING.md                 deliverable type or path -> owning team
+  ROUTING.md                 deliverable type or path -> owning team; path -> tier ceiling
   link-skills.js (.sh .ps1)  links (or installs) each team's skills
   <team>/PROFILE.md          role, owns, rules, green additions, verifier checklist
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
@@ -367,6 +367,7 @@ templates/
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
+    proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
