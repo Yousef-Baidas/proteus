@@ -29,7 +29,7 @@ Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bar
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 ```
 
-## Contracts worker (step 3, one per team in the wave, all teams at once)
+## Contracts worker (step 3, one per team with ready tickets, all teams at once)
 ```
 Run <run>, team <team>, scratch key: each ticket's <run>-<id>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, every shell call runs with that ticket's worktree as the working directory and every edit names a path under it; every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`). Never commit to proteus/<run>, never open a PR: the contract reaches proteus/<run> inside the ticket's PR.
 Per ticket: `gh issue view <n> --json body -q .body` holds the interface and the check (name, input, expected result). Commit exactly those: code gets signature stubs that compile and throw/`todo!()`/`raise NotImplementedError` plus the red test; other deliverables get the check script and whatever stub makes it runnable. No behaviour, no helpers, no extras.
@@ -78,4 +78,4 @@ Skills from skills.sh and installed plugins, ranked by installs and fit to this 
 ```
 
 ## Lead pre-dispatch check
-Every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No shared file owners in this wave, no shared binary with two writers. Hotspot tickets merged. The spawn names `top` or `mid` from `models=` (your own model when `models=unknown`); never a missing, higher, once-per-project, or under-floor model. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open. `proteus/<run>` protected. Each worktree prepared by `proteus-worktree.js`. Stall check armed. I produced no deliverable and resolved no conflict; every fix I decided went out as a ticket or a `BACK-TO-WORKER`.
+Every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names `top` or `mid` from `models=` (your own model when `models=unknown`); never a missing, higher, once-per-project, or under-floor model. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open. `proteus/<run>` protected. Each worktree prepared by `proteus-worktree.js`. Stall check armed. I produced no deliverable and resolved no conflict; every fix I decided went out as a ticket or a `BACK-TO-WORKER`.
