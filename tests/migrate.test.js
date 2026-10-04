@@ -31,14 +31,13 @@ const JOURNAL = [
 ].map((l) => JSON.stringify(l) + "\n").join("");
 
 lib.workdir("migrate");
-const T = fs.mkdtempSync(path.join(os.tmpdir(), "proteus-migrate-"));
+const T = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "proteus-migrate-")));
 const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: SRC, encoding: "utf8", windowsHide: true, timeout: 30000 }).split("\0").filter(Boolean);
 console.log(`${T}: legacy fixtures; checkout under test ${SRC} (${tracked.length} tracked files)`);
 
 // ---- fakes: claude (the context-mode plugin, in the fake HOME) and a stateful gh (issues, labels, PRs in DB)
 const CTX = "context-mode@context-mode";
-fs.writeFileSync(path.join(lib.BIN, "claude"), `#!${process.execPath}
-const fs = require("fs"), path = require("path"), os = require("os");
+lib.fakeCli(lib.BIN, "claude", `const fs = require("fs"), path = require("path"), os = require("os");
 const a = process.argv.slice(2).join(" ");
 const d = path.join(os.homedir(), ".claude"), rd = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return {}; } };
 fs.mkdirSync(path.join(d, "plugins"), { recursive: true });
@@ -47,11 +46,10 @@ if (a === "plugin install ${CTX} --scope user") fs.writeFileSync(path.join(d, "p
 if (a === "plugin install ${CTX} --scope user" || a === "plugin enable ${CTX} --scope user") {
   const s = rd(path.join(d, "settings.json")); s.enabledPlugins = { ...s.enabledPlugins, "${CTX}": true }; fs.writeFileSync(path.join(d, "settings.json"), JSON.stringify(s));
 }
-`, { mode: 0o755 });
+`);
 const GBIN = path.join(T, "gbin");
 fs.mkdirSync(GBIN);
-fs.writeFileSync(path.join(GBIN, "gh"), `#!${process.execPath}
-// stateful fake gh: issues, labels and PRs in $FAKE_GH_DB; every other call goes to tests/fakegh.js
+lib.fakeCli(GBIN, "gh", `// stateful fake gh: issues, labels and PRs in $FAKE_GH_DB; every other call goes to tests/fakegh.js
 const fs = require("fs"), { spawnSync } = require("child_process");
 const argv = process.argv.slice(2), DB = process.env.FAKE_GH_DB;
 fs.appendFileSync(DB + ".log", argv.join(" ") + "\\n");
@@ -76,7 +74,7 @@ if (c1 === "label" && c2 === "list") out(db.labels.map((name) => ({ name })));
 if (c1 === "pr" && c2 === "list") out(db.prs.filter((p) => !all("--base").length || all("--base").includes(p.baseRefName)));
 const r = spawnSync(process.execPath, [process.env.FAKE_GH_FALLBACK, ...argv], { stdio: "inherit" });
 process.exit(r.status === null ? 1 : r.status);
-`, { mode: 0o755 });
+`);
 const DB = path.join(T, "gh.json");
 const iso = (h) => new Date(Date.UTC(2026, 8, 28) + h * 3600e3).toISOString();
 const ms = { number: 1, title: `${RUN}/m1` };
@@ -92,7 +90,7 @@ fs.writeFileSync(DB, JSON.stringify({
 }));
 
 // ---- helpers
-const envFor = (home, extra = {}) => ({ HOME: home, PATH: [GBIN, lib.BIN, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter), FAKE_GH_DB: DB, FAKE_GH_FALLBACK: path.join(lib.BIN, "gh"), ...extra });
+const envFor = (home, extra = {}) => ({ ...lib.homeEnv(home), PATH: [GBIN, lib.BIN, path.dirname(process.execPath), ...lib.SYS_PATH].join(path.delimiter), FAKE_GH_DB: DB, FAKE_GH_FALLBACK: lib.fakeScript(lib.BIN, "gh"), ...extra });
 const fakeHome = (n) => { const h = path.join(T, `home-${n}`); fs.mkdirSync(path.join(h, ".claude"), { recursive: true }); return h; };
 const run = (script, cwd, home, args = [], input = "", extra = {}) => lib.run(script, input, { cwd, env: envFor(home, extra), args });
 const read = (...p) => { try { return fs.readFileSync(path.join(...p), "utf8"); } catch { return null; } };
@@ -470,7 +468,7 @@ if (process.platform === "win32" || (typeof process.getuid === "function" && pro
   const list = () => g(LW, "worktree", "list", "--porcelain");
   // the live worktree's registered path, when git still has it and its .git file is there
   const liveAt = () => {
-    const p = lines(list()).filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9)).find((x) => x.endsWith(tail));
+    const p = lines(list()).filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9)).find((x) => path.resolve(x).endsWith(tail));
     return p && fs.existsSync(path.join(p, ".git")) ? p : "";
   };
   ok("scratch worktree (5): after --project, git worktree list shows the scratch worktree registered and not prunable", r.code === 0 && !!liveAt() && !/^prunable\b/m.test(list()), `${r.code} ${list().replace(/\n/g, " | ")}`);

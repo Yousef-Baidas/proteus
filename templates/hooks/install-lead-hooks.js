@@ -67,7 +67,7 @@ for (const f of fs.readdirSync(__dirname)) {
 }
 
 const r = ad.registerLead(".");
-const file = r.file;
+const file = r.file.split(path.sep).join("/");
 if (r.error) {
   console.error(`warning: ${r.error}; hooks not registered. Fix the file and re-run.`);
   process.exitCode = 1;
