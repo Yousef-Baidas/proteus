@@ -5,7 +5,7 @@
 Every worker and verifier prompt ends with the three rules below; the agent files repeat them, and the hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third.
 
 - **Long jobs**: a foreground shell call with a timeout up to 10 minutes, or a detached job (`nohup … &`) whose PID or log you poll in this same turn until it ends (Codex: a command still running when the shell call returns is polled with `write_stdin` until it exits, in this same turn). Never a background shell or a watcher (`run_in_background`, `Monitor`), never end a turn waiting on a notification; nothing wakes you.
-- **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop.
+- **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop. Caveman shortens prose, not reports: a report keeps every field its template names, in order, with output lines pasted verbatim, because the lead and verifier parse them.
 - **Scratch**: temp files, renders, clones and inspection worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, never a bare `/tmp` or `mktemp`. The key is the ticket's `<run>-<id>` (the contracts worker uses each ticket's), or `<run>` for QA and the guide; the lead deletes it at merge or close.
 
 A brief carries pointers (issue, `file:line`, command), never raw logs or long output; the agent reads those through context-mode.
