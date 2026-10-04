@@ -1,6 +1,8 @@
 # .github/workflows/proteus-gates.yml — written by the Proteus scaffold ticket.
-# Every PR into proteus/* runs the same gates the worker ran. Branch protection on
-# proteus/<run> requires this job green plus one approving review (the verifier).
+# Every PR into proteus/* runs the same gates the worker ran. The ruleset on proteus/*
+# (install.js --protect) requires a check named exactly `gates` green; keep the job id.
+# The verifier's MERGE is a review comment, not a required approval.
+# Each EDIT-* step below fails until you replace it, so an unfilled template is never green.
 name: proteus-gates
 on:
   pull_request:
@@ -17,11 +19,19 @@ jobs:
       #   - uses: actions/setup-node@v4   with: { node-version: 22, cache: npm }
       #   - uses: astral-sh/setup-uv@v5
       #   - uses: dtolnay/rust-toolchain@stable
-      - run: echo EDIT-install     # npm ci | uv sync | cargo fetch
-      - run: echo EDIT-typecheck
-      - run: echo EDIT-lint
-      - run: echo EDIT-test
-      - run: echo EDIT-deadcode    # npx fallow dead-code | vulture . --min-confidence 80 | cargo machete
+      - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci | uv sync | cargo fetch
+      - run: echo "EDIT-typecheck not filled in" >&2; exit 1
+      - run: echo "EDIT-lint not filled in" >&2; exit 1
+      - run: echo "EDIT-test not filled in" >&2; exit 1
+      - run: echo "EDIT-deadcode not filled in" >&2; exit 1  # npx fallow dead-code | vulture . --min-confidence 80 | cargo machete
+      # a worker's PR (head proteus-work/<run>/<id>) may change only the ticket's owned paths; the PR
+      # body carries them as one line, "Owned: src/a/ tests/a.test.js", copied from the ticket. Shell
+      # writes (sed -i, redirects) skip the edit hooks, so this is their check.
+      - name: owned paths
+        if: startsWith(github.head_ref, 'proteus-work/')
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
       - name: commit messages
         run: |
           for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do

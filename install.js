@@ -1212,6 +1212,11 @@ async function doctor(fix) {
         if (bad.length) return ["FIX", `commit-msg gate: ${bad.join("; ")}, which git does not track`, `point it at ${COMMIT_MSG} and commit`];
         return ["ok", found.length ? "commit-msg gate runs a tracked file" : "commit-msg gate not installed yet (the scaffold ticket adds it)"];
       });
+      // the template's EDIT-* steps fail on purpose; a workflow that still has one keeps every PR red
+      check(() => {
+        const left = [...(readText(path.join(root, ".github", "workflows", "proteus-gates.yml")) || "").matchAll(/^[^#\n]*\b(EDIT-\w+)/gm)].map((m) => m[1]);
+        return left.length ? ["WARN", `.github/workflows/proteus-gates.yml still has unfilled placeholders (${[...new Set(left)].join(", ")}): its gates fail every PR until they run real commands`, "replace each EDIT-* step with the project's command and commit"] : ["ok", "proteus-gates.yml has no unfilled placeholder"];
+      });
     }
   }
 
