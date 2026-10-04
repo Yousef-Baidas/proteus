@@ -18,7 +18,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { ok, summary } = require(path.join(__dirname, "lib.js"));
+const { ok, summary, fakeCli, homeEnv, SYS_PATH } = require(path.join(__dirname, "lib.js"));
 
 const SRC = path.resolve(process.env.PROTEUS_SAFETY_SRC || path.join(__dirname, ".."));
 // any shipped agent works; the ticket's proteus-lead.md is not one
@@ -33,7 +33,7 @@ const read = (p) => { try { return fs.readFileSync(p); } catch { return null; } 
 // a fresh dir under os.tmpdir(); inside the user's home it is removed and the file stops before any spawn
 const made = [];
 function tmp(tag) {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), `proteus-safety-${tag}-`));
+  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `proteus-safety-${tag}-`)));
   if (HOMES.some((h) => under(real(d), h))) {
     fs.rmdirSync(d);
     console.log(`FAIL ${d} is inside the user's home; run with TMPDIR outside it`);
@@ -46,13 +46,11 @@ function tmp(tag) {
 const TOOLS = tmp("tools");
 const BIN = path.join(TOOLS, "bin");
 fs.mkdirSync(BIN);
-fs.symlinkSync(process.execPath, path.join(BIN, "node"));
-fs.copyFileSync(path.join(__dirname, "fakegh.js"), path.join(BIN, "gh"));
-fs.chmodSync(path.join(BIN, "gh"), 0o755);
+if (process.platform === "win32") fs.copyFileSync(process.execPath, path.join(BIN, "node.exe")); else fs.symlinkSync(process.execPath, path.join(BIN, "node"));
+fakeCli(BIN, "gh", fs.readFileSync(path.join(__dirname, "fakegh.js"), "utf8"));
 // fake claude: records the context-mode plugin the way the real CLI does, in the fake HOME
 const CTX = "context-mode@context-mode";
-fs.writeFileSync(path.join(BIN, "claude"), `#!${process.execPath}
-const fs = require("fs"), path = require("path"), os = require("os");
+fakeCli(BIN, "claude", `const fs = require("fs"), path = require("path"), os = require("os");
 const a = process.argv.slice(2).join(" ");
 const d = path.join(os.homedir(), ".claude"), rd = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return {}; } };
 fs.mkdirSync(path.join(d, "plugins"), { recursive: true });
@@ -61,11 +59,11 @@ if (a === "plugin install ${CTX} --scope user") fs.writeFileSync(path.join(d, "p
 if (a === "plugin install ${CTX} --scope user" || a === "plugin enable ${CTX} --scope user") {
   const s = rd(path.join(d, "settings.json")); s.enabledPlugins = { ...s.enabledPlugins, "${CTX}": true }; fs.writeFileSync(path.join(d, "settings.json"), JSON.stringify(s));
 }
-`, { mode: 0o755 });
+`);
 
 // PATH leaves out node's own bin dir, which may hold a real codex or claude
 const envFor = (home) => ({
-  PATH: [BIN, "/usr/bin", "/bin"].join(path.delimiter), HOME: home, USERPROFILE: home, CODEX_HOME: path.join(home, ".codex"),
+  PATH: [BIN, ...SYS_PATH].join(path.delimiter), ...homeEnv(home), CODEX_HOME: path.join(home, ".codex"),
   GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t",
 });
 const git = (args, cwd, input) => spawnSync("git", args, { cwd, env: envFor(TOOLS), encoding: "utf8", input, maxBuffer: 1 << 28 });
@@ -317,7 +315,7 @@ try {
     const preload = path.join(TOOLS, "fake-userinfo.js");
     fs.writeFileSync(preload, `"use strict";\n// test fake: os.userInfo().homedir is FAKE_USER_HOME\nconst os = require("os");\nconst h = process.env.FAKE_USER_HOME;\nif (h) { const u = os.userInfo; os.userInfo = (o) => ({ ...u(o), homedir: h }); }\n`);
     fs.writeFileSync(path.join(TOOLS, "userhome.js"), "console.log(require(\"os\").userInfo().homedir);\n");
-    const fake7 = { NODE_OPTIONS: `--require ${preload}`, FAKE_USER_HOME: F7 };
+    const fake7 = { NODE_OPTIONS: `${homeEnv("").NODE_OPTIONS || ""} --require ${preload}`.trim(), FAKE_USER_HOME: F7 };
     const echo = nodeRun(path.join(TOOLS, "userhome.js"), [], T7, H7, fake7);
     ok("case 7: the preload fakes os.userInfo().homedir in a spawned node", echo.stdout === `${F7}\n`, `${echo.status} ${echo.stdout}${echo.stderr}`);
     const r7 = installer(["--project", "--confine"], R7, H7, fake7);
@@ -420,7 +418,7 @@ try {
     const top15 = path.join(T15, "tophome"), user15 = path.join(T15, "topuser"), plain15 = path.join(T15, "plain");
     const a15 = roots15(path.join(top15, "home"), top15);
     ok("case 15 (allowedRoots): a toplevel that holds HOME is left out", Array.isArray(a15) && a15.length > 0 && !a15.includes(real(top15)), JSON.stringify(a15));
-    const b15 = roots15(path.join(T15, "h"), user15, { NODE_OPTIONS: `--require ${preload}`, FAKE_USER_HOME: path.join(user15, "me") });
+    const b15 = roots15(path.join(T15, "h"), user15, { NODE_OPTIONS: `${homeEnv("").NODE_OPTIONS || ""} --require ${preload}`.trim(), FAKE_USER_HOME: path.join(user15, "me") });
     ok("case 15 (allowedRoots): a toplevel that holds the user's home is left out", Array.isArray(b15) && b15.length > 0 && !b15.includes(real(user15)), JSON.stringify(b15));
     const c15 = roots15(path.join(T15, "h"), plain15);
     ok("case 15 (allowedRoots): a toplevel that holds neither is a root", Array.isArray(c15) && c15.includes(real(plain15)), JSON.stringify(c15));
