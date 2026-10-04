@@ -144,7 +144,8 @@ function tourState(home, cfg) {
   return field;
 }
 
-// agents and hooks to where the harness keeps them, only when bytes differ; never deletes
+// agents and hooks to where the harness keeps them, only when bytes differ; never deletes, and a
+// Codex role without the generated header (the user's own) is skipped
 // (install-lead-hooks removes the files the adapter skips)
 function sync(ad, home, root, notes) {
   let n = 0;
@@ -154,7 +155,7 @@ function sync(ad, home, root, notes) {
     if (!f.endsWith(".md")) continue;
     let a = null;
     try { a = ad.agentFile(f, fs.readFileSync(path.join(home, "agents", f), "utf8")); } catch {}
-    if (a && lib.syncText(a.text, path.join(ad.agentsDir, a.name))) n++;
+    if (a && lib.syncText(a.text, path.join(ad.agentsDir, a.name), ad.generated)) n++;
   }
   const hooksSrc = path.join(home, "templates", "hooks");
   for (const f of ls(hooksSrc)) {
