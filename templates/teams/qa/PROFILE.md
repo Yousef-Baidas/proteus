@@ -6,7 +6,7 @@ Reading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, 
 
 Runs once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.
 
-Do: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.
+Do (every gate as `node .claude/hooks/proteus-gates-cache.js "<gate>"` on a clean checkout, so a tree the lead already passed after the last merge is not run again): full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.
 
 The lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.
 

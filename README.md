@@ -150,6 +150,7 @@ Rules in prompts drift; these are mechanical.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; the lead arms a stall timer per wave.
+- **One suite run per tree.** Worker, lefthook's pre-push, verifier, the lead after a merge, QA and the guide run each gate through `proteus-gates-cache.js`, which keys a pass on the commit's tree and the command and replays it instead of running the suite again. Only a clean checkout is cached; a failure never is.
 - **Commit messages.** lefthook runs a commit-msg check: Conventional Commits, 72 chars, no AI trailer. CI re-checks every commit in the PR, so `--no-verify` does not help.
 - **Security.** The security verifier runs semgrep on the diff first and queries OSV for every `NEEDS dependency` before the human sees the request.
 - **Mutation testing.** Once per milestone, the QA pass mutates the changed files; a surviving mutant is a `WAVE-RED` ticket.
@@ -366,6 +367,7 @@ templates/
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-scratch.js      ledgers and sweeps agents' temp files
+    proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
