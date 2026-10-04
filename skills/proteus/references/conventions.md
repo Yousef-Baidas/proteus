@@ -1,6 +1,6 @@
 # Conventions
 
-Every worker works to `CONVENTIONS.md` at the repo root; every verifier checks the diff against it. Never assume taste. Missing file → interview before any ticket. The file is the human's; agents edit it only when the human says so.
+Every worker works to `CONVENTIONS.md` at the repo root; every verifier checks the diff against it. Taste is asked, not assumed: missing file → interview before any ticket. The file is the human's; agents edit it only when the human says so.
 
 ## Interview (bootstrap, once)
 

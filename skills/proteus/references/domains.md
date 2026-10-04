@@ -30,7 +30,7 @@ The scout reads the repo, `CONTEXT.md`, and the work order, then proposes:
 - **`teams/ROUTING.md`**: one row per deliverable type or path pattern → owning team. The lead routes by this table only; a ticket with no matching row is a question for the human, then a new row.
 - **Qa and security** stay cross-cutting. Security's scope in non-code work: personal data, credentials, money movement, legal exposure, anything published.
 
-The human approves the roster before anything links. Then a worker writes each `teams/<team>/PROFILE.md` (rules, 40 lines max) and, where the craft needs it, `CRAFT.md` (the playbook: what a senior in that role does and checks, numbers with their sources, worked examples). `CRAFT.md` is read on demand by that team only, never by the lead. Every number in it cites where it came from; a playbook built from the model's defaults is the thing Proteus exists to avoid.
+The human approves the roster before anything links. Then a worker writes each `teams/<team>/PROFILE.md` (rules, 40 lines max) and, where the craft needs it, `CRAFT.md` (the playbook: what a senior in that role does and checks, numbers with their sources, worked examples). `CRAFT.md` is read on demand by that team only, not by the lead. Every number in it cites where it came from; a playbook built from the model's defaults is the thing Proteus exists to avoid.
 
 ## Research-backed, not model-backed
 
