@@ -341,7 +341,7 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
-  return verdictPost(ev.command, ev.cwd);
+  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd);
 }
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
@@ -361,6 +361,177 @@ function verdictPost(command, cwd) {
     try { bodies.push(fs.readFileSync(path.resolve(cwd || ".", m[2]), "utf8").slice(0, 4096)); } catch {}
   }
   return bodies.some((b) => HUMAN_WORD.test(b.replace(/^\$\(\s*cat\s*<<[\s\S]*$/, ""))) ? VERDICT_MSG : null;
+}
+
+// a command line as simple commands, each a list of words: quotes removed, split at ; & | ( ) ` and newlines,
+// comments and heredoc bodies skipped. Enough to find a git or gh call and its arguments; not a shell.
+function shellCommands(command) {
+  const s = String(command || "");
+  const out = [];
+  let words = [], word = null, heredocs = [];
+  const endWord = () => { if (word !== null) words.push(word); word = null; };
+  const endCmd = () => { endWord(); if (words.length) out.push(words); words = []; };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "\\") {
+      if (s[i + 1] !== "\n") word = (word ?? "") + (s[i + 1] ?? "");
+      i++;
+    } else if (c === "'") {
+      const j = s.indexOf("'", i + 1);
+      const e = j < 0 ? s.length : j;
+      word = (word ?? "") + s.slice(i + 1, e);
+      i = e;
+    } else if (c === '"') {
+      let j = i + 1, v = "";
+      for (; j < s.length && s[j] !== '"'; j++) {
+        if (s[j] === "\\" && j + 1 < s.length && "\"\\$`\n".includes(s[j + 1])) j++;
+        v += s[j];
+      }
+      word = (word ?? "") + v;
+      i = j;
+    } else if (s.startsWith("<<<", i)) {
+      endWord();
+      i += 2;
+    } else if (s.startsWith("<<", i)) {
+      endWord();
+      const m = /^<<-?[ \t]*(["']?)([\w.-]+)\1/.exec(s.slice(i));
+      if (m) heredocs.push(m[2]);
+      i += m ? m[0].length - 1 : 1;
+    } else if (c === "\n") {
+      endCmd();
+      for (const d of heredocs) {
+        let k = i + 1;
+        for (;;) {
+          const nl = s.indexOf("\n", k);
+          const line = s.slice(k, nl < 0 ? s.length : nl);
+          k = nl < 0 ? s.length : nl + 1;
+          if (nl < 0 || line.trim() === d) break;
+        }
+        i = k - 1;
+      }
+      heredocs = [];
+    } else if (";&|()`".includes(c)) endCmd();
+    else if (c === " " || c === "\t" || c === "\r") endWord();
+    else if (c === "#" && word === null) {
+      const nl = s.indexOf("\n", i);
+      i = (nl < 0 ? s.length : nl) - 1;
+    } else word = (word ?? "") + c;
+  }
+  endCmd();
+  return out;
+}
+
+// The branches a run's work must reach only through a PR with `gates` green (enforcement.md §1): agents never merge
+// with --admin, never push to main or update a run branch (creating proteus/<run> is the lead's one push), never
+// delete either, and never lift or rewrite branch protection or a ruleset. The ruleset install.js --protect adds is
+// the boundary; this stops a confused or injected agent before GitHub has to, and binds the shared-identity setup
+// that has no ruleset.
+const BRANCH_MSG = {
+  admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
+  protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
+  wide: (flag) => `proteus: \`git push ${flag}\` can reach main or a run branch; push one branch by name.`,
+  main: (b) => `proteus: agents never push to ${b}; a run reaches it only as the close PR the human merges.`,
+  del: (b) => `proteus: agents never delete ${b}; the human does at close.`,
+  run: (b, remote) => `proteus: ${b} changes only by a PR with \`gates\` green: push your own branch (proteus-work/<run>/<id>) and open a PR into ${b}. The one push to a run branch creates it at the start of the run (no ${remote}/${b} yet; \`git fetch --prune\` if it was deleted).`,
+};
+const WRAPPERS = new Set(["rtk", "proxy", "env", "command", "builtin", "exec", "nohup", "time", "sudo"]);
+const GH_API_VALUE = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq", "-t", "--template", "--hostname", "--cache", "-p", "--preview"]);
+const GIT_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
+const PUSH_VALUE = new Set(["--repo", "-o", "--push-option", "--receive-pack", "--exec"]);
+
+function branchDenial(command, cwd) {
+  const cmd = String(command || "");
+  if (!/\b(gh|git)\b/.test(cmd)) return null;
+  for (const all of shellCommands(cmd)) {
+    let i = 0;
+    while (i < all.length && (WRAPPERS.has(all[i]) || /^[A-Za-z_]\w*=/.test(all[i]))) i++;
+    const words = all.slice(i);
+    const prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || ".")) : null;
+    if (why) return why;
+  }
+  return null;
+}
+
+function ghBranchDenial(args) {
+  if (args[0] === "pr" && args[1] === "merge" && args.includes("--admin")) return BRANCH_MSG.admin;
+  if (args[0] !== "api") return null;
+  let method = "", endpoint = "", body = false;
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    const eq = /^(--[\w-]+)=([\s\S]*)$/.exec(a);
+    const [flag, val] = eq ? [eq[1], eq[2]] : /^-X./.test(a) ? ["-X", a.slice(2)] : [a, undefined];
+    if (GH_API_VALUE.has(flag)) {
+      const v = val === undefined ? args[++i] : val;
+      if (flag === "-X" || flag === "--method") method = String(v || "").toUpperCase();
+      else if (!/^(-H|--header|-q|--jq|-t|--template|--hostname|--cache|-p|--preview)$/.test(flag)) body = true;
+    } else if (!a.startsWith("-") && !endpoint) endpoint = a;
+  }
+  method = method || (body ? "POST" : "GET");
+  if (endpoint === "graphql") return /\b(delete|update)(BranchProtectionRule|RepositoryRuleset)\b/.test(args.join(" ")) ? BRANCH_MSG.protect : null;
+  const path_ = endpoint.replace(/[?#].*$/, "").replace(/\/+$/, "");
+  if (method === "GET") return null;
+  if (/(^|\/)rulesets(\/|$)/.test(path_)) return BRANCH_MSG.protect;
+  const p = /(?:^|\/)branches\/([^/]+)\/protection(\/.*)?$/.exec(path_);
+  if (!p) return null;
+  let branch = p[1];
+  try { branch = decodeURIComponent(branch); } catch {}
+  const runPut = method === "PUT" && !p[2] && SCHEMES.some((s) => branch.startsWith(s.branch));
+  return runPut ? null : BRANCH_MSG.protect;
+}
+
+// git <global options> push …: each destination it would write, judged against main and the run branches
+function pushDenial(words, cwd) {
+  let i = 0, dir = cwd;
+  for (; i < words.length && words[i].startsWith("-"); i++) {
+    if (words[i] === "-C") dir = path.resolve(dir, words[++i] || ".");
+    else if (GIT_VALUE.has(words[i])) i++;
+  }
+  if (words[i] !== "push") return null;
+  const args = words.slice(i + 1);
+  let del = false;
+  const pos = [];
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === "--") { pos.push(...args.slice(k + 1)); break; }
+    if (PUSH_VALUE.has(a)) k++;
+    else if (a === "--delete" || /^-[a-zA-Z]*d[a-zA-Z]*$/.test(a)) del = true;
+    else if (/^--(all|branches|mirror|prune)$/.test(a)) return BRANCH_MSG.wide(a);
+    else if (!a.startsWith("-")) pos.push(a);
+  }
+  const g = (...a) => git(a, dir);
+  const cur = g("symbolic-ref", "-q", "--short", "HEAD");
+  const remote = pos[0] || (cur && g("config", "--get", `branch.${cur}.remote`)) || "origin";
+  let specs = pos.slice(1);
+  if (!specs.length && !del) {
+    if (!cur) return null;
+    specs = [`${cur}:${g("config", "--get", `branch.${cur}.merge`).replace(/^refs\/heads\//, "") || cur}`];
+  }
+  for (const spec of specs) {
+    const s = spec.replace(/^\+/, "");
+    const at = s.indexOf(":");
+    const src = del ? "" : at < 0 ? s : s.slice(0, at);
+    let dst = del || at < 0 ? s : s.slice(at + 1) || src;
+    if (dst === "HEAD" || dst === "@") dst = cur;
+    dst = String(dst || "").replace(/^refs\/heads\//, "");
+    if (!dst || dst.startsWith("refs/")) continue;
+    const kind = guardedBranch(dst, dir, remote, g);
+    if (!kind) continue;
+    if (!src) return BRANCH_MSG.del(dst);
+    if (kind === "main") return BRANCH_MSG.main(dst);
+    // creating a run branch is allowed: no remote-tracking ref for it, under a remote this repo names
+    if (!g("config", "--get", `remote.${remote}.url`) || g("rev-parse", "--verify", "-q", `refs/remotes/${remote}/${dst}`)) return BRANCH_MSG.run(dst, remote);
+  }
+  return null;
+}
+
+// "main" for main, master or the remote's default branch; "run" for a run branch under either scheme (not a
+// pre-rename worker branch <prefix><run>-<id>); "" for anything else
+function guardedBranch(dst, dir, remote, g) {
+  const head = g("symbolic-ref", "-q", "--short", `refs/remotes/${remote}/HEAD`).slice(remote.length + 1);
+  if (dst === "main" || dst === "master" || dst === head) return "main";
+  if (!SCHEMES.some((s) => dst.startsWith(s.branch))) return "";
+  return runBranches(gitCommonDir(dir)).some((a) => a !== dst && dst.startsWith(a + "-")) ? "" : "run";
 }
 
 // copy src → dst only when the bytes differ; true when written
@@ -467,6 +638,6 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
-  workerDenial, verdictPost, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

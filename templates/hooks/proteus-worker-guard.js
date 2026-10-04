@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // PreToolUse hook inside a worker's worktree (registered by the harness adapter's worktree settings).
-// Refuses background Bash, Monitor, `gh … --edit-last`, and a comment opening with ACCEPT, CHANGES or ANSWER: a worker whose
+// Refuses background Bash, Monitor, `gh … --edit-last`, a comment opening with ACCEPT, CHANGES or ANSWER, and what
+// lib.branchDenial refuses (--admin merges, pushes to main or a run branch, protection changes): a worker whose
 // turn ends waiting on a notification never wakes, --edit-last can overwrite another agent's comment, and those words are the human's.
 // Only active when the owned-path list exists (a dispatched worker's worktree).
 // Exit 2 = block; the message on stderr reaches the worker as the tool's error.

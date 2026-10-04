@@ -9,10 +9,12 @@
 // 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
-// 5. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
+// 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
+//    deleting either, no lifting or rewriting branch protection or a ruleset (lib.branchDenial).
+// 6. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment. An edit inside a checkout with .claude/proteus-owned
+//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses. An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt). All else passes.
@@ -36,10 +38,10 @@ lib.run((ev, ad) => {
     if (why) ad.deny(why);
     return;
   }
-  // the lead's own shell stays cheap: regexes, and a file read only for a gh comment naming a body file
+  // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
   if (ev.tool === "shell") {
     if (/--edit-last\b/.test(ev.command)) ad.deny(lib.EDIT_LAST_MSG);
-    const why = lib.verdictPost(ev.command, ev.cwd);
+    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
     if (why) ad.deny(why);
     return;
   }

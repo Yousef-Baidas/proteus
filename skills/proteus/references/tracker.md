@@ -32,7 +32,7 @@ Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the secon
 | accept | remove `needs-human`, close the review issue, close the milestone |
 | queue (unattended) | review issues still labelled `needs-human`; `/proteus-review` lists `gh issue list --label needs-human --state open` |
 | learned | still `AGENTS.md ## Learned`; that file is for the next human too |
-| close run | PR `proteus/<run>` → `main`, body links the milestones; `gh api -X DELETE "repos/{owner}/{repo}/branches/proteus%2F<run>/protection"` if the run set it, then `git push origin --delete proteus-evidence/<run>` after merge |
+| close run | PR `proteus/<run>` → `main`, body links the milestones; if the run set the protection, the body ends with `gh api -X DELETE "repos/{owner}/{repo}/branches/proteus%2F<run>/protection"` for the human (the guards refuse it to agents); `git push origin --delete proteus-evidence/<run>` after merge |
 
 Verdict poll, background shell; prints the first trusted verdict and exits (Codex runs it without `--wait`: `harnesses.md`):
 
