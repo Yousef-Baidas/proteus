@@ -11,7 +11,7 @@ The usual multi-agent loop bleeds tokens in three places: the lead sits inside t
 - The lead decides, writes prompts, and dispatches. It produces no deliverable, not even the contract stubs, and never reads diffs. A hook refuses its edits.
 - Workers run their team's checks themselves (typecheck, lint, tests on code; render probes, loudness, link checks, model recompute elsewhere), loop to green, and cap at 2 retries. Every check is shown failing on deliberately broken input before any worker starts, so a green check means something.
 - Escalation sends only the diff plus failing output to a fresh-context verifier. One pass.
-- Independent tickets run in parallel, one git worktree each, merged sequentially.
+- Independent tickets run in parallel, one git worktree each, merged in batches with one suite run per batch and a bisect when it goes red.
 - The lead is whatever model you start the session on, and nothing runs above it (see [Models](#models)). Hard tickets and every verdict run on the lead's tier, standard tickets one rung down. A hook refuses any other spawn.
 - The pipeline is fixed. A step is skipped or added only when you say so or a `/research` finding does.
 
