@@ -32,7 +32,7 @@ Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the secon
 | revision | `gh issue create --title "Revision <run>/<m> r<k>" --label proteus --milestone …`; one comment per tweak, evidence, and human `ok` (`operations.md`) |
 | wait for verdict | poll every 30 s with the command under the table |
 | accept | remove `needs-human`, close the review issue, close the milestone |
-| queue (unattended) | review issues still labelled `needs-human`; `/proteus-review` lists `gh issue list --label needs-human --state open` |
+| queue (unattended) | review issues still labelled `needs-human`; `/proteus-review` lists `gh issue list --label proteus-review --label needs-human --state open` |
 | learned | still `AGENTS.md ## Learned`; that file is for the next human too |
 | close run | PR `proteus/<run>` → `main`, body links the milestones; if the run set the protection, the body ends with `gh api -X DELETE "repos/{owner}/{repo}/branches/proteus%2F<run>/protection"` for the human (the guards refuse it to agents); `git push origin --delete proteus-evidence/<run>` after merge |
 
