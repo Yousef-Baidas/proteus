@@ -8,7 +8,7 @@ One rule per line. The verifier fails a diff that breaks one. Edited only by the
 - Functions and variables camelCase (`readJSON`, `projectRoot`); module constants UPPER_SNAKE (`HARNESS`, `ROOT`).
 - Env vars `PROTEUS_*` (`PROTEUS_HARNESS`, `PROTEUS_DEBUG`); test fakes `FAKE_*` (`FAKE_GH`).
 - CLI flags kebab-case (`--auto-update`); PowerShell switches PascalCase (`-AutoUpdate`).
-- Run branches `proteus/<run>`, worker branches `proteus-work/<run>/<n>`, evidence `proteus-evidence/<run>` (`hive/` is legacy until the rename lands).
+- Run branches `proteus/<run>`, worker branches `proteus-work/<run>/<n>`, evidence `proteus-evidence/<run>`; `hive/` branches are hivemind's, and `install.js --update` migrates open ones.
 
 ## Layout
 - Hooks live in `templates/hooks/`; shared logic in `proteus-lib.js`; harness specifics only in `proteus-harness-<harness>.js`, picked by `proteus-harness.js`.

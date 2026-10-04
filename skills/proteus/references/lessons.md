@@ -10,7 +10,7 @@ A lesson is a solved problem, kept so it is not solved twice. It is recalled onl
 
 Not a lesson: a one-off typo, a taste preference (that goes to `CONVENTIONS.md` via the human), an architectural decision (ADR), anything already enforced by a gate or hook.
 
-The lead writes lessons itself; `docs/lessons/` is inside its allowed paths. One file per problem, `docs/lessons/<kebab-slug>.md`, committed on the run branch with `docs(lessons): <slug>`:
+The lead writes lessons itself; `docs/lessons/` is inside its allowed paths. One file per problem, `docs/lessons/<kebab-slug>.md`, committed with `docs(lessons): <slug>` as `bootstrap.md` § Lead docs says:
 
 ```markdown
 ---

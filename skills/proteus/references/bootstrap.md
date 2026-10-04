@@ -21,7 +21,7 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
    - Code: the grilled stack is TypeScript and every choice is one `create-better-t-stack` offers (frontend, backend, runtime, database, ORM, API, auth) → the worker generates it with `npx create-better-t-stack@latest <name> --frontend … --backend … --runtime … --database … --orm … --api … --auth … --package-manager … --directory-conflict merge --no-install --no-git --disable-analytics`, every stack flag explicit (`--yes` cannot be combined with them; a missing `--directory-conflict` prompts and hangs). The stack decides the tool, not the reverse; anything it does not cover is scaffolded by hand. The ticket ends with package manifest, typecheck, lint, test runner, one passing smoke test, the gate commands from `stack.md`, and the mechanical gates from `enforcement.md`: `.github/workflows/proteus-gates.yml`, `lefthook.yml`, `teams/templates/` committed (both run its `hooks/commit-msg.js`), `EDIT` lines filled from the gate commands, and on JS/TS the anti-slop oxlint rules (`enforcement.md` §9).
    - Not code: the build is scripts that produce the deliverable from the repo alone (render, export, compile the document, recompute the model), one check per team from `domains.md` that runs headless and prints its inputs, the commit-msg hook and CI workflow from `enforcement.md` §3–4 with the gate lines set to those checks, and Git LFS or a manifest for large binaries.
    Nothing else. Merge it before any feature wave.
-5. Add `## Learned` to `AGENTS.md`. Record the gate commands, `labels: created`, and the domain.
+5. Add `## Learned` to `AGENTS.md` and commit it (§ Lead docs). Record the gate commands, `labels: created`, and the domain.
 6. Now the flow from step 1. Hotspot files (routes, registries, config, shared scene or project files) get their own ticket in wave one.
 
 ## Mid-project, unset
@@ -30,13 +30,21 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave: it records each red gate's findings in `teams/baseline.json` with `proteus-baseline.js` and runs that gate through it in CI and lefthook (`enforcement.md` §12), so a ticket fails only on findings it adds; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them (where `CONVENTIONS.md` forbids dependencies, ask about the lint dependency first: §9). Fixing the recorded failures is follow-up work, not a precondition. A red gate with no baseline still blocks features; workers cannot tell their red from yours.
 3. Code: `fallow health` / `vulture`, run by a `helper` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, not into a feature ticket.
 4. Root docs over budget (`doc-bloat` in `proteus-state`) → a docs-diet ticket (`docs-diet.md`) in wave one. Plans, maps, or logs committed as files → the same ticket moves them to the tracker.
-5. Add `## Learned` to `AGENTS.md`. Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
+5. Add `## Learned` to `AGENTS.md` and commit it (§ Lead docs). Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
 6. Existing branches or worktrees: list them, ask the human which are live, leave the rest alone. Don't delete a branch you did not create: it may be someone's live work.
 7. Now the flow from step 1.
 
 ## Conventions (both paths)
 
-`CONVENTIONS.md` missing → read `conventions.md`, run the interview, commit the file. Creative and business work: the interview covers the house defaults too (`conventions.md` § Taste beyond code).
+`CONVENTIONS.md` missing → read `conventions.md`, run the interview, commit the file (§ Lead docs). Creative and business work: the interview covers the house defaults too (`conventions.md` § Taste beyond code).
+
+## Lead docs (both paths)
+
+Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and bootstrap's `teams/` reach `main` only through the human's merge. Nobody pushes `main`; the guard refuses it.
+
+- No `proteus/<run>` yet: commit on local `main`. They reach GitHub on the run branch, which `stack.md` cuts from local `main`.
+- `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Owned:` naming the files (`Tier: full` for `CONVENTIONS.md` or `teams/`). It merges on green `gates`.
+- Quick and Direct branches are cut from `origin/main`, not local `main`: lead docs riding along would fail CI's owned check. They wait on local `main` for the next run branch.
 
 ## Roster (both paths)
 

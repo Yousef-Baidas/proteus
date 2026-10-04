@@ -25,6 +25,7 @@ The lead reads no worker output or diffs (the verifier does) and produces no del
 
 ## Worktrees
 ```
+git checkout main && git pull --rebase origin main   # merged work under the unpushed lead docs
 git checkout -b proteus/<run> main && git push -u origin proteus/<run>
 git worktree add ../<repo>-proteus/<id> -b proteus-work/<run>/<id> proteus/<run>
 node <hooks>/proteus-worktree.js ../<repo>-proteus/<id> <owned paths…>
