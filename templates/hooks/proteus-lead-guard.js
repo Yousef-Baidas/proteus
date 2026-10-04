@@ -84,11 +84,14 @@ function modelDenial(c, name) {
   return "";
 }
 
-// the escape hatch: the human's latest prompt names the file; any doubt denies
+// the escape hatch: the human's latest prompt names the file as a whole token; any doubt denies
 function humanNamed(ev, ad, target) {
   try {
     const prompt = ad.lastHumanPrompt(ev);
-    return !!prompt && prompt.includes(path.basename(String(target).replace(/\\/g, "/")));
+    if (!prompt) return false;
+    const base = path.basename(String(target).replace(/\\/g, "/")).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // a whole token: not inside a longer name (data.png) or extension (a.png.bak); a sentence's full stop is fine
+    return new RegExp(`(?<![\\w.-])${base}(?![\\w-]|\\.\\w)`).test(prompt);
   } catch { return false; }
 }
 
