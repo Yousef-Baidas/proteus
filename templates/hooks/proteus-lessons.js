@@ -5,7 +5,8 @@
 // prompt, path; default all), scope (all | lead | worker; default all).
 // before a shell call → command; before an edit or read → path; after a shell call → output;
 // prompt submit → prompt. A hit injects the lesson as additionalContext, once per session
-// (per subagent) per lesson, at most 2 per event; hits are counted in <common>/proteus/lesson-hits.json.
+// (per subagent) per lesson, at most 2 per event; each hit is one line appended to <common>/proteus/lesson-hits.jsonl
+// ({file, at}; append-only, so concurrent sessions never lose a count; sum per file when reading).
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -54,11 +55,8 @@ lib.run((ev, ad) => {
   if (!seen.size) prune(path.dirname(seenFile));
   fs.mkdirSync(path.dirname(seenFile), { recursive: true });
   fs.appendFileSync(seenFile, fresh.map((l) => l.file + "\n").join(""));
-  const countFile = path.join(store, "lesson-hits.json");
-  const counts = lib.readJSON(countFile, {}) || {};
   const now = new Date().toISOString();
-  for (const l of fresh) counts[l.file] = { hits: ((counts[l.file] || {}).hits || 0) + 1, last: now };
-  lib.writeJSON(countFile, counts);
+  fs.appendFileSync(path.join(store, "lesson-hits.jsonl"), fresh.map((l) => JSON.stringify({ file: l.file, at: now }) + "\n").join(""));
 
   ad.context(ev, fresh.map((l) => {
     const body = l.body.length > MAX_CHARS ? l.body.slice(0, MAX_CHARS) + " …" : l.body;

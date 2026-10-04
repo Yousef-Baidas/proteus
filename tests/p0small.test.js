@@ -3,6 +3,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const SRC = path.join(ROOT, "templates", "hooks");
@@ -46,4 +47,21 @@ ok("image: a.png does not match xa.png or a.pngx", !allowed("/r/a.png", "see xa.
 ok("image: path segment and full stop allowed", allowed("/r/a.png", "open /tmp/out/a.png.") && allowed("/r/a.png", '"a.png",'));
 ok("image: regex characters in the name are literal", !allowed("/r/a+b.png", "see aab.png") && allowed("/r/a+b.png", "see a+b.png"));
 
-lib.summary();
+// async tests last; they print the summary
+(async () => {
+  // lessons: hits are appended, so parallel sessions lose none
+  fs.mkdirSync(path.join(REPO, "docs", "lessons"), { recursive: true });
+  fs.writeFileSync(path.join(REPO, "docs", "lessons", "boom.md"), "---\ntrigger: boom\non: command\n---\nbody\n");
+  const LS = path.join(SRC, "proteus-lessons.js");
+  const launch = (session) => new Promise((resolve) => {
+    const c = spawn(process.execPath, [LS], { cwd: REPO, env: { PATH: process.env.PATH, CLAUDE_PROJECT_DIR: REPO } });
+    c.on("close", resolve);
+    c.stdin.end(JSON.stringify({ hook_event_name: "PreToolUse", session_id: session, cwd: REPO, tool_name: "Bash", tool_input: { command: "boom" } }));
+  });
+  const hitFile = path.join(REPO, ".git", "proteus", "lesson-hits.jsonl");
+  const count = () => { try { return fs.readFileSync(hitFile, "utf8").trim().split("\n").filter(Boolean).length; } catch { return 0; } };
+  await Promise.all(Array.from({ length: 12 }, (_, i) => launch(`race${i}`)));
+  ok("lessons: concurrent sessions each leave one hit line", count() === 12, `${count()} of 12`);
+  ok("lessons: no read-modify-write json left behind", !fs.existsSync(path.join(REPO, ".git", "proteus", "lesson-hits.json")));
+  lib.summary();
+})();
