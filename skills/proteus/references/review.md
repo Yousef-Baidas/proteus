@@ -1,6 +1,6 @@
 # Human review gate
 
-Agents verify tickets; the human verifies milestones. The loop halts at every gate until a verdict exists. One ticket is one milestone; no run is too small.
+Agents verify tickets; the human verifies milestones. The loop halts at every gate until a verdict exists. From the Standard tier up (`SKILL.md` rule 3) every run has milestones and gates, however small: one ticket is one milestone. Direct and Quick have neither; the human's merge of their PR into `main` is the review, and a Direct PR's body is the digest (`roles.md`).
 
 The lead never talks the human through a review. It has no diff, and every relayed line costs it twice. The human talks to the **review session** or to the review issue.
 
@@ -12,7 +12,7 @@ Taste-driven runs (anything the human judges by eye or ear: a scene, an edit, a 
 
 ## Gate
 
-Fires after the last ticket of a milestone merges into `proteus/<run>` and QA says `WAVE-GREEN`.
+Fires after the last ticket of a milestone merges into `proteus/<run>` and QA says `WAVE-GREEN`. Standard batches the ceremony: milestones that finish in the same wave share one milestone QA pass and one review issue, `Review: <run>/<m1>+<m2>`, a section each, and one verdict covers them all. Full, and every test piece, gates each milestone alone.
 
 1. Spawn `proteus-guide` with run, milestone, ticket numbers, diff range, QA verdict, gate commands, mode, debt issue. It opens the review issue `Review: <run>/<milestone>` (label `proteus-review`, `needs-human`) with the brief, evidence links, and the open debt lines, so the human sees what was deferred, exits.
 2. `PushNotification`: `review ready: <milestone> — <issue url>`. Print the url and `PROTEUS=0 claude → /proteus-review` in a second terminal (or `/remote-control` from the phone); on Codex `PROTEUS=0 codex → $proteus-review`.
