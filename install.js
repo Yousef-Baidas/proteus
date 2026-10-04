@@ -62,15 +62,17 @@ const SHIPPED_TEAMS = path.join(HERE, "templates", "teams");
 const HOME = os.homedir();
 const CLAUDE = path.join(HOME, ".claude");
 const SKILLS = ["proteus", "proteus-review"];
-const LINK_SCRIPTS = ["link-skills.js", "link-skills.sh", "link-skills.ps1"];
-const EXCLUDE = [".claude/settings.local.json", ".claude/hooks/proteus-*.js", ".claude/hooks/worktree-settings.local.json", ".claude/proteus-owned"];
+// package.json ({"type": "commonjs"}) keeps the CommonJS scripts beside it running in a repo whose
+// own package.json sets "type": "module" (#77); one ships in templates/hooks/ too
+const LINK_SCRIPTS = ["link-skills.js", "link-skills.sh", "link-skills.ps1", "package.json"];
+const EXCLUDE = [".claude/settings.local.json", ".claude/hooks/proteus-*.js", ".claude/hooks/package.json", ".claude/hooks/worktree-settings.local.json", ".claude/proteus-owned"];
 const TEAMS_ENV = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
 const CTX_PLUGIN = "context-mode@context-mode";
 const CTX_MARKET = "mksglu/context-mode";
 const NODE_MIN = "22.5.0";
 const HARNESSES = ["claude", "codex"];
 const AGENTS_SKILLS = path.join(HOME, ".agents", "skills"); // Codex reads skills here and in <repo>/.agents/skills
-const CODEX_EXCLUDE = [".codex/hooks.json", ".codex/hooks/proteus-*.js", ".codex/rules/proteus.rules", ".codex/proteus-owned"];
+const CODEX_EXCLUDE = [".codex/hooks.json", ".codex/hooks/proteus-*.js", ".codex/hooks/package.json", ".codex/rules/proteus.rules", ".codex/proteus-owned"];
 // the commit-msg gate runs from here on every CLI: committed with teams/, refreshed by --project
 const COMMIT_MSG = "teams/templates/hooks/commit-msg.js";
 const CODEX_CTX = "codex mcp add context-mode --env CONTEXT_MODE_PLATFORM=codex -- npx -y context-mode";
@@ -520,7 +522,7 @@ function copyTeams(root) {
     // required.txt is the pipeline's, not the scout's or the repo's: always refreshed
     if (isFile(path.join(src, "required.txt"))) copyFile(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
-  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, "}templates/)`);
+  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, package.json, "}templates/)`);
 }
 
 function projectInstall(root, opt) {
@@ -1253,7 +1255,10 @@ async function doctor(fix) {
         const s = readJson(path.join(root, ...(cxh ? [".codex", "hooks.json"] : [".claude", "settings.local.json"])));
         const hooks = JSON.stringify((s && s.hooks) || {});
         const miss = ["proteus-autostart.js", "proteus-lead-guard.js"].filter((f) => !hooks.includes(f) || !isFile(path.join(root, hd, "hooks", f)));
-        return miss.length ? ["FIX", `lead hooks not registered: ${miss.join(", ")}`, `${self} --project`] : ["ok", "lead hooks registered"];
+        if (miss.length) return ["FIX", `lead hooks not registered: ${miss.join(", ")}`, `${self} --project`];
+        // without it the hooks throw in a repo whose package.json sets "type": "module", and fail open (#77)
+        return isFile(path.join(root, hd, "hooks", "package.json")) ? ["ok", "lead hooks registered"]
+          : ["FIX", `${hd}/hooks/package.json missing (the hooks fail in a "type": "module" repo)`, `${self} --project`];
       }, () => registerHooks(root));
       if (cxh) {
         check(() => {
@@ -1289,16 +1294,29 @@ async function doctor(fix) {
           : ["ok", "team skills linked"];
       }, () => { teamsIgnore(path.join(base, "teams"), true); withProject(root, () => L.run({ root: base, log, remove: guardedRemove })); });
       // CI runs the gate on a clean checkout: the file it names must be tracked (a Codex-only repo
-      // has no .claude/hooks/commit-msg.js, and .codex/hooks is machine-local)
+      // has no .claude/hooks/commit-msg.js, and .codex/hooks is machine-local), and so must the
+      // package.json that keeps it CommonJS when the repo's says "type": "module" (#77)
       if (!guest) check(() => {
-        const found = [], bad = [];
+        const tracked = (rel) => git(["ls-files", "--error-unmatch", "--", rel], root).ok;
+        // the nearest tracked package.json from the gate's dir up decides how a clean checkout runs it
+        const esm = (rel) => {
+          for (let d = path.posix.dirname(rel); ; d = path.posix.dirname(d)) {
+            const pj = d === "." ? "package.json" : `${d}/package.json`;
+            if (tracked(pj)) return (readJson(path.join(root, pj)) || {}).type === "module";
+            if (d === "." || d === "/" || d === "..") return false;
+          }
+        };
+        const found = [], bad = [], mod = [];
         for (const f of ["lefthook.yml", ".github/workflows/proteus-gates.yml"]) {
           for (const m of (readText(path.join(root, f)) || "").matchAll(/\bnode\s+["']?([^\s"']*commit-msg\.js)/g)) {
             found.push(f);
-            if (!git(["ls-files", "--error-unmatch", "--", m[1]], root).ok) bad.push(`${f} runs ${m[1]}`);
+            const rel = m[1].replace(/\\/g, "/").replace(/^\.\//, "");
+            if (!tracked(rel)) bad.push(`${f} runs ${m[1]}`);
+            else if (esm(rel)) mod.push(`${f} runs ${m[1]}`);
           }
         }
         if (bad.length) return ["FIX", `commit-msg gate: ${bad.join("; ")}, which git does not track`, `point it at ${COMMIT_MSG} and commit`];
+        if (mod.length) return ["FIX", `commit-msg gate: ${mod.join("; ")} as an ES module (no tracked package.json says "commonjs")`, `point it at ${COMMIT_MSG} and commit teams/templates/hooks/package.json`];
         return ["ok", found.length ? "commit-msg gate runs a tracked file" : "commit-msg gate not installed yet (the scaffold ticket adds it)"];
       });
       // the template's EDIT-* steps fail on purpose; a workflow that still has one keeps every PR red

@@ -37,6 +37,8 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 
 `PROTEUS=0 claude` opens a plain session with none of them, for the review session or for working by hand.
 
+The hooks are CommonJS. A `package.json` of `{"type": "commonjs"}` goes beside them (`.claude/hooks/`, `teams/templates/hooks/`, a worker's worktree) and beside `teams/link-skills.js`, so they still run in a repo whose own `package.json` sets `"type": "module"`. The one in `teams/templates/hooks/` is committed with the rest, for CI's commit-msg gate.
+
 ## Models
 
 The session you start is the lead, on whatever model you started it with, and it staffs down from there on a ladder, cheapest first: `haiku < sonnet < opus < fable`. Roles map to three tiers. `judge` takes the work that needs sustained judgment: verifiers, the scout, contracts, escalations, merge conflicts, and QA at milestone and close. `build` implements every ticket. `helper` runs QA per wave, the guide, research and small reads. The autostart prints `models=lead:…,judge:…,build:…,helper:…`; the guard enforces the ladder on every spawn.
@@ -154,7 +156,7 @@ In a repo you contribute to but do not own, even those docs and `teams/` are not
 
 Rules in prompts drift; these are mechanical.
 
-- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see. The same hook and a CI `tier` step fail a change larger than its declared tier.
+- **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see. A worktree in a repo with no commit-msg hook of its own (no lefthook yet) also gets one that runs `commit-msg.js`, so a bad message fails at commit rather than in CI. The same hook and a CI `tier` step fail a change larger than its declared tier.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead, and no glob covers the owned-path list itself, so a worker cannot widen its own; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
 - **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; a script watchdog reads each worker's last tool call and wakes the lead only when one has been silent for 40 minutes or stopped without a report.
@@ -381,6 +383,7 @@ agents/
 templates/teams/             the shipped roster, copied into your repo's teams/ by install.js --project
   ROUTING.md                 deliverable type or path -> owning team; path -> tier ceiling
   link-skills.js (.sh .ps1)  links (or installs) each team's skills
+  package.json               {"type": "commonjs"}: the link script runs in a "type": "module" repo
   <team>/PROFILE.md          role, owns, rules, green additions, verifier checklist
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
   <team>/required.txt        pipeline-required skills; the scout never edits it
@@ -407,6 +410,7 @@ templates/
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
+    package.json            {"type": "commonjs"}: the hooks run in a "type": "module" repo
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
 tests/hooks.test.js          node tests/hooks.test.js: hooks and installer against temp repos and a fake gh
 ```

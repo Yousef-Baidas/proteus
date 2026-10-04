@@ -418,8 +418,8 @@ const allowDir = (root, dir, write = true) => sandboxRoots(root, write, dir);
 
 // Subagents run in the lead's session under its hooks, which enforce owned paths; the copies
 // here are the backup for a codex session opened inside the worktree.
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js"];
-const WORKER_EXCLUDE = ["/.codex/proteus-owned", "/.codex/hooks/proteus-*.js"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_EXCLUDE = ["/.codex/proteus-owned", "/.codex/hooks/proteus-*.js", "/.codex/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
   fs.mkdirSync(dir, { recursive: true });
