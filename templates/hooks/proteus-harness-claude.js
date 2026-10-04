@@ -305,9 +305,10 @@ function allowDir(root, dir, write = true) {
   return { file, dir: want, changed: true };
 }
 
-// a worker's worktree: its hooks, registered by the worktree settings template beside this file
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js"];
-const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js"];
+// a worker's worktree: its hooks, registered by the worktree settings template beside this file, and
+// package.json, which keeps them CommonJS in a "type": "module" repo (#77)
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js", "/.claude/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
   fs.mkdirSync(dir, { recursive: true });

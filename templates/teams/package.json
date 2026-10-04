@@ -1,0 +1,4 @@
+{
+  "description": "Proteus scripts are CommonJS: this keeps them so in a repo whose package.json sets \"type\": \"module\".",
+  "type": "commonjs"
+}

@@ -6,6 +6,12 @@ installed version and the new one.
 
 ## [Unreleased]
 
+### Fixed
+
+- Hooks and `teams/link-skills.js` run in a repo whose `package.json` sets `"type": "module"`: a
+  `package.json` of `{"type": "commonjs"}` ships beside them. Before, every hook threw on `require`
+  and the guards failed open (#77).
+
 ## [1.0.0] - 2026-10-04
 
 First signed release. Proteus was called hivemind; `install.js --update` in a hivemind checkout migrates

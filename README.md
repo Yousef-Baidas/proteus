@@ -37,6 +37,8 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 
 `PROTEUS=0 claude` opens a plain session with none of them, for the review session or for working by hand.
 
+The hooks are CommonJS. A `package.json` of `{"type": "commonjs"}` goes beside them (`.claude/hooks/`, `teams/templates/hooks/`, a worker's worktree) and beside `teams/link-skills.js`, so they still run in a repo whose own `package.json` sets `"type": "module"`. The one in `teams/templates/hooks/` is committed with the rest, for CI's commit-msg gate.
+
 ## Models
 
 The session you start is the lead, on whatever model you started it with, and it staffs down from there on a ladder, cheapest first: `haiku < sonnet < opus < fable`. Roles map to three tiers. `judge` takes the work that needs sustained judgment: verifiers, the scout, contracts, escalations, merge conflicts, and QA at milestone and close. `build` implements every ticket. `helper` runs QA per wave, the guide, research and small reads. The autostart prints `models=lead:…,judge:…,build:…,helper:…`; the guard enforces the ladder on every spawn.
@@ -381,6 +383,7 @@ agents/
 templates/teams/             the shipped roster, copied into your repo's teams/ by install.js --project
   ROUTING.md                 deliverable type or path -> owning team; path -> tier ceiling
   link-skills.js (.sh .ps1)  links (or installs) each team's skills
+  package.json               {"type": "commonjs"}: the link script runs in a "type": "module" repo
   <team>/PROFILE.md          role, owns, rules, green additions, verifier checklist
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
   <team>/required.txt        pipeline-required skills; the scout never edits it
@@ -407,6 +410,7 @@ templates/
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
+    package.json            {"type": "commonjs"}: the hooks run in a "type": "module" repo
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
 tests/hooks.test.js          node tests/hooks.test.js: hooks and installer against temp repos and a fake gh
 ```

@@ -179,7 +179,22 @@ function sync(ad, home, root, notes) {
   }
   // a new hook file may need a new registration
   if (hooks) ad.registerLead(root);
+  // the CommonJS marker (#77) can arrive by this sync before install.js --project excludes it
+  if (hooks) safe(() => excludeMarker(ad, root));
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
+}
+
+// keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does
+function excludeMarker(ad, root) {
+  const line = path.relative(root, path.join(ad.hooksDir(root), "package.json")).split(path.sep).join("/");
+  const common = lib.gitCommonDir(root);
+  if (!common || !fs.existsSync(path.join(root, line))) return;
+  const file = path.join(common, "info", "exclude");
+  let cur = "";
+  try { cur = fs.readFileSync(file, "utf8"); } catch {}
+  if (cur.split(/\r?\n/).includes(line)) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n");
 }
 
 // A public repo publishes the run log, briefs, contracts, evidence and questions: said once per repo,
