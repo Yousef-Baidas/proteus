@@ -7,7 +7,7 @@ The checkout is `proteus-src` in `proteus-state`; with no state line (typed `/pr
 ## How to run it
 
 - One stop per message. Each stop is at most six short lines in plain words, no file dumps, then one `AskUserQuestion` (Codex: the same three as a numbered line): `Next` (recommended), `Skip to the end`, `Stop here`. The free-text answer is the human's question.
-- A question: answer it in at most six lines, from the reference that covers it (read that file now if it is not in context; never answer from memory). Then ask the same picker again. A question outside proteus: answer briefly, then continue.
+- A question: answer it in at most six lines, from the reference that covers it (read that file now if it is not in context, rather than answer from memory). Then ask the same picker again. A question outside proteus: answer briefly, then continue.
 - An open run keeps going: workers do not pause for the tour, and a worker report or a pinned question the run waits on comes first; resume the tour after it.
 - Nothing here is an action. The tour runs no ticket, writes no file, and changes no setting; the human asking for one ends the tour and becomes the work order.
 - End, whichever way (`Skip to the end`, `Stop here`, last stop): `node <proteus-src>/install.js --tour-done`, then one line: "Tour done; type `tour` any time to see it again." The offer then stays off until a new feature lands.

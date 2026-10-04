@@ -1,6 +1,6 @@
 # Lessons
 
-A lesson is a solved problem that must never be solved twice. It is recalled only when its trigger fires, so a hundred lessons cost nothing until one is needed. Never paste lessons into `AGENTS.md`, `CLAUDE.md`, or a brief.
+A lesson is a solved problem, kept so it is not solved twice. It is recalled only when its trigger fires, so a hundred lessons cost nothing until one is needed; pasted into `AGENTS.md`, `CLAUDE.md`, or a brief, it would cost every session, so it stays out of them.
 
 ## When to write one
 
@@ -47,6 +47,6 @@ When a problem is not about this project but about the workflow (a step that alw
 
 1. Write the proposal: problem seen (with the run and issue numbers), proposed change to which Proteus file, and why.
 2. `proteus-src` in the `proteus-state` line is the Proteus checkout. File the proposal there: `gh issue create -R <owner/repo of that checkout's origin> --label proposal --title "<one line>" --body-file -`.
-3. Tell the human in one line. The human decides and edits Proteus; the lead never edits the skill, its hooks, or the agents, and never changes the workflow mid-run on its own proposal.
+3. Tell the human in one line. The human decides and edits Proteus; the lead does not edit the skill, its hooks, or the agents, or change the workflow mid-run on its own proposal.
 
 The human saying "improve proteus: …" means the same: write the proposal from their words, file it, report the link.

@@ -5,7 +5,7 @@ Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into ever
 ## Budget
 
 - Root `CLAUDE.md` and `AGENTS.md`: about 150 lines each, together under 250. The autostart reports `doc-bloat=<file:lines>` over that.
-- No variants: `CLAUDE_1.md`, `CLAUDE-old.md`, `AGENTS2.md` and the like are never created; split content goes where the table below says.
+- No variants: `CLAUDE_1.md`, `CLAUDE-old.md`, `AGENTS2.md` and the like are not created; split content goes where the table below says.
 - `CONTEXT.md` (domain glossary) and `CONVENTIONS.md` (taste) have no fixed budget but the same rule: every line must change what an agent does.
 
 ## The diet ticket
@@ -30,7 +30,7 @@ The worker's PR description is the classification table with a line count per de
 A long project still needs to know how it got here. Landmarks are kept, as pointers, not prose:
 
 - The root doc may end with a `## Landmarks` list of at most ten lines, each one line: `<date> <what changed> — <issue, ADR, or PR link>`. Older entries drop off; the link keeps the detail.
-- The wayfinder map is an issue labelled `wayfinder:map`, never a file. Its closed destinations are the journey.
+- The wayfinder map is an issue labelled `wayfinder:map`, not a file. Its closed destinations are the journey.
 - Milestones and their review issues are the record of what shipped and what the human said.
 
 Nothing is lost by moving it to the tracker; it stops costing every session.
