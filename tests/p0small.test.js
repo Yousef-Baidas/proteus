@@ -71,6 +71,12 @@ ok("lead write: CLAUDE.md refused", edit("CLAUDE.md").code === 2 || /does not ed
 ok("lead write: CONTEXT, CONVENTIONS, AGENTS, ADR, lesson allowed", ["CONTEXT.md", "CONVENTIONS.md", "AGENTS.md", "docs/adr/0001-x.md", "docs/lessons/x.md"].every((f) => { const r = edit(f); return r.code === 0 && r.out === ""; }));
 ok("lead write: src file refused", /does not edit src\/a.ts/.test(edit("src/a.ts").out + edit("src/a.ts").err));
 
+// model ladder: the default floor is Sonnet, so a Haiku spawn is under it and Sonnet is not
+const spawnAs = (model) => run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Agent", tool_input: { subagent_type: "proteus-worker", model, prompt: "x" } }, { cwd: REPO, env: { HOME: path.join(W, "nohome") } });
+const haiku = spawnAs("haiku");
+ok("ladder: default floor is sonnet, haiku denied", haiku.code === 2 && /under the floor \(sonnet\)/.test(haiku.err), haiku.err);
+ok("ladder: sonnet passes the floor", !/under the floor/.test(spawnAs("sonnet").err));
+
 // async tests last; they print the summary
 (async () => {
   // lessons: hits are appended, so parallel sessions lose none

@@ -49,7 +49,7 @@ The session you start is the lead, on whatever model you started it with, and it
 
 - Nothing runs above the lead. A worker may run on the lead's own model.
 - Fable is once per project: the lead is its one instance, so a Fable lead staffs Opus and below. Lift it with a line in `AGENTS.md` under `## Learned`: `models: solo=none`.
-- Haiku is under the floor: it does not produce or review work until it earns it. `models: floor=haiku` in `AGENTS.md` lowers the floor for a project; a Haiku lead lowers it on its own, so everything runs on Haiku.
+- The floor is Sonnet, so Haiku is under it: it does not produce or review work until it earns it. `models: floor=haiku` in `AGENTS.md` lowers the floor for a project; a Haiku lead lowers it on its own, so everything runs on Haiku.
 - Machine-wide defaults live in `~/.claude/proteus.json`: `"models": { "ladder": ["haiku", "sonnet", "opus", "fable"], "floor": "sonnet", "solo": ["fable"] }`. Claude Code passes a subagent's model as one of these aliases, so a rung is a family, not a version.
 
 ## Asks before it guesses
