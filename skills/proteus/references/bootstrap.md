@@ -27,7 +27,7 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 ## Mid-project, unset
 
 1. `/setup-matt-pocock-skills` with GitHub as the tracker if not run. `/domain-modeling` for `CONTEXT.md` if missing; `/wayfinder` first if the project is large enough that one session cannot hold it (its map goes to the tracker as a `wayfinder:map` issue, never a file).
-2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them. Do not dispatch features onto a red baseline; workers cannot tell their red from yours.
+2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave: it records each red gate's findings in `teams/baseline.json` with `proteus-baseline.js` and runs that gate through it in CI and lefthook (`enforcement.md` §12), so a ticket fails only on findings it adds; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them. Fixing the recorded failures is follow-up work, not a precondition. A red gate with no baseline still blocks features; workers cannot tell their red from yours.
 3. Code: `fallow health` / `vulture`, run by a `mid` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, never into a feature ticket.
 4. Root docs over budget (`doc-bloat` in `proteus-state`) → a docs-diet ticket (`docs-diet.md`) in wave one. Plans, maps, or logs committed as files → the same ticket moves them to the tracker.
 5. Add `## Learned` to `AGENTS.md`. Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
@@ -52,4 +52,4 @@ Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the hu
 
 ## Ready
 
-Confirm in one line: gates green on `main`, `CONTEXT.md`, `CONVENTIONS.md`, `## Learned`, `teams/` with `ROUTING.md` and links, tracker reachable. Go.
+Confirm in one line: gates green on `main` (a ratcheted gate: no finding beyond `teams/baseline.json`), `CONTEXT.md`, `CONVENTIONS.md`, `## Learned`, `teams/` with `ROUTING.md` and links, tracker reachable. Go.

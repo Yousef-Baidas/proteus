@@ -21,7 +21,7 @@ Read teams/<team>/PROFILE.md first, teams/<team>/CRAFT.md if it exists, CONVENTI
 <Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
 Code: run /implement (drives /tdd at the seam, ends with /code-review). Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths, never a file only in out/, /tmp, or a GUI session. Probes print path, hash or size, and count of what they opened.
-Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths.
+Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths; a gate run through `proteus-baseline.js` is clean when it reports no new findings.
 Two retries after first red. Third red → comment `RED` + `git diff <fork>` + exact failing output on the issue and stop. Never restart, never widen.
 Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill`, with a body line `Owned: <the ticket's owned paths and globs, space-separated>`: CI checks the PR's changed paths against it.
 Done → one comment on the issue: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.

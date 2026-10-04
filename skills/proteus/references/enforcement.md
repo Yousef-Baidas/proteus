@@ -1,6 +1,6 @@
 # Enforcement
 
-Rules in prompts drift. These make the important ones mechanical. Templates ship in `teams/templates/` (copied by `install.js --project`); the scaffold or stabilise ticket installs them once. §3–6 and §8 apply to every domain; §1 CI applies wherever the checks run headless; §7, §9, §10 are code-only (other domains get their deep pass from the team rubric in `domains.md`).
+Rules in prompts drift. These make the important ones mechanical. Templates ship in `teams/templates/` (copied by `install.js --project`); the scaffold or stabilise ticket installs them once. §3–6, §8 and §12 apply to every domain; §1 CI applies wherever the checks run headless; §7, §9, §10 are code-only (other domains get their deep pass from the team rubric in `domains.md`).
 
 ## 1. CI on every ticket PR + run-branch rules
 
@@ -95,10 +95,28 @@ Lead (main checkout):
 - `proteus-scratch.js` (`PreToolUse`, `PostToolUse`, `PostToolUseFailure` on `Bash`, subagents included): ledgers each new entry directly in the temp dir that this user owns and the command or its output names; `--path`, `--sweep` and `--size` from the command line (`operations.md`). Only a sweep deletes, and only what the ledger or the scratch dir holds.
 - `proteus-stall.js` (`SubagentStop`, `TeammateIdle`; Codex `SubagentStop` only): refuses a stop that ends waiting on a background job instead of reporting (`operations.md`).
 - `proteus-statusline.js` (status line): appends `proteus: N questions · M reviews` to your own status line while any are open; it reads a cache and refreshes it in the background at most once a minute. Registered only when the project has no `statusLine` of its own. Codex has no scriptable status line; `inbox=` in `proteus-state` carries the count.
-- Not hooks: `proteus-status.js` (the `status` command), `proteus-inbox.js` (`--refresh` lists open questions and reviews; the `questions` command), `proteus-verdict.js` (the trusted verdict or answer on an issue, `tracker.md`), `proteus-worktree.js` (§2).
+- Not hooks: `proteus-status.js` (the `status` command), `proteus-inbox.js` (`--refresh` lists open questions and reviews; the `questions` command), `proteus-verdict.js` (the trusted verdict or answer on an issue, `tracker.md`), `proteus-worktree.js` (§2), `proteus-baseline.js` (§12).
 
 Worker worktree (written by `proteus-worktree.js`, a backup for sessions opened inside a worktree): `proteus-owned-paths.js` (§2), `proteus-owned-check.js` (§2; the worktree's `pre-commit` and the CI step), `proteus-worker-guard.js` (no `run_in_background`, no `Monitor`, no `--edit-last`, no `ACCEPT`/`CHANGES`/`ANSWER` comment), `proteus-lessons.js`, `proteus-scratch.js`, `proteus-stall.js` on `Stop`.
 
 No hook reads Claude Code's hook JSON itself. `proteus-harness.js` loads the adapter named by `PROTEUS_HARNESS` (`proteus-harness-<name>.js`, default and fallback `claude`), which turns the CLI's input into one Proteus event, answers for the hook (deny, add context, keep going), reads the transcript, and knows where the CLI keeps settings, agents and worker hooks. `proteus-lib.js` is the part every CLI shares. The event and adapter contract are documented at the top of `proteus-harness.js`. Hooks installed under `.codex/hooks` use the Codex adapter. The default model ladder belongs to the adapter; a CLI without one runs single-model, every spawn on the lead's model, until `models.ladder` is set.
 
 `PROTEUS=0 claude` (`PROTEUS=0 codex`) opens a plain session with none of the lead's hooks: the review session, or the human working by hand. Hook state lives in `<git-common-dir>/proteus/` (`journal.jsonl`, `inbox.json`, `lesson-hits.jsonl`, `lead-model.json`, `skills-drift.json`, `visibility.json`, `scratch-ledger.jsonl`, `scratch/`, `scratch-size.json`, lesson and stall caches) and is never committed. `node <Proteus checkout>/install.js --doctor` checks the whole install, `--doctor --fix` repairs what it safely can.
+
+## 12. Baseline ratchet
+
+A gate that is red on `main` when Proteus arrives would block every ticket, and a worker cannot tell its red from the repo's. The stabilise ticket records it instead and runs the gate through the ratchet, which fails only on what is new:
+
+```
+node teams/templates/hooks/proteus-baseline.js <gate> --record [--mode lines|count] [--match <re>] [--ignore <re>] -- <command…>
+node teams/templates/hooks/proteus-baseline.js <gate> -- <command…>
+```
+
+- The first line, once per red gate, writes `teams/baseline.json` (`gates.<gate>`: mode, match, findings or count, exit); commit it. The second is the gate line in `proteus-gates.yml`, `lefthook.yml` and the worker's green. One argument after `--` runs as a shell line; several run as argv.
+- `lines` (default): every output line matching `match` is a finding, compared as a multiset after stripping ANSI codes, the checkout path, `ignore`, and with every number turned into `#` (line numbers and timings move without the finding changing). The default `match` catches `FAIL`, `FAILED`, `Error`, `error`, `warning`, `not ok`; set one per runner, e.g. `^FAILED ` for pytest, `^\s*FAIL ` for vitest and jest.
+- `count`: the sum of the numbers `match` captures, e.g. `(\d+) (?:errors?|warnings?)` for a linter summary, must not grow.
+- A command that exits 0 passes. A non-zero exit passes only when every finding is in the baseline; a non-zero exit with no finding the regex recognises fails (a crash or a changed output format is not "nothing new"), and so does any red run of a gate recorded green.
+- `--record` on an existing entry only tightens: it refuses while a finding is not in the baseline. `--reset` re-records from scratch and is the human's call. A run that reports `fixed` prints the tighten hint; the lead puts `teams/baseline.json` in the owned paths of the ticket that fixes a recorded failure, and that worker re-records.
+- A gate with no entry passes its own exit code through, so nothing is ratcheted by accident.
+
+Limits: a line-based finding is only as stable as the runner's output. A renamed test or a reworded message is a new finding and its old line a fixed one; a flaky test shows up as new when it fails and was not recorded; two failures that print the same line once digits are gone count as one line twice, not as two names. A count cannot tell one new failure from one fixed, so a ticket that fixes one and breaks another passes; prefer `lines` with a runner-specific `match` and keep `count` for linters whose per-finding lines are too noisy. Output over 512 MB, or a command past `PROTEUS_BASELINE_TIMEOUT` (default one hour), fails.

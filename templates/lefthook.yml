@@ -1,5 +1,6 @@
 # lefthook (https://lefthook.dev). Installed by the Proteus scaffold ticket.
-# Replace the EDIT lines with the gate commands recorded in AGENTS.md ## Learned.
+# Replace the EDIT lines with the gate commands recorded in AGENTS.md ## Learned. A gate with a recorded
+# baseline runs as `node teams/templates/hooks/proteus-baseline.js <gate> -- <command>`, same as in CI.
 commit-msg:
   commands:
     conventional:
