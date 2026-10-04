@@ -32,7 +32,7 @@ Skip when `proteus-state` says it exists (never redo, never re-ask): `/setup-mat
 
 Never skip, every session, in this order:
 1. Tracker preflight (`tracker.md`). Fails → stop.
-2. Pending human review: `gh issue list --label needs-human --state open --json number,title -q …`. Any open and the run is attended → you are at step 7½; wait, dispatch nothing.
+2. Pending human review: `gh issue list --label needs-human --state open --json number,title -q …`. Any open and the run is attended → you are at step 7½; wait, dispatching only speculative tickets (`review.md`).
 3. Open run: `proteus-branches` lists a `proteus/<run>` → resume it, never start a second run beside it. Position comes from the tracker, first match wins: open PR into `proteus/<run>` with no verdict → step 6; with `MERGE` → step 7; open `proteus` issue with a `RED`/`NEEDS` comment → step 5; open `proteus` issue, no PR → step 4; milestone's issues all closed, no review issue → step 7 QA then 7½; every milestone closed → step 8. The autostart printed the run-log tail; read it before deciding.
 4. Baseline on `main`: `gh run list --branch main --limit 1 --json conclusion -q '.[0].conclusion'`; no CI → the gate command from `## Learned` with `>/dev/null 2>&1; echo $?`. Red → stabilise ticket first (`bootstrap.md`), no feature dispatch.
 5. `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`); it does not block. `proteus-update` present → tell the human once. `scratch=` present → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once: it is required; `node <proteus-src>/install.js --doctor --fix` installs it.
