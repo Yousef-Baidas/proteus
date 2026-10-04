@@ -464,9 +464,27 @@ try {
   ok("workdir() exits non-zero when os.tmpdir() is inside a git worktree", r.status !== 0 && r.status !== null, `${r.status} ${said}`);
   ok("workdir()'s refusal names the misplaced tmpdir", r.status !== 0 && (said.includes(bad) || said.includes(real(bad))), said);
   ok("workdir()'s refusal is a message, not a crash", r.status !== 0 && !/\n\s+at /.test(r.stderr || ""), r.stderr);
-  ok("workdir() creates nothing under the misplaced tmpdir", !lstat(path.join(bad, "proteus-test")));
+  ok("workdir() creates nothing under the misplaced tmpdir", fs.readdirSync(bad).length === 0, fs.readdirSync(bad).join(" "));
 } finally {
   for (const d of made) fs.rmSync(d, { recursive: true, force: true });
+}
+
+// #87: each process gets its own temp root, so two checkouts running the suite at once never collide;
+// a green run removes its root, a red one keeps it to inspect
+{
+  const LIB = JSON.stringify(path.join(SRC, "tests", "lib.js"));
+  const probe = (body) => {
+    const r = spawnSync(process.execPath, ["-e", `const l = require(${LIB}); l.workdir("a"); const a = l.W; l.workdir("b"); ${body} console.log(a + "\\n" + l.W);`], { encoding: "utf8", timeout: 60000 });
+    const [a, b] = (r.stdout || "").trim().split("\n").slice(-2);
+    return { a, b, root: a && path.dirname(a), err: r.stderr };
+  };
+  const green = probe("l.ok(\"x\", true); l.summary();");
+  const red = probe("l.ok(\"x\", false); l.summary();");
+  ok("workdir(): one root per process, shared by its workdirs", green.root && green.root === path.dirname(green.b), green.err);
+  ok("workdir(): two processes get different roots", green.root && red.root && green.root !== red.root, `${green.root} ${red.root}`);
+  ok("summary(): a green run removes its temp root", green.root && !lstat(green.root), green.root);
+  ok("summary(): a red run keeps its temp root", red.root && !!lstat(red.root), red.root);
+  if (red.root) fs.rmSync(red.root, { recursive: true, force: true });
 }
 
 summary();
