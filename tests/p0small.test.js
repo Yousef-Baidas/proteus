@@ -65,6 +65,12 @@ ok("lessons: input is cut before matching", !/body long/.test(r.out) && r.code =
 for (let i = 0; i < unsafe.length; i++) fs.unlinkSync(path.join(REPO, "docs", "lessons", `bad${i}.md`));
 for (const f of ["safe", "long"]) fs.unlinkSync(path.join(REPO, "docs", "lessons", f + ".md"));
 
+// lead write list: CLAUDE.md is the human's; the docs the lead keeps still pass
+const edit = (file) => run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Edit", tool_input: { file_path: path.join(REPO, file), old_string: "a", new_string: "b" } }, { cwd: REPO });
+ok("lead write: CLAUDE.md refused", edit("CLAUDE.md").code === 2 || /does not edit CLAUDE.md/.test(edit("CLAUDE.md").out + edit("CLAUDE.md").err));
+ok("lead write: CONTEXT, CONVENTIONS, AGENTS, ADR, lesson allowed", ["CONTEXT.md", "CONVENTIONS.md", "AGENTS.md", "docs/adr/0001-x.md", "docs/lessons/x.md"].every((f) => { const r = edit(f); return r.code === 0 && r.out === ""; }));
+ok("lead write: src file refused", /does not edit src\/a.ts/.test(edit("src/a.ts").out + edit("src/a.ts").err));
+
 // async tests last; they print the summary
 (async () => {
   // lessons: hits are appended, so parallel sessions lose none
