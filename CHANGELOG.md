@@ -6,13 +6,37 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-04
+
+### Added
+
+- A repo that requires an AI attribution trailer adds the line `attribution: allow` to its
+  `CONVENTIONS.md`; `commit-msg.js` then accepts it. `"attribution": "keep"` in `proteus.json` stops
+  the installer from rewriting the `attribution` setting (#94).
+
 ### Fixed
 
+- README: the Windows PowerShell steps that trust the release key work on Windows PowerShell 5.1, which
+  passed the key list down the pipeline as one object and left the key empty (#92).
+- Agents may write under their scratch dir (`proteus-scratch.js --path`); both edit guards refused it (#27).
+- No owned-paths glob covers the owned-path list itself, in any spelling Windows or macOS resolves to it,
+  and CI fails a PR that changes it, so a worker cannot widen its own ownership (#74).
 - Hooks and `teams/link-skills.js` run in a repo whose `package.json` sets `"type": "module"`: a
   `package.json` of `{"type": "commonjs"}` ships beside them. Before, every hook threw on `require`
   and the guards failed open (#77).
 - A worker worktree in a repo with no commit-msg hook (no lefthook yet, or a guest repo) gets one
   that runs `commit-msg.js`, so a message CI would reject fails at commit, not on the PR (#28).
+
+### Changed
+
+- Verifiers run the standards and spec passes themselves instead of `/code-review`, which their tools
+  cannot run (#60, #75). Worker and verifier briefs end with their report template, and the lead resends
+  a brief once when a report misses a field (#29).
+- Claude Code workers start each shell call with `cd <worktree> && ` and push their branch by name; Codex
+  workers set `workdir` (#58). Role prompts take an optional safety slot from a team profile (#61).
+- Only review issues (`proteus-review`) hold dispatch, not open questions (#26). The lead runs
+  `install.js --doctor --fix` when team skills are unlinked (#30), and asks before adding the lint
+  dependency to a repo that forbids new ones (#25).
 
 ## [1.0.0] - 2026-10-04
 
