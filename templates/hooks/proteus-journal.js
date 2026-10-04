@@ -4,7 +4,8 @@
 //    but for secrets (tokens, keys, private key blocks, password=… ; lib.redact), which become
 //    [redacted]; the autostart re-injects the newest ten after a compaction.
 // 2. Nudges the lead to log decisions to the run log.
-// 3. Context meter: at PROTEUS_HANDOFF_AT (default 150000) tokens or above, tells the lead to hand off.
+// 3. Context meter: at PROTEUS_HANDOFF_AT tokens or above (default 75% of the lead's context window,
+//    lib.handoffLines: 150000 on a 200k window), tells the lead to hand off.
 // Silent for PROTEUS=0, subagents, and linked worktrees.
 "use strict";
 const fs = require("fs");
@@ -33,7 +34,7 @@ lib.run((ev, ad) => {
   if (q) out.push(q);
 
   const ctx = ad.contextTokens(ev);
-  if (ctx >= lib.envInt("PROTEUS_HANDOFF_AT", 150000))
+  if (ctx && ctx >= lib.handoffLines(ev, root).at)
     out.push(`proteus: context at ${Math.round(ctx / 1000)}k. Finish the current step, log position to the run log, then /handoff and start a fresh lead.`);
 
   if (out.length) ad.context(ev, out.join("\n"), "prompt");

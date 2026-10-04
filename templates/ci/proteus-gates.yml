@@ -2,24 +2,36 @@
 # Every PR into proteus/* runs the same gates the worker ran. The ruleset on proteus/*
 # (install.js --protect) requires a check named exactly `gates` green; keep the job id.
 # The verifier's MERGE is a review comment, not a required approval.
+# Every push to proteus/* (each merge) runs `gates` again on the integrated tree and then `qa`,
+# the mechanical QA: e2e, smoke from a fresh install, rebuild of the deliverables, mutation
+# testing on the files the merge changed. The QA verifier reads these runs instead of
+# re-running them (teams/qa/PROFILE.md); keep the step names, it reads failures by them.
 # Each EDIT-* step below fails until you replace it, so an unfilled template is never green.
+# PRs into main come from the Direct and Quick tiers (SKILL.md rule 3); rename main if the default branch differs.
 name: proteus-gates
 on:
   pull_request:
+    branches: ["proteus/**", "main"]
+  push:
     branches: ["proteus/**"]
 jobs:
   gates:
+    # every push to and PR into a run branch; into main only a Quick ticket's (the human's own PRs are not Proteus's to gate)
+    if: github.event_name == 'push' || startsWith(github.base_ref, 'proteus/') || startsWith(github.head_ref, 'proteus-work/quick/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}   # the PR head, not the synthetic merge commit
+          ref: ${{ github.event.pull_request.head.sha }}   # the PR head, not the synthetic merge commit; on a push, the pushed commit
           fetch-depth: 0
       # EDIT: one setup action for the stack, e.g.
       #   - uses: actions/setup-node@v4   with: { node-version: 22, cache: npm }
       #   - uses: astral-sh/setup-uv@v5
       #   - uses: dtolnay/rust-toolchain@stable
       - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci | uv sync | cargo fetch
+      # a gate that was red before Proteus runs through the baseline ratchet (teams/baseline.json), which fails
+      # only on findings the recorded baseline lacks, e.g.
+      #   - run: node teams/templates/hooks/proteus-baseline.js test -- npx vitest run
       - run: echo "EDIT-typecheck not filled in" >&2; exit 1
       - run: echo "EDIT-lint not filled in" >&2; exit 1
       - run: echo "EDIT-test not filled in" >&2; exit 1
@@ -32,8 +44,64 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+      # the change must fit its declared tier (the PR body's "Tier:" line, standard without one) by the
+      # tiers block of teams/ROUTING.md as of the base; a change that outgrew it is re-run at the tier named
+      - name: tier
+        if: startsWith(github.head_ref, 'proteus-work/')
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
+      - name: commit messages
+        if: github.event_name == 'pull_request'
+        run: |
+          for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
+            git log -1 --format=%B "$c" > /tmp/msg && node teams/templates/hooks/commit-msg.js /tmp/msg || exit 1
+          done
+  # Direct tier: a batched docs PR from proteus-work/direct/<batch> into main runs the mechanical gates only;
+  # the tier step fails it once the batch outgrows Direct
+  direct:
+    if: startsWith(github.head_ref, 'proteus-work/direct/') && !startsWith(github.base_ref, 'proteus/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - run: echo "EDIT-docs not filled in" >&2; exit 1  # markdown lint, link check, spelling, e.g. npx markdownlint-cli2 && lychee . && npx cspell .
+      - name: owned paths
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-owned-check.js --ci origin/${{ github.base_ref }}
+      - name: tier
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node teams/templates/hooks/proteus-tier.js --ci origin/${{ github.base_ref }}
       - name: commit messages
         run: |
           for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
             git log -1 --format=%B "$c" > /tmp/msg && node teams/templates/hooks/commit-msg.js /tmp/msg || exit 1
           done
+  qa:
+    if: github.event_name == 'push'
+    needs: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # EDIT: the same setup action and install as the gates job
+      # A step this project has no use for (no e2e suite, no non-code deliverable) is deleted, not
+      # left green; a rebuild that needs hardware CI lacks (a GPU render) is deleted too and QA runs it locally.
+      - name: e2e
+        run: echo "EDIT-e2e not filled in" >&2; exit 1  # npx playwright test | uv run pytest tests/e2e | cargo test --test e2e
+      - name: smoke
+        run: echo "EDIT-smoke not filled in" >&2; exit 1  # install from a fresh dir (npm pack + npm i <tgz> | pip install . | cargo install --path .), run the documented command
+      - name: rebuild
+        run: echo "EDIT-rebuild not filled in" >&2; exit 1  # rebuild every non-code deliverable from the branch alone and compare with the merged evidence
+      # the files this push changed, mutated; exits non-zero on any surviving mutant (Stryker: thresholds.break
+      # 100 in its config). The push that creates the run branch has no before commit and is skipped.
+      - name: mutation
+        if: github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: echo "EDIT-mutation not filled in" >&2; exit 1  # f=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- src | paste -sd, -); [ -z "$f" ] || npx stryker run --mutate "$f" | mutmut run --paths-to-mutate "$f" | cargo mutants --in-diff <(git diff "$BEFORE" HEAD)

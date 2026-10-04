@@ -6,9 +6,9 @@
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Sonnet by default, so Haiku) is refused.
-// 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns. While a linked
-//    skill has drifted from teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier
-//    spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
+// 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
+//    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
+//    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
@@ -20,7 +20,9 @@
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
-//   scout's teams/*/skills.txt). All else passes.
+//   scout's teams/*/skills.txt). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+// Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
+//   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // Linked worktrees and PROTEUS=0 sessions pass untouched.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
@@ -41,6 +43,7 @@ if (process.env.PROTEUS === "0") process.exit(0);
 lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
   if (ev.agent) {
+    lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
     const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev));
     if (why) ad.deny(why);
     return;
@@ -61,7 +64,7 @@ lib.run((ev, ad) => {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
-    if (ctx >= lib.envInt("PROTEUS_HANDOFF_HARD", 180000)) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
+    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
     if (PIPELINE.test(ev.spawnType)) {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
@@ -73,21 +76,28 @@ lib.run((ev, ad) => {
   if (!target) return;
   if (ev.tool === "read") {
     if (IMAGE.test(target) && !humanNamed(ev, ad, target))
-      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the ladder's mid model: "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
+      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the helper model (helper: in models=): "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
     return; // lib.run exits 0 once stdout drains
   }
   if (ev.tool !== "edit") return;
-  const rel = ev.paths.map((p) => lib.relPath(root, p)).find((r) => r && !LEAD_MAY_WRITE.some((re) => re.test(r)));
-  if (!rel) return; // outside the repo (temp issue bodies, memory) or a doc the lead keeps
-  ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);
+  const guest = lib.guestDir(root);
+  for (const p of ev.paths) {
+    const rel = lib.relPath(root, p), mine = (r) => LEAD_MAY_WRITE.some((re) => re.test(r));
+    // guest mode: the docs the lead keeps live in the guest dir, and the repo's own copies are not Proteus's to touch
+    if (rel && guest && mine(rel)) ad.deny(`guest mode: this repo keeps no Proteus files; ${rel} lives at ${slash(path.join(guest, rel))}. Edit it there.` + BYPASS);
+    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);
+    const grel = !rel && guest ? lib.relPath(guest, p) : null;
+    if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
+  } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps
 });
 
 // the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
 function modelDenial(c, name) {
   if (!c.ladder.length) return ""; // no ladder and no known lead model
-  const use = `use "${c.top}" for hard tickets and every verdict, "${c.mid}" for standard tickets and helpers`;
+  const t = (x) => `"${x.model}"${x.effort ? ` with ${c.effortParam} "${x.effort}"` : ""}`;
+  const use = `use ${t(c.tiers.judge)} for verdicts, contracts, escalations, conflicts and the scout, ${t(c.tiers.build)} for tickets, ${t(c.tiers.helper)} for wave QA, the guide and helpers`;
   if (!name) return `every Agent call names its model (the agent's default may sit above the lead's): ${use}.`;
-  const r = lib.rungOf(c.ladder, name);
+  const r = lib.rungOf(c.ladder, name, c.aliases);
   if (r < 0) return `model "${name}" is not on the ladder (${c.ladder.join(" < ")}); ${use}.`;
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;
@@ -118,6 +128,8 @@ function subagentEdit(ev) {
 function subagentPath(ev, target) {
   const cwd = path.resolve(ev.cwd || lib.projectRoot(ev));
   const abs = path.resolve(cwd, String(target));
+  const guest = guestPath(ev, abs);
+  if (guest !== null) return guest;
   const wt = lib.gitRoot(path.dirname(abs));
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
@@ -132,6 +144,17 @@ function subagentPath(ev, target) {
     ? `yours is ${slash(own)}: edit ${slash(path.join(own, rel))}`
     : "none found from your cwd; comment NEEDS on the issue and stop";
   return `workers edit only inside their worktree (${hint}). ${rel} is in the main checkout while a run is open.`;
+}
+
+// guest mode: the guest dir stands in for the main checkout (null when abs is outside it, or no guest mode)
+function guestPath(ev, abs) {
+  const root = path.resolve(lib.projectRoot(ev)), guest = lib.guestDir(root);
+  const rel = guest ? lib.relPath(guest, abs) : null;
+  if (rel === null) return null;
+  const common = lib.gitCommonDir(root);
+  if (!common || !lib.runOpen(common)) return "";
+  if (ev.agentType === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
+  return `${rel} is in the guest dir ${slash(guest)}, which holds this repo's Proteus files; workers do not edit it while a run is open. Edit only inside your worktree, or comment NEEDS on the issue and stop.`;
 }
 
 // One worker, one worktree. A subagent's worktree is its cwd's when that is a prepared worktree (a

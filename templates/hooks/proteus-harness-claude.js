@@ -8,8 +8,12 @@ const os = require("os");
 const { tailLines } = require(path.join(__dirname, "proteus-lib.js"));
 
 const name = "claude";
-// the default model ladder, lowest first; solo models run once per project
-const models = { ladder: ["haiku", "sonnet", "opus", "fable"], floor: "sonnet", solo: ["fable"] };
+// the default model ladder, lowest first; solo models run once per project. Claude Mythos is
+// Claude Fable offered under another name (Project Glasswing), so it sits on Fable's rung.
+const models = { ladder: ["haiku", "sonnet", "opus", "fable"], floor: "sonnet", solo: ["fable"], aliases: { mythos: "fable" } };
+// the Agent tool takes a model per spawn but no effort; a subagent's effort is its frontmatter
+// `effort:` (the judge agents carry high), else the session's
+const spawnEffort = "";
 const bypass = "PROTEUS=0 claude";
 
 const KINDS = {
@@ -165,6 +169,40 @@ function sessionModel(ev) {
   return "";
 }
 
+// the model's nominal context window: 1M for a [1m] id and for the models whose window is 1M
+// natively (Fable, Mythos, Opus 4.7 and later, Sonnet 5 and later, and the bare aliases, which
+// name the newest); 200k for Haiku and older Opus and Sonnet; 0 for an id this does not know
+function modelWindow(model) {
+  const m = String(model || "").toLowerCase();
+  if (m.includes("[1m]")) return 1000000;
+  const f = /(haiku|sonnet|opus|fable|mythos)(?:[-. ](\d{1,2})(?!\d)(?:[-.](\d{1,2})(?!\d))?)?/.exec(m);
+  if (!f) return 0;
+  if (f[1] === "haiku") return 200000;
+  if (f[1] === "fable" || f[1] === "mythos") return 1000000;
+  if (!f[2]) return /\d/.test(m) ? 200000 : 1000000; // claude-3-5-sonnet-… is old; a bare alias is the newest
+  const v = +f[2] + (f[3] ? +f[3] / 10 : 0);
+  return v >= (f[1] === "opus" ? 4.7 : 5) ? 1000000 : 200000;
+}
+
+// the window the human capped Claude Code at, or 0: CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
+// autoCompactWindow in the settings files (local, project, user; a modelSettings entry for this
+// model before the plain key), and at most 200k under CLAUDE_CODE_DISABLE_1M_CONTEXT
+function contextCap(ev, model) {
+  const off = String(process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || "").toLowerCase();
+  const no1m = off && off !== "0" && off !== "false" ? 200000 : Infinity;
+  let cap = +process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  if (!(cap > 0)) {
+    const root = (ev && ev.root) || process.cwd();
+    const files = [path.join(root, ".claude", "settings.local.json"), path.join(root, ".claude", "settings.json"), path.join(home, "settings.json")];
+    const all = files.map((f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")) || {}; } catch { return {}; } });
+    const id = String(model || "").toLowerCase().replace(/\[1m\]$/, "");
+    const per = (s) => s.modelSettings && s.modelSettings[id] && s.modelSettings[id].autoCompactWindow;
+    cap = +(all.map(per).find((n) => +n > 0) || all.map((s) => s.autoCompactWindow).find((n) => +n > 0) || 0);
+  }
+  const n = Math.min(cap > 0 ? cap : Infinity, no1m);
+  return n === Infinity ? 0 : n;
+}
+
 // ---- install: where things live, and the hook registrations
 
 const home = path.join(os.homedir(), ".claude");
@@ -179,7 +217,10 @@ const skipHooks = [];
 const agentFile = (file, text) => ({ name: path.basename(file), text });
 const leadSettings = (root) => path.join(root, ".claude", "settings.local.json");
 
-// the required context-mode plugin: installed and enabled at user scope (two small file reads)
+// where installed plugins keep their skills, then the dirs `npx skills add` links into (proteus-skillpath.js)
+const skillRoots = () => [path.join(home, "plugins", "cache"), path.join(home, "skills"), path.join(os.homedir(), ".agents", "skills")];
+
+// the optional context-mode plugin: installed and enabled at user scope (two small file reads)
 function contextModeOn() {
   const id = "context-mode@context-mode";
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")) || {}; } catch { return {}; } };
@@ -243,8 +284,29 @@ function registerLead(root) {
   return { file, changed: true };
 }
 
+// guest mode: the guest dir outside the project, open to the session without a prompt per file
+// (permissions.additionalDirectories in .claude/settings.local.json). write=false only checks.
+// Returns {file, dir, changed}, {file, dir, missing} or {file, dir, error}.
+function allowDir(root, dir, write = true) {
+  const file = leadSettings(root), want = path.resolve(dir);
+  let s = {};
+  try {
+    const raw = fs.readFileSync(file, "utf8");
+    if (raw.trim()) s = JSON.parse(raw);
+  } catch (e) { if (e.code !== "ENOENT") return { file, dir: want, error: `${file} is not valid JSON (${e.message})` }; }
+  if (!s || typeof s !== "object" || Array.isArray(s)) return { file, dir: want, error: `${file} is not a JSON object` };
+  const perms = s.permissions && typeof s.permissions === "object" && !Array.isArray(s.permissions) ? s.permissions : {};
+  const list = Array.isArray(perms.additionalDirectories) ? perms.additionalDirectories : [];
+  if (list.some((d) => typeof d === "string" && path.resolve(d) === want)) return { file, dir: want, changed: false };
+  if (!write) return { file, dir: want, missing: true };
+  s.permissions = { ...perms, additionalDirectories: [...list, want] };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(s, null, 2) + "\n");
+  return { file, dir: want, changed: true };
+}
+
 // a worker's worktree: its hooks, registered by the worktree settings template beside this file
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js"];
 const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
@@ -275,7 +337,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, projectRoot, event, deny, context, keepGoing,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

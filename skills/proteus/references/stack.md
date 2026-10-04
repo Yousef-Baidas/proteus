@@ -7,7 +7,7 @@
 | LSP plugin / Serena | – | yes | yes |
 | ponytail | – | full | – |
 | caveman | lite | full | lite |
-| rtk + context-mode | yes | yes | yes |
+| rtk + context-mode (optional) | yes | yes | yes |
 | code-review-graph | – | – | yes |
 | fallow (JS/TS) | `health` at close | `dead-code` on owned paths | `dupes` on diff |
 | vulture / vulture-rs (Python) | close | `--min-confidence 80` owned paths | diff |
@@ -21,7 +21,7 @@ caveman owns prose, ponytail owns code size, rtk + context-mode own tool output.
 Never two graph tools on one role. Workers get no repo tour; if one asks for context, fix the ticket. Missing tool → note once in the task list, continue.
 
 ## Context budget (200k lead)
-Lead never reads worker output or diffs; the verifier does. Lead never produces a deliverable either; a fix is a decision dispatched to a worker on the ladder. Lead holds: skill, issue numbers, contracts, task list, one-line verdicts. Never a raw `gh issue view`; always `--json … -q`. `proteus-journal.js` meters context from the transcript: at `PROTEUS_HANDOFF_AT` (default 150000 tokens) it tells the lead to finish the step, log the position, and `/handoff`; at `PROTEUS_HANDOFF_HARD` (default 180000) the guard refuses new spawns until it does. Workers and verifiers are unaffected by a lead restart. Set both lower on a 200k model if compaction still fires first.
+Lead never reads worker output or diffs; the verifier does. Lead never produces a deliverable either; a fix is a decision dispatched to a worker on the ladder. Lead holds: skill, issue numbers, contracts, task list, one-line verdicts. Never a raw `gh issue view`; always `--json … -q`. `proteus-journal.js` meters context from the transcript: at `PROTEUS_HANDOFF_AT` (default 75% of the lead's context window) it tells the lead to finish the step, log the position, and `/handoff`; at `PROTEUS_HANDOFF_HARD` (default 90%) the guard refuses new spawns until it does. The window is the smallest of the model's nominal one, the harness cap the human set (Claude Code `autoCompactWindow`, Codex `model_auto_compact_token_limit`) and `contextWindow` in `~/.claude/proteus.json`, else 200k; a 200k cap puts the lines at 150k and 180k. Workers and verifiers are unaffected by a lead restart. Set both lower on a 200k model if compaction still fires first.
 
 ## Worktrees
 ```
@@ -31,9 +31,9 @@ node <hooks>/proteus-worktree.js ../<repo>-proteus/<id> <owned paths…>
 git rev-parse proteus/<run>   # fork point, record in task
 ```
 `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex. On Codex run each line as its own command, as written: a `cd`, pipe to a filter, or `$(…)` keeps git and `gh` inside the sandbox (`harnesses.md`).
-The lead makes the wave's worktrees at step 3; the contracts worker commits each ticket's contract there, and the ticket's worker continues on the same branch. Worker branches are `proteus-work/<run>/<id>`, outside `proteus/`, so a rule on `proteus/*` binds run branches and leaves workers free to push (`enforcement.md` §1). A run opened before this keeps `proteus/<run>-<id>` until it closes; the hooks read both.
-Per worktree: own dev-server port (`.env.local`), own DB/container/SQLite, own install dir. Shared services are why "passes alone, fails together". Binaries outside the worktree (a symlinked `.blend`, an absolute path to a media library or a spreadsheet) are shared too: one writer per such file per wave, or each worktree builds its own copy from the committed scripts. A check that reads the shared original while a worker writes it measures nothing (`domains.md`).
+The lead makes each ready ticket's worktree at step 3, forked from `proteus/<run>` after its dependencies merged; the contracts worker commits each ticket's contract there, and the ticket's worker continues on the same branch. Worker branches are `proteus-work/<run>/<id>`, outside `proteus/`, so a rule on `proteus/*` binds run branches and leaves workers free to push (`enforcement.md` §1). A run opened before this keeps `proteus/<run>-<id>` until it closes; the hooks read both.
+Per worktree: own dev-server port (`.env.local`), own DB/container/SQLite, own install dir. Shared services are why "passes alone, fails together". Binaries outside the worktree (a symlinked `.blend`, an absolute path to a media library or a spreadsheet) are shared too: one writer per such file at a time, or each worktree builds its own copy from the committed scripts. A check that reads the shared original while a worker writes it measures nothing (`domains.md`).
 
-Merge: `git worktree remove ../<repo>-proteus/<id>` (the branch cannot be deleted while checked out), then `gh pr merge <pr> --merge --delete-branch`, then `git checkout proteus/<run> && git pull` and the full suite. Every merge, not just the last.
+Merge: `git worktree remove ../<repo>-proteus/<id>` (the branch cannot be deleted while checked out), then `gh pr merge <pr> --merge --delete-branch`, and after the batch's last merge `git checkout proteus/<run> && git pull` and the full suite once as `node <hooks>/proteus-gates-cache.js "<suite>" >/dev/null 2>&1; echo $?` (QA's run on the same tree then replays it); red is bisected (SKILL.md step 7).
 
 More than ~6 parallel workers or multi-repo → hand worktree lifecycle to Composio Agent Orchestrator or Conductor; keep this skill for judgement.

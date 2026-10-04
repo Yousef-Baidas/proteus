@@ -23,5 +23,5 @@ The checkout is `proteus-src` in `proteus-state`; with no state line (typed `/pr
 
 ## whats-new
 
-1. Spawn one `mid` subagent: "In `<proteus-src>`, read `git log --reverse --format='%h %s%n%b' <toured>..HEAD` and `git diff <toured>..HEAD -- README.md skills/`. Return at most eight lines, one per change a user of Proteus would notice (new command, new behaviour, something removed or renamed, a step that now asks them something), each in plain words with what they do differently. Nothing internal." `<toured>` is `toured` in `~/.claude/proteus.json`.
+1. Spawn one `helper` subagent: "In `<proteus-src>`, read `git log --reverse --format='%h %s%n%b' <toured>..HEAD` and `git diff <toured>..HEAD -- README.md skills/`. Return at most eight lines, one per change a user of Proteus would notice (new command, new behaviour, something removed or renamed, a step that now asks them something), each in plain words with what they do differently. Nothing internal." `<toured>` is `toured` in `~/.claude/proteus.json`.
 2. Stop one: "Proteus changed since your last tour:" and the lines. Stop two, only if the human picks a line to go into: that change in six lines, from the reference it touched. Then end.

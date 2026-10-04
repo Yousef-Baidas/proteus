@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -271,6 +271,35 @@ function gitRoot(dir) {
   }
 }
 
+// run file with args and no shell. On win32 a .cmd shim (npx, npm) cannot start without one, so that case falls
+// back to cmd.exe with each argument quoted and its metacharacters ^-escaped twice, since the shim re-parses %*
+// (cross-spawn's rules); a single cmd-quoted line would let a quote inside an argument expose > or & to cmd.
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+function spawnArgv(file, args, opts = {}) {
+  const o = { encoding: "utf8", windowsHide: true, ...opts, shell: false };
+  const r = spawnSync(file, args, o);
+  if (process.platform !== "win32" || !r.error || !["ENOENT", "EINVAL"].includes(r.error.code)) return r;
+  const q = (a) => `"${String(a).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
+  const line = [String(file).replace(CMD_META, "^$1"), ...args.map(q)].join(" ");
+  return spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { ...o, windowsVerbatimArguments: true });
+}
+
+// ---- guest mode: a repo the human does not own keeps Proteus's files out of its tree. <common>/proteus/guest.json
+// {dir} names an absolute folder laid out like the checkout root (CONTEXT.md, CONVENTIONS.md, AGENTS.md, docs/adr,
+// docs/lessons, teams/); install.js --guest writes it. docRoot is where those files live: that folder, else root.
+const guestFile = (common) => path.join(stateDir(common), "guest.json");
+// ~/.proteus/guest/<repo>-<hash of the common dir>: per user, per clone, outside every checkout
+function defaultGuestDir(common) {
+  const name = path.basename(mainRoot(common) || common).replace(/[^\w.-]/g, "_");
+  return path.join(os.homedir(), ".proteus", "guest", `${name}-${require("crypto").createHash("sha256").update(realOr(common)).digest("hex").slice(0, 8)}`);
+}
+function guestDir(root) {
+  const common = root ? gitCommonDir(path.resolve(String(root))) : null;
+  const g = common ? readJSON(guestFile(common), null) : null;
+  return g && typeof g.dir === "string" && path.isAbsolute(g.dir) ? path.resolve(g.dir) : "";
+}
+const docRoot = (root) => guestDir(root) || root;
+
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
@@ -300,6 +329,76 @@ function ownedDenial(wt, target) {
   if (path.isAbsolute(r) || rel === ".." || rel.startsWith("../")) return needs("outside the worktree");
   const owned = list.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
   return owned.some((g) => ownedMatch(g, rel)) ? "" : needs(`not in ${path.relative(wt, ownedFile(wt)).split(path.sep).join("/")}`);
+}
+
+// ---- change tiers (SKILL.md rule 3): the tier decides the pipeline's steps, cheapest first
+const TIERS = ["direct", "quick", "standard", "full"];
+// the tiers block of teams/ROUTING.md, a ```tiers fence with one rule per line: <glob> <tier> [lines=<n>] [files=<n>].
+// null when there is none; a bad line is an error, never a silent default.
+function parseTiers(text) {
+  const m = /^```tiers[ \t]*\r?\n([\s\S]*?)^```/m.exec(String(text || ""));
+  if (!m) return null;
+  const rules = [], errors = [];
+  for (const line of m[1].split(/\r?\n/)) {
+    const words = line.replace(/(^|\s)#.*$/, "").trim().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    const [glob, tier, ...opts] = words;
+    const rule = { glob, tier, lines: Infinity, files: Infinity };
+    const bad = !TIERS.includes(tier) || opts.some((o) => {
+      const kv = /^(lines|files)=(\d+)$/.exec(o);
+      if (kv) rule[kv[1]] = Number(kv[2]);
+      return !kv;
+    });
+    if (bad) errors.push(`bad tiers line "${line.trim()}" (want <glob> ${TIERS.join("|")} [lines=<n>] [files=<n>])`);
+    else rules.push(rule);
+  }
+  return { rules, errors };
+}
+
+// ownedMatch, where a leading **/ also matches at the root (**/auth/** covers auth/x and src/auth/x)
+const tierMatch = (glob, rel) => ownedMatch(glob, rel) || (glob.startsWith("**/") && ownedMatch(glob.slice(3), rel));
+// The cheapest tier a change may run at. changes: [{ path, lines }] (lines 0 for a planned path or a binary).
+// Each path takes the first rule whose glob matches (tierMatch), else standard. A rule whose paths together
+// pass its lines= or files= limit costs one tier more. By path only: an extension says nothing about what a
+// file is (a skill repo's markdown is its product). No block → standard for everything, today's pipeline.
+function classifyTier(block, changes) {
+  if (!block) return { tier: "standard", why: ["no tiers block in teams/ROUTING.md"] };
+  const groups = new Map();
+  for (const c of changes) {
+    const rule = block.rules.find((r) => tierMatch(r.glob, c.path)) || null;
+    const g = groups.get(rule) || { rule, paths: [], lines: 0 };
+    g.paths.push(c.path);
+    g.lines += c.lines || 0;
+    groups.set(rule, g);
+  }
+  let rank = 0, why = [];
+  for (const { rule, paths, lines } of groups.values()) {
+    let r = TIERS.indexOf(rule ? rule.tier : "standard");
+    let line = `${paths.join(", ")}: ${rule ? `${rule.tier} (${rule.glob})` : "standard (no tier rule)"}`;
+    if (rule && (lines > rule.lines || paths.length > rule.files) && r < TIERS.length - 1) {
+      line += `, over ${lines > rule.lines ? `lines=${rule.lines} (${lines})` : `files=${rule.files} (${paths.length})`} → ${TIERS[++r]}`;
+    }
+    if (r > rank) { rank = r; why = []; }
+    if (r === rank) why.push(line);
+  }
+  return { tier: TIERS[rank], why };
+}
+
+// the tier proteus-worktree.js --tier records in a worktree's owned-path list, as a comment ownedDenial skips:
+// "# tier <tier> [human] <base sha>"
+const TIER_LINE = /^#[ \t]*tier[ \t]+(direct|quick|standard|full)([ \t]+human)?[ \t]+([0-9a-f]{4,64})[ \t]*$/m;
+// a declared tier: "quick", or "quick (human)" when the human's quick: prefix lowered a Standard change
+function parseDeclared(text) {
+  const m = /^\s*(direct|quick|standard|full)\b(\s*\(?human\)?)?/i.exec(String(text || ""));
+  return m ? { tier: m[1].toLowerCase(), human: Boolean(m[2]) } : null;
+}
+// "" when the change fits the declared tier, else why not and what to do. A human quick: covers Standard work,
+// never Full; a ceiling is never widened by an agent.
+function tierOverrun(declared, result) {
+  const cap = declared.human && declared.tier === "quick" ? "standard" : declared.tier;
+  if (TIERS.indexOf(result.tier) <= TIERS.indexOf(cap)) return "";
+  return `this change needs the ${result.tier} tier, declared ${declared.tier}${declared.human ? " (human)" : ""}:\n  ${result.why.join("\n  ")}\n` +
+    `The lead re-runs the work order at ${result.tier} from its first step (SKILL.md rule 3); never widen the tier.`;
 }
 
 // last `bytes` of a file as complete lines (first partial line dropped)
@@ -648,7 +747,7 @@ function readInbox(common) {
 // ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
 // A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
 // differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
-const lockFile = (root) => path.join(root, "teams", "skills-lock.json");
+const lockFile = (root) => path.join(docRoot(root), "teams", "skills-lock.json");
 const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
 const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
 
@@ -669,12 +768,13 @@ function skillsDrift(root) {
   const lock = readJSON(lockFile(root), null);
   const pins = lock && lock.skills && typeof lock.skills === "object" ? lock.skills : {};
   const names = Object.keys(pins).filter((n) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(n) && pins[n] && typeof pins[n].hash === "string");
+  const base = docRoot(root);
   let teams = [];
-  try { teams = fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
+  try { teams = fs.readdirSync(path.join(base, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
   const hashes = new Map(); // real skill dir -> hash, so a skill linked into several teams is hashed once
   const drift = [];
   for (const name of names) {
-    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(root, "teams", t, ...s, name)))) {
+    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(base, "teams", t, ...s, name)))) {
       let src;
       try { src = fs.realpathSync(dir); if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
       if (!hashes.has(src)) hashes.set(src, hashSkill(src));
@@ -702,20 +802,37 @@ function lockDrift(root, fresh = false) {
 const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
 
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
-// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
-// defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
-// floor=haiku`) overrides floor and solo. A solo model never runs as a subagent: at most one per
-// project, and that one is the lead when the session runs on it.
+// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo, aliases } overrides
+// the defaults (aliases, other names of a rung's model, merge over the harness's); a project's
+// `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none floor=haiku`) overrides
+// floor and solo. A solo model never runs as a subagent: at most one per project, and that one
+// is the lead when the session runs on it.
+// Roles map to three tiers, each a model and an effort: judge (verifiers, scout, contracts,
+// escalations, conflicts, QA at milestone and close), build (tickets) and helper (QA per wave,
+// guide, research, helpers). A tier is "<model>[@<effort>]" or { model, effort }; the model is top
+// (the highest rung the lead may staff), mid (one under it, not under the floor), a rung or a
+// model id, kept between the floor and top. "models": { "tiers": {...} } and judge=/build=/helper=
+// on the AGENTS.md line override the harness's tiers. Effort applies only where the harness
+// passes it per spawn (adapter spawnEffort, the spawn tool's parameter name); elsewhere it is "".
 // the harness's default ladder; none (a CLI whose lineup Proteus does not know) is single-model
 // mode, the lead's own model as the only rung, until models.ladder names one
-const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [] };
+const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [], aliases: {} };
+const MODEL_TIERS = { judge: "top", build: "mid", helper: "mid" };
+function tierSpec(v) {
+  if (v && typeof v === "object") return { model: String(v.model || "").toLowerCase(), effort: String(v.effort || "").toLowerCase() };
+  const [model = "", effort = ""] = String(v || "").toLowerCase().split("@");
+  return { model, effort };
+}
 
-// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins
-function rungOf(ladder, name) {
+// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins,
+// else the longest matching alias names the rung ("claude-mythos-5-1" → fable with { mythos: "fable" })
+function rungOf(ladder, name, aliases = {}) {
   const n = String(name || "").toLowerCase();
-  let best = -1;
-  ladder.forEach((r, i) => { if (n.includes(r) && (best < 0 || r.length > ladder[best].length)) best = i; });
-  return best;
+  const longest = (keys) => keys.filter((k) => k && n.includes(k)).sort((a, b) => b.length - a.length)[0];
+  const r = longest(ladder);
+  if (r) return ladder.indexOf(r);
+  const a = longest(Object.keys(aliases));
+  return a ? ladder.indexOf(aliases[a]) : -1;
 }
 
 // the session's model, as the harness finds it
@@ -737,33 +854,93 @@ function modelPolicy(root) {
   const list = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((x) => String(x).trim().toLowerCase()).filter((x) => x && x !== "none");
   const d = modelDefaults();
   const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? list(cfg.ladder) : d.ladder;
-  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo };
+  const aliases = {}, own = cfg.aliases && typeof cfg.aliases === "object" ? cfg.aliases : {};
+  for (const [k, v] of Object.entries({ ...d.aliases, ...own })) if (typeof v === "string") aliases[k.toLowerCase()] = v.toLowerCase();
+  const tiers = {}, ownTiers = cfg.tiers && typeof cfg.tiers === "object" ? cfg.tiers : {};
+  for (const [k, v] of Object.entries({ ...MODEL_TIERS, ...d.tiers, ...ownTiers })) if (k in MODEL_TIERS) tiers[k] = tierSpec(v);
+  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo, aliases, tiers };
   let agents = "";
-  try { agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"); } catch {}
+  try { agents = fs.readFileSync(path.join(docRoot(root), "AGENTS.md"), "utf8"); } catch {}
   const line = /^models:(.*)$/m.exec(agents);
   if (line) {
     for (const [, k, v] of line[1].matchAll(/(\w+)=(\S+)/g)) {
       if (k === "floor") pol.floor = v.toLowerCase();
       if (k === "solo") pol.solo = list(v);
+      if (k in MODEL_TIERS) pol.tiers[k] = tierSpec(v);
     }
   }
   return pol;
 }
 
-// what this session may spawn: top (hard tickets, every verdict) and mid (standard tickets, helpers)
+// what this session may spawn: top and mid, and the model and effort of each role tier
 function modelCaps(ev, root) {
   const pol = modelPolicy(root);
   const lead = leadModel(ev) || savedLead(ev, root);
   const ladder = pol.ladder.length ? pol.ladder : lead ? [String(lead).toLowerCase()] : [];
-  const { solo } = pol;
-  if (!ladder.length) return { ladder, solo, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "" }; // nothing known to enforce
-  const L = rungOf(ladder, lead);
+  const { solo, aliases } = pol;
+  const effortParam = harness().spawnEffort || "";
+  const none = { model: "", effort: "" };
+  if (!ladder.length) return { ladder, solo, aliases, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "", effortParam, tiers: { judge: none, build: none, helper: none } }; // nothing known to enforce
+  const L = rungOf(ladder, lead, aliases);
   // highest rung at or under the lead that is not solo (the lead is that one instance); unknown lead: the whole ladder
   let cap = L < 0 ? ladder.length - 1 : L;
   while (cap > 0 && solo.includes(ladder[cap])) cap--;
-  const fl = rungOf(ladder, pol.floor);
+  const fl = rungOf(ladder, pol.floor, aliases);
   const floor = Math.min(fl < 0 ? 0 : fl, cap); // a lead below the floor takes the floor down with it
-  return { ladder, solo, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
+  const mid = Math.max(floor, cap - 1);
+  // a tier's rung: top, mid, or the named model's, held between the floor and top; an unknown or
+  // solo model falls back to the default tier's rung. A named model in range keeps its full id.
+  const tier = (t, dflt) => {
+    const named = !["top", "mid"].includes(t.model);
+    let r = t.model === "top" ? cap : t.model === "mid" ? mid : rungOf(ladder, t.model, aliases);
+    if (r < 0 || solo.includes(ladder[r])) r = dflt === "top" ? cap : mid;
+    const held = Math.min(Math.max(r, floor), cap);
+    return { model: named && held === r && rungOf(ladder, t.model, aliases) === r ? t.model : ladder[held], effort: effortParam ? t.effort : "" };
+  };
+  const tiers = {};
+  for (const k of Object.keys(MODEL_TIERS)) tiers[k] = tier(pol.tiers[k], MODEL_TIERS[k]);
+  return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[mid], floorName: ladder[floor], effortParam, tiers };
+}
+
+// ---- context window: the handoff lines are fractions of the lead's window, the smallest of the
+// model's nominal window (adapter modelWindow), the cap the human set in the harness (adapter
+// contextCap: Claude Code's autoCompactWindow, Codex's model_auto_compact_token_limit) and
+// "contextWindow" in ~/.claude/proteus.json; 200k when none is known. A configured cap wins over
+// a 1M model, so a 200k cap keeps the lines at 150k and 180k.
+const DEFAULT_WINDOW = 200000;
+function contextWindow(ev, root) {
+  const h = harness();
+  const model = leadModel(ev) || savedLead(ev, root);
+  const known = [h.modelWindow ? h.modelWindow(model, ev) : 0, h.contextCap ? h.contextCap(ev, model) : 0, +proteusConfig().contextWindow].filter((n) => n > 0);
+  return known.length ? Math.min(...known) : DEFAULT_WINDOW;
+}
+// at: the journal tells the lead to hand off; hard: the guard refuses new spawns. PROTEUS_HANDOFF_AT
+// and PROTEUS_HANDOFF_HARD (tokens) override them.
+function handoffLines(ev, root) {
+  const w = contextWindow(ev, root);
+  return { window: w, at: envInt("PROTEUS_HANDOFF_AT", Math.round(w * 0.75)), hard: envInt("PROTEUS_HANDOFF_HARD", Math.round(w * 0.9)) };
+}
+
+// Liveness of the lead's workers and verifiers, read by proteus-watchdog.js: one file per agent in
+// <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
+// "ended" (proteus-stall.js, a stop without a report) stamps `ended`, "done" (a stop with a report)
+// removes the file. Other agent types (scout, guide) are not tracked: they end without a report.
+const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
+const beatsDir = (common) => path.join(stateDir(common), "beats");
+function beat(ev, state) {
+  if (!ev.agent || (ev.agentType && !PIPELINE_AGENT.test(ev.agentType))) return;
+  try {
+    const common = gitCommonDir(projectRoot(ev));
+    if (!common) return;
+    const file = path.join(beatsDir(common), `${String(ev.agent).replace(/[^\w.-]/g, "_")}.json`);
+    if (state === "done") { fs.rmSync(file, { force: true }); return; }
+    const prev = readJSON(file, null) || {};
+    const now = new Date().toISOString();
+    // a rewrite drops `flagged`: a tool call after the watchdog's STALL is the agent answering
+    const rec = { agent: ev.agent, type: ev.agentType || prev.type || "", session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
+    if (state === "ended") { rec.last = prev.last || now; rec.ended = now; rec.flagged = prev.flagged; }
+    writeJSON(file, rec);
+  } catch {}
 }
 
 // gh query → cache; on any gh failure the old cache stays and null is returned
@@ -780,10 +957,10 @@ function refreshInbox(root, common, timeout = 10000) {
 
 module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
-  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
+  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

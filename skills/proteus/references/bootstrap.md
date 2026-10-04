@@ -27,8 +27,8 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 ## Mid-project, unset
 
 1. `/setup-matt-pocock-skills` with GitHub as the tracker if not run. `/domain-modeling` for `CONTEXT.md` if missing; `/wayfinder` first if the project is large enough that one session cannot hold it (its map goes to the tracker as a `wayfinder:map` issue, never a file).
-2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them. Do not dispatch features onto a red baseline; workers cannot tell their red from yours.
-3. Code: `fallow health` / `vulture`, run by a `mid` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, never into a feature ticket.
+2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave: it records each red gate's findings in `teams/baseline.json` with `proteus-baseline.js` and runs that gate through it in CI and lefthook (`enforcement.md` §12), so a ticket fails only on findings it adds; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them. Fixing the recorded failures is follow-up work, not a precondition. A red gate with no baseline still blocks features; workers cannot tell their red from yours.
+3. Code: `fallow health` / `vulture`, run by a `helper` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, never into a feature ticket.
 4. Root docs over budget (`doc-bloat` in `proteus-state`) → a docs-diet ticket (`docs-diet.md`) in wave one. Plans, maps, or logs committed as files → the same ticket moves them to the tracker.
 5. Add `## Learned` to `AGENTS.md`. Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
 6. Existing branches or worktrees: list them, ask the human which are live, leave the rest alone. Never delete a branch you did not create.
@@ -50,6 +50,15 @@ Then, if `skills-unscouted` is not `none` or the human says "refresh skills" or 
 
 Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. On a public repo the autostart adds a note once per repo (recorded in `<git-common-dir>/proteus/visibility.json`): the run log, issues, contracts, review briefs, evidence branches and questions are readable by anyone. Pass it on to the human in your first reply. Nothing Proteus produces during a run is written to the repo except deliverables, checks, contracts, lessons, and the three docs.
 
+## Guest mode
+
+`guest=<dir>` in `proteus-state` means the human does not own this repo (`install.js --project --guest`, or `gh` reported READ or TRIAGE access). Proteus's files live in `<dir>`, laid out like a repo root, and the repo gets none of them:
+
+- Read every `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, `docs/adr/`, `docs/lessons/` and `teams/` path in this file and the references as `<dir>/<path>`. The lead writes the docs there; the guard refuses the repo's own copies. Brief workers and verifiers with the absolute `<dir>/teams/<team>/` paths. On both CLIs they list `<dir>/teams/<team>/.agents/skills/` after `PROFILE.md` and read each fitting `SKILL.md` themselves, as Codex workers always do.
+- No scaffold of CI, lefthook, lint config or root docs. `ci-gates=guest` and `lefthook=guest` are not missing pieces. Workers and verifiers run the repo's own gate commands locally. For a red gate, the lead records the baseline from the main checkout with `node <dir>/teams/templates/hooks/proteus-baseline.js <gate> --record -- <command>`, which writes `<dir>/teams/baseline.json`; nothing is committed. Once a ticket that fixes old failures merges, the lead re-runs the same line with `--record`, which only tightens.
+- No docs-diet: the repo's `CLAUDE.md` and `AGENTS.md` are the owner's.
+- The tracker still needs issues, labels, milestones and branches. If the preflight in `tracker.md` shows the human cannot create them here, stop. Ask them to work from a fork (`gh repo set-default <fork>`) or name another tracker repo. Ticket PRs into `proteus/<run>` are the contribution; what goes upstream, and how, is the human's call.
+
 ## Ready
 
-Confirm in one line: gates green on `main`, `CONTEXT.md`, `CONVENTIONS.md`, `## Learned`, `teams/` with `ROUTING.md` and links, tracker reachable. Go.
+Confirm in one line: gates green on `main` (a ratcheted gate: no finding beyond `teams/baseline.json`), `CONTEXT.md`, `CONVENTIONS.md`, `## Learned`, `teams/` with `ROUTING.md` and links, tracker reachable. Go.

@@ -59,10 +59,20 @@ ok("ci: no Owned: line fails rather than passing everything", r.status === 1 && 
 ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
-const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
+const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
 const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
-ok("template: five placeholders, each exits 1; job id is gates; owned-paths step runs on worker PRs",
-  steps.length === 5 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
+ok("template: six placeholders (five code gates, the Direct job's docs gate), each exits 1; job id is gates; owned-paths step runs on worker PRs",
+  steps.length === 6 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
   /startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-owned-check\.js --ci/.test(tpl) && !/required review|one approving review/.test(tpl));
+// mechanical QA: every push to a run branch runs gates, then qa, whose steps the QA verifier reads by name
+const qa = tpl.slice(tpl.indexOf("\n  qa:\n"));
+const qaSteps = ["e2e", "smoke", "rebuild", "mutation"];
+ok("template: pushes to proteus/** run gates and a qa job with e2e, smoke, rebuild and mutation placeholders that exit 1",
+  /\n  push:\n    branches: \["proteus\/\*\*"\]/.test(tpl) && /if: github\.event_name == 'push'\n    needs: gates/.test(qa) &&
+  qaSteps.every((n) => new RegExp(`- name: ${n}\\n(?:.*\\n)*?\\s+run: echo "EDIT-${n} not filled in" >&2; exit 1`).test(qa)), qa.slice(0, 300));
+ok("template: a push runs the gates job, so qa (which needs it) runs too",
+  !/^  gates:\n(?:    #[^\n]*\n)*    if: (?![^\n]*github\.event_name == 'push')/m.test(tpl));
+ok("template: commit messages only on a PR (a push has no base ref), mutation skipped on the push that creates the branch",
+  /- name: commit messages\n\s+if: github\.event_name == 'pull_request'/.test(tpl.slice(tpl.indexOf("\n  gates:\n"), tpl.indexOf("\n  direct:\n"))) && /- name: mutation\n\s+if: github\.event\.before != '0{40}'/.test(qa));
 
 summary();

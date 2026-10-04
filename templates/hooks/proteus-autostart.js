@@ -308,25 +308,29 @@ function humanSaid(root) {
   return said.length ? ["human said (verbatim, newest last):", ...said].join("\n") : "";
 }
 
-// the ladder for this session: the lead's model, and the two the lead spawns on
+// the ladder for this session: the lead's model, and each role tier's model (@effort where the
+// harness passes effort per spawn)
 function models(ev, root) {
   safe(() => lib.saveLead(ev, root));
   const c = lib.modelCaps(ev, root);
   if (!c.ladder.length) return "models=unknown";
   const lead = c.leadRung >= 0 ? c.ladder[c.leadRung] : "unknown";
-  return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
+  const t = (x) => x.model + (x.effort ? `@${x.effort}` : "");
+  return `models=lead:${lead},judge:${t(c.tiers.judge)},build:${t(c.tiers.build)},helper:${t(c.tiers.helper)}`;
 }
 
+// guest mode: the docs and teams/ are read from the guest dir; the repo's CI, lefthook and root docs are not Proteus's
 function localState(ad, root, runs, home, pending, drift) {
-  const has = (f) => fs.existsSync(path.join(root, f));
-  const read = (f) => { try { return fs.readFileSync(path.join(root, f), "utf8"); } catch { return ""; } };
-  const ls = (d) => { try { return fs.readdirSync(path.join(root, d)); } catch { return []; } };
+  const guest = lib.guestDir(root), base = guest || root;
+  const has = (f) => fs.existsSync(path.join(base, f));
+  const read = (f) => { try { return fs.readFileSync(path.join(base, f), "utf8"); } catch { return ""; } };
+  const ls = (d) => { try { return fs.readdirSync(path.join(base, d)); } catch { return []; } };
   const agents = read("AGENTS.md") + "\n" + read("CLAUDE.md"); // older installs keep ## Learned in CLAUDE.md
-  const profiles = (() => { try { return fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory() && fs.existsSync(path.join(root, "teams", e.name, "skills.txt"))).map((e) => e.name); } catch { return []; } })();
+  const profiles = (() => { try { return fs.readdirSync(path.join(base, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory() && fs.existsSync(path.join(base, "teams", e.name, "skills.txt"))).map((e) => e.name); } catch { return []; } })();
   const shipped = profiles.filter((p) => /shipped default/.test(read(`teams/${p}/skills.txt`).split("\n")[0]));
   const unlinked = profiles.filter((p) => ls(ad.teamSkills(path.join("teams", p))).length === 0);
   // root agent docs over budget, and any CLAUDE_*.md / CLAUDE-*.md split at all
-  const bloat = ls(".").filter((f) => /^(CLAUDE|AGENTS).*\.md$/.test(f)).map((f) => {
+  const bloat = guest ? [] : ls(".").filter((f) => /^(CLAUDE|AGENTS).*\.md$/.test(f)).map((f) => {
     const text = read(f);
     const lines = text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
     return lines > 150 || /^CLAUDE[_-]/.test(f) ? `${f}:${lines}` : "";
@@ -338,6 +342,7 @@ function localState(ad, root, runs, home, pending, drift) {
   return (
     "proteus-state (local files only; tracker not queried): " +
     [
+      ...(guest ? [`guest=${guest.split(path.sep).join("/")}`] : []),
       `CONTEXT.md=${yn(has("CONTEXT.md"))}`,
       `CONVENTIONS.md=${yn(has("CONVENTIONS.md"))}`,
       `AGENTS.md#Learned=${yn(/^## Learned/m.test(agents))}`,
@@ -345,8 +350,8 @@ function localState(ad, root, runs, home, pending, drift) {
       `skills-unscouted=${shipped.join(",") || "none"}`,
       `skills-unlinked=${unlinked.join(",") || "none"}`,
       `skills-lock=${drift.length ? `drift:${drift.join(",")}` : yn(has("teams/skills-lock.json"))}`,
-      `ci-gates=${yn(has(".github/workflows/proteus-gates.yml"))}`,
-      `lefthook=${yn(has("lefthook.yml"))}`,
+      `ci-gates=${guest ? "guest" : yn(has(".github/workflows/proteus-gates.yml"))}`,
+      `lefthook=${guest ? "guest" : yn(has("lefthook.yml"))}`,
       `protection=${/protection:\s*none/.test(agents) ? "none" : "on"}`,
       `proteus-branches=${runs.join(",") || "none"}`,
       `doc-bloat=${bloat.join(",") || "none"}`,

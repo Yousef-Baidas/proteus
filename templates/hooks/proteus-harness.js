@@ -20,11 +20,16 @@
 // Adapter contract (see proteus-harness-claude.js for the reference):
 //   answers      deny(why, {json}) · context(ev, text, kind) · keepGoing(ev, reason)
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
-//   models       the default ladder {ladder, floor, solo}, or null for single-model mode
+//   window       modelWindow(model, ev) (the model's nominal context window) · contextCap(ev, model) (the
+//                cap the human configured); each 0 when unknown, and both optional
+//   models       the default ladder {ladder, floor, solo, aliases, tiers}, or null for single-model mode
+//   spawnEffort  the spawn tool's per-spawn effort parameter, "" when it has none
 //   install      name · bypass · projectRoot(raw) · home · skillDirs(root) · agentsDir · agentFile(file, text)
+//                skillRoots() (dirs holding other plugins' and installed skills, searched by proteus-skillpath.js)
 //                hooksDir(root) · teamSkills(teamDir) (where link-skills.js links a team's skills for this CLI)
 //                skipHooks (template files this CLI never uses: not copied into hooksDir)
 //                contextModeOn() · registerLead(root) · prepareWorker(wt, src) · ownedFile(wt)
+//                allowDir(root, dir, write) (guest mode: the session may read and write dir, outside the project)
 //                exportEnv(root, vars) (env for the agents' shell commands; SessionStart only on claude)
 "use strict";
 const path = require("path");

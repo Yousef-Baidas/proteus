@@ -218,6 +218,8 @@ if (require.main === module) {
     else if (a === "--relock") opt.relock = true;
     else { console.error(`unknown flag: ${a}`); process.exit(2); }
   }
+  // from elsewhere (a guest dir outside the repo, a subfolder): the teams/ this script sits in
+  if (!isDir(path.join(process.cwd(), "teams")) && path.basename(__dirname) === "teams") opt.root = path.dirname(__dirname);
   try { run(opt); }
   catch (e) { console.error(e.message); process.exit(1); }
 }

@@ -138,7 +138,7 @@ const spawn = (model, tp, opts) => run(LG, pre("Agent", { ...(model && { model }
 {
   const TF = withModel("claude-fable-5-1", "claude-sonnet-5-5"), TO = withModel("claude-opus-5-5[1m]"), TS = withModel("claude-sonnet-5-5"), TH = withModel("claude-haiku-4-5-20251001");
   r = spawn("", T100);
-  ok("ladder: missing model denied, hive agents too", r.code === 2 && /every Agent call names its model/.test(r.err) && /use "opus" for hard tickets and every verdict, "sonnet" for standard/.test(r.err), r.err);
+  ok("ladder: missing model denied, hive agents too", r.code === 2 && /every Agent call names its model/.test(r.err) && /use "opus" for verdicts, contracts, escalations, conflicts and the scout, "sonnet" for tickets/.test(r.err), r.err);
   ok("ladder: unknown lead → opus and sonnet ok", spawn("opus", T100).code === 0 && spawn("sonnet", T100).code === 0);
   r = spawn("haiku", T100);
   ok("ladder: haiku under the floor", r.code === 2 && /under the floor \(sonnet\)/.test(r.err), r.err);
@@ -147,7 +147,7 @@ const spawn = (model, tp, opts) => run(LG, pre("Agent", { ...(model && { model }
   ok("ladder: fable lead (sidechain reply ignored) → opus ok", spawn("opus", TF).code === 0);
   ok("ladder: opus lead → opus worker ok, fable denied", spawn("opus", TO).code === 0 && spawn("fable", TO).code === 2);
   r = spawn("opus", TS);
-  ok("ladder: sonnet lead → opus above the lead", r.code === 2 && /above the lead \(claude-sonnet-5-5\); nothing above sonnet/.test(r.err) && /use "sonnet" for hard tickets and every verdict, "sonnet" for standard/.test(r.err), r.err);
+  ok("ladder: sonnet lead → opus above the lead", r.code === 2 && /above the lead \(claude-sonnet-5-5\); nothing above sonnet/.test(r.err) && /use "sonnet" for verdicts, contracts, escalations, conflicts and the scout, "sonnet" for tickets/.test(r.err), r.err);
   ok("ladder: sonnet lead → sonnet ok", spawn("sonnet", TS).code === 0);
   ok("ladder: haiku lead takes the floor down → haiku ok, sonnet denied", spawn("haiku", TH).code === 0 && spawn("sonnet", TH).code === 2);
   r = spawn("gpt-6", TO);
@@ -438,12 +438,12 @@ ok("autostart: run-log tail on startup with branch", /run-log #7 tail \(newest l
 const tailBlock = r.out.slice(r.out.indexOf("run-log #7"), r.out.indexOf("SKILL BODY"));
 ok("autostart: run-log capped 3000", tailBlock.length < 3200, tailBlock.length);
 ok("autostart: body present", r.out.trim().endsWith("SKILL BODY"));
-ok("autostart: models= from the event's model, fable lead staffs opus", /models=lead:fable,top:opus,mid:sonnet( |$)/.test(run(AS, { source: "startup", cwd: REPO, model: "claude-fable-5-1" }).out.split("\n")[3]));
+ok("autostart: models= from the event's model, fable lead staffs opus", /models=lead:fable,judge:opus,build:sonnet,helper:sonnet( |$)/.test(run(AS, { source: "startup", cwd: REPO, model: "claude-fable-5-1" }).out.split("\n")[3]));
 run(AS, { source: "startup", cwd: REPO, session_id: "s9", model: "claude-sonnet-5-5" });
 r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { session_id: "s9" }));
 ok("ladder: guard falls back to the model SessionStart saved", r.code === 2 && /above the lead \(claude-sonnet-5-5\)/.test(r.err) && run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" })).code === 0, r.err);
-ok("autostart: models= for a sonnet lead, and unknown", /models=lead:sonnet,top:sonnet,mid:sonnet/.test(run(AS, { source: "startup", cwd: REPO, model: { id: "claude-sonnet-5-5", display_name: "Sonnet 5.5" } }).out) &&
-  /models=lead:unknown,top:opus,mid:sonnet/.test(run(AS, { source: "startup", cwd: REPO }).out));
+ok("autostart: models= for a sonnet lead, and unknown", /models=lead:sonnet,judge:sonnet,build:sonnet,helper:sonnet/.test(run(AS, { source: "startup", cwd: REPO, model: { id: "claude-sonnet-5-5", display_name: "Sonnet 5.5" } }).out) &&
+  /models=lead:unknown,judge:opus,build:sonnet,helper:sonnet/.test(run(AS, { source: "startup", cwd: REPO }).out));
 r = run(AS, { source: "startup", cwd: REPO });
 ok("autostart: quiet when nothing to sync", !/synced/.test(r.out));
 r = run(AS, { source: "compact", cwd: REPO });
@@ -625,7 +625,7 @@ const ctxLine = (out) => (out.split("\n").find((l) => l.includes(`${CTX} plugin`
 const cjson = (h, ...f) => JSON.parse(fs.readFileSync(path.join(h, ".claude", ...f), "utf8"));
 let CH = chome("none");
 r = run(INST, "", { cwd: CWD, env: lib.homeEnv(CH) });
-ok("context-mode: no claude CLI → commands printed, install still done", r.code === 0 && /warning: the required context-mode plugin is not installed\. Run:\n  claude plugin marketplace add mksglu\/context-mode\n  claude plugin install context-mode@context-mode --scope user\n/.test(r.err) &&
+ok("context-mode: no claude CLI → commands printed, install still done", r.code === 0 && /warning: the optional context-mode plugin is not installed; agents fall back to a scratch file and grep\. To use it, run:\n  claude plugin marketplace add mksglu\/context-mode\n  claude plugin install context-mode@context-mode --scope user\n/.test(r.err) &&
   /Done\. \/proteus/.test(r.out) && fs.existsSync(path.join(CH, ".claude", "agents", "proteus-worker.md")), r.out + r.err);
 r = run(INST, "", { cwd: CWD, env: cenv(CH) });
 ok("context-mode: installer runs marketplace add, then install at user scope", r.code === 0 && JSON.stringify(clog()) === JSON.stringify(["plugin marketplace add mksglu/context-mode", `plugin install ${CTX} --scope user`]) &&
@@ -638,21 +638,21 @@ r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
 ok("doctor: context-mode installed and enabled → ok", ctxLine(r.out) === `ok   ${CTX} plugin`, r.out);
 fs.writeFileSync(path.join(CH, ".claude", "settings.json"), JSON.stringify({ ...cs, enabledPlugins: { [CTX]: false } }));
 r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
-ok("doctor: context-mode disabled → FIX with the enable command, exit 1", r.code === 1 && ctxLine(r.out) === `FIX  ${CTX} plugin (required) disabled — claude plugin enable ${CTX} --scope user`, r.out);
+ok("doctor: context-mode disabled → WARN with the enable command, ",  ctxLine(r.out) === `WARN ${CTX} plugin (optional; agents fall back to a scratch file and grep) disabled — claude plugin enable ${CTX} --scope user`, r.out);
 r = run(INST, "", { args: ["--doctor", "--fix"], cwd: CWD, env: cenv(CH) });
 ok("doctor --fix: enables through the CLI only", clog().slice(2).join("|") === `plugin enable ${CTX} --scope user` && ctxLine(r.out) === `ok   ${CTX} plugin (fixed)`, clog().join(" | ") + r.out);
 CH = chome("missing");
 r = run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH) });
-ok("doctor: context-mode missing → FIX with both commands", r.code === 1 && ctxLine(r.out) === `FIX  ${CTX} plugin (required) missing — claude plugin marketplace add mksglu/context-mode && claude plugin install ${CTX} --scope user`, r.out);
+ok("doctor: context-mode missing → WARN with both commands (not a FIX line)", ctxLine(r.out) === `WARN ${CTX} plugin (optional; agents fall back to a scratch file and grep) missing — claude plugin marketplace add mksglu/context-mode && claude plugin install ${CTX} --scope user`, r.out);
 ok("doctor: read only (no CLI call, nothing written)", clog().length === 3 && !fs.existsSync(path.join(CH, ".claude", "plugins")) && !fs.existsSync(path.join(CH, ".claude", "settings.json")));
 fs.writeFileSync(CLOG, "");
 r = run(INST, "", { cwd: CWD, env: cenv(CH, { FAKE_CLAUDE: "fail" }) });
 ok("context-mode: CLI failure stops at the failed step, prints the commands, not fatal", r.code === 0 && clog().join("|") === "plugin marketplace add mksglu/context-mode" &&
-  /not installed\. Run:\n  claude plugin marketplace add .*\n  claude plugin install /.test(r.err), clog().join(" | ") + r.err);
+  /not installed; agents fall back to a scratch file and grep\. To use it, run:\n  claude plugin marketplace add .*\n  claude plugin install /.test(r.err), clog().join(" | ") + r.err);
 // node version, mocked through a preload
 CH = chome("oldnode");
 r = run(INST, "", { cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: "22.4.9" }) });
-ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the required context-mode plugin needs\. Upgrade: .*(nodejs\.org|OpenJS\.NodeJS\.LTS), then re-run/.test(r.err) &&
+ok("node < 22.5: install dies with the fix, writes nothing", r.code === 1 && /node 22\.4\.9 is older than 22\.5\.0, which the context-mode plugin needs\. Upgrade: .*(nodejs\.org|OpenJS\.NodeJS\.LTS), then re-run/.test(r.err) &&
   fs.readdirSync(path.join(CH, ".claude")).length === 0 && clog().length === 1, r.err);
 const nodeLine = (v) => run(INST, "", { args: ["--doctor"], cwd: CWD, env: cenv(CH, { NODE_OPTIONS: `--require ${OLDNODE}`, FAKE_NODE: v }) }).out.split("\n")[0];
 ok("doctor: node 20.11.0 → FIX", /^FIX  node 20\.11\.0 is older than 22\.5\.0 \(context-mode needs it\) — .*(nodejs\.org|OpenJS\.NodeJS\.LTS)$/.test(nodeLine("20.11.0")), nodeLine("20.11.0"));
@@ -938,7 +938,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "check shot_0042.png please" }] } }),
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>other.png</environment_context>" }] } }),
     JSON.stringify({ timestamp: "t", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "on it" }] } }),
-    JSON.stringify({ timestamp: "t", type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { total_tokens: 185000 }, total_token_usage: { total_tokens: 900000 }, model_context_window: 272000 } } }),
+    JSON.stringify({ timestamp: "t", type: "event_msg", payload: { type: "token_count", info: { last_token_usage: { total_tokens: 250000 }, total_token_usage: { total_tokens: 900000 }, model_context_window: 272000 } } }),
   ]);
   const cpre = (tool, ti, extra = {}) => ({ hook_event_name: "PreToolUse", session_id: "c1", transcript_path: TCX, cwd: CX, model: "gpt-6-sol", permission_mode: "default", turn_id: "t1", tool_name: tool, tool_input: ti, tool_use_id: "u1", ...extra });
   const patch = (...files) => ({ command: ["*** Begin Patch", ...files.map((x) => `*** Update File: ${x}\n@@\n-a\n+b`), "*** End Patch"].join("\n") });
@@ -961,7 +961,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("codex guard: with models.ladder set, the lower rung is allowed", cg(cpre("spawn_agent", { message: "x", model: "gpt-6-luna" }, { transcript_path: null })).code === 0);
   fs.writeFileSync(HCX, JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
   r = cg(cpre("spawn_agent", { message: "x", model: "gpt-6-sol" }));
-  ok("codex guard: spawns refused at the handoff line from the rollout's token_count", r.code === 2 && /context at 185k/.test(r.err), r.err);
+  ok("codex guard: spawns refused at the handoff line from the rollout's token_count", r.code === 2 && /context at 250k/.test(r.err), r.err);
   ok("codex guard: view_image of a file the human named is allowed", cg(cpre("view_image", { path: "renders/shot_0042.png" })).out === "");
   r = cg(cpre("view_image", { path: "renders/other.png" }));
   ok("codex guard: view_image of an unnamed image is denied (injected context does not count)", /permissionDecision":"deny"/.test(r.out), r.out + r.err);
@@ -984,7 +984,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   // autostart: plain stdout is the context; agents land in CODEX_HOME as TOML
   r = run(path.join(CX, ".codex", "hooks", "proteus-autostart.js"), { hook_event_name: "SessionStart", session_id: "c1", cwd: CX, model: "gpt-6-sol", source: "startup", transcript_path: null }, { cwd: CX, env: cenvx });
   ok("codex autostart: skill body from .agents/skills as plain stdout, models= from the event", r.code === 0 && r.out.trim().endsWith("CODEX SKILL BODY") && !r.out.startsWith("{") &&
-    /models=lead:gpt-6-sol,top:gpt-6-sol,mid:gpt-6-sol/.test(r.out), r.out.slice(0, 800) + r.err);
+    /models=lead:gpt-6-sol,judge:gpt-6-sol@high,build:gpt-6-sol@medium,helper:gpt-6-sol@low/.test(r.out), r.out.slice(0, 800) + r.err);
   { // the sync of agents into CODEX_HOME refreshes a generated role and leaves the user's own
     const SH = path.join(W, "cx-sync"); fs.mkdirSync(path.join(SH, "agents"), { recursive: true });
     for (const n of ["proteus-worker", "proteus-guide"]) fs.writeFileSync(path.join(SH, "agents", `${n}.md`), `---\nname: ${n}\ndescription: d\n---\nbody ${n}\n`);
@@ -999,7 +999,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     fs.writeFileSync(path.join(CXH, ".claude", "proteus.json"), JSON.stringify({ autoUpdate: false, lastFetch: Date.now() }));
   }
   r = run(path.join(CX, ".codex", "hooks", "proteus-journal.js"), { hook_event_name: "UserPromptSubmit", session_id: "c1", cwd: CX, model: "gpt-6-sol", transcript_path: TCX, prompt: "go" }, { cwd: CX, env: cenvx });
-  ok("codex journal: context as UserPromptSubmit additionalContext", /"hookEventName":"UserPromptSubmit"/.test(r.out) && /185k/.test(r.out), r.out + r.err);
+  ok("codex journal: context as UserPromptSubmit additionalContext", /"hookEventName":"UserPromptSubmit"/.test(r.out) && /250k/.test(r.out), r.out + r.err);
   r = run(path.join(CX, ".codex", "hooks", "proteus-stall.js"), { hook_event_name: "SubagentStop", session_id: "c1", cwd: CX, model: "gpt-6-sol", agent_id: "t-2", agent_type: "proteus-worker", stop_hook_active: false, last_assistant_message: "Waiting for the background build to finish.", transcript_path: TCX }, { cwd: CX, env: cenvx });
   ok("codex stall: a subagent stopping to wait keeps going, as JSON", /"decision":"block"/.test(r.out) && r.code === 0, r.out + r.err);
 
@@ -1143,7 +1143,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     /^FIX  ~\/\.agents\/skills\/\{proteus\} not linked/m.test(d) && /^FIX  lead hooks not registered: proteus-lead-guard\.js/m.test(d) && /^FIX  \.codex\/rules\/proteus\.rules missing/m.test(d) &&
     /^FIX  Claude-only files in \.codex\/hooks: proteus-statusline\.js /m.test(d) && /^FIX  workers cannot write in .*cx-proj-proteus: \.codex\/config\.toml does not list it/m.test(d) &&
     /^FIX  commit-msg gate: lefthook\.yml runs \.claude\/hooks\/commit-msg\.js, which git does not track — point it at teams\/templates\/hooks\/commit-msg\.js/m.test(d) &&
-    /^WARN context-mode \(required\) is neither an MCP server nor .* — codex mcp add context-mode /m.test(d) && /^ok   project trusted in codex$/m.test(d), d);
+    /^WARN context-mode \(optional; agents fall back to a scratch file and grep\) is neither an MCP server nor .* — codex mcp add context-mode /m.test(d) && /^ok   project trusted in codex$/m.test(d), d);
   d = xdoc("--fix");
   ok("codex doctor --fix: relinks, re-registers, rewrites the rules; the header-less agent stays",
     /^ok   ~\/\.agents\/skills link .*\(fixed\)$/m.test(d) && /^ok   lead hooks registered \(fixed\)$/m.test(d) && /^ok   \.codex\/rules\/proteus\.rules( \(fixed\))?$/m.test(d) && fs.existsSync(path.join(XP, ".codex", "rules", "proteus.rules")) &&
@@ -1169,7 +1169,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   fs.copyFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), path.join(XP, ".github", "workflows", "proteus-gates.yml"));
   d = xdoc();
   ok("gates doctor: the unfilled template WARNs, naming each placeholder",
-    /^WARN \.github\/workflows\/proteus-gates\.yml still has unfilled placeholders \(EDIT-install, EDIT-typecheck, EDIT-lint, EDIT-test, EDIT-deadcode\)/m.test(d), d);
+    /^WARN \.github\/workflows\/proteus-gates\.yml still has unfilled placeholders \(EDIT-install, EDIT-typecheck, EDIT-lint, EDIT-test, EDIT-deadcode, EDIT-docs, EDIT-e2e, EDIT-smoke, EDIT-rebuild, EDIT-mutation\)/m.test(d), d);
   fs.writeFileSync(path.join(XP, ".github", "workflows", "proteus-gates.yml"), "jobs:\n  gates:\n    steps:\n      # EDIT-x was here\n      - run: npm test\n");
   ok("gates doctor: a filled workflow is ok", /^ok   proteus-gates\.yml has no unfilled placeholder$/m.test(xdoc()));
   fs.rmSync(path.join(XP, ".github"), { recursive: true });
