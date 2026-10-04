@@ -26,12 +26,12 @@ Lead never reads worker output or diffs; the verifier does. Lead never produces 
 ## Worktrees
 ```
 git checkout -b proteus/<run> main && git push -u origin proteus/<run>
-git worktree add ../<repo>-proteus/<id> -b proteus/<run>-<id> proteus/<run>
+git worktree add ../<repo>-proteus/<id> -b proteus-work/<run>/<id> proteus/<run>
 node <hooks>/proteus-worktree.js ../<repo>-proteus/<id> <owned paths…>
 git rev-parse proteus/<run>   # fork point, record in task
 ```
 `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex. On Codex run each line as its own command, as written: a `cd`, pipe to a filter, or `$(…)` keeps git and `gh` inside the sandbox (`harnesses.md`).
-Worker branches are `proteus/<run>-<id>`, never `proteus/<run>/<id>`: git cannot hold a ref and a ref-directory of the same name.
+The lead makes the wave's worktrees at step 3; the contracts worker commits each ticket's contract there, and the ticket's worker continues on the same branch. Worker branches are `proteus-work/<run>/<id>`, outside `proteus/`, so a rule on `proteus/*` binds run branches and leaves workers free to push (`enforcement.md` §1). A run opened before this keeps `proteus/<run>-<id>` until it closes; the hooks read both.
 Per worktree: own dev-server port (`.env.local`), own DB/container/SQLite, own install dir. Shared services are why "passes alone, fails together". Binaries outside the worktree (a symlinked `.blend`, an absolute path to a media library or a spreadsheet) are shared too: one writer per such file per wave, or each worktree builds its own copy from the committed scripts. A check that reads the shared original while a worker writes it measures nothing (`domains.md`).
 
 Merge: `git worktree remove ../<repo>-proteus/<id>` (the branch cannot be deleted while checked out), then `gh pr merge <pr> --merge --delete-branch`, then `git checkout proteus/<run> && git pull` and the full suite. Every merge, not just the last.

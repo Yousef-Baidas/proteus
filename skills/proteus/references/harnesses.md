@@ -10,6 +10,7 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | `<hooks>`: hooks and lead scripts | `.claude/hooks` | `.codex/hooks` |
 | Owned-paths file | `<wt>/.claude/proteus-owned` | `<wt>/.codex/proteus-owned` (read-only to the worker's sandbox) |
 | Worktree folder `../<repo>-proteus/` | writable | writable because `install.js --project --harness codex` adds it to `[sandbox_workspace_write] writable_roots` in `.codex/config.toml`; `--doctor` checks it |
+| Agents' GitHub login | `GH_CONFIG_DIR` from the autostart's `CLAUDE_ENV_FILE`, this session | under `[shell_environment_policy.set]` in `.codex/config.toml`, written by the autostart and read from the next session; it applies to every Codex session in the project, `PROTEUS=0` ones too, and only in a trusted project |
 | Lead hook registration | `.claude/settings.local.json` | `.codex/hooks.json` plus `.codex/rules/proteus.rules`; the human trusts the project and approves the hooks in `/hooks` once |
 | Plain session, no lead hooks | `PROTEUS=0 claude` | `PROTEUS=0 codex` |
 | Agent definitions | `.claude/agents/*.md`; a project may pin tools or a model | TOML roles in `$CODEX_HOME/agents`, no model and no tool limits: verifiers stay read-only by instruction only |
@@ -17,7 +18,7 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | Worker's directory | named in the brief | same, and nothing else sets it: the brief gives the worktree's absolute path; every shell call sets the shell tool's `workdir` to it, every patch names absolute paths under it |
 | `git`, `gh`, lead scripts | run as usual | the sandbox has no network and keeps a worktree's gitdir read-only; `.codex/rules/proteus.rules` lets a command out only when every segment matches a rule (`git <subcommand>` for the writing ones, `gh`, `node .codex/hooks/<script>` relative from the repo root). Plain words joined by `&&`, `\|\|`, `;`, `\|` are split and checked one by one; `$(…)`, `$var`, a redirect, or one unmatched segment (`cd`, `tail`, `sleep`) keeps the whole command sandboxed. So set the directory with `workdir`, never `cd <dir> && git …` or `git -C` (they fail on `index.lock`), and do not pipe `gh` into a filter: use its `-q` |
 | Wait for a report | it arrives as a notification | `wait_agent` |
-| Wait for a review verdict | the background poll in `tracker.md` | no poll: its loop is not a plain `gh` command, so it runs sandboxed without network. Run the single `gh issue view <n> --json comments -q …` check; no verdict → end the turn with the review url and "type `reviewed` here once the verdict is posted". Unattended: `wait_agent` on the guide, whose `AUTO-` verdict is the answer |
+| Wait for a review verdict | the background poll in `tracker.md` | no `--wait`: run the single check `node .codex/hooks/proteus-verdict.js <n>` (`proteus.rules` lets it out of the sandbox); no verdict → end the turn with the review url and "type `reviewed` here once the verdict is posted". Unattended: `wait_agent` on the guide, whose `AUTO-` verdict is the answer |
 | Message a running agent | `SendMessage` | `send_message` |
 | Stop an agent | `TaskStop` | `close_agent` |
 | Running agents (`status`, `pause`) | the task list | the agents you spawned and have not closed |

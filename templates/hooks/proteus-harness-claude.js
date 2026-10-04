@@ -255,8 +255,26 @@ function prepareWorker(wt, src) {
 // the file a worker's worktree lists its owned paths in
 const ownedFile = (wt) => path.join(wt, ".claude", "proteus-owned");
 
+// vars for every later Bash call of this session, subagents' included: export lines in the file SessionStart
+// hooks get as CLAUDE_ENV_FILE. Values go single-quoted with forward slashes (Git Bash on Windows reads them too).
+// An empty value writes nothing. Returns { error } when it cannot.
+function exportEnv(root, vars) {
+  const set = Object.entries(vars).filter(([, v]) => v);
+  if (!set.length) return {};
+  const file = process.env.CLAUDE_ENV_FILE;
+  if (!file) return { error: "no CLAUDE_ENV_FILE (Claude Code gives it to SessionStart hooks only)" };
+  const lines = [];
+  for (const [k, v] of set) {
+    const val = String(v).replace(/\\/g, "/");
+    if (val.includes("'")) return { error: `${k} holds a quote` };
+    lines.push(`export ${k}='${val}'\n`);
+  }
+  fs.appendFileSync(file, lines.join(""));
+  return {};
+}
+
 module.exports = {
   name, bypass, models, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

@@ -13,7 +13,7 @@ Reply with those two parts on one line. Nothing is dispatched, nothing is re-rea
 
 ## `questions` / `inbox`
 
-`node <hooks>/proteus-inbox.js --refresh` lists open question and review issues. For each question, in order: read its body (`--json body -q .body`), present it with `AskUserQuestion` (its options, the recommendation first; Codex: as a plain numbered question), post the pick as `ANSWER <pick>` on the issue, act on it. Reviews are listed with a pointer to `/proteus-review`; you never relay one. Four questions per picker at most; more → the next picker.
+`node <hooks>/proteus-inbox.js --refresh` lists open question and review issues. For each question, in order: read its body (`--json body -q .body`), present it with `AskUserQuestion` (its options, the recommendation first; Codex: as a plain numbered question), post it on the issue as `Answered in session: <pick>` (never `ANSWER`, which only the human's login posts), act on it. Reviews are listed with a pointer to `/proteus-review`; you never relay one. Four questions per picker at most; more → the next picker.
 
 ## `pause` / `resume`
 
@@ -39,7 +39,7 @@ Agents write temp files, renders, clones and inspection worktrees under `node <h
 
 - **Ticket merged** (step 7): `--sweep <run>-<id>` after the agents are stopped.
 - **Run closed** (step 8): `--sweep <run>`, which takes every `<run>-*` key with it.
-- **Safety net**: the autostart runs `--sweep --stale` in the background each session (done and idle 72h, or idle 7 days); `proteus-state` shows `scratch=<MB>` over 1 GB, and then `--sweep --all-done` clears every key whose `proteus/<key>` branch is gone.
+- **Safety net**: the autostart runs `--sweep --stale` in the background each session (done and idle 72h, or idle 7 days); `proteus-state` shows `scratch=<MB>` over 1 GB, and then `--sweep --all-done` clears every key whose branch is gone.
 
 A sweep deletes only ledgered entries and scratch dirs, re-checks each (same inode, this user, directly in the temp dir), unlinks a symlink without following it, removes a git worktree with `git worktree remove --force` and `prune`, and prints the MB freed plus a `kept <path>: <why>` line for anything it refused, such as a locked worktree.
 
@@ -47,9 +47,9 @@ A sweep deletes only ledgered entries and scratch dirs, re-checks each (same ino
 
 For a review round of small, taste-driven tweaks ("warmer", "lower the camera", "cut two seconds", "reword the intro") where a full ticket, contract, and verifier per tweak would take longer than the tweak. The human asks for it, or asks to skip verification or go faster during review. It is a pipeline mode, not a deviation; log its start and end on the run log.
 
-1. The lead opens one revision issue `Revision <run>/<milestone> r<k>` labelled `proteus`, and branches `proteus/<run>-rev<k>` from `proteus/<run>`.
+1. The lead opens one revision issue `Revision <run>/<milestone> r<k>` labelled `proteus`, and branches `proteus-work/<run>/rev<k>` from `proteus/<run>`.
 2. One standing worker of the owning team (`mid`; `top` if the tweaks touch shared structure) takes tweaks one at a time from the issue comments. Each tweak is an idempotent change committed into the team's owned paths, a script or source edit that rebuilds the result from the repo, never a file under `out/`, `/tmp`, or a GUI-only change. It posts the evidence (render, still, excerpt, number) as a comment and commits before taking the next tweak.
 3. The human is the per-tweak verifier: `ok`, or a note that becomes the next tweak. A hand edit the human makes to an artifact is logged on the run log at once and becomes the worker's next tweak: port it to the script.
-4. Close: the human says `done`. Then one verifier (`top`) on the cumulative diff of `proteus/<run>-rev<k>` with two checks beyond the team checklist: every change sits in owned paths, and a clean rebuild from the branch reproduces the approved evidence. `MERGE` → merge into `proteus/<run>`, stop the standing worker, and the milestone's review issue gets the new evidence for the verdict. Anything it cannot reproduce is a `BACK-TO-WORKER` before merge.
+4. Close: the human says `done`. Then one verifier (`top`) on the cumulative diff of `proteus-work/<run>/rev<k>` with two checks beyond the team checklist: every change sits in owned paths, and a clean rebuild from the branch reproduces the approved evidence. `MERGE` → merge into `proteus/<run>`, stop the standing worker, and the milestone's review issue gets the new evidence for the verdict. Anything it cannot reproduce is a `BACK-TO-WORKER` before merge.
 
 Revision mode never adds scope. A note that needs a new deliverable or a second team is a ticket for the next wave.

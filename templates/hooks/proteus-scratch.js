@@ -3,10 +3,10 @@
 // and nothing Proteus did not make is ever touched.
 //   node .claude/hooks/proteus-scratch.js --path <key>       mkdir <git-common-dir>/proteus/scratch/<key>/, bump its mtime, print it
 //   node .claude/hooks/proteus-scratch.js --sweep <key>      delete scratch/<key>[-*] and the strays keyed <key>[-*]
-//   node .claude/hooks/proteus-scratch.js --sweep --all-done the same for every key whose proteus/<key> branch is gone
+//   node .claude/hooks/proteus-scratch.js --sweep --all-done the same for every key whose branch is gone
 //   node .claude/hooks/proteus-scratch.js --sweep --stale    the autostart's: done and idle 72h, or idle 7 days regardless
 //   node .claude/hooks/proteus-scratch.js --size             MB held in scratch dirs and ledgered strays
-// <key> is a ticket's <run>-<id> (its branch proteus/<run>-<id>) or a run's <run>.
+// <key> is a ticket's <run>-<id> (its branch proteus-work/<run>/<id>) or a run's <run>.
 // As a hook (lead's session, before and after every shell call, failed or not): the first snapshots the
 // top-level names of os.tmpdir(); after the call a new name owned by this user and named in the command or its
 // output is a stray, appended to <common>/proteus/scratch-ledger.jsonl with its key (the agent's own --path,
@@ -193,7 +193,7 @@ function removeWorktree(p, prune) {
   return true;
 }
 
-// a key is done once its proteus/<key> branch is gone: `gh pr merge --delete-branch` drops a ticket's,
+// a key is done once its branch (proteus/<run>, proteus-work/<run>/<id>) is gone: `gh pr merge --delete-branch` drops a ticket's,
 // close drops the run's. Unkeyed strays are done when no proteus/* branch is left. A run opened
 // before the rename counts on its legacy branch (lib.runRefs reads both prefixes).
 function doneFn(common) {

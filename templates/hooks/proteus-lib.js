@@ -65,8 +65,10 @@ const mainRoot = (common) => (common && path.basename(common) === ".git" ? path.
 
 const stateDir = (common) => path.join(common, "proteus");
 
-// a run's names: its branch prefix, evidence prefix, labels, and the sibling folder its worker worktrees use
-const CURRENT = { branch: "proteus/", evidence: "proteus-evidence/", label: "proteus", log: "proteus-log", review: "proteus-review", debt: "proteus-debt", question: "proteus-question", worktrees: "-proteus" };
+// a run's names: its branch prefix, its worker branches' prefix, evidence prefix, labels, and the sibling folder its
+// worker worktrees use. Worker branches are <work><run>/<id>, outside <branch>, so a ruleset on proteus/* binds runs only;
+// a run opened before that keeps <branch><run>-<id> until it closes.
+const CURRENT = { branch: "proteus/", work: "proteus-work/", evidence: "proteus-evidence/", label: "proteus", log: "proteus-log", review: "proteus-review", debt: "proteus-debt", question: "proteus-question", worktrees: "-proteus" };
 
 // legacy-hive:start
 // hivemind, the old name (#6): a run opened before the rename keeps these names until it closes, and its
@@ -190,12 +192,18 @@ function migrateState(common, dry) {
 // legacy-hive:end
 
 const SCHEMES = [CURRENT, LEGACY];
+const isWork = (branch) => String(branch).startsWith(CURRENT.work);
 // the naming scheme a run or worker branch is on, null for any other branch
-const schemeOf = (branch) => SCHEMES.find((s) => String(branch).startsWith(s.branch)) || null;
-// the run (or <run>-<id>) a branch names, without its prefix
-const runName = (branch) => { const s = schemeOf(branch); return s ? String(branch).slice(s.branch.length) : String(branch); };
+const schemeOf = (branch) => (isWork(branch) ? CURRENT : SCHEMES.find((s) => String(branch).startsWith(s.branch)) || null);
+// the run (or <run>-<id>) a branch names, without its prefix: proteus-work/<run>/<id> names <run>-<id>
+function runName(branch) {
+  const b = String(branch);
+  if (isWork(b)) return b.slice(CURRENT.work.length).replace("/", "-");
+  const s = schemeOf(b);
+  return s ? b.slice(s.branch.length) : b;
+}
 
-// every run and worker branch under both schemes: loose refs and packed-refs, no git call
+// every run and worker branch under both schemes, and proteus-work/<run>/<id>: loose refs and packed-refs, no git call
 function runRefs(common) {
   const out = new Set();
   if (!common) return [];
@@ -207,13 +215,21 @@ function runRefs(common) {
     const esc = s.branch.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
     for (const m of packed.matchAll(new RegExp(`^[0-9a-f]+ refs/heads/(${esc}[^/\\s]+)$`, "gm"))) out.add(m[1]);
   }
+  const work = path.join(common, "refs", "heads", CURRENT.work.slice(0, -1));
+  try {
+    for (const r of fs.readdirSync(work, { withFileTypes: true })) {
+      if (!r.isDirectory()) continue;
+      for (const e of fs.readdirSync(path.join(work, r.name), { withFileTypes: true })) if (e.isFile()) out.add(`${CURRENT.work}${r.name}/${e.name}`);
+    }
+  } catch {}
+  for (const m of packed.matchAll(/^[0-9a-f]+ refs\/heads\/(proteus-work\/[^/\s]+\/[^/\s]+)$/gm)) out.add(m[1]);
   return [...out].sort();
 }
 
-// run branches only: <prefix><run>-<id> is a worker branch of <prefix><run>
+// run branches only: proteus-work/<run>/<id>, and <prefix><run>-<id> beside <prefix><run>, are worker branches
 function runBranches(common) {
   const refs = runRefs(common);
-  return refs.filter((b) => !refs.some((a) => a !== b && b.startsWith(a + "-")));
+  return refs.filter((b) => !isWork(b) && !refs.some((a) => a !== b && b.startsWith(a + "-")));
 }
 
 function readJSON(file, dflt) {
@@ -229,6 +245,13 @@ function writeJSON(file, obj) {
 
 const configFile = () => path.join(os.homedir(), ".claude", "proteus.json");
 const proteusConfig = () => readJSON(configFile(), {}) || {};
+// the gh config dir the agents post from ("agentGh" in proteus.json, a leading ~ allowed): a GitHub login of
+// their own, set up by install.js --agent-login. "" while they post under the human's.
+function agentGhDir() {
+  const d = proteusConfig().agentGh;
+  if (typeof d !== "string" || !d.trim()) return "";
+  return path.resolve(d.trim().replace(/^~(?=$|[\\/])/, () => os.homedir()));
+}
 
 // repo-relative path with forward slashes; null when outside root (incl. another drive on Windows)
 function relPath(root, target) {
@@ -301,8 +324,11 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 function git(args, cwd, timeout = 3000) {
   try { return execFileSync("git", args, execOpts(cwd, timeout)).trim(); } catch { return ""; }
 }
-function gh(args, cwd, timeout = 6000) {
-  try { return execFileSync("gh", args, execOpts(cwd, timeout, { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" })).trim(); } catch { return ""; }
+// configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login
+function gh(args, cwd, timeout = 6000, configDir = "") {
+  const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
+  if (configDir) env.GH_CONFIG_DIR = configDir;
+  try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
 
 const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); return Number.isFinite(n) && n > 0 ? n : dflt; };
@@ -315,7 +341,26 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
-  return null;
+  return verdictPost(ev.command, ev.cwd);
+}
+
+// ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
+// comments API call whose body opens with one is refused. The body is read from --body/-b, a body= field, a
+// heredoc, or a --body-file/-F file under cwd. A guard, not a boundary: the verdict script's author check is.
+const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
+const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`.";
+function verdictPost(command, cwd) {
+  const cmd = String(command || "");
+  if (!/\bgh\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
+  const unq = (v) => v.replace(/^\$?(["'])([\s\S]*)\1$/, "$2").replace(/\\(["\\$`])/g, "$1").replace(/\\n/g, "\n");
+  const bodies = [];
+  for (const m of cmd.matchAll(/(?:--body|-b|(?:-f|-F|--field|--raw-field)\s+body)(?:\s+|=)("(?:[^"\\]|\\.)*"|\$?'[^']*'|\S+)/g)) bodies.push(unq(m[1]));
+  for (const m of cmd.matchAll(/<<-?\s*(["']?)(\w+)\1[^\n]*\n([\s\S]*?)(?:\n\s*\2\s*(?:\n|$)|$)/g)) bodies.push(m[3]);
+  for (const m of cmd.matchAll(/(?:--body-file|-F)(?:\s+|=)(["']?)([^\s"']+)\1/g)) {
+    if (m[2] === "-" || m[2].includes("=")) continue;
+    try { bodies.push(fs.readFileSync(path.resolve(cwd || ".", m[2]), "utf8").slice(0, 4096)); } catch {}
+  }
+  return bodies.some((b) => HUMAN_WORD.test(b.replace(/^\$\(\s*cat\s*<<[\s\S]*$/, ""))) ? VERDICT_MSG : null;
 }
 
 // copy src → dst only when the bytes differ; true when written
@@ -421,7 +466,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
-  workerDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
+  workerDenial, verdictPost, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

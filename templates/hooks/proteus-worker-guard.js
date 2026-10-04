@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // PreToolUse hook inside a worker's worktree (registered by the harness adapter's worktree settings).
-// Refuses background Bash, Monitor, and `gh … --edit-last`: a worker whose turn ends waiting
-// on a notification never wakes, and --edit-last can overwrite another agent's comment.
+// Refuses background Bash, Monitor, `gh … --edit-last`, and a comment opening with ACCEPT, CHANGES or ANSWER: a worker whose
+// turn ends waiting on a notification never wakes, --edit-last can overwrite another agent's comment, and those words are the human's.
 // Only active when the owned-path list exists (a dispatched worker's worktree).
 // Exit 2 = block; the message on stderr reaches the worker as the tool's error.
 "use strict";

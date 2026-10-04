@@ -12,9 +12,9 @@ A brief carries pointers (issue, `file:line`, command), never raw logs or long o
 
 ## Worker
 ```
-Ticket #<n> (gh issue view <n> --json body -q .body), team <team>, worktree <absolute path>, branch proteus/<run>-<id>, scratch key <run>-<id>. Nothing outside this ticket exists.
+Ticket #<n> (gh issue view <n> --json body -q .body), team <team>, worktree <absolute path>, branch proteus-work/<run>/<id>, scratch key <run>-<id>. Nothing outside this ticket exists.
 Work only in the worktree: every shell call runs with it as the working directory (the shell tool's workdir where it has one), every command starts with the tool it runs (`git commit …`, never `cd <wt> && git …` or `git -C`), every edit names a path under it.
-Contract (committed, don't change it): <file:line pointers>
+Contract: commit <sha>, the first on your branch; never change the check's files: <file:line pointers>
 Check: <file::name or command>
 You own: <paths>. Anything else is read-only and the edit hook refuses it; need it → `gh issue comment <n> --body "NEEDS <file>: <why>"` and stop. New package or tool → `NEEDS dependency <ecosystem>/<name>@<version>: <why>` and stop; never install one.
 Read teams/<team>/PROFILE.md first, teams/<team>/CRAFT.md if it exists, CONVENTIONS.md and the taste docs it names third. A rule in CONVENTIONS.md beats a rule in any skill.
@@ -30,22 +30,22 @@ Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Cavema
 
 ## Contracts worker (step 3, one per team in the wave, sequential)
 ```
-Run <run>, branch proteus/<run>, team <team>, tickets #<n>, #<n>, …, scratch key <run>. No worktree, no PR. Every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`).
+Run <run>, team <team>, scratch key <run>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, every shell call runs with that ticket's worktree as the working directory and every edit names a path under it; every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`). Never commit to proteus/<run>, never open a PR: the contract reaches proteus/<run> inside the ticket's PR.
 Per ticket: `gh issue view <n> --json body -q .body` holds the interface and the check (name, input, expected result). Commit exactly those: code gets signature stubs that compile and throw/`todo!()`/`raise NotImplementedError` plus the red test; other deliverables get the check script and whatever stub makes it runnable. No behaviour, no helpers, no extras.
 Show each check red twice and paste both outputs on the issue:
  1. on the missing work: it fails on its assertion or the not-implemented stub, never on an import, type, syntax, or missing-file error;
  2. on a deliberately broken input (a copy with the property the check guards removed or wrong; for binaries, a probe copy made from the scripts, never the shared original): it fails and names what is wrong.
 A check that stays green on broken input measures nothing: rewrite it until it goes red. Its first output line prints the path, hash or size, and count of what it opened.
 Can't be written as given → `gh issue comment <n> --body "CONTRACT-UNCLEAR: <what>"`, skip that ticket, continue.
-One commit per ticket, `test(<scope>): contract for #<n>`, per references/commits.md. Push proteus/<run>.
-Done → per ticket one line on its issue: `CONTRACT #<n> <stub> <check> red-on-missing red-on-broken`.
+One commit per ticket on its branch, `test(<scope>): contract for #<n>`, per references/commits.md, then `git push -u origin proteus-work/<run>/<id>`.
+Done → per ticket one line on its issue: `CONTRACT #<n> <commit sha> <stub> <check> red-on-missing red-on-broken`.
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. CONVENTIONS.md applies. Caveman full. Ponytail full.
 ```
 
 ## Verifier
 ```
 Ticket #<n>, PR #<pr>, team <team>, debt issue #<d>, scratch key <run>-<id>. No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md (Owns, Verifier adds) and CRAFT.md if it exists.
-CI red → BACK-TO-WORKER with the failing check named; no checks listed → run them yourself. `gh pr diff <pr> --name-only` outside the ticket's owned paths or outside the team's Owns → BACK-TO-WORKER.
+CI red → BACK-TO-WORKER with the failing check named; no checks listed → run them yourself. `gh pr diff <pr> --name-only` outside the ticket's owned paths or outside the team's Owns → BACK-TO-WORKER. The check is the contract: `git fetch origin proteus-work/<run>/<id>` then `git diff --stat <contract sha> FETCH_HEAD -- <check files>` prints anything → BACK-TO-WORKER.
 Code: /code-review (standards + spec as parallel sub-agents), code-review-graph blast radius on changed exports, <fallow dupes | vulture> on the diff. Otherwise: the team's rubric, each line scored with evidence. Diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted, never a nit.
 Evidence rules: a probe or check whose output does not print what it opened is void; rerun it so it does. A result that exists only outside the repo (out/, /tmp, GUI) is not delivered.
 One verdict, as a PR review (`gh pr review <pr> --comment|--request-changes --body`; `--approve` fails on your own PR):

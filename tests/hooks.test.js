@@ -114,6 +114,16 @@ r = run(LG, pre("Bash", { command: "npm run render", run_in_background: true }, 
 ok("guard: subagent run_in_background denied", r.code === 2 && /never wait on a background notification/.test(r.err), r.err);
 ok("guard: subagent Monitor denied", code(pre("Monitor", { command: "x" }, sub)) === 2);
 ok("guard: subagent --edit-last denied", code(pre("Bash", { command: "gh pr comment 3 --edit-last -b y" }, sub)) === 2);
+// the human's words: an agent's comment opening with ACCEPT, CHANGES or ANSWER is refused, from the lead or a subagent
+const said = (command, extra) => { const res = run(LG, pre("Bash", { command }, extra)); return res.code === 2 && /ACCEPT, CHANGES and ANSWER are the human's words/.test(res.err); };
+ok("guard: an agent's ACCEPT, CHANGES or ANSWER comment is refused, lead and subagent", said("gh issue comment 22 --body ACCEPT") && said("gh issue comment 22 -b 'CHANGES\n- too dark'", sub) &&
+  said('gh issue comment 21 --body "ANSWER 2"') && said("gh pr review 40 --comment -b ACCEPT", sub) && said("gh api repos/o/r/issues/22/comments -f body=ACCEPT"));
+ok("guard: a heredoc or $(cat <<EOF) body is read", said("gh issue comment 22 --body-file - <<'EOF'\nACCEPT\nEOF") && said('gh issue comment 22 --body "$(cat <<\'EOF\'\n  CHANGES\n- x\nEOF\n)"', sub));
+fs.writeFileSync(path.join(REPO, "verdict.md"), "ACCEPT\nall good\n"); fs.writeFileSync(path.join(REPO, "report.md"), "DONE #12\nACCEPT criteria met\n");
+ok("guard: a --body-file under cwd is read", said("gh issue comment 22 --body-file verdict.md") && said("gh issue comment 22 -F verdict.md", sub) && !said("gh issue comment 22 --body-file report.md"));
+ok("guard: other words, other commands and the keyword past line 1 pass", !said("gh issue comment 22 --body 'ACCEPTED criteria are listed below'") && !said('gh issue comment 22 --body "Answered in session: 2"') &&
+  !said("gh issue comment 22 --body 'DONE\nACCEPT would be premature'") && !said("grep -n ACCEPT tracker.md") && !said("gh issue view 22 --json comments -q '.comments[].body | select(test(\"^ACCEPT\"))'") &&
+  !said("gh issue create --title 'Q: x' --body 'ANSWER with 1 or 2'"));
 ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm test" }, sub)) === 0);
 r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
@@ -210,6 +220,18 @@ const REPO4 = path.join(W, "repo4"); fs.mkdirSync(REPO4); g(REPO4, "init", "-q",
 ok("guard sub: main checkout with no run allowed", run(LG, pre("Edit", { file_path: "src/a.ts" }, { ...sub, cwd: REPO4 }), { cwd: REPO4 }).code === 0);
 fs.writeFileSync(path.join(REPO4, ".git", "packed-refs"), "# pack-refs with: peeled fully-peeled sorted\n0123456789abcdef0123456789abcdef01234567 refs/heads/proteus/run9\n");
 ok("guard sub: packed proteus/* ref counts as a run", run(LG, pre("Edit", { file_path: "src/a.ts" }, { ...sub, cwd: REPO4 }), { cwd: REPO4 }).code === 2);
+// worker branches proteus-work/<run>/<id>, loose and packed, name the key <run>-<id> and are never a run
+{
+  const HL = require(path.join(H, "proteus-lib.js"));
+  const R5 = path.join(W, "repo5"), heads = path.join(R5, ".git", "refs", "heads"), sha = "0123456789abcdef0123456789abcdef01234567\n";
+  fs.mkdirSync(path.join(heads, "proteus-work", "bl9"), { recursive: true }); fs.mkdirSync(path.join(heads, "proteus"), { recursive: true });
+  fs.writeFileSync(path.join(heads, "proteus", "bl9"), sha); fs.writeFileSync(path.join(heads, "proteus-work", "bl9", "3"), sha);
+  fs.writeFileSync(path.join(R5, ".git", "packed-refs"), `# pack-refs with: peeled fully-peeled sorted\n${sha.trim()} refs/heads/proteus-work/bl9/4\n`);
+  const C5 = path.join(R5, ".git");
+  ok("lib: proteus-work/<run>/<id> refs are read, loose and packed", JSON.stringify(HL.runRefs(C5)) === JSON.stringify(["proteus-work/bl9/3", "proteus-work/bl9/4", "proteus/bl9"]), JSON.stringify(HL.runRefs(C5)));
+  ok("lib: a worker branch is never a run branch", JSON.stringify(HL.runBranches(C5)) === JSON.stringify(["proteus/bl9"]));
+  ok("lib: proteus-work/<run>/<id> names <run>-<id> on the current scheme", HL.runName("proteus-work/bl9/3") === "bl9-3" && HL.schemeOf("proteus-work/bl9/3") === HL.CURRENT && HL.runName("proteus/bl9-3") === "bl9-3" && HL.schemeOf("main") === null);
+}
 // Windows semantics, in-process: path swapped to win32, a list file named with backslashes in a temp cwd.
 // POSIX hosts only: a real win32 host cannot name a file with backslashes, and runs the owned tests below natively
 if (process.platform !== "win32") {
@@ -324,6 +346,32 @@ run(SL, slIn, { env: { FAKE_GH: "fail" } });
 ok("statusline: refresh at most once per 60 s", fs.statSync(lock).mtimeMs === lockM);
 ok("statusline: outside a repo prints empty", run(SL, "{}", { cwd: W }).code === 0);
 const slTimes = []; for (let i = 0; i < 5; i++) slTimes.push(run(SL, slIn).ms);
+
+// ---- verdict: only the human's ACCEPT / CHANGES / ANSWER count, AUTO-* from the human or the agents, the keyword alone
+const VD = hook("proteus-verdict.js");
+const vc = (login, body) => ({ author: { login }, body });
+const vd = (comments, env = {}, args = ["30"]) => run(VD, "", { args, env: { FAKE_GH_COMMENTS: JSON.stringify(comments), ...env } });
+const PJ = path.join(HOME, ".claude", "proteus.json");
+const pjSaved = fs.existsSync(PJ) ? fs.readFileSync(PJ, "utf8") : null;
+r = vd([vc("human", "looks good"), vc("human", "ACCEPT\nnice work")]);
+ok("verdict: the human's ACCEPT is printed whole, exit 0", r.code === 0 && r.out === "ACCEPT\nnice work\n", r.out + r.err);
+ok("verdict: shared identity warns on stderr", /identity=shared: agents post as human/.test(r.err), r.err);
+r = vd([vc("human", "CHANGES\n- the shadow is too dark"), vc("mallory", "ACCEPT")]);
+ok("verdict: a passer-by's newer ACCEPT is ignored, the human's CHANGES stands", r.code === 0 && r.out.startsWith("CHANGES\n- the shadow"), r.out);
+r = vd([vc("human", "ACCEPTED, mostly"), vc("human", "I will ACCEPT later"), vc("human", "note\nACCEPT"), vc("human", "CHANGES-REQUESTED")]);
+ok("verdict: ACCEPTED, a keyword mid-line, on line 2 or glued to a dash is no verdict, exit 1", r.code === 1 && r.out === "", r.out);
+ok("verdict: ANSWER, after leading blank lines", vd([vc("human", "\n  ANSWER 2")]).out === "ANSWER 2\n");
+fs.writeFileSync(PJ, JSON.stringify({ human: "human" }));
+const bot = { FAKE_GH_LOGIN: "bot" };
+r = vd([vc("bot", "AUTO-ACCEPT\nall steps matched"), vc("bot", "ACCEPT"), vc("mallory", "AUTO-HOLD")], bot);
+ok("verdict: with an agent login, its ACCEPT is ignored, its AUTO-ACCEPT counts, a passer-by's AUTO-HOLD does not", r.code === 0 && r.out.startsWith("AUTO-ACCEPT") && r.err === "", r.out + r.err);
+ok("verdict: the human named in proteus.json still counts", vd([vc("human", "ACCEPT"), vc("bot", "AUTO-HOLD")], bot).out.startsWith("AUTO-HOLD") && vd([vc("bot", "AUTO-HOLD"), vc("human", "CHANGES")], bot).out.startsWith("CHANGES"));
+if (pjSaved === null) fs.rmSync(PJ); else fs.writeFileSync(PJ, pjSaved);
+const CNT = path.join(W, "verdict-count");
+r = vd([vc("human", "ACCEPT")], { FAKE_GH_COUNTER: CNT, PROTEUS_VERDICT_POLL_S: "1" }, ["30", "--wait"]);
+ok("verdict: --wait polls until the verdict arrives", r.code === 0 && r.out === "ACCEPT\n" && fs.readFileSync(CNT, "utf8") === "2", r.out + r.err);
+ok("verdict: gh failing is no verdict, exit 1", vd([vc("human", "ACCEPT")], { FAKE_GH: "fail" }).code === 1);
+ok("verdict: no issue number is usage, exit 2", vd([], {}, []).code === 2);
 
 // ---- stall
 const ST = hook("proteus-stall.js");
@@ -848,6 +896,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("codex guard: a patch of lead docs only is allowed", cg(cpre("apply_patch", patch("AGENTS.md", "docs/adr/0001-x.md"))).code === 0);
   ok("codex guard: apply_patch run through the shell is an edit", cg(cpre("Bash", { command: "apply_patch <<'EOF'\n" + patch("src/b.ts").command + "\nEOF" })).code === 2);
   ok("codex guard: plain shell allowed, --edit-last denied", cg(cpre("Bash", { command: "git status" })).code === 0 && cg(cpre("Bash", { command: "gh issue comment 3 --edit-last -b x" })).code === 2);
+  ok("codex guard: an ACCEPT comment denied", cg(cpre("Bash", { command: "gh issue comment 3 --body ACCEPT" })).code === 2);
   r = cg(cpre("spawn_agent", { message: "x", agent_type: "proteus-worker", model: "gpt-6-luna" }));
   ok("codex guard: single-model mode, a spawn on another model is denied", r.code === 2 && /not on the ladder \(gpt-6-sol\)/.test(r.err), r.err);
   ok("codex guard: single-model mode, the lead's model is allowed", cg(cpre("spawn_agent", { message: "x", model: "gpt-6-sol" }, { transcript_path: null })).code === 0);

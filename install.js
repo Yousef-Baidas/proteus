@@ -21,6 +21,13 @@
 //   node install.js --tour-done       record the tour as taken (the lead runs it when the tour ends
 //                                     or is skipped); the session start stops offering it until
 //                                     a new feature lands
+//   node install.js --agent-login [dir]   sign in the agents' own GitHub account (a machine user you created) in a gh
+//                                     config dir of its own (default ~/.config/gh-proteus), token in a file there;
+//                                     records it and your login in ~/.claude/proteus.json. From the next session every
+//                                     agent shell command runs gh as that account; you keep yours
+//   node install.js --protect         in a repo you administer: invite the agents' account with write access and
+//                                     add the "proteus runs" ruleset (a PR with the gates check green, no force push,
+//                                     no bypass, admins included) to every proteus/* branch
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -860,6 +867,112 @@ function tourDone() {
   log(`tour     -> done${head.ok ? ` at ${head.out.slice(0, 7)}` : ""}; "tour" in a Proteus session runs it again`);
 }
 
+// the agents' own GitHub login (#identity)
+
+// a gh config dir of their own, the token in a file there: gh keeps one keyring entry per host, shared by every
+// config dir, so a second keyring login would replace the human's
+const AGENT_GH = path.join(HOME, ".config", "gh-proteus");
+const RULESET = "proteus runs";
+const agentGh = () => { const c = readJson(CONFIG) || {}; return typeof c.agentGh === "string" && c.agentGh.trim() ? path.resolve(c.agentGh.trim().replace(/^~(?=$|[\\/])/, () => HOME)) : ""; };
+// gh as the agents (dir) or as the human: the human's is this shell's own config, unless this shell is an agent's
+function ghAs(dir, args, extra = {}) {
+  const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
+  if (dir) env.GH_CONFIG_DIR = dir;
+  else if (env.GH_CONFIG_DIR && agentGh() && samePath(path.resolve(env.GH_CONFIG_DIR), agentGh())) delete env.GH_CONFIG_DIR;
+  const r = spawnSync("gh", args, { encoding: "utf8", timeout: 30000, ...extra, env });
+  return { ok: r.status === 0, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() || (r.error ? r.error.message : "") };
+}
+const loginOf = (dir) => { const r = ghAs(dir, ["api", "user", "--jq", ".login"]); return r.ok ? r.out : ""; };
+
+function agentLogin(dirArg) {
+  const human = loginOf("");
+  if (!human) { warn("gh is not logged in as you: run gh auth login first, then this again"); return false; }
+  const dir = path.resolve(dirArg ? dirArg.replace(/^~(?=$|[\\/])/, () => HOME) : AGENT_GH);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!WIN) fs.chmodSync(dir, 0o700); // the token sits in hosts.yml here
+  let bot = loginOf(dir);
+  if (!bot) {
+    log(`Sign in as the agents' GitHub account, not as ${human}: open the device link in a private window, or one signed in as that account.`);
+    const r = spawnSync("gh", ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--insecure-storage"],
+      { stdio: "inherit", env: { ...process.env, GH_CONFIG_DIR: dir } });
+    bot = r.status === 0 ? loginOf(dir) : "";
+    if (!bot) { warn("gh auth login did not finish; nothing recorded"); return false; }
+  }
+  if (bot === human) {
+    ghAs(dir, ["auth", "logout", "--hostname", "github.com"]);
+    warn(`that signed in as ${human}, your own account; logged it out of ${dir}. Create a second account for the agents and run this again`);
+    return false;
+  }
+  const c = readConfig();
+  writeJson(CONFIG, { ...c, human, agentGh: dir });
+  log(`identity -> agents post as ${bot}, you as ${human} (${CONFIG}); gh config and token in ${dir}`);
+  log(`next: in each repo you administer, node "${path.join(HERE, "install.js")}" --protect, then start a new session`);
+  return true;
+}
+
+// the ruleset on proteus/*: a PR with gates green, no force push, nobody bypasses. Creating proteus/<run> stays
+// allowed (do_not_enforce_on_create), and so does deleting it at close.
+const rulesetBody = () => ({
+  name: RULESET, target: "branch", enforcement: "active", bypass_actors: [],
+  conditions: { ref_name: { include: ["refs/heads/proteus/*"], exclude: [] } },
+  rules: [
+    { type: "pull_request", parameters: { required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false, require_last_push_approval: false, required_review_thread_resolution: false } },
+    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: [{ context: "gates" }] } },
+    { type: "non_fast_forward" },
+  ],
+});
+const json = (s) => { try { return JSON.parse(s); } catch { return null; } };
+// what binds proteus/* in a repo: the rule types GitHub applies there, null when it cannot say
+function runRules(repo, dir = "") {
+  const r = ghAs(dir, ["api", `repos/${repo}/rules/branches/proteus%2Fprobe`]);
+  const rules = r.ok ? json(r.out) : null;
+  return Array.isArray(rules) ? rules : null;
+}
+const rulesHold = (rules) => !!rules && rules.some((x) => x.type === "pull_request") && rules.some((x) => x.type === "non_fast_forward")
+  && rules.some((x) => x.type === "required_status_checks" && ((x.parameters || {}).required_status_checks || []).some((c) => c.context === "gates"));
+
+function protect() {
+  const human = loginOf("");
+  if (!human) { warn("gh is not logged in as you: gh auth login"); return false; }
+  const view = ghAs("", ["repo", "view", "--json", "nameWithOwner,viewerPermission"]);
+  const info = view.ok ? json(view.out) : null;
+  if (!info) { warn(`gh repo view fails here: ${view.err || "no GitHub remote"}`); return false; }
+  const repo = info.nameWithOwner;
+  if (info.viewerPermission !== "ADMIN") { warn(`${human} is not an admin of ${repo}; its admin runs --protect`); return false; }
+  const dir = agentGh();
+  const bot = dir ? loginOf(dir) : "";
+  let ok = true;
+  if (!bot) warn(`no agents' account (${dir ? `${dir} is not logged in` : "--agent-login first"}); the ruleset still binds, but agents posting as ${human} can lift it`);
+  else if (bot === human) { warn(`agentGh logs in as ${human}, your own account; --agent-login again`); ok = false; }
+  else {
+    const perm = ghAs("", ["api", `repos/${repo}/collaborators/${bot}/permission`, "--jq", ".permission"]);
+    if (perm.out === "admin") { warn(`${bot} is an admin of ${repo} and can lift the ruleset: make it write in Settings > Collaborators`); ok = false; }
+    else if (perm.out === "write" || perm.out === "maintain") log(`access   -> ${bot} already has ${perm.out} on ${repo}`);
+    else {
+      const inv = ghAs("", ["api", "-X", "PUT", `repos/${repo}/collaborators/${bot}`, "-f", "permission=push"]);
+      if (!inv.ok) { warn(`inviting ${bot} failed: ${inv.err}`); ok = false; }
+      else {
+        const list = json(ghAs(dir, ["api", "user/repository_invitations"]).out) || [];
+        const mine = list.filter((x) => x && x.repository && x.repository.full_name === repo);
+        const acc = mine.map((x) => ghAs(dir, ["api", "-X", "PATCH", `user/repository_invitations/${x.id}`]));
+        if (acc.length && acc.every((a) => a.ok)) log(`access   -> ${bot} invited to ${repo} with write and accepted`);
+        else { warn(`${bot} was invited to ${repo} but the invitation is not accepted: sign in as ${bot} and accept it at https://github.com/${repo}/invitations`); ok = false; }
+      }
+    }
+  }
+  const list = ghAs("", ["api", `repos/${repo}/rulesets`]);
+  const found = (json(list.out) || []).find((x) => x && x.name === RULESET);
+  const put = ghAs("", ["api", "-X", found ? "PUT" : "POST", `repos/${repo}/rulesets${found ? `/${found.id}` : ""}`, "--input", "-"], { input: JSON.stringify(rulesetBody()) });
+  if (!put.ok) {
+    warn(`ruleset failed: ${put.err}`);
+    warn("a private repo on GitHub Free has no rulesets: the lead then falls back to per-run branch protection, which your agents' account cannot set either (enforcement.md §1)");
+    return false;
+  }
+  if (!rulesHold(runRules(repo))) { warn(`ruleset "${RULESET}" saved but GitHub does not report it on proteus/*; check Settings > Rules`); return false; }
+  log(`ruleset  -> "${RULESET}" ${found ? "updated" : "added"} on ${repo}: proteus/* merges only by PR with gates green, never force-pushed, no bypass`);
+  return ok;
+}
+
 // doctor
 
 async function doctor(fix) {
@@ -887,6 +1000,17 @@ async function doctor(fix) {
     if (!has("gh")) return ["FIX", "gh not found", WIN ? "winget install GitHub.cli" : "brew install gh | sudo pacman -S github-cli | https://cli.github.com"];
     ghAuthed = has("gh", ["auth", "status"]) !== null;
     return ghAuthed ? ["ok", "gh logged in"] : ["FIX", "gh not logged in", "gh auth login"];
+  });
+  let bot = "";
+  check(() => {
+    if (!ghAuthed) return ["WARN", "agents' GitHub login not checked (gh not ready)", "gh auth login"];
+    const dir = agentGh();
+    if (!dir) return ["WARN", "identity=shared: agents post as you, so only the guards tell their ACCEPT from yours", `${self} --agent-login`];
+    bot = loginOf(dir);
+    const human = String((readJson(CONFIG) || {}).human || "");
+    if (!bot) return ["FIX", `agents' gh config ${dir} is not logged in`, `${self} --agent-login`];
+    if (bot === human || !human) return ["FIX", !human ? "no \"human\" in proteus.json beside agentGh" : `agents' login ${bot} is your own`, `${self} --agent-login`];
+    return ["ok", `identity=separate: agents post as ${bot}, you as ${human}`];
   });
   // hivemind, the old name: its leftovers before the install checks, which then see what the fix leaves
   check(() => {
@@ -1001,6 +1125,21 @@ async function doctor(fix) {
       const r = spawnSync("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { cwd: root, encoding: "utf8", shell: WIN, timeout: 20000 });
       return r.status === 0 ? ["ok", `GitHub repo ${r.stdout.trim()}`] : ["FIX", "gh repo view fails for this repo's remote", "git remote -v; gh repo view"];
     });
+    // what binds proteus/* and who the agents are there; the ruleset is the human's, set once by --protect
+    let repo = "";
+    if (ghAuthed && isProject) check(() => {
+      repo = json(ghAs("", ["repo", "view", "--json", "nameWithOwner"], { cwd: root }).out)?.nameWithOwner || "";
+      if (!repo) return ["WARN", "proteus/* rules not checked (gh repo view fails)", "gh repo view"];
+      const rules = runRules(repo);
+      if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates green, no force push`];
+      return ["WARN", `no ruleset binds proteus/* on ${repo}${rules ? "" : " (or gh cannot read it)"}: the lead falls back to per-run protection, which only an admin's login can set`, `${self} --protect (run by an admin of ${repo})`];
+    });
+    if (ghAuthed && isProject) check(() => {
+      if (!bot || !repo) return ["ok", "agents' access not checked (no agents' login or repo)"];
+      const p = ghAs("", ["api", `repos/${repo}/collaborators/${bot}/permission`, "--jq", ".permission"], { cwd: root }).out;
+      if (p === "admin") return ["WARN", `${bot} is an admin of ${repo} and can lift the ruleset`, "lower it to write in Settings > Collaborators"];
+      return p === "write" || p === "maintain" ? ["ok", `${bot} has ${p} on ${repo}`] : ["FIX", `${bot} cannot push to ${repo} (${p || "unknown"})`, `${self} --protect (run by an admin of ${repo})`];
+    });
     check(() => {
       const m = migrateProject(root, false);
       if (m.found.length) return ["FIX", `hivemind's pieces in this repo: ${m.found.join(", ")}`, `${self} --project`];
@@ -1097,7 +1236,7 @@ async function doctor(fix) {
 const FLAGS = {
   "--project": "project", "--install": "install", "--confine": "confine", "--update": "update",
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
-  "--tour-done": "tourDone", "--migrate-all": "migrateAll",
+  "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect",
 };
 let harnessArg = null;
 
@@ -1117,6 +1256,10 @@ function main() {
       SCAN = path.resolve(d);
       continue;
     }
+    if (a === "--agent-login" || a.startsWith("--agent-login=")) {
+      opt.agentLogin = a === "--agent-login" ? (argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : true) : a.slice("--agent-login=".length) || true;
+      continue;
+    }
     if (a === "-h" || a === "--help") {
       const lines = fs.readFileSync(__filename, "utf8").split(/\r?\n/).slice(1);
       console.log(lines.slice(0, lines.findIndex((l) => !l.startsWith("//"))).map((l) => l.slice(3)).join("\n"));
@@ -1133,10 +1276,13 @@ function main() {
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);
   if (opt.tourDone && Object.keys(opt).length > 1) die("--tour-done takes no other flag", 2);
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
+  if ((opt.agentLogin || opt.protect) && Object.keys(opt).length > 1) die("--agent-login and --protect take no other flag", 2);
 
   (async () => {
     if (opt.doctor) process.exitCode = (await doctor(opt.fix)) ? 0 : 1;
     else if (opt.tourDone) tourDone();
+    else if (opt.agentLogin) process.exitCode = agentLogin(opt.agentLogin === true ? "" : opt.agentLogin) ? 0 : 1;
+    else if (opt.protect) process.exitCode = protect() ? 0 : 1;
     else if (opt.update) update(argv);
     else process.exitCode = install(opt) ? 0 : 1;
   })().catch((e) => die(`error: ${e.message}`));

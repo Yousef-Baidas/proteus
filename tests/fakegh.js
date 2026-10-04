@@ -1,9 +1,46 @@
 #!/usr/bin/env node
-// fake gh for the hook tests: canned JSON by argument pattern; FAKE_GH=fail → exit 1
+// fake gh for the hook tests: canned JSON by argument pattern; FAKE_GH=fail → exit 1. FAKE_GH_LOGIN is the authenticated
+// login (default human), FAKE_GH_COMMENTS the comments of issue 30; with FAKE_GH_COUNTER (a file) its first view has none.
+// Under GH_CONFIG_DIR the login is the one `auth login` wrote there (FAKE_GH_BOT_LOGIN, default bot), else none.
+// FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets.
 const a = process.argv.slice(2).join(" ");
 if (process.env.FAKE_GH === "fail") { process.stderr.write("gh: no remote\n"); process.exit(1); }
 const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
+if (a === "--version" || a === "auth status") { process.stdout.write("gh fake\n"); process.exit(0); }
+const CD = process.env.GH_CONFIG_DIR;
+if (CD) {
+  const fs = require("fs"), path = require("path"), hosts = path.join(CD, "hosts.yml");
+  if (a.startsWith("auth login ")) { fs.writeFileSync(hosts, process.env.FAKE_GH_BOT_LOGIN || "bot"); process.exit(0); }
+  if (a.startsWith("auth logout ")) { fs.rmSync(hosts, { force: true }); process.exit(0); }
+  if (!fs.existsSync(hosts)) { process.stderr.write("gh: not logged in\n"); process.exit(1); }
+  if (/^api user --jq \.login$/.test(a)) { process.stdout.write(fs.readFileSync(hosts, "utf8") + "\n"); process.exit(0); }
+}
+if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_STATE)) {
+  const fs = require("fs"), file = process.env.FAKE_GH_STATE;
+  const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const save = () => fs.writeFileSync(file, JSON.stringify(s));
+  const body = () => JSON.parse(fs.readFileSync(0, "utf8"));
+  let m;
+  if (/^repo view --json nameWithOwner,viewerPermission$/.test(a)) out({ nameWithOwner: "o/r", viewerPermission: s.viewer || "ADMIN" });
+  if (/^repo view --json nameWithOwner$/.test(a)) out({ nameWithOwner: "o/r" });
+  if (/^repo view --json nameWithOwner -q \.nameWithOwner$/.test(a)) { process.stdout.write("o/r\n"); process.exit(0); }
+  if (/^api repos\/o\/r\/collaborators\/\w+\/permission --jq \.permission$/.test(a)) { process.stdout.write((s.perm || "none") + "\n"); process.exit(0); }
+  if (/^api -X PUT repos\/o\/r\/collaborators\/\w+ -f permission=push$/.test(a)) { s.invited = true; save(); out({ id: 5 }); }
+  if (a === "api user/repository_invitations") out(CD && s.invited ? [{ id: 5, repository: { full_name: "o/r" } }] : []);
+  if (CD && a === "api -X PATCH user/repository_invitations/5") { s.invited = false; s.perm = "write"; save(); process.exit(0); }
+  if (a === "api repos/o/r/rulesets") out(s.rulesets || []);
+  if (a === "api -X POST repos/o/r/rulesets --input -") { s.rulesets = [...(s.rulesets || []), { id: 9, ...body() }]; save(); out({ id: 9 }); }
+  if ((m = /^api -X PUT repos\/o\/r\/rulesets\/(\d+) --input -$/.exec(a))) { s.rulesets = (s.rulesets || []).map((r) => (r.id === +m[1] ? { id: r.id, ...body() } : r)); s.puts = (s.puts || 0) + 1; save(); out({ id: +m[1] }); }
+  if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
+}
 const iso = (h) => new Date(Date.UTC(2026, 8, 1) + h * 3600e3).toISOString();
+if (/^api user --jq \.login$/.test(a)) { process.stdout.write((process.env.FAKE_GH_LOGIN || "human") + "\n"); process.exit(0); }
+if (/issue view 30 --json comments/.test(a)) {
+  const fs = require("fs"), c = process.env.FAKE_GH_COUNTER;
+  const n = c ? (parseInt(fs.existsSync(c) ? fs.readFileSync(c, "utf8") : "0", 10) || 0) + 1 : 2;
+  if (c) fs.writeFileSync(c, String(n));
+  out({ comments: n === 1 ? [] : JSON.parse(process.env.FAKE_GH_COMMENTS || "[]") });
+}
 if (/issue list --label proteus-log/.test(a)) out([{ number: 7, title: "Run: bl1077" }]);
 if (/issue view 7 --json comments/.test(a)) out({ comments: Array.from({ length: 15 }, (_, i) => ({ body: `decision ${i + 1}: ` + "x".repeat(i === 14 ? 50 : 300) })) });
 if (/issue list --label needs-human/.test(a)) out([

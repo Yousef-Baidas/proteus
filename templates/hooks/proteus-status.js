@@ -44,7 +44,7 @@ const withVerdict = prs.filter((p) => [...(p.reviews || []), ...(p.comments || [
 parts.push(`${prs.length} PRs open (${withVerdict} verdict)`);
 
 const heads = new Set(prs.map((p) => p.headRefName));
-const inProgress = branches.filter((b) => b.startsWith(`${names.branch}${run}-`) && !heads.has(b)).length;
+const inProgress = branches.filter((b) => (b.startsWith(`${names.branch}${run}-`) || b.startsWith(`${lib.CURRENT.work}${run}/`)) && !heads.has(b)).length;
 const parallel = Math.max(1, prs.length + inProgress);
 const took = tickets.filter((i) => !isOpen(i) && i.closedAt && i.createdAt).map((i) => Date.parse(i.closedAt) - Date.parse(i.createdAt)).filter((d) => d > 0).sort((a, b) => a - b);
 if (took.length < 2) parts.push(`eta: n/a (need 2 closed tickets)`);

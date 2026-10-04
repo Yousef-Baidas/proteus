@@ -38,10 +38,11 @@ lib.run((ev, ad) => {
   }
   safe(() => migrateState(root, home, notes));
   safe(() => codexRoots(ad, root, home, notes));
+  const identity = safe(() => agentIdentity(ad, root, home, notes), "identity=unknown");
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);
   const src = ev.source;
   const tour = home && (src === "startup" || src === "clear") ? safe(() => tourState(home, cfg), "") : "";
-  const state = localState(ad, root, runs, home, behind) + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
+  const state = localState(ad, root, runs, home, behind) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchSweep(root));
 
@@ -201,6 +202,29 @@ function codexRoots(ad, root, home, notes) {
   }
   const cmd = home ? `node "${path.join(home, "install.js")}" --update` : "install.js --update";
   notes.push(`proteus: ${w.error || `${w.dir} is not in writable_roots of ${w.file}`}; ${cmd} (install.ps1 -Update on Windows) finishes the move`);
+}
+
+// The agents' GitHub login: with "agentGh" in proteus.json (install.js --agent-login), every agent shell command,
+// the lead's included, runs gh under that config dir, so the human's own login stays the human's. Claude Code takes
+// the variable through its env file for this session; Codex through the project's config.toml from its next
+// session. Returns the identity= token: separate, shared (agents post as the human), or next (Codex, set for next time).
+function agentIdentity(ad, root, home, notes) {
+  if (typeof ad.exportEnv !== "function") return "identity=unknown";
+  const dir = lib.agentGhDir();
+  const fix = home ? `node "${path.join(home, "install.js")}" --agent-login` : "install.js --agent-login";
+  if (dir && !fs.existsSync(dir)) notes.push(`proteus: agentGh ${dir} does not exist; ${fix} sets it up`);
+  const use = dir && fs.existsSync(dir) ? dir : "";
+  const w = ad.exportEnv(root, { GH_CONFIG_DIR: use });
+  if (w.error) {
+    if (use) notes.push(`proteus: agents post as the human: ${w.error}`);
+    return "identity=shared";
+  }
+  if (!use) return "identity=shared";
+  if (w.changed) {
+    notes.push(`proteus: GH_CONFIG_DIR for agent shells written to ${w.file}; Codex reads it from the next session`);
+    return "identity=next";
+  }
+  return "identity=separate";
 }
 
 // the open run's log issue; a run opened before the rename is labelled with the legacy log label
