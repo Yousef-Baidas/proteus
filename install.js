@@ -403,16 +403,23 @@ function installContextMode() {
 function projectDupes(dir, act) {
   const dupes = [], overrides = [];
   if (samePath(real(dir), real(HOME))) return { dupes, overrides }; // ~/.claude is the global install
+  // a repo may commit .claude as a link (to ~/.claude, say): nothing reached through one is a dupe (#22)
+  const through = (p, segs) => {
+    if (L.ownDir(dir, segs)) return false;
+    if (act) warn(`refused  ${p} (${path.join(dir, ...segs)} is a link or has one on the way; left alone. A link you made: replace it with a real directory)`);
+    return true;
+  };
   for (const s of SKILLS) {
-    const p = path.join(dir, codex() ? ".agents" : ".claude", "skills", s);
+    const base = codex() ? ".agents" : ".claude", p = path.join(dir, base, "skills", s);
     const st = lstat(p);
-    if (!st) continue;
+    if (!st || through(p, [base, "skills"])) continue;
     if (st.isSymbolicLink() || (st.isDirectory() && frontmatterName(p) === s && !inside(HERE, p))) { if (!act || safeRemove(p, ownedRoots())) dupes.push(p); }
   }
   for (const f of codex() ? [] : shippedAgents()) {
     const p = path.join(dir, ".claude", "agents", f);
     const t = readText(p);
-    if (t === null || ap().isGenerated(t)) continue; // generated from proteus-agents.json: agentPatches rewrites it
+    // generated from proteus-agents.json: agentPatches rewrites it
+    if (t === null || ap().isGenerated(t) || through(p, [".claude", "agents"])) continue;
     if (norm(t) === norm(fs.readFileSync(path.join(HERE, "agents", f), "utf8")) || pastShipped(`agents/${f}`, t)) {
       if (!act || safeRemove(p, ownedRoots())) dupes.push(p);
     } else overrides.push(p);
@@ -433,6 +440,7 @@ function agentPatches(root) {
   for (const p of r.written) log(`agent    -> ${p} (shipped agent + ${r.file})`);
   for (const p of r.removed) log(`removed  ${p} (generated; its entry left ${r.file})`);
   for (const k of r.kept) log(`patch not applied: ${k.path} is a local copy, not generated; move its edits into ${r.file}, then delete it`);
+  for (const p of r.refused) warn(`refused  ${p} (a link, or a link on the way; no generated agent written or removed through it. A link you made: replace it with a real directory or file)`);
   return true;
 }
 
@@ -526,6 +534,12 @@ function teamUpstream(root, teams, rels) {
   const file = path.join(teams, BASE_FILE), base = readJson(file) || {}, next = { ...base };
   const guest = !!GUEST && samePath(real(root), real(GUEST)), excl = [];
   const shown = (p) => (guest ? p : path.relative(root, p).split(path.sep).join("/"));
+  // a link the repo commits at the record or at a .upstream or .base path stops the run before anything
+  // is written through it (#22); a copy is only read, or made where nothing is, in a dir copyTeams owns
+  for (const p of [file, ...rels.flatMap((rel) => ["upstream", "base"].map((x) => `${path.join(teams, ...rel.split("/"))}.${x}`))]) {
+    const st = lstat(p);
+    if (st && st.isSymbolicLink()) die(`refused  ${p} (a link; nothing written through it). Replace it with a regular file and re-run.`);
+  }
   for (const rel of rels) {
     const src = path.join(SHIPPED_TEAMS, ...rel.split("/")), dest = path.join(teams, ...rel.split("/"));
     const text = fs.readFileSync(src, "utf8"), h = hashText(text), rec = base[rel] && typeof base[rel] === "object" ? base[rel] : null;
@@ -587,7 +601,19 @@ function copyTeams(root) {
   const teams = path.join(root, "teams");
   // self-host: the checkout's own templates/ and link scripts are the source, never copied into git
   const self = samePath(real(root), real(HERE));
-  fs.mkdirSync(teams, { recursive: true });
+  // a repo may commit teams/, or a dir or file in it, as a link: every dir written to is made, or found, a real
+  // one (ownDir), and a link at .gitignore stops the run, before anything is written through it (#22)
+  const own = (...segs) => L.ownDir(root, ["teams", ...segs], true) || die(`refused  ${path.join(teams, ...segs)} (a link, or a link on the way; nothing written through it). Replace it with a real directory and re-run.`);
+  const ownTree = (src, segs) => {
+    own(...segs);
+    for (const e of fs.readdirSync(src, { withFileTypes: true })) if (e.isDirectory() && !samePath(path.join(src, e.name), SHIPPED_TEAMS)) ownTree(path.join(src, e.name), [...segs, e.name]);
+  };
+  own();
+  ownTree(path.join(HERE, "templates"), ["templates"]);
+  // and every profile dir, before teamUpstream copies a PROFILE.md or skills.txt into one
+  const dirs = L.profiles(SHIPPED_TEAMS).map((p) => [p, own(p)]);
+  const ign = lstat(path.join(teams, ".gitignore"));
+  if (ign && ign.isSymbolicLink()) die(`refused  ${path.join(teams, ".gitignore")} (a link; nothing written through it). Replace it with a regular file and re-run.`);
   teamsIgnore(teams, true);
   if (!self) for (const f of LINK_SCRIPTS) copyFile(path.join(SHIPPED_TEAMS, f), path.join(teams, f));
   // excluded first: a run that stops partway never leaves the copy showing in git status
@@ -604,9 +630,8 @@ function copyTeams(root) {
   // to one the repo has comes as <file>.upstream to merge (teamUpstream)
   const owned = ["ROUTING.md", ...L.profiles(SHIPPED_TEAMS).flatMap((p) => ["PROFILE.md", "skills.txt"].map((f) => `${p}/${f}`))];
   teamUpstream(root, teams, owned.filter((rel) => isFile(path.join(SHIPPED_TEAMS, rel))));
-  for (const p of L.profiles(SHIPPED_TEAMS)) {
-    const src = path.join(SHIPPED_TEAMS, p), dest = path.join(teams, p);
-    fs.mkdirSync(dest, { recursive: true });
+  for (const [p, dest] of dirs) {
+    const src = path.join(SHIPPED_TEAMS, p);
     // required.txt is the pipeline's, not the scout's or the repo's: always refreshed
     if (isFile(path.join(src, "required.txt"))) copyFile(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
@@ -1372,6 +1397,7 @@ async function doctor(fix) {
         const rel = (x) => path.relative(patchRoot, x).split(path.sep).join("/");
         const stale = [...p.write.map((w) => w.path), ...p.remove].map(rel);
         if (stale.length) return ["FIX", `generated agents out of date with ${p.file}: ${stale.join(", ")}`, `${self} --project`];
+        if (p.refused.length) return ["WARN", `${p.file} not applied through a link: ${p.refused.map(rel).join(", ")}`, "replace each with a real directory or file"];
         if (p.kept.length) return ["WARN", `${p.file} not applied over local copies: ${p.kept.map((k) => rel(k.path)).join(", ")}`, "move their edits into the patch file, then delete the copies"];
         return ["ok", p.present ? `agent patches applied (${p.file})` : "no agent patches"];
       }, () => agentPatches(patchRoot));

@@ -11,6 +11,9 @@
 // when required rather than run, exports { allowedRoots, safeRemove } and runs nothing.
 // #17 pins the guard layers a mutation pass let go: the doctor's dupe walk stops at the toplevel (case 13), standalone
 // removeLink refuses a link reached through a symlinked HOME/.claude (case 14), and allowedRoots drops a toplevel holding a home (case 15).
+// #22 pins writes and deletes through a link the repo commits: copyTeams (case 16), projectDupes (17), the hooks sync (18),
+// the skills lock (19), Codex's config.toml writer (20), agent patches (21) and teamUpstream's .upstream, .base and
+// .proteus-base.json (22) refuse it by name; a file link is skipped where the OS refuses one.
 // PROTEUS_SAFETY_SRC overrides the checkout cloned and read, for tests only.
 // Exit 0 if every assertion passed, 1 otherwise; exit 1 before any spawn when os.tmpdir() is inside the user's home.
 "use strict";
@@ -422,6 +425,171 @@ try {
     ok("case 15 (allowedRoots): a toplevel that holds the user's home is left out", Array.isArray(b15) && b15.length > 0 && !b15.includes(real(user15)), JSON.stringify(b15));
     const c15 = roots15(path.join(T15, "h"), plain15);
     ok("case 15 (allowedRoots): a toplevel that holds neither is a root", Array.isArray(c15) && c15.includes(real(plain15)), JSON.stringify(c15));
+
+    // cases 16-20 (#22): a link the repo commits is never written or removed through; the run says which path it refused
+    // case 16, copyTeams: teams/ itself, teams/templates/hooks deep in it, or a profile dir teamUpstream copies into, links out
+    for (const [tag, segs] of [["teams", ["teams"]], ["deep", ["teams", "templates", "hooks"]], ["profile", ["teams", "backend"]]]) {
+      const T = tmp(`teams-${tag}`), H = homeAt(path.join(T, "home")), R = path.join(T, "repo"), out = path.join(T, "outside");
+      fs.mkdirSync(out);
+      fs.writeFileSync(path.join(out, "KEEP"), "KEEP\n");
+      fs.mkdirSync(path.join(R, ...segs.slice(0, -1)), { recursive: true });
+      fs.symlinkSync(out, path.join(R, ...segs), "junction");
+      fs.writeFileSync(path.join(R, "README.md"), "# repo\n");
+      let g = git(["init", "--quiet"], R);
+      if (g.status === 0) g = git(["add", "-A"], R);
+      if (g.status === 0) g = git(["commit", "--quiet", "--no-verify", "-m", "init"], R);
+      ok(`case 16 (${segs.join("/")} a link): the repo is set up`, g.status === 0, g.stderr);
+      const before = snapshot(T, [R, H]);
+      const r = installer(["--project"], R, H);
+      const moved = drift(before, snapshot(T, [R, H]));
+      ok(`case 16 (${segs.join("/")} a link, --project): nothing outside the repo and HOME is added or changed`, !moved.length, `${moved.join(", ")} | ${r.status} ${r.stderr}`);
+      ok(`case 16 (${segs.join("/")} a link, --project): the run refuses it by name and exits non-zero`, r.status !== 0 && new RegExp(`refused\\s+\\S*${segs.join("[\\\\/]")}\\b`).test(r.stderr || ""), `${r.status} ${r.stderr}`);
+      ok(`case 16 (${segs.join("/")} a link, --project): the refusal is a message, not a crash`, !/\n\s+at /.test(r.stderr || ""), r.stderr);
+    }
+
+    // case 17, projectDupes: a committed .claude links to HOME/.claude, whose proteus link and shipped agent are the global install
+    const T17 = tmp("dupelink"), H17 = homeAt(path.join(T17, "home")), R17 = path.join(T17, "repo");
+    const g17 = path.join(H17, ".claude", "skills", "proteus"), a17 = path.join(H17, ".claude", "agents", AGENT);
+    fs.mkdirSync(path.dirname(g17), { recursive: true });
+    fs.mkdirSync(path.dirname(a17), { recursive: true });
+    fs.symlinkSync(path.join(CHK, "skills", "proteus"), g17, "junction");
+    fs.copyFileSync(path.join(CHK, "agents", AGENT), a17);
+    fs.mkdirSync(R17);
+    fs.symlinkSync(path.join(H17, ".claude"), path.join(R17, ".claude"), "junction");
+    ok("case 17: the repo with .claude linked to HOME/.claude is set up", teamRepo(R17, []).status === 0);
+    const r17 = installer(["--project"], R17, H17);
+    ok("case 17 (.claude a link to HOME/.claude, --project): HOME's proteus skill link survives", linkOf(g17) === path.join(CHK, "skills", "proteus"), `${r17.status} ${r17.stdout}${r17.stderr}`);
+    ok("case 17 (.claude a link to HOME/.claude, --project): HOME's shipped agent survives", !!lstat(a17), `${r17.status} ${r17.stdout}${r17.stderr}`);
+    ok("case 17 (.claude a link to HOME/.claude, --project): the run says it refused the copies", /refused\s+\S*proteus\b/.test(r17.stderr || ""), `${r17.status} ${r17.stderr}`);
+
+    // cases 18-20 plant file links, which Windows refuses without the symlink privilege: those parts are skipped there
+    const fileLink = (target, link) => {
+      try { fs.symlinkSync(target, link, "file"); return true; }
+      catch (e) { if (e.code !== "EPERM") throw e; console.log(`skip: ${link} (no file symlinks here)`); return false; }
+    };
+
+    // case 18, syncText: a committed .claude/hooks/proteus-autostart.js links to a file outside the repo
+    const T18 = tmp("hookleaf"), H18 = homeAt(path.join(T18, "home")), R18 = path.join(T18, "repo"), v18 = path.join(T18, "victim.txt");
+    fs.writeFileSync(v18, "KEEP\n");
+    fs.mkdirSync(path.join(R18, ".claude", "hooks"), { recursive: true });
+    if (fileLink(v18, path.join(R18, ".claude", "hooks", "proteus-autostart.js"))) {
+      ok("case 18: the repo with a linked proteus-autostart.js is set up", teamRepo(R18, []).status === 0);
+      const r18 = installer(["--project"], R18, H18);
+      ok("case 18 (linked hook file, --project): the file outside keeps its bytes", String(read(v18)) === "KEEP\n", `${r18.status} ${r18.stderr}`);
+      ok("case 18 (linked hook file, --project): the run says it refused the link", /refused\s+\S*proteus-autostart\.js/.test(r18.stderr || ""), `${r18.status} ${r18.stderr}`);
+    }
+
+    // case 19, standalone link-skills.js: a committed teams/skills-lock.json links to a file outside the repo
+    const T19 = tmp("lockleaf"), H19 = homeAt(path.join(T19, "home")), R19 = path.join(T19, "repo"), v19 = path.join(T19, "victim.txt");
+    fs.mkdirSync(path.join(H19, ".agents", "skills", "foo"), { recursive: true });
+    fs.writeFileSync(path.join(H19, ".agents", "skills", "foo", "SKILL.md"), "---\nname: foo\ndescription: test skill\n---\n");
+    fs.writeFileSync(v19, "KEEP\n");
+    fs.mkdirSync(path.join(R19, "teams"), { recursive: true });
+    if (fileLink(v19, path.join(R19, "teams", "skills-lock.json"))) {
+      ok("case 19: the repo with a linked skills-lock.json is set up", teamRepo(R19, ["o/r foo"]).status === 0);
+      const r19 = nodeRun(path.join(CHK, "templates", "teams", "link-skills.js"), [], R19, H19);
+      ok("case 19 (linked skills-lock.json, standalone): foo is still linked into the team", !!linkOf(path.join(R19, "teams", "zz", ".claude", "skills", "foo")), `${r19.status} ${r19.stdout}${r19.stderr}`);
+      ok("case 19 (linked skills-lock.json, standalone): the file outside keeps its bytes", String(read(v19)) === "KEEP\n", `${r19.status} ${r19.stderr}`);
+      ok("case 19 (linked skills-lock.json, standalone): the run says it refused the lock", r19.status === 0 && /refused\s+\S*skills-lock\.json/.test(r19.stderr || ""), `${r19.status} ${r19.stderr}`);
+    }
+
+    // case 20, Codex sandboxRoots (run at every Codex session start): .codex, or .codex/config.toml, links out of the repo
+    const T20 = tmp("codexcfg"), H20 = homeAt(path.join(T20, "home")), probe20 = path.join(TOOLS, "roots20-probe.js");
+    fs.writeFileSync(probe20, `"use strict";\nconst [js, root] = process.argv.slice(2);\nconsole.log(JSON.stringify(require(js).sandboxRoots(root)));\n`);
+    const cfg20 = (tag, plant) => {
+      const R = path.join(T20, tag), out = path.join(T20, `${tag}-out`);
+      fs.mkdirSync(out, { recursive: true });
+      fs.writeFileSync(path.join(out, "config.toml"), "KEEP\n");
+      fs.mkdirSync(R, { recursive: true });
+      if (!plant(R, out)) return;
+      const r = nodeRun(probe20, [path.join(CHK, "templates", "hooks", "proteus-harness-codex.js"), R], R, H20);
+      let w = null;
+      try { w = JSON.parse(r.stdout); } catch {}
+      ok(`case 20 (${tag}): the config outside keeps its bytes`, String(read(path.join(out, "config.toml"))) === "KEEP\n", `${r.status} ${r.stdout}${r.stderr}`);
+      ok(`case 20 (${tag}): sandboxRoots returns an error naming the link`, !!w && typeof w.error === "string" && /link/.test(w.error) && !w.changed, `${r.status} ${r.stdout}${r.stderr}`);
+      ok(`case 20 (${tag}): no worktree folder is made beside the repo`, !lstat(path.join(T20, `${tag}-proteus`)), tag);
+    };
+    cfg20("dirlink", (R, out) => { fs.symlinkSync(out, path.join(R, ".codex"), "junction"); return true; });
+    cfg20("filelink", (R, out) => { fs.mkdirSync(path.join(R, ".codex")); return fileLink(path.join(out, "config.toml"), path.join(R, ".codex", "config.toml")); });
+
+    // case 21, agent patches: .claude or .claude/agents (.codex on Codex) links out, holding a patch entry and a stale
+    // generated agent; or a generated agent's own path links to a file outside
+    const MARK21 = "# generated by proteus from proteus-agents.json", PATCH21 = JSON.stringify({ "proteus-scout": { append: "Planted." } });
+    const T21 = tmp("agentlink"), H21 = homeAt(path.join(T21, "home"));
+    const out21 = (tag, ext) => {
+      const out = path.join(T21, `${tag}-out`);
+      fs.mkdirSync(path.join(out, "agents"), { recursive: true });
+      fs.writeFileSync(path.join(out, "proteus-agents.json"), PATCH21);
+      fs.writeFileSync(path.join(out, "agents", `stale.${ext}`), ext === "md" ? `---\n${MARK21}\nname: stale\n---\nKEEP\n` : `${MARK21}\nKEEP\n`);
+      return out;
+    };
+    const kept21 = (tag, out, ext, why) => {
+      ok(`case 21 (${tag}): no generated agent is written outside the repo`, !lstat(path.join(out, "agents", `proteus-scout.${ext}`)), why);
+      ok(`case 21 (${tag}): the stale generated agent outside survives`, !!lstat(path.join(out, "agents", `stale.${ext}`)), why);
+    };
+    for (const [tag, segs] of [["claude", [".claude"]], ["agents", [".claude", "agents"]]]) {
+      const R = path.join(T21, tag), out = out21(tag, "md");
+      fs.mkdirSync(path.join(R, ...segs.slice(0, -1)), { recursive: true });
+      if (segs.length > 1) fs.writeFileSync(path.join(R, ".claude", "proteus-agents.json"), PATCH21);
+      fs.symlinkSync(segs.length > 1 ? path.join(out, "agents") : out, path.join(R, ...segs), "junction");
+      ok(`case 21 (${segs.join("/")} a link): the repo is set up`, teamRepo(R, []).status === 0);
+      const r = installer(["--project"], R, H21), why = `${r.status} ${r.stdout}${r.stderr}`;
+      kept21(`${segs.join("/")} a link, --project`, out, "md", why);
+      ok(`case 21 (${segs.join("/")} a link, --project): the run refuses .claude/agents by name`, /refused\s+\S*\.claude[\\/]agents\b/.test(r.stderr || ""), why);
+      ok(`case 21 (${segs.join("/")} a link, --project): the refusal is a message, not a crash`, !/\n\s+at /.test(r.stderr || ""), r.stderr);
+    }
+    // the session-start sync's call: the module with no remover, on Codex
+    const probe21 = path.join(TOOLS, "patch21-probe.js");
+    fs.writeFileSync(probe21, `"use strict";\nconst [mod, home, root, ad] = process.argv.slice(2);\nconsole.log(JSON.stringify(require(mod).apply(root, home, require(ad))));\n`);
+    for (const [tag, segs] of [["codex", [".codex"]], ["codexagents", [".codex", "agents"]]]) {
+      const R = path.join(T21, tag), out = out21(tag, "toml");
+      fs.mkdirSync(path.join(R, ...segs.slice(0, -1)), { recursive: true });
+      if (segs.length > 1) fs.writeFileSync(path.join(R, ".codex", "proteus-agents.json"), PATCH21);
+      fs.symlinkSync(segs.length > 1 ? path.join(out, "agents") : out, path.join(R, ...segs), "junction");
+      const hooks = path.join(CHK, "templates", "hooks");
+      const r = nodeRun(probe21, [path.join(hooks, "proteus-agent-patch.js"), CHK, R, path.join(hooks, "proteus-harness-codex.js")], R, H21);
+      let x = null;
+      try { x = JSON.parse(r.stdout); } catch {}
+      const why = `${r.status} ${r.stdout}${r.stderr}`;
+      kept21(`${segs.join("/")} a link, Codex apply`, out, "toml", why);
+      ok(`case 21 (${segs.join("/")} a link, Codex apply): refused lists .codex/agents, nothing written or removed`, !!x && !x.error && (x.refused || []).includes(".codex/agents") && !x.written.length && !x.removed.length, why);
+    }
+    {
+      const R = path.join(T21, "leaf"), v = path.join(T21, "victim.md"), body = `---\n${MARK21}\nname: proteus-scout\n---\nKEEP\n`;
+      fs.writeFileSync(v, body);
+      fs.mkdirSync(path.join(R, ".claude", "agents"), { recursive: true });
+      fs.writeFileSync(path.join(R, ".claude", "proteus-agents.json"), PATCH21);
+      if (fileLink(v, path.join(R, ".claude", "agents", "proteus-scout.md"))) {
+        ok("case 21: the repo with a linked generated agent is set up", teamRepo(R, []).status === 0);
+        const r = installer(["--project"], R, H21), why = `${r.status} ${r.stdout}${r.stderr}`;
+        ok("case 21 (linked generated agent, --project): the file outside keeps its bytes", String(read(v)) === body, why);
+        ok("case 21 (linked generated agent, --project): the run refuses it by name", /refused\s+\S*proteus-scout\.md/.test(r.stderr || ""), why);
+      }
+    }
+
+    // case 22, teamUpstream: a release changed the shipped ROUTING.md the repo edited, and teams/.proteus-base.json,
+    // ROUTING.md.upstream or ROUTING.md.base links to a file outside. The release is a commit on a clone of the
+    // checkout, so the recorded text is in its history even when the suite runs from a shallow clone.
+    const T22 = tmp("upstreamlink"), H22 = homeAt(path.join(T22, "home")), CHK22 = path.join(T22, "proteus");
+    const ship22 = path.join(CHK22, "templates", "teams", "ROUTING.md");
+    let s22 = git(["clone", "--quiet", ORIGIN, CHK22], T22);
+    const old22 = s22.status === 0 ? fs.readFileSync(ship22, "utf8") : "";
+    if (s22.status === 0) { fs.appendFileSync(ship22, "\nA shipped change.\n"); s22 = git(["commit", "--quiet", "--no-verify", "-am", "routing"], CHK22); }
+    ok("case 22: the checkout with a newer shipped ROUTING.md is set up", s22.status === 0, s22.stderr);
+    const rec22 = JSON.stringify({ "ROUTING.md": { sha256: require("crypto").createHash("sha256").update(old22.replace(/\r\n/g, "\n").trimEnd()).digest("hex") } });
+    for (const f of [".proteus-base.json", "ROUTING.md.upstream", "ROUTING.md.base"]) {
+      const R = path.join(T22, f.replace(/^\./, "")), v = path.join(T22, `${f}-victim`), body = f === ".proteus-base.json" ? rec22 : "KEEP\n";
+      fs.writeFileSync(v, body);
+      fs.mkdirSync(path.join(R, "teams"), { recursive: true });
+      fs.writeFileSync(path.join(R, "teams", "ROUTING.md"), "# our own routing\n");
+      if (f !== ".proteus-base.json") fs.writeFileSync(path.join(R, "teams", ".proteus-base.json"), rec22);
+      if (!fileLink(v, path.join(R, "teams", f))) continue;
+      ok(`case 22 (teams/${f} a link): the repo is set up`, teamRepo(R, []).status === 0);
+      const r = nodeRun(path.join(CHK22, "install.js"), ["--project"], R, H22), why = `${r.status} ${r.stdout}${r.stderr}`;
+      ok(`case 22 (teams/${f} a link, --project): the file outside keeps its bytes`, String(read(v)) === body, why);
+      ok(`case 22 (teams/${f} a link, --project): the run refuses it by name and exits non-zero`, r.status !== 0 && new RegExp(`refused\\s+\\S*${f.replace(/\./g, "\\.")}`).test(r.stderr || ""), why);
+      ok(`case 22 (teams/${f} a link, --project): the refusal is a message, not a crash`, !/\n\s+at /.test(r.stderr || ""), r.stderr);
+    }
   }
 
   // case 3, grep: every rmSync, unlinkSync and rmdirSync in each file sits inside that file's one guard or remover

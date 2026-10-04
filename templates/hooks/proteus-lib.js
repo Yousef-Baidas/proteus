@@ -769,8 +769,12 @@ function syncFile(src, dst) {
 }
 // write dst only when its bytes differ; true when written. With a marker, a dst that exists
 // without it as its first text is the user's own and is left alone (install.js keeps it too).
+// A link at dst (a repo may commit one) is never written through: refused, with a warning (#22).
 function syncText(a, dst, marker) {
   a = Buffer.isBuffer(a) ? a : Buffer.from(String(a));
+  let st = null;
+  try { st = fs.lstatSync(dst); } catch {}
+  if (st && st.isSymbolicLink()) { console.error(`refused  ${dst} (a link; not written through, left alone)`); return false; }
   let cur = null;
   try { cur = fs.readFileSync(dst); } catch {}
   if (cur && a.equals(cur)) return false;
