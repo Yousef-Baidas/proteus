@@ -45,7 +45,7 @@ A sweep deletes only ledgered entries and scratch dirs, re-checks each (same ino
 
 ## Installs
 
-An `install.js` run (`--update` and `--doctor --fix` included) that changes `~/.claude/agents` takes effect only in a new session: Claude Code loads agent types at session start. Tell the human to restart before the next spawn, and spawn no other agent type meanwhile: it lacks the role's tools, model and rules.
+An `install.js` run (`--update` and `--doctor --fix` included) that changes `~/.claude/agents`, or a session-start note that a patched agent in `.claude/agents` was regenerated, takes effect only in a new session: Claude Code loads agent types at session start. Tell the human to restart before the next spawn, and spawn no other agent type meanwhile: it lacks the role's tools, model and rules.
 
 ## Revision mode
 
