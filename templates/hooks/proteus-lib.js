@@ -766,6 +766,28 @@ function modelCaps(ev, root) {
   return { ladder, solo, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
 }
 
+// Liveness of the lead's workers and verifiers, read by proteus-watchdog.js: one file per agent in
+// <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
+// "ended" (proteus-stall.js, a stop without a report) stamps `ended`, "done" (a stop with a report)
+// removes the file. Other agent types (scout, guide) are not tracked: they end without a report.
+const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
+const beatsDir = (common) => path.join(stateDir(common), "beats");
+function beat(ev, state) {
+  if (!ev.agent || (ev.agentType && !PIPELINE_AGENT.test(ev.agentType))) return;
+  try {
+    const common = gitCommonDir(projectRoot(ev));
+    if (!common) return;
+    const file = path.join(beatsDir(common), `${String(ev.agent).replace(/[^\w.-]/g, "_")}.json`);
+    if (state === "done") { fs.rmSync(file, { force: true }); return; }
+    const prev = readJSON(file, null) || {};
+    const now = new Date().toISOString();
+    // a rewrite drops `flagged`: a tool call after the watchdog's STALL is the agent answering
+    const rec = { agent: ev.agent, type: ev.agentType || prev.type || "", session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
+    if (state === "ended") { rec.last = prev.last || now; rec.ended = now; rec.flagged = prev.flagged; }
+    writeJSON(file, rec);
+  } catch {}
+}
+
 // gh query → cache; on any gh failure the old cache stays and null is returned
 function refreshInbox(root, common, timeout = 10000) {
   let list;
@@ -780,7 +802,7 @@ function refreshInbox(root, common, timeout = 10000) {
 
 module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
-  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
+  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
