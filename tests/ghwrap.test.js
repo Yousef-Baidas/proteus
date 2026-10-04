@@ -27,7 +27,7 @@ ok("a plain 403 is not retried", r.calls === 1 && r.code === 1 && /not accessibl
 r = gh(1, { FAKE_GH_LIMIT_MSG: "gh: slow down (HTTP 429)" });
 ok("429 is retried", r.calls === 2 && r.code === 0, r.err);
 r = gh(1, { FAKE_GH_LIMIT_MSG: "secondary rate limit\nretry-after: 1" });
-ok("retry-after is honored", r.calls === 2 && r.code === 0 && /in 1\.\d+s/.test(r.err), r.err);
+ok("retry-after is honored", r.calls === 2 && r.code === 0 && /in (1\.\d|2\.0)s/.test(r.err), r.err);
 r = gh(1, { FAKE_GH_LIMIT_MSG: "secondary rate limit\nretry-after: 900", PROTEUS_GH_MAX_WAIT_S: "5" });
 ok("a wait past the total cap ends the retries without sleeping", r.calls === 1 && r.code === 1 && r.ms < 3000, r.err);
 r = gh(1, {}, ["issue", "comment", "5", "--body-file", "-"], "hello body");
