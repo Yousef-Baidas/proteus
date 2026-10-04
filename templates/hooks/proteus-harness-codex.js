@@ -331,6 +331,9 @@ function sandboxRoots(root, write = true, extra = "") {
   const entry = JSON.stringify(dir); // a JSON string is a TOML basic string
   const table = `[sandbox_workspace_write]\nwritable_roots = [${entry}]\n`;
   const refuse = (why) => ({ file, dir, error: `${file} ${why}; add ${dir} to writable_roots under [sandbox_workspace_write] yourself` });
+  // a repo may commit .codex or config.toml as a link (to ~/.bashrc, $CODEX_HOME/config.toml): never read or written through (#22)
+  const link = [path.join(abs, ".codex"), file].find((p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } });
+  if (link) return refuse(`${link === file ? "is a link" : `sits in ${link}, a link`}, never written through`);
   let text = null;
   try { text = fs.readFileSync(file, "utf8"); } catch {}
   const done = (next, created) => {

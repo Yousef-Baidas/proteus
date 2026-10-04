@@ -187,9 +187,11 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   }
   if (confine) log("confined: linked skills removed from ~/.claude/skills (restart Claude Code)");
 
-  // lock
-  if (linked.length) {
-    const lockFile = path.join(teams, "skills-lock.json");
+  // lock; a link at it or on the way (a repo may commit one) is neither read nor written through (#22)
+  const lockFile = path.join(teams, "skills-lock.json"), lockSt = lstat(lockFile);
+  const lockOk = !!ownDir(root, ["teams"]) && !(lockSt && lockSt.isSymbolicLink());
+  if (linked.length && !lockOk) console.error(`refused  ${lockFile} (a link, or a link on the way; lock not written, left alone)`);
+  if (linked.length && lockOk) {
     let lock = { version: 1, skills: {} };
     let before = "";
     try { before = fs.readFileSync(lockFile, "utf8"); lock = JSON.parse(before); } catch {}
