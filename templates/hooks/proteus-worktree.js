@@ -4,7 +4,8 @@
 // The harness adapter copies the worker hooks in and registers them (Claude Code: .claude/hooks/ and
 // .claude/settings.local.json from worktree-settings.local.json); this writes the owned-path list
 // (one entry per line), keeps those local files out of `git add` via <git-common-dir>/info/exclude, and installs
-// a pre-commit hook in this worktree only that checks staged paths against the list (proteus-owned-check.js).
+// a pre-commit hook in this worktree only that checks staged paths against the list (proteus-owned-check.js),
+// plus a commit-msg hook running commit-msg.js when the repo has none of its own.
 // --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
 // the list, which the same pre-commit hook checks with proteus-tier.js --staged; --human marks a human's quick:.
 // A re-run keeps the first base, so a Direct batch is measured as a whole.
@@ -72,6 +73,8 @@ try {
 // shared by every worktree unless extensions.worktreeConfig lets `config --worktree` set it for this one; that
 // needs git 2.20 and works the same on every OS. The hooks dir sits under this worktree's own git dir (it dies
 // with the worktree) and forwards every hook the repo already had, so lefthook's commit-msg gate still runs.
+// A repo with no commit-msg hook (no lefthook yet, or a guest repo) gets one running commit-msg.js, the check
+// CI runs on every commit of the PR, so a worker learns of a bad message before it pushes (#28).
 // A failure is only warned about: CI's check of the PR is the backstop, and `git commit --no-verify` skips this.
 function installPreCommit() {
   const git = (...a) => { try { return execFileSync("git", ["-C", wt, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); } catch { return null; } };
@@ -93,6 +96,11 @@ function installPreCommit() {
   let have = [];
   try { have = fs.readdirSync(orig).filter((f) => !f.endsWith(".sample") && f !== "pre-commit"); } catch {}
   for (const f of have) write(f, `exec ${sq(path.join(orig, f))} "$@"\n`);
+  // beside this script (Claude Code's hooks dir), else the lead's teams/templates/hooks (Codex skips the file);
+  // either way proteus-lib.js and the CommonJS package.json sit next to it
+  const msgCheck = [__dirname, path.join(lib.docRoot(path.resolve(__dirname, "..", "..")), "teams", "templates", "hooks")]
+    .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
+  if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
   write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
   if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--worktree", "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";

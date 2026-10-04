@@ -7,7 +7,8 @@ const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
 const HOOKS = path.join(ROOT, "templates", "hooks");
-const { ok, g, workdir, summary } = require(path.join(__dirname, "lib.js"));
+const lib = require(path.join(__dirname, "lib.js"));
+const { ok, g, workdir, summary } = lib;
 const W = workdir("owned");
 
 const REPO = path.join(W, "repo");
@@ -46,6 +47,48 @@ ok("pre-commit: re-running the worktree script keeps the forwarding", r.status =
 fs.rmSync(MARK);
 r = commit("src/second.txt");
 ok("pre-commit: still forwards after a re-run", r.status === 0 && fs.existsSync(MARK), r.stderr);
+ok("commit-msg: the repo's own hook is forwarded, not replaced by commit-msg.js",
+  !fs.readFileSync(path.join(g(WT, "rev-parse", "--absolute-git-dir"), "proteus-hooks", "commit-msg"), "utf8").includes("commit-msg.js"));
+
+// a repo with no hooks (no lefthook yet): the worktree still gets the commit-msg check CI runs (#28)
+const bare = (name, hooksSrc, env) => {
+  const repo = path.join(W, name), wt = path.join(W, `${name}-wt`);
+  g(W, "init", "-q", "-b", "main", repo);
+  fs.writeFileSync(path.join(repo, "a.txt"), "a\n");
+  g(repo, "add", "-A"); g(repo, "commit", "-qm", "init");
+  g(repo, "worktree", "add", "-q", "-b", "proteus-work/r1/t1", wt);
+  const res = node(path.join(hooksSrc(repo), "proteus-worktree.js"), [wt, "src/"], { cwd: repo, env: { ...process.env, ...env } });
+  const msgCommit = (file, msg) => {
+    fs.mkdirSync(path.join(wt, "src"), { recursive: true });
+    fs.writeFileSync(path.join(wt, "src", file), "x\n");
+    g(wt, "add", "src");
+    return spawnSync("git", ["commit", "-qm", msg], { cwd: wt, encoding: "utf8", env: { ...process.env, ...ID } });
+  };
+  return { res, msgCommit };
+};
+const LONG = "feat(src): " + "a".repeat(62);
+let b = bare("nohooks", () => HOOKS, {});
+ok("commit-msg: the worktree script runs in a repo with no hooks", b.res.status === 0 && !b.res.stderr, b.res.stdout + b.res.stderr);
+r = b.msgCommit("a.txt", LONG);
+ok("commit-msg: a subject over 72 chars is rejected in the worktree", r.status !== 0 && /subject over 72 chars/.test(r.stderr), r.stderr);
+r = b.msgCommit("a.txt", "feat(src): add a");
+ok("commit-msg: a valid message commits", r.status === 0, r.stderr);
+r = b.msgCommit("b.txt", "Added b");
+ok("commit-msg: a non-Conventional subject is rejected", r.status !== 0 && /commit rejected/.test(r.stderr), r.stderr);
+// Codex skips commit-msg.js in its hooks dir: the check comes from the lead's teams/templates/hooks
+b = bare("codexhooks", (repo) => {
+  const cxd = path.join(repo, ".codex", "hooks"), tpl = path.join(repo, "teams", "templates", "hooks");
+  for (const d of [cxd, tpl]) fs.mkdirSync(d, { recursive: true });
+  for (const f of fs.readdirSync(HOOKS)) {
+    fs.copyFileSync(path.join(HOOKS, f), path.join(tpl, f));
+    if (f !== "commit-msg.js") fs.copyFileSync(path.join(HOOKS, f), path.join(cxd, f));
+  }
+  return cxd;
+}, { ...lib.homeEnv(lib.HOME), PROTEUS_HARNESS: "codex", CODEX_HOME: path.join(lib.HOME, ".codex") });
+ok("commit-msg (Codex): the worktree script runs", b.res.status === 0 && !b.res.stderr, b.res.stdout + b.res.stderr);
+r = b.msgCommit("a.txt", LONG);
+ok("commit-msg (Codex): teams/templates/hooks/commit-msg.js rejects a long subject", r.status !== 0 && /subject over 72 chars/.test(r.stderr), r.stderr);
+ok("commit-msg (Codex): a valid message commits", b.msgCommit("a.txt", "fix(src): change a").status === 0);
 
 // CI: paths changed since the base against the PR body's Owned: line
 const CHK = path.join(HOOKS, "proteus-owned-check.js");

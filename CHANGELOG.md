@@ -11,6 +11,8 @@ installed version and the new one.
 - Hooks and `teams/link-skills.js` run in a repo whose `package.json` sets `"type": "module"`: a
   `package.json` of `{"type": "commonjs"}` ships beside them. Before, every hook threw on `require`
   and the guards failed open (#77).
+- A worker worktree in a repo with no commit-msg hook (no lefthook yet, or a guest repo) gets one
+  that runs `commit-msg.js`, so a message CI would reject fails at commit, not on the PR (#28).
 
 ## [1.0.0] - 2026-10-04
 

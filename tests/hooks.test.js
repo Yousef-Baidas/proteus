@@ -232,7 +232,7 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   r = ed("b1", path.join(RB, "src", "x.ts"));
   ok("guard bind: main-checkout refusal names the bound worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)}: edit ${fw(path.join(WA, "src", "x.ts"))}`), r.err);
   ok("guard bind: another agent binds to the sibling", ed("b2", inB).code === 0 && ed("b2", inB).code === 0);
-  g(WA, "add", "-A"); g(WA, "commit", "-qm", "contract");
+  g(WA, "add", "-A"); g(WA, "commit", "-qm", "docs: add the contract");
   ok("guard bind: committed in its own, the agent moves on (contracts worker)", ed("b1", inB).code === 0 && rec("b1") === WB);
   ok("guard bind: owned list still applies in the bound worktree", ed("b3", path.join(WB, "src", "other.ts")).code === 2);
 }
