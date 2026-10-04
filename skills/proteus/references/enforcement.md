@@ -4,7 +4,7 @@ Rules in prompts drift. These make the important ones mechanical. Templates ship
 
 ## 1. CI on every ticket PR + run-branch rules
 
-Scaffold ticket: copy `teams/templates/ci/proteus-gates.yml` to `.github/workflows/`, replace every `EDIT` line with the gate commands from `## Learned`, commit.
+Scaffold ticket: copy `teams/templates/ci/proteus-gates.yml` to `.github/workflows/`, replace every `EDIT` line with the gate commands from `## Learned`, commit. Besides each PR, the workflow runs on every push to `proteus/*`, so each merge gets `gates` on the integrated tree and then `qa`: the mechanical QA (`e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files the merge changed). A step the project has no use for is deleted, not left green. The QA verifier reads these runs (`gh run list`, `gh run view --json jobs`) and re-runs locally only what they do not cover (`teams/qa/PROFILE.md`).
 
 What binds `proteus/<run>` is the human's, set once per repo: `install.js --protect`, run by an admin of the repo, adds the ruleset "proteus runs" on `proteus/*` (a PR with `gates` green, no force push, nobody bypasses, admins included) and gives the agents' own GitHub account write access. Worker branches are `proteus-work/<run>/<id>`, outside the pattern. Per run, right after `git push -u origin proteus/<run>`, check that it binds:
 
@@ -61,7 +61,7 @@ Drift blocks dispatch. Each session start re-hashes every skill linked under `te
 
 ## 7. Mutation testing per milestone
 
-`teams/qa/PROFILE.md`: once per milestone, on files changed since the milestone's merge-base, run Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red. Per milestone, not per ticket; it is the slow gate.
+CI's `qa` job mutates the files each merge changed (§1), so every changed file is mutated once, off any agent's clock. Once per milestone, `teams/qa/PROFILE.md` reads the `mutation` step of every push run since the milestone's merge-base; without that step in the workflow it runs Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>` locally on the files changed since the merge-base. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red. Judged per milestone, not per ticket; it is the slow gate.
 
 ## 8. Dependency check on `NEEDS`
 

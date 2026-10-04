@@ -66,7 +66,7 @@ Open the review issue with brief, evidence, and the open debt lines per your age
 ## QA (wave | milestone | close)
 ```
 Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
-Follow teams/qa/PROFILE.md for that mode. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. One verdict line; findings as issue comments or new issues per the profile. Fix nothing.
+Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. One verdict line; findings as issue comments or new issues per the profile. Fix nothing.
 ```
 
 ## Scout (bootstrap, `top`)

@@ -153,7 +153,7 @@ Rules in prompts drift; these are mechanical.
 - **One suite run per tree.** Worker, lefthook's pre-push, verifier, the lead after a merge, QA and the guide run each gate through `proteus-gates-cache.js`, which keys a pass on the commit's tree and the command and replays it instead of running the suite again. Only a clean checkout is cached; a failure never is.
 - **Commit messages.** lefthook runs a commit-msg check: Conventional Commits, 72 chars, no AI trailer. CI re-checks every commit in the PR, so `--no-verify` does not help.
 - **Security.** The security verifier runs semgrep on the diff first and queries OSV for every `NEEDS dependency` before the human sees the request.
-- **Mutation testing.** Once per milestone, the QA pass mutates the changed files; a surviving mutant is a `WAVE-RED` ticket.
+- **Mechanical QA in CI.** Every merge into `proteus/<run>` pushes it, and the workflow runs the suite, then e2e, a smoke test from a fresh install, a rebuild of the deliverables, and mutation testing on the files the merge changed. The QA pass reads those results (`gh run view`) instead of re-running them; a surviving mutant or a red step is a `WAVE-RED` ticket.
 - **Skill pinning.** `teams/skills-lock.json` pins every linked skill's content hash; the link script warns `drift:` when a machine differs, and the lead guard refuses to spawn workers and verifiers until the copy matches again or you re-lock with `node teams/link-skills.js --relock`.
 - **Cost.** Close reports cost per merged ticket from `ccusage`; OpenTelemetry export is one env var away for trends.
 
