@@ -15,7 +15,7 @@ The usual multi-agent loop bleeds tokens in three places: the lead sits inside t
 - The lead is whatever model you start the session on, and nothing runs above it (see [Models](#models)). Hard tickets and every verdict run on the lead's tier, standard tickets one rung down. A hook refuses any other spawn.
 - The pipeline is fixed. A step is skipped or added only when you say so or a `/research` finding does.
 
-Context cost: the description is ~60 tokens per session. The body loads only on `/proteus` (~1,000 tokens). `references/roles.md` loads at spawn time, `references/stack.md` on first run in a repo, `references/commits.md` when an agent commits. Every other reference loads only at the step that names it, so the lead pays for what the run actually uses.
+Context cost: the name and description are ~110 tokens per session. The body loads on `/proteus` (~4,800 tokens; `SKILL.md` as a whole file is ~4,900). The autostart hook injects the body plus a state line on every start and again after a compaction: ~5,000 tokens on a fresh repo (startup 5,016, compact 5,081; the run-log tail and journal lines of a live run add to that). Measured 2026-10-04 with `claude -p --model haiku` (claude-haiku-4-5-20251001), `PROTEUS=0`, `--tools ""`, as the difference in total input tokens (input + cache creation + cache read) from a fixed short prompt with and without the text, minus an 8-token wrapper; other models tokenize differently. `references/roles.md` loads at spawn time, `references/stack.md` on first run in a repo, `references/commits.md` when an agent commits. Every other reference loads only at the step that names it, so the lead pays for what the run actually uses.
 
 ## Any kind of project
 
