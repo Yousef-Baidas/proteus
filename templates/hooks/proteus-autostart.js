@@ -3,7 +3,8 @@
 // as if the human had typed /proteus. Prints the skill body plus a local state line
 // so the lead knows what bootstrap can skip without spending a tool call.
 // Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile),
-// checks it for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
+// regenerates the project's patched agents (proteus-agent-patch.js),
+// checks the checkout for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
@@ -38,6 +39,7 @@ lib.run((ev, ad) => {
   if (home) {
     pending = safe(() => update(home, cfg, notes), "");
     safe(() => sync(ad, home, root, notes));
+    safe(() => agentPatches(ad, home, root, notes));
   }
   safe(() => migrateState(root, home, notes));
   safe(() => codexRoots(ad, root, home, notes));
@@ -182,6 +184,17 @@ function sync(ad, home, root, notes) {
   // the CommonJS marker (#77) can arrive by this sync before install.js --project excludes it
   if (hooks) safe(() => excludeMarker(ad, root));
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
+}
+
+// the project's patched agents (.claude/proteus-agents.json) regenerated from the shipped ones, so an
+// auto-update reaches them too; the checkout's module first, since this hook may predate it
+function agentPatches(ad, home, root, notes) {
+  const mod = [path.join(home, "templates", "hooks", "proteus-agent-patch.js"), path.join(__dirname, "proteus-agent-patch.js")].find((p) => fs.existsSync(p));
+  if (!mod) return;
+  const r = require(mod).apply(root, home, ad);
+  const cmd = `node "${path.join(home, "install.js")}" --project`;
+  if (r.error) notes.push(`proteus: ${r.error}; generated agents left as they were. Tell the human; once fixed, ${cmd}`);
+  else if (r.written.length + r.removed.length) notes.push(`proteus: ${[...r.written.map((p) => `${p} regenerated`), ...r.removed.map((p) => `${p} removed`)].join(", ")} (${r.file}); agent types load at session start, so the change applies from the next session`);
 }
 
 // keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does
