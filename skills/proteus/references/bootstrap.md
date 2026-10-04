@@ -48,7 +48,7 @@ Then, if `skills-unscouted` is not `none` or the human says "refresh skills" or 
 
 ## Tracker (both paths)
 
-Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. Nothing Proteus produces during a run is written to the repo except deliverables, checks, contracts, lessons, and the three docs.
+Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. On a public repo the autostart adds a note once per repo (recorded in `<git-common-dir>/proteus/visibility.json`): the run log, issues, contracts, review briefs, evidence branches and questions are readable by anyone. Pass it on to the human in your first reply. Nothing Proteus produces during a run is written to the repo except deliverables, checks, contracts, lessons, and the three docs.
 
 ## Ready
 

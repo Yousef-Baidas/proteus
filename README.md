@@ -90,6 +90,8 @@ Step 0 of every run reads `references/bootstrap.md` and detects where the repo i
 - **Mid-project** — runs every gate on `main`; red gates and dead code become a stabilise ticket that runs alone first. Never dispatches features onto a red baseline. Root docs over budget (a 1,000-line `CLAUDE.md`, a `CLAUDE_1.md`) get a docs-diet ticket: each line moves to where it is cheapest (nested `CLAUDE.md`, a lesson, an ADR, the tracker) or is deleted; landmarks stay as one-line links (`references/docs-diet.md`).
 - **Ready** — confirms gates, `CONTEXT.md`, `AGENTS.md ## Learned` in one line and goes.
 
+On a public GitHub repo the session start also says so, once per repo: the run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone, so keep anything private out of work orders and answers. The visibility comes from `gh repo view` (3 s timeout, asked at most once a day until the note has shown) and is recorded in `.git/proteus/visibility.json`.
+
 ## Teams
 
 A team is a folder, not an extra agent. `teams/<team>/` holds `PROFILE.md` (real-world role, what it owns and never touches, rules, what green adds, what the verifier checks), an optional `CRAFT.md` playbook, and `.claude/skills/` with that team's skills. Claude Code loads a nested `.claude/skills/` only when an agent first reads a file in that folder, so a worker's first action, "read `teams/lighting/PROFILE.md`", pulls in the lighting skills, and the lead, which never reads under `teams/`, pays nothing for them. Not even the descriptions.
