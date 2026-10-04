@@ -360,6 +360,7 @@ templates/
     proteus-lessons.js      trigger-based lesson recall
     proteus-stall.js  proteus-worker-guard.js  no waiting on background jobs, one report per agent
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
+    proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-scratch.js      ledgers and sweeps agents' temp files

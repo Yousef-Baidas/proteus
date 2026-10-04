@@ -411,7 +411,7 @@ const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`.";
 function verdictPost(command, cwd) {
   const cmd = String(command || "");
-  if (!/\bgh\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
+  if (!/\b(?:gh|proteus-gh\.js)\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
   const unq = (v) => v.replace(/^\$?(["'])([\s\S]*)\1$/, "$2").replace(/\\(["\\$`])/g, "$1").replace(/\\n/g, "\n");
   const bodies = [];
   for (const m of cmd.matchAll(/(?:--body|-b|(?:-f|-F|--field|--raw-field)\s+body)(?:\s+|=)("(?:[^"\\]|\\.)*"|\$?'[^']*'|\S+)/g)) bodies.push(unq(m[1]));
@@ -505,8 +505,10 @@ function branchDenial(command, cwd) {
   for (const all of shellCommands(cmd)) {
     let i = 0;
     while (i < all.length && (WRAPPERS.has(all[i]) || /^[A-Za-z_]\w*=/.test(all[i]))) i++;
-    const words = all.slice(i);
-    const prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    let words = all.slice(i);
+    let prog = String(words[0] || "").split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+    // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
+    if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
     const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || ".")) : null;
     if (why) return why;
   }

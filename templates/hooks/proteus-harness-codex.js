@@ -384,7 +384,7 @@ function sandboxRoots(root, write = true) {
 
 // Subagents run in the lead's session under its hooks, which enforce owned paths; the copies
 // here are the backup for a codex session opened inside the worktree.
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js"];
 const WORKER_EXCLUDE = ["/.codex/proteus-owned", "/.codex/hooks/proteus-*.js"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
