@@ -1181,7 +1181,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   const msg = (m) => { fs.writeFileSync(path.join(W, "cx-msg"), m); return spawnSync("sh", ["-c", `${gate[1]} "${path.join(W, "cx-msg")}"`], { cwd: XP, encoding: "utf8" }).status; };
   ok("commit-msg gate: the template lefthook.yml names the tracked teams/ copy, which accepts a conventional message and rejects others",
     /^ok   commit-msg gate runs a tracked file$/m.test(d) && gate && msg("feat: add a thing\n") === 0 && msg("added stuff\n") !== 0 &&
-    /node teams\/templates\/hooks\/commit-msg\.js \/tmp\/msg/.test(fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8")), d);
+    /node teams\/templates\/hooks\/commit-msg\.js "\$RUNNER_TEMP\/msg"/.test(fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8")), d);
 
   // the shipped CI template fails until filled in; doctor names a workflow that still has a placeholder
   fs.mkdirSync(path.join(XP, ".github", "workflows"), { recursive: true });
