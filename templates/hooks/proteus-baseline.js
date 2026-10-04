@@ -6,7 +6,7 @@
 //     --record     write the gate's baseline; on an existing one only tightens (refuses to add a finding)
 //     --reset      write the gate's baseline from scratch, new findings included (the human's call)
 //     --mode lines|count   --match <regex>   --ignore <regex>   (stored with the gate on record)
-//     --file <path>        the baseline file (default teams/baseline.json in the checkout)
+//     --file <path>        the baseline file (default teams/baseline.json in the checkout, or in the guest dir)
 // Exit 0 from the command always passes; the ratchet judges red runs only. A gate with no baseline entry
 // passes the command's exit code through, so an unrecorded gate stays strict.
 // Modes, per gate:
@@ -41,7 +41,7 @@ const flag = (name) => opts.includes(name);
 const value = (name) => { const i = opts.indexOf(name); if (i < 0) return undefined; if (i + 1 >= opts.length) usage(`${name} needs a value`); return opts[i + 1]; };
 
 const root = lib.gitRoot(process.cwd()) || process.cwd();
-const file = path.resolve(value("--file") || process.env.PROTEUS_BASELINE || path.join(root, "teams", "baseline.json"));
+const file = path.resolve(value("--file") || process.env.PROTEUS_BASELINE || path.join(lib.docRoot(root), "teams", "baseline.json"));
 const data = lib.readJSON(file, null) || {};
 if (!data.gates || typeof data.gates !== "object") data.gates = {};
 const old = data.gates[gate] && typeof data.gates[gate] === "object" ? data.gates[gate] : null;
@@ -92,6 +92,8 @@ const minus = (a, b) => {
 };
 const list = (xs) => xs.slice(0, SHOW).map((x) => `  ${x}`).join("\n") + (xs.length > SHOW ? `\n  … ${xs.length - SHOW} more` : "");
 const say = (msg) => console.error(`proteus-baseline ${gate}: ${msg}`);
+// a baseline outside the checkout (guest mode) is not committed
+const commit = lib.relPath(root, file) ? ` and commit ${path.basename(file)}` : "";
 
 // the verdict; exitCode rather than exit(), so the command's output drains first on a pipe
 process.exitCode = verdict();
@@ -120,12 +122,12 @@ function verdict() {
     entry.recorded = new Date().toISOString().slice(0, 10);
     data.gates[gate] = entry;
     lib.writeJSON(file, data);
-    say(`recorded ${mode === "lines" ? `${found.length} finding${found.length === 1 ? "" : "s"}` : `count ${count}`} (exit ${exit}) in ${path.relative(root, file).split(path.sep).join("/") || file}; commit it.`);
+    say(`recorded ${mode === "lines" ? `${found.length} finding${found.length === 1 ? "" : "s"}` : `count ${count}`} (exit ${exit}) in ${lib.relPath(root, file) ? `${lib.relPath(root, file)}; commit it` : file}.`);
     return 0;
   }
 
   if (exit === 0) {
-    if (old && old.exit !== 0) say(`green; drop its baseline with --record and commit ${path.basename(file)}.`);
+    if (old && old.exit !== 0) say(`green; drop its baseline with --record${commit}.`);
     return 0;
   }
   if (old.exit === 0) {
@@ -139,14 +141,14 @@ function verdict() {
       say(`${added.length} new finding${added.length === 1 ? "" : "s"} (${base.length} in the baseline):\n${list(added)}`);
       return 1;
     }
-    say(`no new findings (${found.length} known${fixed.length ? `, ${fixed.length} fixed: tighten with --record and commit ${path.basename(file)}` : ""}).`);
+    say(`no new findings (${found.length} known${fixed.length ? `, ${fixed.length} fixed: tighten with --record${commit}` : ""}).`);
   } else {
     const was = old.count || 0;
     if (count > was) {
       say(`count ${count} > ${was} in the baseline.`);
       return 1;
     }
-    say(`count ${count} (baseline ${was}${count < was ? `; tighten with --record and commit ${path.basename(file)}` : ""}).`);
+    say(`count ${count} (baseline ${was}${count < was ? `; tighten with --record${commit}` : ""}).`);
   }
   return 0;
 }

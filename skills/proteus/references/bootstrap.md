@@ -50,6 +50,15 @@ Then, if `skills-unscouted` is not `none` or the human says "refresh skills" or 
 
 Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. On a public repo the autostart adds a note once per repo (recorded in `<git-common-dir>/proteus/visibility.json`): the run log, issues, contracts, review briefs, evidence branches and questions are readable by anyone. Pass it on to the human in your first reply. Nothing Proteus produces during a run is written to the repo except deliverables, checks, contracts, lessons, and the three docs.
 
+## Guest mode
+
+`guest=<dir>` in `proteus-state` means the human does not own this repo (`install.js --project --guest`, or `gh` reported READ or TRIAGE access). Proteus's files live in `<dir>`, laid out like a repo root, and the repo gets none of them:
+
+- Read every `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, `docs/adr/`, `docs/lessons/` and `teams/` path in this file and the references as `<dir>/<path>`. The lead writes the docs there; the guard refuses the repo's own copies. Brief workers and verifiers with the absolute `<dir>/teams/<team>/` paths. On both CLIs they list `<dir>/teams/<team>/.agents/skills/` after `PROFILE.md` and read each fitting `SKILL.md` themselves, as Codex workers always do.
+- No scaffold of CI, lefthook, lint config or root docs. `ci-gates=guest` and `lefthook=guest` are not missing pieces. Workers and verifiers run the repo's own gate commands locally. For a red gate, the lead records the baseline from the main checkout with `node <dir>/teams/templates/hooks/proteus-baseline.js <gate> --record -- <command>`, which writes `<dir>/teams/baseline.json`; nothing is committed. Once a ticket that fixes old failures merges, the lead re-runs the same line with `--record`, which only tightens.
+- No docs-diet: the repo's `CLAUDE.md` and `AGENTS.md` are the owner's.
+- The tracker still needs issues, labels, milestones and branches. If the preflight in `tracker.md` shows the human cannot create them here, stop. Ask them to work from a fork (`gh repo set-default <fork>`) or name another tracker repo. Ticket PRs into `proteus/<run>` are the contribution; what goes upstream, and how, is the human's call.
+
 ## Ready
 
 Confirm in one line: gates green on `main` (a ratcheted gate: no finding beyond `teams/baseline.json`), `CONTEXT.md`, `CONVENTIONS.md`, `## Learned`, `teams/` with `ROUTING.md` and links, tracker reachable. Go.

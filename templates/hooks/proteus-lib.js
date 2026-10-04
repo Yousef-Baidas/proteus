@@ -271,6 +271,22 @@ function gitRoot(dir) {
   }
 }
 
+// ---- guest mode: a repo the human does not own keeps Proteus's files out of its tree. <common>/proteus/guest.json
+// {dir} names an absolute folder laid out like the checkout root (CONTEXT.md, CONVENTIONS.md, AGENTS.md, docs/adr,
+// docs/lessons, teams/); install.js --guest writes it. docRoot is where those files live: that folder, else root.
+const guestFile = (common) => path.join(stateDir(common), "guest.json");
+// ~/.proteus/guest/<repo>-<hash of the common dir>: per user, per clone, outside every checkout
+function defaultGuestDir(common) {
+  const name = path.basename(mainRoot(common) || common).replace(/[^\w.-]/g, "_");
+  return path.join(os.homedir(), ".proteus", "guest", `${name}-${require("crypto").createHash("sha256").update(realOr(common)).digest("hex").slice(0, 8)}`);
+}
+function guestDir(root) {
+  const common = root ? gitCommonDir(path.resolve(String(root))) : null;
+  const g = common ? readJSON(guestFile(common), null) : null;
+  return g && typeof g.dir === "string" && path.isAbsolute(g.dir) ? path.resolve(g.dir) : "";
+}
+const docRoot = (root) => guestDir(root) || root;
+
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
@@ -648,7 +664,7 @@ function readInbox(common) {
 // ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
 // A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
 // differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
-const lockFile = (root) => path.join(root, "teams", "skills-lock.json");
+const lockFile = (root) => path.join(docRoot(root), "teams", "skills-lock.json");
 const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
 const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
 
@@ -669,12 +685,13 @@ function skillsDrift(root) {
   const lock = readJSON(lockFile(root), null);
   const pins = lock && lock.skills && typeof lock.skills === "object" ? lock.skills : {};
   const names = Object.keys(pins).filter((n) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(n) && pins[n] && typeof pins[n].hash === "string");
+  const base = docRoot(root);
   let teams = [];
-  try { teams = fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
+  try { teams = fs.readdirSync(path.join(base, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
   const hashes = new Map(); // real skill dir -> hash, so a skill linked into several teams is hashed once
   const drift = [];
   for (const name of names) {
-    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(root, "teams", t, ...s, name)))) {
+    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(base, "teams", t, ...s, name)))) {
       let src;
       try { src = fs.realpathSync(dir); if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
       if (!hashes.has(src)) hashes.set(src, hashSkill(src));
@@ -739,7 +756,7 @@ function modelPolicy(root) {
   const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? list(cfg.ladder) : d.ladder;
   const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo };
   let agents = "";
-  try { agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"); } catch {}
+  try { agents = fs.readFileSync(path.join(docRoot(root), "AGENTS.md"), "utf8"); } catch {}
   const line = /^models:(.*)$/m.exec(agents);
   if (line) {
     for (const [, k, v] of line[1].matchAll(/(\w+)=(\S+)/g)) {
@@ -782,7 +799,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

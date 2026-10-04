@@ -294,9 +294,10 @@ function registerLead(root) {
 // worktree folder a run from before the rename used stays listed while git still has a worktree
 // registered in it (legacy: {dir, worktrees}), and goes once none is (stale: that dir).
 // Returns {file, dir, created, changed, missing, legacy, stale} or {file, dir, error}; write=false only checks.
-function sandboxRoots(root, write = true) {
+// extra: another folder to list instead (a guest dir, allowDir); the legacy handling is the worktree folder's only.
+function sandboxRoots(root, write = true, extra = "") {
   const abs = path.resolve(root);
-  const dir = path.join(path.dirname(abs), `${path.basename(abs)}-proteus`);
+  const dir = extra ? path.resolve(extra) : path.join(path.dirname(abs), `${path.basename(abs)}-proteus`);
   const file = path.join(abs, ".codex", "config.toml");
   const entry = JSON.stringify(dir); // a JSON string is a TOML basic string
   const table = `[sandbox_workspace_write]\nwritable_roots = [${entry}]\n`;
@@ -351,9 +352,9 @@ function sandboxRoots(root, write = true) {
   if (text[i] !== "]") return refuse("has an unterminated writable_roots array");
   const old = legacyWorktreeDir(abs);
   const isOld = (x) => path.resolve(x.v) === old;
-  const live = vals.some(isOld) ? legacyWorktrees(abs) : [];
+  const live = !extra && vals.some(isOld) ? legacyWorktrees(abs) : [];
   const legacy = live.length ? { dir: old, worktrees: live } : null;
-  const drop = live.length ? [] : vals.filter(isOld);
+  const drop = extra || live.length ? [] : vals.filter(isOld);
   const stale = drop.length ? old : null;
   const has = vals.some((x) => path.resolve(x.v) === dir);
   if (has && !stale) {
@@ -382,6 +383,9 @@ function sandboxRoots(root, write = true) {
   fs.mkdirSync(dir, { recursive: true });
   return { file, dir, created: false, changed: true, legacy, stale };
 }
+
+// guest mode: the guest dir outside the project, writable in the workspace-write sandbox (writable_roots)
+const allowDir = (root, dir, write = true) => sandboxRoots(root, write, dir);
 
 // Subagents run in the lead's session under its hooks, which enforce owned paths; the copies
 // here are the backup for a codex session opened inside the worktree.
@@ -451,5 +455,5 @@ module.exports = {
   name, bypass, models, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
-  patchPaths, RULES, sandboxRoots, exportEnv,
+  patchPaths, RULES, sandboxRoots, allowDir, exportEnv,
 };

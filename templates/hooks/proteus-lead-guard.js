@@ -21,6 +21,8 @@
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt). All else passes.
+// Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
+//   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // Linked worktrees and PROTEUS=0 sessions pass untouched.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
@@ -77,9 +79,15 @@ lib.run((ev, ad) => {
     return; // lib.run exits 0 once stdout drains
   }
   if (ev.tool !== "edit") return;
-  const rel = ev.paths.map((p) => lib.relPath(root, p)).find((r) => r && !LEAD_MAY_WRITE.some((re) => re.test(r)));
-  if (!rel) return; // outside the repo (temp issue bodies, memory) or a doc the lead keeps
-  ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);
+  const guest = lib.guestDir(root);
+  for (const p of ev.paths) {
+    const rel = lib.relPath(root, p), mine = (r) => LEAD_MAY_WRITE.some((re) => re.test(r));
+    // guest mode: the docs the lead keeps live in the guest dir, and the repo's own copies are not Proteus's to touch
+    if (rel && guest && mine(rel)) ad.deny(`guest mode: this repo keeps no Proteus files; ${rel} lives at ${slash(path.join(guest, rel))}. Edit it there.` + BYPASS);
+    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);
+    const grel = !rel && guest ? lib.relPath(guest, p) : null;
+    if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
+  } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps
 });
 
 // the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
@@ -118,6 +126,8 @@ function subagentEdit(ev) {
 function subagentPath(ev, target) {
   const cwd = path.resolve(ev.cwd || lib.projectRoot(ev));
   const abs = path.resolve(cwd, String(target));
+  const guest = guestPath(ev, abs);
+  if (guest !== null) return guest;
   const wt = lib.gitRoot(path.dirname(abs));
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
@@ -132,6 +142,17 @@ function subagentPath(ev, target) {
     ? `yours is ${slash(own)}: edit ${slash(path.join(own, rel))}`
     : "none found from your cwd; comment NEEDS on the issue and stop";
   return `workers edit only inside their worktree (${hint}). ${rel} is in the main checkout while a run is open.`;
+}
+
+// guest mode: the guest dir stands in for the main checkout (null when abs is outside it, or no guest mode)
+function guestPath(ev, abs) {
+  const root = path.resolve(lib.projectRoot(ev)), guest = lib.guestDir(root);
+  const rel = guest ? lib.relPath(guest, abs) : null;
+  if (rel === null) return null;
+  const common = lib.gitCommonDir(root);
+  if (!common || !lib.runOpen(common)) return "";
+  if (ev.agentType === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
+  return `${rel} is in the guest dir ${slash(guest)}, which holds this repo's Proteus files; workers do not edit it while a run is open. Edit only inside your worktree, or comment NEEDS on the issue and stop.`;
 }
 
 // One worker, one worktree. A subagent's worktree is its cwd's when that is a prepared worktree (a

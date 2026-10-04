@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Hook: trigger-based recall of <main checkout>/docs/lessons/*.md, so a solved
+// Hook: trigger-based recall of <main checkout or guest dir>/docs/lessons/*.md, so a solved
 // problem never recurs and no session pays for lessons it does not hit.
 // Lesson frontmatter: trigger (JS regex source, case-insensitive), on (command, output,
 // prompt, path; default all), scope (all | lead | worker; default all).
@@ -34,7 +34,7 @@ lib.run((ev, ad) => {
 
   const common = lib.gitCommonDir(root);
   if (!common) return;
-  const dir = path.join(lib.mainRoot(common) || root, "docs", "lessons");
+  const dir = path.join(lib.guestDir(root) || lib.mainRoot(common) || root, "docs", "lessons");
   let names;
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { return; }
   if (!names.length) return;

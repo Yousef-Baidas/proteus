@@ -142,6 +142,12 @@ Proteus writes nothing to your repo but deliverables, checks, contract stubs, le
 
 The tracker is GitHub via `gh` today. `references/tracker.md` is an operations table with one column per tracker; Jira or anything else slots in by filling the column.
 
+### Guest mode: repos you do not own
+
+In a repo you contribute to but do not own, even those docs and `teams/` are not yours to add. `install.js --project --guest` keeps them out of the tree: `teams/`, `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, `docs/adr/` and `docs/lessons/` go to a guest dir, by default `~/.proteus/guest/<repo>-<hash>/` (`--guest <dir>` picks another), named in `.git/proteus/guest.json`. Bootstrap writes no CI workflow, no lefthook and no root doc, and the repo's own copies of those files stay untouched. The only files in the tree are the CLI's own hook files under `.claude/` or `.codex/`, untracked and excluded from git as in every install. The session gets access to the guest dir through `permissions.additionalDirectories` (Claude Code) or `writable_roots` (Codex). A tracked `.codex/config.toml` is never edited; the installer says what to add instead. The lead guard, the session-start state line, lessons, the skills lock and the baseline ratchet all read the guest dir.
+
+`--project` picks guest mode without the flag when `gh repo view` reports READ or TRIAGE access and the repo has no `teams/` of its own; `--no-guest` turns it off (the guest dir keeps its files). Gates still run, but locally and through tickets, not through CI you add. Tickets, PRs and the run log still need a GitHub repo you can write to: in a clone of your fork, `gh` reports your own rights, so pass `--guest` yourself.
+
 ## Enforcement, not promises
 
 Rules in prompts drift; these are mechanical.
@@ -196,7 +202,7 @@ cd /path/to/your/repo
 node ~/proteus/install.js --project    # teams/, ROUTING.md, the lead's hooks and status line
 ```
 
-`--project --install --confine` also fetches skills this machine lacks and hides them from the lead. After `proteus-scout` rewrites a list, run `node teams/link-skills.js --install --confine` from the repo root.
+`--project --install --confine` also fetches skills this machine lacks and hides them from the lead. After `proteus-scout` rewrites a list, run `node teams/link-skills.js --install --confine` from the repo root. In a repo you do not own, `--project --guest` keeps all of it outside the tree ([Guest mode](#guest-mode-repos-you-do-not-own)); there the script is `<guest dir>/teams/link-skills.js`.
 
 The global install links `~/.claude/skills/proteus` and `proteus-review` to this checkout (a symlink on Linux and macOS, a junction on Windows, no admin rights needed), so there is exactly one copy of each skill and `git pull` updates every repo at once. `--project` removes old per-repo copies of the two skills and of unmodified agents; that is why `/proteus` used to show up twice. An agent you changed is kept and reported as a local override: delete it to take the shipped one.
 
@@ -206,7 +212,7 @@ On Windows, PowerShell blocks unsigned scripts by default. Run the wrapper as:
 powershell -ExecutionPolicy Bypass -File C:\path\to\proteus\install.ps1 -Project
 ```
 
-or skip PowerShell: `node C:\path\to\proteus\install.js --project`. The switches are `-Project -Install -Confine -Update -AutoUpdate -NoAutoUpdate -Doctor -Fix -Harness codex`.
+or skip PowerShell: `node C:\path\to\proteus\install.js --project`. The switches are `-Project -Install -Confine -Guest -NoGuest -Update -AutoUpdate -NoAutoUpdate -Doctor -Fix -Harness codex`.
 
 Agent teams must be on. `--doctor` prints the exact line for your shell; for reference:
 
