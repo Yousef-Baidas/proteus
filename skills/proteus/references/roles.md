@@ -6,7 +6,7 @@ Every worker and verifier prompt ends with the three rules below; the agent file
 
 - **Long jobs**: a foreground shell call with a timeout up to 10 minutes, or a detached job (`nohup … &`) whose PID or log you poll in this same turn until it ends (Codex: a command still running when the shell call returns is polled with `write_stdin` until it exits, in this same turn). Never a background shell or a watcher (`run_in_background`, `Monitor`), never end a turn waiting on a notification; nothing wakes you.
 - **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop.
-- **Scratch**: temp files, renders, clones and inspection worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, never a bare `/tmp` or `mktemp`. The key is the ticket's `<run>-<id>`, or `<run>` for contracts, QA and the guide; the lead deletes it at merge or close.
+- **Scratch**: temp files, renders, clones and inspection worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, never a bare `/tmp` or `mktemp`. The key is the ticket's `<run>-<id>` (the contracts worker uses each ticket's), or `<run>` for QA and the guide; the lead deletes it at merge or close.
 
 A brief carries pointers (issue, `file:line`, command), never raw logs or long output; the agent reads those through context-mode.
 
@@ -29,9 +29,9 @@ Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bar
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 ```
 
-## Contracts worker (step 3, one per team in the wave, sequential)
+## Contracts worker (step 3, one per team in the wave, all teams at once)
 ```
-Run <run>, team <team>, scratch key <run>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, every shell call runs with that ticket's worktree as the working directory and every edit names a path under it; every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`). Never commit to proteus/<run>, never open a PR: the contract reaches proteus/<run> inside the ticket's PR.
+Run <run>, team <team>, scratch key: each ticket's <run>-<id>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, every shell call runs with that ticket's worktree as the working directory and every edit names a path under it; every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`). Never commit to proteus/<run>, never open a PR: the contract reaches proteus/<run> inside the ticket's PR.
 Per ticket: `gh issue view <n> --json body -q .body` holds the interface and the check (name, input, expected result). Commit exactly those: code gets signature stubs that compile and throw/`todo!()`/`raise NotImplementedError` plus the red test; other deliverables get the check script and whatever stub makes it runnable. No behaviour, no helpers, no extras.
 Show each check red twice and paste both outputs on the issue:
  1. on the missing work: it fails on its assertion or the not-implemented stub, never on an import, type, syntax, or missing-file error;
