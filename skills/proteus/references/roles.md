@@ -2,7 +2,7 @@
 
 `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; spawn, model and stop names per `harnesses.md`.
 
-Every worker and verifier prompt ends with the three rules below; the agent files repeat them, and the hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third.
+Every worker and verifier prompt carries the three rules below; the agent files repeat them, and the hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third.
 
 - **Long jobs**: a foreground shell call with a timeout up to 10 minutes, or a detached job (`nohup … &`) whose PID or log you poll in this same turn until it ends (Codex: a command still running when the shell call returns is polled with `write_stdin` until it exits, in this same turn). Don't use a background shell or a watcher (`run_in_background`, `Monitor`), and don't end a turn waiting on a notification: nothing wakes you.
 - **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop. Caveman shortens prose, not reports: a report keeps every field its template names, in order, with output lines pasted verbatim, because the lead and verifier parse them.
@@ -10,27 +10,30 @@ Every worker and verifier prompt ends with the three rules below; the agent file
 
 A brief carries pointers (issue, `file:line`, command), not raw logs or long output; the agent reads those through context-mode, or through a scratch file and `grep` when the plugin is absent.
 
-Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes each spawn pay for the whole brief again.
+Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes each spawn pay for the whole brief again. The report template closes every brief, after the ticket: the agent fills in what it read last, and those lines cost little outside the cache. A report missing a field its template names → the lead resends the brief once, naming the field, rather than rebuilding the report from the PR.
+
+`<safety>` is the `Safety:` lines of the team's `PROFILE.md` (QA, guide and grader: every team in the milestone), verbatim; drop the slot when there are none. They bind every command the agent runs, checks and probes included, because on a team whose deliverables change a live system (`domains.md`) running one on the host is the harm.
 
 ## Worker
 ```
 Nothing outside your ticket exists; the closing lines name it, your team, worktree and owned paths.
-Work only in the worktree: every shell call runs with it as the working directory (the shell tool's workdir where it has one), every command starts with the tool it runs (`git commit …`, never `cd <wt> && git …` or `git -C`), every edit names a path under it.
+Work only in the worktree; every edit names a path under it. Claude Code returns the shell to the lead's checkout on every call, so each call starts `cd <worktree> && `; Codex sets the shell tool's `workdir` instead (a `cd` keeps the command in its sandbox). Before the first edit or commit, check `git rev-parse --show-toplevel` prints the worktree. No `git -C`: it moves git alone, so the gates and tests beside it run elsewhere.
 The contract commit is the first on your branch; leave the check's files as it wrote them (the verifier diffs them against it). Anything outside your owned paths is read-only and the edit hook refuses it; need it → comment `NEEDS <file>: <why>` on the ticket and stop. New package or tool → `NEEDS dependency <ecosystem>/<name>@<version>: <why>` and stop; never install one yourself, since dependencies are the human's call.
 Read your team's PROFILE.md first, its CRAFT.md if it exists, CONVENTIONS.md and the taste docs it names third. A rule in CONVENTIONS.md beats a rule in any skill.
-Code: run /implement (drives /tdd at the seam) but skip its closing /code-review: the verifier runs it in fresh context, and a second pass by the author only repeats it. Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths; a file only in out/, /tmp, or a GUI session is not delivered. Probes print path, hash or size, and count of what they opened.
+Code: run /implement (drives /tdd at the seam) but skip its closing /code-review: the verifier reviews standards and spec in fresh context, and a second pass by the author only repeats it. Otherwise: the team's procedure from PROFILE.md. Everything you produce is reproducible from the repo: scripts and source in owned paths; a file only in out/, /tmp, or a GUI session is not delivered. Probes print path, hash or size, and count of what they opened.
 Green = the check, the team's green adds, and every repo gate (<gate commands>) clean on owned paths; a gate run through `proteus-baseline.js` is clean when it reports no new findings. Run each gate on a committed, clean tree as `node <hooks>/proteus-gates-cache.js "<gate>"`: a pass is recorded for that tree, so the pre-push hook, the verifier and QA skip what you already ran.
 Two retries after first red. Third red → comment `RED` + `git diff <contract sha>~1` + exact failing output on the ticket and stop. Don't restart or widen the ticket: the lead escalates it.
-Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer unless CONVENTIONS.md has `attribution: allow`; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch, `gh pr create --base proteus/<run> --fill` (Quick: `--base main`), with body lines `Owned: <the ticket's owned paths and globs, space-separated>` and `Tier: <the ticket's tier>`: CI checks the PR's changed paths against the first and its size against the second. The commit hook refusing a change as over its tier → comment `NEEDS tier <the tier it named>` and stop; don't trim the work to fit.
-Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
+Commit per references/commits.md: Conventional Commits, terse, no Co-Authored-By or AI trailer unless CONVENTIONS.md has `attribution: allow`; the commit-msg hook rejects anything else, never bypass it with --no-verify. Push the branch by name (`git push -u origin <branch>`: the guard reads a bare push or `HEAD` in the lead's checkout), `gh pr create --base proteus/<run> --fill` (Quick: `--base main`), with body lines `Owned: <the ticket's owned paths and globs, space-separated>` and `Tier: <the ticket's tier>`: CI checks the PR's changed paths against the first and its size against the second. The commit hook refusing a change as over its tier → comment `NEEDS tier <the tier it named>` and stop; don't trim the work to fit.
 Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. Caveman full. Ponytail full.
 Team <team>: teams/<team>/PROFILE.md, teams/<team>/CRAFT.md.
 <Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
+<safety>
 Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, branch proteus-work/<run>/<id> (Quick: proteus-work/quick/<n>), scratch key <run>-<id>.
 Contract: commit <contract sha>; check files: <file:line pointers>. Check: <file::name or command>.
 You own: <paths>.
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
+Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 ```
 
 ## Direct helper (Direct tier, `helper`)
@@ -39,12 +42,13 @@ Direct batch <batch>, worktree <absolute path>, branch proteus-work/direct/<batc
 Work only in the worktree, as the worker prompt says. You own: <this change's paths>; anything else → final line `BLOCKED <why>` and stop.
 Make exactly this change. Run <docs gate commands> on the files you touched. Commit per references/commits.md; the commit hook refuses a change that outgrew Direct: then final line `BLOCKED tier <the tier it named>` and stop; don't trim the change to fit.
 Push the branch. The PR body is the digest: one line per change, `- <file>: <what> (<short sha>)`, then `Owned: <every path in the batch: <paths>>`. No PR yet (<none | #pr>) → `node <hooks>/proteus-gh.js pr create --base main --title "docs: direct batch <batch>" --body-file <file under your scratch>`; else add your line with `node <hooks>/proteus-gh.js pr edit <pr> --body-file …`.
-Final turn text: `DONE direct <batch> <sha>` or `BLOCKED <why>`. Then stop. Long jobs and scratch rules as above. Caveman full.
+Long jobs and scratch rules as above. Caveman full.
+Final turn text: `DONE direct <batch> <sha>` or `BLOCKED <why>`. Then stop.
 ```
 
 ## Contracts worker (step 3, one per team with ready tickets, all teams at once)
 ```
-Run <run>, team <team>, scratch key: each ticket's <run>-<id>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, every shell call runs with that ticket's worktree as the working directory and every edit names a path under it; every command starts with the tool it runs (`git commit …`, never `cd … && git …` or `git -C`). Don't commit to proteus/<run> or open a PR: the contract reaches proteus/<run> inside the ticket's PR.
+Run <run>, team <team>, scratch key: each ticket's <run>-<id>. Tickets, each with its worktree (absolute path) and branch: #<n> <wt> proteus-work/<run>/<id>, …. Per ticket, work in that ticket's worktree as the worker prompt says (Claude Code: each shell call starts `cd <wt> && `; Codex: `workdir`; no `git -C`) and every edit names a path under it. Don't commit to proteus/<run> or open a PR: the contract reaches proteus/<run> inside the ticket's PR.
 Per ticket: `gh issue view <n> --json body -q .body` holds the interface and the check (name, input, expected result). Commit exactly those: code gets signature stubs that compile and throw/`todo!()`/`raise NotImplementedError` plus the red test; other deliverables get the check script and whatever stub makes it runnable. No behaviour, no helpers, no extras.
 Show each check red twice and paste both outputs on the issue:
  1. on the missing work: it fails on its assertion or the not-implemented stub, not on an import, type, syntax, or missing-file error;
@@ -52,40 +56,46 @@ Show each check red twice and paste both outputs on the issue:
 A check that stays green on broken input measures nothing: rewrite it until it goes red. Its first output line prints the path, hash or size, and count of what it opened.
 Can't be written as given → `gh issue comment <n> --body "CONTRACT-UNCLEAR: <what>"`, skip that ticket, continue.
 One commit per ticket on its branch, `test(<scope>): contract for #<n>`, per references/commits.md, then `git push -u origin proteus-work/<run>/<id>`.
-Done → per ticket one line on its issue: `CONTRACT #<n> <commit sha> <stub> <check> red-on-missing red-on-broken`.
 Long jobs, report-once and scratch rules as above. CONTEXT.md vocabulary. CONVENTIONS.md applies. Caveman full. Ponytail full.
+<safety>
+Done → per ticket one line on its issue: `CONTRACT #<n> <commit sha> <stub> <check> red-on-missing red-on-broken`.
 ```
 
 ## Verifier
 ```
 Ticket #<n>, PR #<pr>, team <team>, debt issue #<d>, scratch key <run>-<id>. No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md (Owns, Verifier adds) and CRAFT.md if it exists.
+<safety>
 CI runs while you review, so read it last: `gh pr checks <pr> --watch --fail-fast` in the foreground (long-job rule), then `--json name,state`. CI red → BACK-TO-WORKER with the failing check named; no checks listed → run them yourself on the PR head, each as `node <hooks>/proteus-gates-cache.js "<gate>"` (a tree the worker already passed is not run again). `gh pr diff <pr> --name-only` outside the ticket's owned paths or outside the team's Owns → BACK-TO-WORKER. The check is the contract: `git fetch origin proteus-work/<run>/<id>` then `git diff --stat <contract sha> FETCH_HEAD -- <check files>` prints anything → BACK-TO-WORKER.
-Code: /code-review (standards + spec as parallel sub-agents), code-review-graph blast radius on changed exports, <fallow dupes | vulture> on the diff. Otherwise: the team's rubric, each line scored with evidence. Diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted, not a nit.
+Code: review the diff yourself, a standards pass then a spec pass (against the issue body and contract: nothing missing, nothing extra); you have no Skill or Agent tool, so /code-review cannot run here. Then code-review-graph blast radius on changed exports, <fallow dupes | vulture> on the diff, and mutants on the contract's check where PROFILE.md asks. Otherwise: the team's rubric, each line scored with evidence. Standards: the diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted, not a nit.
 Evidence rules: a probe or check whose output does not print what it opened is void; rerun it so it does. A result that exists only outside the repo (out/, /tmp, GUI) is not delivered.
+Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on debt issue #<d>, one line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Open no ticket and fix nothing. Don't edit a comment: every agent posts as one account (`tracker.md`).
+Long jobs, report-once and scratch rules as above. Caveman lite.
 One verdict, as a PR review (`gh pr review <pr> --comment|--request-changes --body`; `--approve` fails on your own PR):
 MERGE #<n>
 BACK-TO-WORKER #<n>  1. <file:line> wrong → green looks like  2. ...
 CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
-Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on debt issue #<d>, one line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Open no ticket and fix nothing. Don't edit a comment: every agent posts as one account (`tracker.md`).
-Long jobs, report-once and scratch rules as above. Caveman lite.
 ```
 
 ## Guide (human review gate)
 ```
 Run <run>, milestone <name>, mode <attended|unattended>. Tickets: #<n>, ... Diff: <merge-base>..proteus/<run>. QA: WAVE-GREEN. Gates: <commands>. Debt issue: #<d>. Acceptance: <run-log comment url>. Scratch key: <run>.
+<safety>
 Open the review issue with brief, evidence, and the open debt lines per your agent instructions, post REVIEW <milestone> <url> to the task, exit.
 ```
 
 ## Grader (unattended gate, `judge`)
 ```
 Run <run>, milestone <name>, mode grade. Review issue #<r>. Acceptance: <run-log comment url>. Scratch key: <run>.
+<safety>
 Grade the evidence against the frozen checks per your agent instructions, comment AUTO-ACCEPT or AUTO-HOLD on #<r>, exit.
 ```
 
 ## QA (wave | milestone | close)
 ```
 Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
-Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. One verdict line; findings as issue comments or new issues per the profile. Fix nothing.
+Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. Fix nothing.
+<safety>
+One verdict line; findings as issue comments or new issues per the profile.
 ```
 
 ## Scout (bootstrap, `judge`)
@@ -93,7 +103,8 @@ Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold t
 Domain: <domain>. Work order: <one paragraph>. Read CONTEXT.md, manifests, and skills/proteus/references/domains.md from the Proteus checkout (<path>).
 <shipped software teams fit: rewrite teams/*/skills.txt only.>
 <otherwise: propose the roster per domains.md: teams as real-world roles, per team Owns / Never touches / checks / verifier adds / research sources, ROUTING.md rows, and skills.>
-Skills from skills.sh and installed plugins, ranked by installs and fit to this project's specifics, eight per team at most. Report per team with installs and why. Write nothing until the human approves; do not install.
+Skills from skills.sh and installed plugins, ranked by installs and fit to this project's specifics, eight per team at most. Write nothing until the human approves; do not install.
+Report per team: each skill with its installs and why.
 ```
 
 ## Lead pre-dispatch check

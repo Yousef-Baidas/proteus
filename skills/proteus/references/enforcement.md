@@ -78,7 +78,7 @@ Result goes into the issue comment with the request. The human still decides; un
 
 ## 9. anti-slop lint rules (JS/TS)
 
-Required, `teams/devops/required.txt`. The scaffold or stabilise worker reads `teams/devops/PROFILE.md`, runs the `install-anti-slop` skill, and the vendored oxlint plugin (`tools/oxlint/anti-slop/`) joins the lint gate: lefthook pre-commit, CI `gates`, and every worker's green. After that it costs no agent a token; slop fails lint like a type error fails the build. A rule that fights `CONVENTIONS.md` is disabled in `oxlint.config.ts` with the convention quoted; the human's file wins. No JS/TS in the repo → write `anti-slop: n/a` under `## Learned` once. Updating the rules is a devops ticket, never a side effect.
+Required, `teams/devops/required.txt`. The scaffold or stabilise worker reads `teams/devops/PROFILE.md`, runs the `install-anti-slop` skill, and the vendored oxlint plugin (`tools/oxlint/anti-slop/`) joins the lint gate: lefthook pre-commit, CI `gates`, and every worker's green. After that it costs no agent a token; slop fails lint like a type error fails the build. `CONVENTIONS.md` forbids new dependencies → ask the human about the dev-only `oxlint` and `@oxlint/plugins` before writing that ticket: its worker cannot add them and would stop on `NEEDS` mid-wave. The config is `.oxlintrc.json`, which needs no TypeScript loader. A rule that fights `CONVENTIONS.md` is disabled there with the convention quoted; the human's file wins. No JS/TS in the repo → write `anti-slop: n/a` under `## Learned` once. Updating the rules is a devops ticket, never a side effect.
 
 ## 10. Deep review per milestone, architecture scan at close
 
