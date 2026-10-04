@@ -14,7 +14,8 @@
 // required.txt (same format) holds the pipeline's mandatory skills; proteus-scout never
 // rewrites it and it does not count against the eight-per-profile cap.
 // teams/skills-lock.json pins each linked skill's content hash (sha256 over its files);
-// a differing hash on this machine prints "drift: <skill>" and keeps the committed hash.
+// a differing hash on this machine prints "drift: <skill>" and keeps the committed hash; until the copy
+// matches or --relock, the lead guard refuses worker and verifier spawns (proteus-lib.js lockDrift).
 // Links are symlinks, junctions on Windows (no admin needed); removing one never touches
 // its target. install.js requires this file for the same link helpers.
 // A skill name is one path segment ([A-Za-z0-9][A-Za-z0-9._-]*) or it is warned and skipped (#13).

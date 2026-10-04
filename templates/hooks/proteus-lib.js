@@ -318,6 +318,28 @@ function tailLines(file, bytes = 256 * 1024) {
   } catch { return []; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
 }
 
+// ---- secrets: text kept on disk or re-injected into context (the journal) has these replaced by
+// [redacted]. Every pattern is linear: bounded or disjoint quantifiers, nothing nested.
+const REDACTED = "[redacted]";
+const SECRETS = [
+  [/-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|$)/g, REDACTED], // to the end when unterminated
+  [/\b(authorization["']?\s{0,5}[:=]\s{0,5}["']?)(?:(?:bearer|basic|token)\s{1,5})?[^\s"',;]+/gi, `$1${REDACTED}`],
+  [/\b(bearer\s{1,5})[A-Za-z0-9._~+/=-]{16,}/gi, `$1${REDACTED}`],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, REDACTED], // GitHub tokens, classic and fine-grained
+  [/\bsk-[A-Za-z0-9_-]{20,}/g, REDACTED], // Anthropic (sk-ant-…) and OpenAI style keys
+  [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, REDACTED], // AWS access key ids
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, REDACTED], // Slack
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, REDACTED], // JWT
+];
+// key = value, key: value, "key": "value" where the key ends in a secret's name (DB_PASSWORD, client_secret, apiKey)
+const ASSIGN = /\b([A-Za-z_][\w-]{0,63})(["']?\s{0,5}[:=]\s{0,5}["']?)([^\s"'`,;&]+)/g;
+const SECRET_KEY = /(?:passw(?:or)?d|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)$/i;
+function redact(text) {
+  let s = String(text);
+  for (const [re, to] of SECRETS) s = s.replace(re, to);
+  return s.replace(ASSIGN, (m, key, sep) => (SECRET_KEY.test(key) ? key + sep + REDACTED : m));
+}
+
 const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windowsHide: true, stdio: ["ignore", "pipe", "ignore"], env });
 
 // git / gh with a hard timeout; "" on any failure (not installed, no auth, no remote, offline)
@@ -622,6 +644,63 @@ function readInbox(common) {
   const c = readJSON(inboxFile(common), null);
   return c && Array.isArray(c.questions) && Array.isArray(c.reviews) ? c : null;
 }
+
+// ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
+// A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
+// differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
+const lockFile = (root) => path.join(root, "teams", "skills-lock.json");
+const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
+const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
+
+// byte-identical to link-skills.js hashDir (sha256 over relative path + content of every file), or every lock drifts
+const walkSkill = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+  e.name === "node_modules" || e.name === ".git" ? [] : e.isDirectory() ? walkSkill(path.join(d, e.name)) : [path.join(d, e.name)]);
+function hashSkill(d) {
+  const h = require("crypto").createHash("sha256");
+  for (const f of walkSkill(d).sort()) {
+    h.update(path.relative(d, f).split(path.sep).join("/") + "\0");
+    h.update(fs.readFileSync(f));
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
+function skillsDrift(root) {
+  const lock = readJSON(lockFile(root), null);
+  const pins = lock && lock.skills && typeof lock.skills === "object" ? lock.skills : {};
+  const names = Object.keys(pins).filter((n) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(n) && pins[n] && typeof pins[n].hash === "string");
+  let teams = [];
+  try { teams = fs.readdirSync(path.join(root, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch {}
+  const hashes = new Map(); // real skill dir -> hash, so a skill linked into several teams is hashed once
+  const drift = [];
+  for (const name of names) {
+    for (const dir of teams.flatMap((t) => SKILL_LINKS.map((s) => path.join(root, "teams", t, ...s, name)))) {
+      let src;
+      try { src = fs.realpathSync(dir); if (!fs.statSync(src).isDirectory()) continue; } catch { continue; }
+      if (!hashes.has(src)) hashes.set(src, hashSkill(src));
+      if (hashes.get(src) !== pins[name].hash) { drift.push(name); break; }
+    }
+  }
+  return drift.sort();
+}
+
+// the drifted skills, cached in <common>/proteus/skills-drift.json per lock content: a clean result
+// stands until the lock changes (the autostart passes fresh on every session start), a drift is
+// re-checked on every call so a re-lock or an update counts at once
+function lockDrift(root, fresh = false) {
+  let key;
+  try { key = require("crypto").createHash("sha256").update(fs.readFileSync(lockFile(root))).digest("hex"); } catch { return []; }
+  const common = gitCommonDir(root);
+  const cache = common && !fresh ? readJSON(driftFile(common), null) : null;
+  if (cache && cache.lock === key && Array.isArray(cache.drift) && !cache.drift.length) return [];
+  const drift = skillsDrift(root);
+  if (common) { try { writeJSON(driftFile(common), { lock: key, drift }); } catch {} }
+  return drift;
+}
+
+// how to clear a drift; the lead does not re-lock on its own: third-party skill text runs in every worker
+const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
+
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
 // Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
 // defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
@@ -700,10 +779,10 @@ function refreshInbox(root, common, timeout = 10000) {
 }
 
 module.exports = {
-  readInbox, refreshInbox, inboxFile,
+  readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

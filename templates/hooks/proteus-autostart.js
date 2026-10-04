@@ -10,6 +10,9 @@
 // (proteus-scratch.js --sweep --stale) detached, so it never slows the start. Moves the state a
 // pre-rename install left in the legacy state dir into <git-common-dir>/proteus (lib.migrateState),
 // and lists open runs on either branch prefix: a legacy run keeps its names until it closes.
+// On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
+// Re-hashes the linked team skills against teams/skills-lock.json (lib.lockDrift): a drift shows as
+// skills-lock=drift:<names> plus a note, and the lead guard refuses worker and verifier spawns until it clears.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -38,11 +41,15 @@ lib.run((ev, ad) => {
   }
   safe(() => migrateState(root, home, notes));
   safe(() => codexRoots(ad, root, home, notes));
+  safe(() => publicNote(root, notes));
   const identity = safe(() => agentIdentity(ad, root, home, notes), "identity=unknown");
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);
   const src = ev.source;
   const tour = home && (src === "startup" || src === "clear") ? safe(() => tourState(home, cfg), "") : "";
-  const state = localState(ad, root, runs, home, pending) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
+  // hashed afresh each session start; the guard reuses the result until the lock changes
+  const drift = safe(() => lib.lockDrift(root, true), []);
+  if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
+  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchSweep(root));
 
@@ -175,6 +182,28 @@ function sync(ad, home, root, notes) {
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
 }
 
+// A public repo publishes the run log, briefs, contracts, evidence and questions: said once per repo,
+// recorded in <common>/proteus/visibility.json. Until then gh is asked at most once a day (3 s
+// timeout; any failure, no remote or offline, just waits for the next day).
+const DAY = 24 * 3600e3;
+function publicNote(root, notes) {
+  const common = lib.gitCommonDir(root);
+  if (!common) return;
+  const file = path.join(lib.stateDir(common), "visibility.json");
+  const seen = lib.readJSON(file, null) || {};
+  if (seen.warned) return;
+  let vis = typeof seen.visibility === "string" ? seen.visibility : "";
+  let at = typeof seen.at === "number" ? seen.at : 0;
+  if (Date.now() - at >= DAY) {
+    vis = lib.gh(["repo", "view", "--json", "visibility", "-q", ".visibility"], root, 3000).toUpperCase();
+    at = Date.now();
+    lib.writeJSON(file, { at, visibility: vis });
+  }
+  if (vis !== "PUBLIC") return;
+  notes.push("proteus: this repo is public on GitHub. The run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone. Tell the human once, in your first reply, so nothing private goes into a work order, an answer or an evidence file. (Shown once per repo.)");
+  lib.writeJSON(file, { at, visibility: vis, warned: new Date().toISOString() });
+}
+
 // only when the run has scratch state; the sweep caches the size the next state line reads
 function scratchSweep(root) {
   const store = lib.stateDir(lib.gitCommonDir(root));
@@ -272,7 +301,8 @@ function humanSaid(root) {
   const files = [lib.legacyStateDir(common), lib.stateDir(common)].flatMap((d) => { const f = path.join(d, "journal.jsonl"); return fs.existsSync(f) ? [f] : []; });
   const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024)))].slice(-10);
   const said = lines.flatMap((l) => {
-    const p = safe(() => JSON.parse(l).prompt, "");
+    // redacted again on the way out: a journal written before redaction existed may hold secrets
+    const p = safe(() => { const raw = JSON.parse(l).prompt; return typeof raw === "string" ? lib.redact(raw) : ""; }, "");
     return typeof p === "string" && p.trim() ? ["- " + (p.length > 400 ? p.slice(0, 400) + "…" : p).replace(/\n/g, "\n  ")] : [];
   });
   return said.length ? ["human said (verbatim, newest last):", ...said].join("\n") : "";
@@ -287,7 +317,7 @@ function models(ev, root) {
   return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
 }
 
-function localState(ad, root, runs, home, pending) {
+function localState(ad, root, runs, home, pending, drift) {
   const has = (f) => fs.existsSync(path.join(root, f));
   const read = (f) => { try { return fs.readFileSync(path.join(root, f), "utf8"); } catch { return ""; } };
   const ls = (d) => { try { return fs.readdirSync(path.join(root, d)); } catch { return []; } };
@@ -314,7 +344,7 @@ function localState(ad, root, runs, home, pending) {
       `teams=${profiles.length ? profiles.join(",") : "NO"}`,
       `skills-unscouted=${shipped.join(",") || "none"}`,
       `skills-unlinked=${unlinked.join(",") || "none"}`,
-      `skills-lock=${yn(has("teams/skills-lock.json"))}`,
+      `skills-lock=${drift.length ? `drift:${drift.join(",")}` : yn(has("teams/skills-lock.json"))}`,
       `ci-gates=${yn(has(".github/workflows/proteus-gates.yml"))}`,
       `lefthook=${yn(has("lefthook.yml"))}`,
       `protection=${/protection:\s*none/.test(agents) ? "none" : "on"}`,
