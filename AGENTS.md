@@ -16,5 +16,5 @@ Proteus source repo. Read `CONTEXT.md` for terms and `CONVENTIONS.md` for rules 
 - package manager: npm, dev-only (`oxlint`, `@oxlint/plugins`); nothing shipped needs `node_modules`.
 - test layout: `tests/*.test.js`, plain Node, fake CLIs in `tests/`.
 - hotspot files: `install.js`, `install.ps1`, `install.sh`, `templates/hooks/proteus-harness.js`, `templates/hooks/proteus-lib.js`, `tests/hooks.test.js`, `README.md`.
-- self-host: `install.js --project` refuses to run in this checkout (install.js:674) until the self-host ticket lands.
+- self-host: `install.js --project` sets Proteus up on this checkout (#4, `tests/selfhost.test.js`); `teams/templates/` stays git-excluded, `templates/` is the source.
 - Work to CONVENTIONS.md. Verifier fails the ticket on a deviation.
