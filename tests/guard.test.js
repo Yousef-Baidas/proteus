@@ -67,6 +67,16 @@ ok("subagents are refused the same", denied("gh pr merge 4 --admin", /--admin/, 
 ok("PROTEUS=0 passes", shell("git push origin trunk", {}, { PROTEUS: "0" }).code === 0);
 const hl = require(path.join(SRC, "proteus-lib.js"));
 ok("workerDenial (the worker guard) refuses them too", /--admin/.test(hl.workerDenial({ tool: "shell", command: "gh pr merge 1 --admin", cwd: REPO }) || ""));
+// scratch (#27): a subagent writes under proteus-scratch.js --path while a run is open; nothing else in the main checkout
+const write = (file) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Write", tool_input: { file_path: file, content: "x" }, ...sub }, { cwd: REPO });
+const SCR = path.join(REPO, ".git", "proteus", "scratch");
+ok("scratch: a subagent Write under <git-common-dir>/proteus/scratch/<key>/ passes while a run is open",
+  write(path.join(SCR, "r1-4", "log.txt")).code === 0 && write(path.join(SCR, "r1-4", "mut", "a.js")).code === 0);
+const src = write(path.join(REPO, "src", "a.js"));
+ok("scratch: src/a.js in the main checkout is still refused", src.code === 2 && /src\/a\.js is in the main checkout while a run is open/.test(src.err), src.err);
+ok("scratch: a .. out of scratch, the scratch root itself and a sibling of it are refused",
+  write([SCR, "r1-4", "..", "..", "..", "..", "src", "a.js"].join(path.sep)).code === 2 && write(SCR).code === 2 &&
+  write(path.join(REPO, ".git", "proteus", "scratch-ledger.jsonl")).code === 2 && write(path.join(REPO, ".git", "proteus", "scratchy", "f")).code === 2);
 ok("shellCommands splits, unquotes and skips heredocs",
   JSON.stringify(hl.shellCommands("a \"b c\" d\\ e; f|g && h # x\ncat <<EOF\ngit push\nEOF\nX=1 git push")) === JSON.stringify([["a", "b c", "d e"], ["f"], ["g"], ["h"], ["cat"], ["X=1", "git", "push"]]));
 
