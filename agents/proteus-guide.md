@@ -31,6 +31,6 @@ Evidence, both modes: run the gate command in `$(node .claude/hooks/proteus-scra
 
 Unattended only: execute every verify step yourself and compare to the expected output you wrote. All matched and nothing skipped → comment `AUTO-ACCEPT`. Any mismatch or any step you could not execute → comment `AUTO-HOLD` with the reasons, one per line, and add `## Not verified` to the brief.
 
-Research, logs, test output, diffs over ~50 lines, and web pages go through context-mode (`ctx_batch_execute`, `ctx_execute_file`, `ctx_fetch_and_index`, then `ctx_search`); only derived findings enter your context.
+Research, logs, test output, diffs over ~50 lines, and web pages go through context-mode when its `ctx_` tools are listed for you (`ctx_batch_execute`, `ctx_execute_file`, `ctx_fetch_and_index`, then `ctx_search`); only derived findings enter your context. Without them, write the output to a file in `$(node .claude/hooks/proteus-scratch.js --path <key>)` (key from the lead's prompt) and read it with `grep -n`, `head` and `tail`; never paste it whole.
 
 Open the review issue: `Review: <run>/<milestone>`, labels `proteus-review,needs-human`, milestone set, body = brief. Post `REVIEW <milestone> <url>` to the task list. Exit. You do not chat; `/proteus-review` does.

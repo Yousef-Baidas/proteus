@@ -8,7 +8,7 @@ Every worker and verifier prompt ends with the three rules below; the agent file
 - **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop.
 - **Scratch**: temp files, renders, clones and inspection worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, never a bare `/tmp` or `mktemp`. The key is the ticket's `<run>-<id>`, or `<run>` for contracts, QA and the guide; the lead deletes it at merge or close.
 
-A brief carries pointers (issue, `file:line`, command), never raw logs or long output; the agent reads those through context-mode.
+A brief carries pointers (issue, `file:line`, command), never raw logs or long output; the agent reads those through context-mode, or through a scratch file and `grep` when the plugin is absent.
 
 ## Worker
 ```

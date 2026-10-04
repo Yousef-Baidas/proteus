@@ -22,6 +22,7 @@
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
 //   models       the default ladder {ladder, floor, solo}, or null for single-model mode
 //   install      name · bypass · projectRoot(raw) · home · skillDirs(root) · agentsDir · agentFile(file, text)
+//                skillRoots() (dirs holding other plugins' and installed skills, searched by proteus-skillpath.js)
 //                hooksDir(root) · teamSkills(teamDir) (where link-skills.js links a team's skills for this CLI)
 //                skipHooks (template files this CLI never uses: not copied into hooksDir)
 //                contextModeOn() · registerLead(root) · prepareWorker(wt, src) · ownedFile(wt)

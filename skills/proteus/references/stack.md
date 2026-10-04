@@ -7,7 +7,7 @@
 | LSP plugin / Serena | – | yes | yes |
 | ponytail | – | full | – |
 | caveman | lite | full | lite |
-| rtk + context-mode | yes | yes | yes |
+| rtk + context-mode (optional) | yes | yes | yes |
 | code-review-graph | – | – | yes |
 | fallow (JS/TS) | `health` at close | `dead-code` on owned paths | `dupes` on diff |
 | vulture / vulture-rs (Python) | close | `--min-confidence 80` owned paths | diff |

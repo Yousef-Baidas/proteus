@@ -179,7 +179,10 @@ const skipHooks = [];
 const agentFile = (file, text) => ({ name: path.basename(file), text });
 const leadSettings = (root) => path.join(root, ".claude", "settings.local.json");
 
-// the required context-mode plugin: installed and enabled at user scope (two small file reads)
+// where installed plugins keep their skills, then the dirs `npx skills add` links into (proteus-skillpath.js)
+const skillRoots = () => [path.join(home, "plugins", "cache"), path.join(home, "skills"), path.join(os.homedir(), ".agents", "skills")];
+
+// the optional context-mode plugin: installed and enabled at user scope (two small file reads)
 function contextModeOn() {
   const id = "context-mode@context-mode";
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")) || {}; } catch { return {}; } };
@@ -277,5 +280,5 @@ function exportEnv(root, vars) {
 module.exports = {
   name, bypass, models, projectRoot, event, deny, context, keepGoing,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

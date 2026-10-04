@@ -167,13 +167,13 @@ Every agent commits with terse, professional [Conventional Commits](https://www.
 ### Prerequisites (all platforms)
 
 1. [Claude Code](https://code.claude.com/docs/en/overview) installed and logged in.
-2. Node.js 22.5 or newer (context-mode needs it; `node --version`) and the [GitHub CLI](https://cli.github.com/) logged in (`gh auth login`); the repo needs a GitHub remote.
+2. Node.js 22.5 or newer (the context-mode plugin needs it; `node --version`) and the [GitHub CLI](https://cli.github.com/) logged in (`gh auth login`); the repo needs a GitHub remote.
 3. The mattpocock-skills plugin. Inside Claude Code:
    ```
    /plugin install mattpocock-skills@claude-plugins-official
    ```
    Cherry-picking instead? You need: `setup-matt-pocock-skills`, `grilling`, `grill-with-docs`, `domain-modeling`, `codebase-design`, `wayfinder`, `to-spec`, `to-tickets`, `implement`, `tdd`, `code-review`, `resolving-merge-conflicts`, `handoff`.
-4. The [context-mode](https://github.com/mksglu/context-mode) plugin, required. `install.js` installs it through the claude CLI; if that is not on PATH, run `claude plugin marketplace add mksglu/context-mode` and `claude plugin install context-mode@context-mode` yourself. Research, logs, test output, and web pages go through its sandbox so only the findings enter an agent's context. It is third-party code: its hooks see every tool call in every Claude Code session on the machine, and it keeps session events and indexed content in local SQLite under your home directory (`~/.context-mode/`). Read it before you install it.
+4. The [context-mode](https://github.com/mksglu/context-mode) plugin, optional. Without it, agents write large output to a file in the scratch dir (`proteus-scratch.js --path <key>`) and read it with `grep`, `head` and `tail`; Proteus works the same, it just spends more context. `install.js` installs it through the claude CLI and only warns if that fails; if the CLI is not on PATH, run `claude plugin marketplace add mksglu/context-mode` and `claude plugin install context-mode@context-mode` yourself. Research, logs, test output, and web pages go through its sandbox so only the findings enter an agent's context. It is third-party code: its hooks see every tool call in every Claude Code session on the machine, and it keeps session events and indexed content in local SQLite under your home directory (`~/.context-mode/`). Read it before you install it.
 5. Recommended companions (each is its own install; the skill works without them but saves less):
    - [caveman](https://github.com/JuliusBrussee/caveman) — terse agent output
    - [ponytail](https://github.com/DietrichGebert/ponytail) — minimal code
@@ -190,7 +190,7 @@ All logic is in `install.js` (Node 22.5+). `install.sh` and `install.ps1` are th
 
 ```bash
 git clone https://github.com/Yousef-Baidas/proteus.git ~/proteus
-node ~/proteus/install.js              # skills + agents for every repo, and the context-mode plugin
+node ~/proteus/install.js              # skills + agents for every repo, and the optional context-mode plugin
 cd /path/to/your/repo
 node ~/proteus/install.js --project    # teams/, ROUTING.md, the lead's hooks and status line
 ```
@@ -236,7 +236,7 @@ Three steps the installer cannot do for you, once per repo:
 
 1. Open `codex` in the repo and trust it. Codex loads a project's `.codex/` hooks only in a trusted project.
 2. Approve the Proteus hooks in `/hooks`. Codex asks again when a hook entry changes, not when a script updates.
-3. Add context-mode, required: `codex mcp add context-mode --env CONTEXT_MODE_PLATFORM=codex -- npx -y context-mode`.
+3. Optional: add context-mode: `codex mcp add context-mode --env CONTEXT_MODE_PLATFORM=codex -- npx -y context-mode`.
 
 Codex has no status line hook and no attribution setting; the commit-msg check still rejects an AI trailer. `~/.claude/proteus.json` records which CLIs you installed for, and `--update` refreshes each. `--doctor --harness codex` checks the Codex side: skill links, agents, the hooks and rules, leftover Claude-only hooks, the worktree folder's writable root, project trust, and context-mode (as an MCP server or an installed, enabled Codex plugin).
 
@@ -287,10 +287,10 @@ Kept as they were: the `hive/<run>` and `hive-evidence/<run>` branches, the `hiv
 
 ```bash
 node ~/proteus/install.js --doctor         # from a repo root: global and project checks
-node ~/proteus/install.js --doctor --fix   # repair links, duplicates, context-mode, hook registration, team skills
+node ~/proteus/install.js --doctor --fix   # repair links, duplicates, the optional context-mode plugin, hook registration, team skills
 ```
 
-Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (installed and enabled), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (a `WARN` when missing or disabled, since it is optional; `--fix` installs it), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves, that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
 
 ### Agents under their own login (recommended)
 
@@ -366,6 +366,7 @@ templates/
     proteus-verdict.js      reads a verdict or answer only from the human's login
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-scratch.js      ledgers and sweeps agents' temp files
+    proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)
