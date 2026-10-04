@@ -47,6 +47,24 @@ ok("image: a.png does not match xa.png or a.pngx", !allowed("/r/a.png", "see xa.
 ok("image: path segment and full stop allowed", allowed("/r/a.png", "open /tmp/out/a.png.") && allowed("/r/a.png", '"a.png",'));
 ok("image: regex characters in the name are literal", !allowed("/r/a+b.png", "see aab.png") && allowed("/r/a+b.png", "see a+b.png"));
 
+// lessons: a trigger that can backtrack without end is skipped, safe ones still fire
+const LSP = path.join(SRC, "proteus-lessons.js");
+const lesson = (name, trigger) => fs.writeFileSync(path.join(REPO, "docs", "lessons", name + ".md"), `---\ntrigger: ${trigger}\non: command\n---\nbody ${name}\n`);
+fs.mkdirSync(path.join(REPO, "docs", "lessons"), { recursive: true });
+const unsafe = ["(a+)+$", "(a*)*b", "(a|a)*$", "(a|ab)+c", "(x+x+)+y", "(?:a{2,})+$", "([a-z]+)*$"];
+unsafe.forEach((t, i) => lesson(`bad${i}`, t));
+lesson("safe", "(npm|yarn) (run )?build");
+const evt = (command, session) => ({ hook_event_name: "PreToolUse", session_id: session, cwd: REPO, tool_name: "Bash", tool_input: { command } });
+let r = run(LSP, evt("a".repeat(40) + "!", "redos"), { cwd: REPO });
+ok("lessons: nested-quantifier triggers skipped, fast", r.code === 0 && r.out === "" && r.ms < 3000 && unsafe.every((t, i) => r.err.includes(`bad${i}.md`)), `${r.ms}ms ${r.err}`);
+r = run(LSP, evt("npm run build", "redos2"), { cwd: REPO });
+ok("lessons: safe trigger still hits", /body safe/.test(r.out) && !/body bad/.test(r.out), r.out);
+lesson("long", "needle$");
+r = run(LSP, evt("x".repeat(100000) + " needle", "redos3"), { cwd: REPO });
+ok("lessons: input is cut before matching", !/body long/.test(r.out) && r.code === 0, r.out.slice(0, 200));
+for (let i = 0; i < unsafe.length; i++) fs.unlinkSync(path.join(REPO, "docs", "lessons", `bad${i}.md`));
+for (const f of ["safe", "long"]) fs.unlinkSync(path.join(REPO, "docs", "lessons", f + ".md"));
+
 // async tests last; they print the summary
 (async () => {
   // lessons: hits are appended, so parallel sessions lose none
@@ -60,8 +78,9 @@ ok("image: regex characters in the name are literal", !allowed("/r/a+b.png", "se
   });
   const hitFile = path.join(REPO, ".git", "proteus", "lesson-hits.jsonl");
   const count = () => { try { return fs.readFileSync(hitFile, "utf8").trim().split("\n").filter(Boolean).length; } catch { return 0; } };
+  const before = count();
   await Promise.all(Array.from({ length: 12 }, (_, i) => launch(`race${i}`)));
-  ok("lessons: concurrent sessions each leave one hit line", count() === 12, `${count()} of 12`);
+  ok("lessons: concurrent sessions each leave one hit line", count() - before === 12, `${count() - before} of 12`);
   ok("lessons: no read-modify-write json left behind", !fs.existsSync(path.join(REPO, ".git", "proteus", "lesson-hits.json")));
   lib.summary();
 })();

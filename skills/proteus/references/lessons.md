@@ -23,7 +23,7 @@ Fix: set `scene.camera` in the pass script before `bpy.ops.render.render`; the p
 Why: the GUI falls back to the active view; background mode does not.
 ```
 
-- `trigger`: a JavaScript regex, case-insensitive. Specific enough to fire on the problem and not on every command; test it against the text that showed the failure.
+- `trigger`: a JavaScript regex, case-insensitive. Specific enough to fire on the problem and not on every command; test it against the text that showed the failure. Avoid nested repetition such as `(a+)+`, `(a*)*` or `(a|ab)*`: the hook skips such a trigger with a note on stderr because it can backtrack without end, and it matches only the first 20 KB of any input.
 - `on`: which text is tested: `command` (a shell command about to run), `output` (shell output after it ran), `prompt` (a human message), `path` (a file about to be read or edited).
 - `scope`: `lead`, `worker`, or `all`.
 - Body: symptom, fix, why. Five lines at most. Name the command or file, not the story.
