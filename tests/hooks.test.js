@@ -281,6 +281,25 @@ ok("owned: exact file allowed", run(WH("proteus-owned-paths.js"), wpre("Write", 
 r = run(WH("proteus-owned-paths.js"), wpre("Edit", { file_path: path.join(WT, "src/other.ts") }), { cwd: WT });
 ok("owned: outside denied", r.code === 2 && /NEEDS src\/other.ts/.test(r.err), r.err);
 ok("owned: outside worktree denied", run(WH("proteus-owned-paths.js"), wpre("Edit", { file_path: "/etc/x" }), { cwd: WT }).code === 2);
+// #27: outside the worktree, the repo's scratch (proteus-scratch.js --path) passes and nothing beside it does
+ok("owned: scratch under <git-common-dir>/proteus/scratch/ allowed, the rest of the state dir denied",
+  run(WH("proteus-owned-paths.js"), wpre("Write", { file_path: path.join(REPO, ".git", "proteus", "scratch", "bl1077-5", "log.txt") }), { cwd: WT }).code === 0 &&
+  run(WH("proteus-owned-paths.js"), wpre("Write", { file_path: path.join(REPO, ".git", "proteus", "scratch-ledger.jsonl") }), { cwd: WT }).code === 2 &&
+  run(WH("proteus-owned-paths.js"), wpre("Write", { file_path: path.join(REPO, ".git", "proteus", "agents", "agent-x") }), { cwd: WT }).code === 2);
+// #74: no glob covers the owned-path list itself, in any spelling NTFS or a case-insensitive filesystem resolves to it
+{
+  const HL = require(path.join(H, "proteus-lib.js")), OW = path.join(W, "own74");
+  fs.mkdirSync(path.join(OW, ".claude"), { recursive: true });
+  const self = [".claude/proteus-owned", ".claude/PROTEUS-OWNED", ".claude/proteus-owned.", ".claude/proteus-owned ", ".claude/proteus-owned::$DATA",
+    ".claude/proteus-owned:x", ".claude./proteus-owned", ".claude/hive-owned", path.join(OW, ".claude", "proteus-owned")];
+  for (const list of ["*/*\n", "**\n", ".claude/\n"]) {
+    fs.writeFileSync(path.join(OW, ".claude", "proteus-owned"), list);
+    const got = self.map((p) => HL.ownedDenial(OW, p));
+    ok(`owned list ${JSON.stringify(list.trim())}: the list file is refused in every spelling`, got.every((m) => / is the owned-path list itself, which only the lead writes\. Comment "NEEDS /.test(m)), JSON.stringify(got));
+  }
+  fs.writeFileSync(path.join(OW, ".claude", "proteus-owned"), "*/*\n");
+  ok("owned list \"*/*\": src/x.js and .claude/other are still allowed", HL.ownedDenial(OW, "src/x.js") === "" && HL.ownedDenial(OW, ".claude/proteus-owned-notes") === "", HL.ownedDenial(OW, "src/x.js"));
+}
 ok("owned: ..foo file is inside", run(WH("proteus-owned-paths.js"), wpre("Edit", { file_path: "..foo" }), { cwd: WT }).code === 2 && /not in/.test(run(WH("proteus-owned-paths.js"), wpre("Edit", { file_path: "..foo" }), { cwd: WT }).err));
 
 // ---- lessons

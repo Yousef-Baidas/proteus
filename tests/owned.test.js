@@ -58,6 +58,20 @@ r = ci("no owned line here");
 ok("ci: no Owned: line fails rather than passing everything", r.status === 1 && /no "Owned:/.test(r.stderr), r.stderr);
 ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 
+// #74: the owned-path list itself never commits, whatever its globs cover; nor passes CI whatever the Owned: line says
+const LIST = path.join(WT, ".claude", "proteus-owned"), was = fs.readFileSync(LIST, "utf8");
+fs.writeFileSync(LIST, "**\n");
+g(WT, "add", "-f", ".claude/proteus-owned");
+r = commit("src/third.txt");
+ok("pre-commit: a staged owned-path list is refused even when its globs cover it, the rest passes",
+  r.status !== 0 && /not in \.claude\/proteus-owned:\n {2}\.claude\/proteus-owned\n/.test(r.stderr) && !/src\/third\.txt/.test(r.stderr), r.stderr);
+spawnSync("git", ["commit", "-qm", "feat: x", "--no-verify"], { cwd: WT, encoding: "utf8", env: { ...process.env, ...ID } });
+r = ci("Owned: ** .claude/proteus-owned");
+ok("ci: a PR that changes the owned-path list fails even when the Owned: line covers it",
+  r.status === 1 && /\.claude\/proteus-owned/.test(r.stderr) && !/src\//.test(r.stderr), r.stderr);
+g(WT, "reset", "-q", "--soft", "HEAD~1"); g(WT, "rm", "-q", "--cached", ".claude/proteus-owned"); g(WT, "commit", "-qm", "feat: x", "--no-verify");
+fs.writeFileSync(LIST, was);
+
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
 const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));

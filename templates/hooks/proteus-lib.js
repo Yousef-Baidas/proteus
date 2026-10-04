@@ -64,6 +64,10 @@ function gitCommonDir(root) {
 const mainRoot = (common) => (common && path.basename(common) === ".git" ? path.dirname(common) : null);
 
 const stateDir = (common) => path.join(common, "proteus");
+// the scratch root proteus-scratch.js --path hands out; the edit guards let an agent write under it
+const scratchDir = (common) => path.join(stateDir(common), "scratch");
+// abs lies under common's scratch root (relPath: null outside it or on another drive, case-insensitive on win32)
+const inScratch = (common, abs) => !!common && !!relPath(scratchDir(common), abs);
 
 // a run's names: its branch prefix, its worker branches' prefix, evidence prefix, labels, and the sibling folder its
 // worker worktrees use. Worker branches are <work><run>/<id>, outside <branch>, so a ruleset on proteus/* binds runs only;
@@ -318,15 +322,26 @@ const ownedFile = (wt) => {
   return !fs.existsSync(f) && fs.existsSync(old) ? old : f;
 };
 
+// one key per file NTFS resolves alike: each segment loses a :stream suffix and trailing dots and spaces, and
+// case goes (macOS and Windows ignore it). Applied on every OS, so Linux also refuses the look-alike names.
+const fileKey = (rel) => rel.split("/").map((s) => s.replace(/:.*$/, "").replace(/[. ]+$/, "")).join("/").toLowerCase();
+// rel (worktree-relative, forward slashes) names the owned-path list itself: the harness's, or the legacy one beside it
+function isOwnedList(wt, rel) {
+  const f = harness().ownedFile(wt);
+  return [f, path.join(path.dirname(f), LEGACY.owned)].some((p) => fileKey(path.relative(wt, p).split(path.sep).join("/")) === fileKey(rel));
+}
+
 // why an edit of target breaks the worktree's owned-path list, or "" when allowed or there is no list
 function ownedDenial(wt, target) {
   let list;
   try { list = fs.readFileSync(ownedFile(wt), "utf8"); } catch { return ""; }
   // path.relative across Windows drives returns an absolute path, not "../"
-  const r = path.relative(wt, path.resolve(wt, String(target)));
+  const abs = path.resolve(wt, String(target)), r = path.relative(wt, abs);
   const rel = r.split(path.sep).join("/");
   const needs = (why) => `${rel} is ${why}. Comment "NEEDS ${rel}: <why>" on the issue and stop.`;
-  if (path.isAbsolute(r) || rel === ".." || rel.startsWith("../")) return needs("outside the worktree");
+  if (path.isAbsolute(r) || rel === ".." || rel.startsWith("../")) return inScratch(gitCommonDir(wt), abs) ? "" : needs("outside the worktree");
+  // no glob covers the list itself (`*/*` and `**` match .claude/), or a worker could widen its own ownership
+  if (isOwnedList(wt, rel)) return needs("the owned-path list itself, which only the lead writes");
   const owned = list.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
   return owned.some((g) => ownedMatch(g, rel)) ? "" : needs(`not in ${path.relative(wt, ownedFile(wt)).split(path.sep).join("/")}`);
 }
@@ -959,7 +974,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

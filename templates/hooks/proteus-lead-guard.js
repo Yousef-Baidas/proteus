@@ -20,7 +20,7 @@
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
-//   scout's teams/*/skills.txt). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+//   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // Linked worktrees and PROTEUS=0 sessions pass untouched.
@@ -133,6 +133,7 @@ function subagentPath(ev, target) {
   const wt = lib.gitRoot(path.dirname(abs));
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
+  if (lib.inScratch(common, abs)) return ""; // proteus-scratch.js --path: the agents' sanctioned temp space
   if (fs.existsSync(lib.ownedFile(wt))) return bindingDenial(ev, cwd, wt, common, abs) || lib.ownedDenial(wt, abs);
   if (lib.isLinked(wt)) return "";
   if (!common || common !== lib.gitCommonDir(path.resolve(lib.projectRoot(ev))) || !lib.runOpen(common)) return "";

@@ -35,7 +35,7 @@ A worker that ends its turn waiting on a background job never wakes up; nothing 
 
 ## Scratch
 
-Agents write temp files, renders, clones and inspection worktrees under `node <hooks>/proteus-scratch.js --path <key>` (`<git-common-dir>/proteus/scratch/<key>/`), keyed `<run>-<id>` per ticket (its contracts worker included), `<run>` for QA and the guide. `/tmp` is RAM; a run that leaves its scratch behind fills it until the OOM killer takes the terminal. The same hook watches every Bash call, the lead's included: a new entry directly in the temp dir, owned by this user and named in the command or its output, is ledgered under the agent's key. Without context-mode, this dir is also where an agent puts output too long to read whole, and reads it back with `grep`.
+Agents write temp files, renders, clones and inspection worktrees under `node <hooks>/proteus-scratch.js --path <key>` (`<git-common-dir>/proteus/scratch/<key>/`), keyed `<run>-<id>` per ticket (its contracts worker included), `<run>` for QA and the guide. The edit guards allow writes there to every agent, from a worktree or not, while a run is open. `/tmp` is RAM; a run that leaves its scratch behind fills it until the OOM killer takes the terminal. The same hook watches every Bash call, the lead's included: a new entry directly in the temp dir, owned by this user and named in the command or its output, is ledgered under the agent's key. Without context-mode, this dir is also where an agent puts output too long to read whole, and reads it back with `grep`.
 
 - **Ticket merged** (step 7): `--sweep <run>-<id>` after the agents are stopped.
 - **Run closed** (step 8): `--sweep <run>`, which takes every `<run>-*` key with it.

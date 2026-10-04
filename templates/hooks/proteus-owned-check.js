@@ -4,7 +4,8 @@
 //                   (proteus-worktree.js installs this as that worktree's pre-commit hook)
 //   --ci <base>     CI on a proteus-work/<run>/<id> PR: paths changed since <base> against the "Owned:" line
 //                   of the PR body (env PR_BODY), entries separated by commas or spaces
-// Matching is proteus-lib's ownedMatch, the same rule the edit hooks apply. Exit 1 lists the paths outside the list.
+// Matching is proteus-lib's ownedMatch, the same rule the edit hooks apply; the owned-path list file itself is
+// refused in both modes whatever the globs (lib.isOwnedList). Exit 1 lists the paths outside the list.
 "use strict";
 const path = require("path");
 const { execFileSync } = require("child_process");
@@ -30,7 +31,8 @@ if (mode === "--staged") {
     process.exit(1);
   }
   from = "the PR body's Owned: line";
-  bad = names([`${base}...HEAD`]).filter((p) => !owned.some((g) => lib.ownedMatch(g, p)));
+  // the owned-path list itself fails whatever the line says, as ownedDenial refuses it for --staged
+  bad = names([`${base}...HEAD`]).filter((p) => lib.isOwnedList(process.cwd(), p) || !owned.some((g) => lib.ownedMatch(g, p)));
 } else {
   console.error("usage: node proteus-owned-check.js --staged | --ci <base-ref>");
   process.exit(2);
