@@ -27,6 +27,7 @@ The scout reads the repo, `CONTEXT.md`, and the work order, then proposes:
 
 - **Teams**, each a real-world role a studio or firm would hire for this work, one line of what it owns. Four to eight teams for most projects; a team that would own one ticket is merged into another.
 - **Per team**: `Owns` (paths, file types, or named parts of a shared artifact), `Never touches`, deliverable format, its checks (mechanical first, rubric second), what its verifier adds, required research sources (standards bodies, official docs, trade references), and skills from skills.sh and installed plugins, at most eight.
+- **`Safety`** for a team whose deliverables change a live system (system tuning, live infrastructure): how agents run them without touching the host, for example privileged steps only inside `unshare -rm` with mocks bound over the real tool paths, no `sudo`. The role prompts paste it into every brief (`roles.md`); a lesson fires only after the first failure.
 - **`teams/ROUTING.md`**: one row per deliverable type or path pattern → owning team. The lead routes by this table only; a ticket with no matching row is a question for the human, then a new row.
 - **Qa and security** stay cross-cutting. Security's scope in non-code work: personal data, credentials, money movement, legal exposure, anything published.
 

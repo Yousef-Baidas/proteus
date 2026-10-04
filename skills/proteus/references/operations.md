@@ -1,6 +1,6 @@
 # Operations
 
-Commands the human types mid-run, the stall check, and scratch. Each runs before anything else in the turn it arrives in. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; other names per `harnesses.md`.
+Commands the human types mid-run, the stall check, scratch, and installs. Each runs before anything else in the turn it arrives in. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; other names per `harnesses.md`.
 
 ## `status`
 
@@ -42,6 +42,10 @@ Agents write temp files, renders, clones and inspection worktrees under `node <h
 - **Safety net**: the autostart runs `--sweep --stale` in the background each session (done and idle 72h, or idle 7 days); `proteus-state` shows `scratch=<MB>` over 1 GB, and then `--sweep --all-done` clears every key whose branch is gone.
 
 A sweep deletes only ledgered entries and scratch dirs, re-checks each (same inode, this user, directly in the temp dir), unlinks a symlink without following it, removes a git worktree with `git worktree remove --force` and `prune`, and prints the MB freed plus a `kept <path>: <why>` line for anything it refused, such as a locked worktree.
+
+## Installs
+
+An `install.js` run (`--update` and `--doctor --fix` included) that changes `~/.claude/agents` takes effect only in a new session: Claude Code loads agent types at session start. Tell the human to restart before the next spawn, and spawn no other agent type meanwhile: it lacks the role's tools, model and rules.
 
 ## Revision mode
 
