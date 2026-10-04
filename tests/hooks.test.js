@@ -211,6 +211,30 @@ ok("guard sub: .. inside worktree normalised", r.code === 2 && /NEEDS src\/other
 r = run(LG, sp("Edit", { file_path: "../repo/src/x.ts" }));
 ok("guard sub: .. escape into main checkout denied with worktree hint", r.code === 2 && r.err.includes(`yours is ${WT}: edit ${path.join(WT, "src/x.ts")}`), r.err);
 ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.join(W, "scratch.txt") })).code === 0);
+// one worker, one worktree: a sibling's worktree is refused even on a path its own list owns
+{
+  const RB = path.join(W, "repo-bind"), WA = path.join(W, "bind-a"), WB = path.join(W, "bind-b");
+  fs.mkdirSync(RB); g(RB, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(RB, "a.txt"), "a\n"); g(RB, "add", "-A"); g(RB, "commit", "-qm", "init");
+  g(RB, "branch", "proteus/rb");
+  g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/1", WA, "proteus/rb"); g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/2", WB, "proteus/rb");
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"] });
+  const inA = path.join(WA, "src", "lighting", "a.ts"), inB = path.join(WB, "src", "lighting", "a.ts"), rec = (id) => { try { return fs.readFileSync(path.join(RB, ".git", "proteus", "agents", `agent-${id}`), "utf8").trim(); } catch { return ""; } };
+  const ed = (id, file, cwd = RB) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd, transcript_path: undefined }), { cwd: RB });
+  r = ed("c1", inB, WA);
+  ok("guard bind: agent whose cwd is a prepared worktree is refused in a sibling's owned path",
+    r.code === 2 && r.err.includes(`src/lighting/a.ts is in ${WB}, another worker's worktree; yours is ${WA} (your cwd)`) && ed("c1", inA, WA).code === 0, r.err);
+  // a subagent's cwd stays the lead's: its first edit in a prepared worktree binds it there
+  ok("guard bind: first edit binds the agent to that worktree", ed("b1", inA).code === 0 && rec("b1") === WA);
+  fs.mkdirSync(path.dirname(inA), { recursive: true }); fs.writeFileSync(inA, "x\n");
+  r = ed("b1", inB);
+  ok("guard bind: bound agent with uncommitted work is refused in a sibling worktree", r.code === 2 && r.err.includes(`yours is ${WA} (uncommitted work there)`) && /NEEDS src\/lighting\/a\.ts/.test(r.err), r.err);
+  r = ed("b1", path.join(RB, "src", "x.ts"));
+  ok("guard bind: main-checkout refusal names the bound worktree", r.code === 2 && r.err.includes(`yours is ${WA}: edit ${path.join(WA, "src", "x.ts")}`), r.err);
+  ok("guard bind: another agent binds to the sibling", ed("b2", inB).code === 0 && ed("b2", inB).code === 0);
+  g(WA, "add", "-A"); g(WA, "commit", "-qm", "contract");
+  ok("guard bind: committed in its own, the agent moves on (contracts worker)", ed("b1", inB).code === 0 && rec("b1") === WB);
+  ok("guard bind: owned list still applies in the bound worktree", ed("b3", path.join(WB, "src", "other.ts")).code === 2);
+}
 ok("guard sub: scout skills.txt allowed, other file denied", run(LG, pre("Write", { file_path: "teams/backend/skills.txt" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 0 &&
   run(LG, pre("Write", { file_path: "teams/backend/PROFILE.md" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 2);
 ok("guard sub: Read and Bash not path-checked", run(LG, sp("Read", { file_path: path.join(REPO, "src/a.ts") })).code === 0);
