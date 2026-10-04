@@ -2,6 +2,7 @@
 name: proteus-verifier
 description: Proteus generic verifier for any team. Reviews a diff against its contract and the team's checklist or rubric; never edits.
 model: opus
+effort: high
 tools:
   - Read
   - Grep

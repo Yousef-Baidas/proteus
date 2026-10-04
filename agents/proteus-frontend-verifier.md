@@ -2,6 +2,7 @@
 name: proteus-frontend-verifier
 description: Proteus verifier for frontend tickets. Reviews a diff against its contract; never edits.
 model: opus
+effort: high
 tools:
   - Read
   - Grep

@@ -15,8 +15,11 @@ const { tailLines, legacyWorktreeDir, legacyWorktrees, git } = require(path.join
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
 
 const name = "codex";
-// no default ladder: single-model mode (the lead's model) until models.ladder names the rungs
-const models = null;
+// no default ladder: single-model mode (the lead's model) until models.ladder names the rungs.
+// The tiers differ by effort instead: spawn_agent takes reasoning_effort per spawn (a custom
+// agent file's model_reasoning_effort would override it, so agentFile writes none).
+const models = { ladder: [], floor: "", solo: [], aliases: {}, tiers: { judge: "top@high", build: "top@medium", helper: "top@low" } };
+const spawnEffort = "reasoning_effort";
 const bypass = "PROTEUS=0 codex";
 
 const KINDS = {
@@ -160,6 +163,29 @@ function sessionModel(ev) {
     if (e.type === "turn_context" && typeof e.payload.model === "string" && e.payload.model) return e.payload.model;
   }
   return "";
+}
+
+// the window Codex reports for the session's model (the newest token_count's model_context_window), or 0
+function modelWindow(model, ev) {
+  const lines = tailLines(ev && ev.raw && ev.raw.transcript_path).filter((l) => l.includes('"model_context_window"'));
+  for (const e of entriesBackward(lines)) {
+    const n = e.type === "event_msg" && e.payload.type === "token_count" && e.payload.info && +e.payload.info.model_context_window;
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+// the window the human capped Codex at, or 0: model_auto_compact_token_limit or model_context_window
+// at the root of the project's .codex/config.toml, else of $CODEX_HOME/config.toml
+function contextCap(ev) {
+  const root = (ev && ev.root) || process.cwd();
+  for (const f of [path.join(root, ".codex", "config.toml"), path.join(home, "config.toml")]) {
+    let t;
+    try { t = tomlTables(fs.readFileSync(f, "utf8"))[""]; } catch { continue; }
+    const n = [t.model_auto_compact_token_limit, t.model_context_window].flatMap((v) => { const x = parseInt(String(v || "").replace(/_/g, ""), 10); return x > 0 ? [x] : []; });
+    if (n.length) return Math.min(...n);
+  }
+  return 0;
 }
 
 // ---- install
@@ -451,8 +477,8 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, projectRoot, event, deny, context, keepGoing,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, sandboxRoots, exportEnv,
 };

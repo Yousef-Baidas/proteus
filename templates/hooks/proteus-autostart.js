@@ -308,13 +308,15 @@ function humanSaid(root) {
   return said.length ? ["human said (verbatim, newest last):", ...said].join("\n") : "";
 }
 
-// the ladder for this session: the lead's model, and the two the lead spawns on
+// the ladder for this session: the lead's model, and each role tier's model (@effort where the
+// harness passes effort per spawn)
 function models(ev, root) {
   safe(() => lib.saveLead(ev, root));
   const c = lib.modelCaps(ev, root);
   if (!c.ladder.length) return "models=unknown";
   const lead = c.leadRung >= 0 ? c.ladder[c.leadRung] : "unknown";
-  return `models=lead:${lead},top:${c.top},mid:${c.mid}`;
+  const t = (x) => x.model + (x.effort ? `@${x.effort}` : "");
+  return `models=lead:${lead},judge:${t(c.tiers.judge)},build:${t(c.tiers.build)},helper:${t(c.tiers.helper)}`;
 }
 
 function localState(ad, root, runs, home, pending, drift) {

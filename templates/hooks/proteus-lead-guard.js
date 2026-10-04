@@ -6,9 +6,9 @@
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Sonnet by default, so Haiku) is refused.
-// 3. Context at PROTEUS_HANDOFF_HARD (default 180000) or above: no new Agent spawns. While a linked
-//    skill has drifted from teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier
-//    spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
+// 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
+//    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
+//    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
@@ -61,7 +61,7 @@ lib.run((ev, ad) => {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
-    if (ctx >= lib.envInt("PROTEUS_HANDOFF_HARD", 180000)) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
+    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
     if (PIPELINE.test(ev.spawnType)) {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
@@ -73,7 +73,7 @@ lib.run((ev, ad) => {
   if (!target) return;
   if (ev.tool === "read") {
     if (IMAGE.test(target) && !humanNamed(ev, ad, target))
-      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the ladder's mid model: "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
+      ad.deny(`proteus: the lead does not open images (each costs ~1.5k tokens of lead context). Spawn a subagent on the helper model (helper: in models=): "Read ${target}; answer in 5 lines: <what to check>", or post the path on the review issue for the human. ${ad.bypass} skips this guard.`, { json: true });
     return; // lib.run exits 0 once stdout drains
   }
   if (ev.tool !== "edit") return;
@@ -85,9 +85,10 @@ lib.run((ev, ad) => {
 // the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
 function modelDenial(c, name) {
   if (!c.ladder.length) return ""; // no ladder and no known lead model
-  const use = `use "${c.top}" for hard tickets and every verdict, "${c.mid}" for standard tickets and helpers`;
+  const t = (x) => `"${x.model}"${x.effort ? ` with ${c.effortParam} "${x.effort}"` : ""}`;
+  const use = `use ${t(c.tiers.judge)} for verdicts, contracts, escalations, conflicts and the scout, ${t(c.tiers.build)} for tickets, ${t(c.tiers.helper)} for wave QA, the guide and helpers`;
   if (!name) return `every Agent call names its model (the agent's default may sit above the lead's): ${use}.`;
-  const r = lib.rungOf(c.ladder, name);
+  const r = lib.rungOf(c.ladder, name, c.aliases);
   if (r < 0) return `model "${name}" is not on the ladder (${c.ladder.join(" < ")}); ${use}.`;
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;

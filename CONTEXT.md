@@ -15,5 +15,5 @@ Proteus is a multi-agent build pipeline that installs into a coding-agent CLI (t
 - **run**: one pipeline execution on a run branch, ending in a PR to `main` that the human merges.
 - **harness**: the coding-agent CLI Proteus runs inside (Claude Code, Codex; pi, Gemini, local researched in `docs/harnesses/`), picked by `PROTEUS_HARNESS` or by the folder the hooks live in.
 - **adapter**: one `templates/hooks/proteus-harness-<harness>.js` that turns the harness's hook payload into a Proteus event and answers back (`deny`, `context`, `keepGoing`), plus its install-side hooks (skill dirs, agent format, `registerLead`, `prepareWorker`); the shared hooks never read harness JSON.
-- **ladder**: the ordered model list per harness with a floor (Claude: haiku < sonnet < opus < fable, floor sonnet); `top` and `mid` are picked from it relative to the lead.
+- **ladder**: the ordered model list per harness with a floor (Claude: haiku < sonnet < opus < fable, floor sonnet); the role tiers `judge`, `build` and `helper` are picked from it relative to the lead.
 - **self-host**: Proteus running its own pipeline on this repo, where the project and the Proteus checkout are the same directory.

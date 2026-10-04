@@ -702,20 +702,37 @@ function lockDrift(root, fresh = false) {
 const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join(", ")}. Ask the human to run \`npx skills update <skill>\` so the copy matches the lock again, or \`node teams/link-skills.js --relock\` to accept this machine's copies and commit teams/skills-lock.json.`;
 
 // ---- model ladder: the lead is whatever model the session runs; no agent goes above it.
-// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo } overrides the
-// defaults; a project's `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none
-// floor=haiku`) overrides floor and solo. A solo model never runs as a subagent: at most one per
-// project, and that one is the lead when the session runs on it.
+// Rungs cheapest first. ~/.claude/proteus.json "models": { ladder, floor, solo, aliases } overrides
+// the defaults (aliases, other names of a rung's model, merge over the harness's); a project's
+// `models:` line in AGENTS.md (the human's call, e.g. `models: solo=none floor=haiku`) overrides
+// floor and solo. A solo model never runs as a subagent: at most one per project, and that one
+// is the lead when the session runs on it.
+// Roles map to three tiers, each a model and an effort: judge (verifiers, scout, contracts,
+// escalations, conflicts, QA at milestone and close), build (tickets) and helper (QA per wave,
+// guide, research, helpers). A tier is "<model>[@<effort>]" or { model, effort }; the model is top
+// (the highest rung the lead may staff), mid (one under it, not under the floor), a rung or a
+// model id, kept between the floor and top. "models": { "tiers": {...} } and judge=/build=/helper=
+// on the AGENTS.md line override the harness's tiers. Effort applies only where the harness
+// passes it per spawn (adapter spawnEffort, the spawn tool's parameter name); elsewhere it is "".
 // the harness's default ladder; none (a CLI whose lineup Proteus does not know) is single-model
 // mode, the lead's own model as the only rung, until models.ladder names one
-const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [] };
+const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [], aliases: {} };
+const TIERS = { judge: "top", build: "mid", helper: "mid" };
+function tierSpec(v) {
+  if (v && typeof v === "object") return { model: String(v.model || "").toLowerCase(), effort: String(v.effort || "").toLowerCase() };
+  const [model = "", effort = ""] = String(v || "").toLowerCase().split("@");
+  return { model, effort };
+}
 
-// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins
-function rungOf(ladder, name) {
+// ladder index of a model name or id ("claude-opus-5-5[1m]" → opus); the longest matching rung wins,
+// else the longest matching alias names the rung ("claude-mythos-5-1" → fable with { mythos: "fable" })
+function rungOf(ladder, name, aliases = {}) {
   const n = String(name || "").toLowerCase();
-  let best = -1;
-  ladder.forEach((r, i) => { if (n.includes(r) && (best < 0 || r.length > ladder[best].length)) best = i; });
-  return best;
+  const longest = (keys) => keys.filter((k) => k && n.includes(k)).sort((a, b) => b.length - a.length)[0];
+  const r = longest(ladder);
+  if (r) return ladder.indexOf(r);
+  const a = longest(Object.keys(aliases));
+  return a ? ladder.indexOf(aliases[a]) : -1;
 }
 
 // the session's model, as the harness finds it
@@ -737,7 +754,11 @@ function modelPolicy(root) {
   const list = (v) => (Array.isArray(v) ? v : String(v || "").split(",")).map((x) => String(x).trim().toLowerCase()).filter((x) => x && x !== "none");
   const d = modelDefaults();
   const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? list(cfg.ladder) : d.ladder;
-  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo };
+  const aliases = {}, own = cfg.aliases && typeof cfg.aliases === "object" ? cfg.aliases : {};
+  for (const [k, v] of Object.entries({ ...d.aliases, ...own })) if (typeof v === "string") aliases[k.toLowerCase()] = v.toLowerCase();
+  const tiers = {}, ownTiers = cfg.tiers && typeof cfg.tiers === "object" ? cfg.tiers : {};
+  for (const [k, v] of Object.entries({ ...TIERS, ...d.tiers, ...ownTiers })) if (k in TIERS) tiers[k] = tierSpec(v);
+  const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo, aliases, tiers };
   let agents = "";
   try { agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"); } catch {}
   const line = /^models:(.*)$/m.exec(agents);
@@ -745,25 +766,59 @@ function modelPolicy(root) {
     for (const [, k, v] of line[1].matchAll(/(\w+)=(\S+)/g)) {
       if (k === "floor") pol.floor = v.toLowerCase();
       if (k === "solo") pol.solo = list(v);
+      if (k in TIERS) pol.tiers[k] = tierSpec(v);
     }
   }
   return pol;
 }
 
-// what this session may spawn: top (hard tickets, every verdict) and mid (standard tickets, helpers)
+// what this session may spawn: top and mid, and the model and effort of each role tier
 function modelCaps(ev, root) {
   const pol = modelPolicy(root);
   const lead = leadModel(ev) || savedLead(ev, root);
   const ladder = pol.ladder.length ? pol.ladder : lead ? [String(lead).toLowerCase()] : [];
-  const { solo } = pol;
-  if (!ladder.length) return { ladder, solo, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "" }; // nothing known to enforce
-  const L = rungOf(ladder, lead);
+  const { solo, aliases } = pol;
+  const effortParam = harness().spawnEffort || "";
+  const none = { model: "", effort: "" };
+  if (!ladder.length) return { ladder, solo, aliases, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "", effortParam, tiers: { judge: none, build: none, helper: none } }; // nothing known to enforce
+  const L = rungOf(ladder, lead, aliases);
   // highest rung at or under the lead that is not solo (the lead is that one instance); unknown lead: the whole ladder
   let cap = L < 0 ? ladder.length - 1 : L;
   while (cap > 0 && solo.includes(ladder[cap])) cap--;
-  const fl = rungOf(ladder, pol.floor);
+  const fl = rungOf(ladder, pol.floor, aliases);
   const floor = Math.min(fl < 0 ? 0 : fl, cap); // a lead below the floor takes the floor down with it
-  return { ladder, solo, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[Math.max(floor, cap - 1)], floorName: ladder[floor] };
+  const mid = Math.max(floor, cap - 1);
+  // a tier's rung: top, mid, or the named model's, held between the floor and top; an unknown or
+  // solo model falls back to the default tier's rung. A named model in range keeps its full id.
+  const tier = (t, dflt) => {
+    const named = !["top", "mid"].includes(t.model);
+    let r = t.model === "top" ? cap : t.model === "mid" ? mid : rungOf(ladder, t.model, aliases);
+    if (r < 0 || solo.includes(ladder[r])) r = dflt === "top" ? cap : mid;
+    const held = Math.min(Math.max(r, floor), cap);
+    return { model: named && held === r && rungOf(ladder, t.model, aliases) === r ? t.model : ladder[held], effort: effortParam ? t.effort : "" };
+  };
+  const tiers = {};
+  for (const k of Object.keys(TIERS)) tiers[k] = tier(pol.tiers[k], TIERS[k]);
+  return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[mid], floorName: ladder[floor], effortParam, tiers };
+}
+
+// ---- context window: the handoff lines are fractions of the lead's window, the smallest of the
+// model's nominal window (adapter modelWindow), the cap the human set in the harness (adapter
+// contextCap: Claude Code's autoCompactWindow, Codex's model_auto_compact_token_limit) and
+// "contextWindow" in ~/.claude/proteus.json; 200k when none is known. A configured cap wins over
+// a 1M model, so a 200k cap keeps the lines at 150k and 180k.
+const DEFAULT_WINDOW = 200000;
+function contextWindow(ev, root) {
+  const h = harness();
+  const model = leadModel(ev) || savedLead(ev, root);
+  const known = [h.modelWindow ? h.modelWindow(model, ev) : 0, h.contextCap ? h.contextCap(ev, model) : 0, +proteusConfig().contextWindow].filter((n) => n > 0);
+  return known.length ? Math.min(...known) : DEFAULT_WINDOW;
+}
+// at: the journal tells the lead to hand off; hard: the guard refuses new spawns. PROTEUS_HANDOFF_AT
+// and PROTEUS_HANDOFF_HARD (tokens) override them.
+function handoffLines(ev, root) {
+  const w = contextWindow(ev, root);
+  return { window: w, at: envInt("PROTEUS_HANDOFF_AT", Math.round(w * 0.75)), hard: envInt("PROTEUS_HANDOFF_HARD", Math.round(w * 0.9)) };
 }
 
 // gh query → cache; on any gh failure the old cache stays and null is returned
@@ -784,6 +839,6 @@ module.exports = {
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
