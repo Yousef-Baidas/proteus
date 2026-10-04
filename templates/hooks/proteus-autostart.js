@@ -195,6 +195,8 @@ function agentPatches(ad, home, root, notes) {
   const cmd = `node "${path.join(home, "install.js")}" --project`;
   if (r.error) notes.push(`proteus: ${r.error}; generated agents left as they were. Tell the human; once fixed, ${cmd}`);
   else if (r.written.length + r.removed.length) notes.push(`proteus: ${[...r.written.map((p) => `${p} regenerated`), ...r.removed.map((p) => `${p} removed`)].join(", ")} (${r.file}); agent types load at session start, so the change applies from the next session`);
+  // a link the repo commits (#22); an older checkout's module has no refused list
+  if (!r.error && r.refused && r.refused.length) notes.push(`proteus: refused ${r.refused.join(", ")} (a link, or a link on the way); no generated agent written or removed through it. Tell the human`);
 }
 
 // keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does

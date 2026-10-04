@@ -5,6 +5,8 @@
 // session-start sync. A marked file whose entry is gone is removed. Generated files are git-excluded
 // (machine-local, like the hooks); the patch file is the project's and committed, unless guest mode.
 // A bad file (invalid JSON, an unknown agent or key, a wrong type) returns {error} and writes nothing.
+// A link the repo commits at .claude, its agents/ or a generated file's path (to ~/.claude, say) is
+// never written or removed through: it is listed in refused, and left alone (#22).
 // Used by install.js and proteus-autostart.js; no exit codes of its own, and it never throws.
 "use strict";
 const fs = require("fs");
@@ -24,6 +26,20 @@ const relOf = (root, p) => path.relative(root, p).split(path.sep).join("/");
 const norm = (s) => String(s).replace(/^﻿/, "").replace(/\r\n/g, "\n");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };
 const isGenerated = (text) => text !== null && norm(text).split("\n", 2).some((l) => l.startsWith(MARK));
+const lstat = (p) => { try { return fs.lstatSync(p); } catch { return null; } };
+// root (resolved once) joined with segs: each component below root is missing or a real directory,
+// never a link (a junction on Windows lstats as one too) or a file
+function ownable(root, segs) {
+  let d;
+  try { d = fs.realpathSync(root); } catch { d = path.resolve(root); }
+  for (const s of segs) {
+    d = path.join(d, s);
+    const st = lstat(d);
+    if (!st) return true;
+    if (st.isSymbolicLink() || !st.isDirectory()) return false;
+  }
+  return true;
+}
 
 // frontmatter as fields [{key, lines}] (key "" for comments and blank lines) and the body; null without one
 function split(text) {
@@ -127,7 +143,7 @@ function load(root, h, names) {
   return { patches: v, file: rel, present: true };
 }
 
-// what apply() would do: {error} or {write: [{path, text}], remove: [path], kept: [{path, name}], file}
+// what apply() would do: {error} or {write: [{path, text}], remove: [path], kept: [{path, name}], refused: [path], file}
 // home: the Proteus checkout (shipped agents in home/agents); ad: the harness adapter (name, agentFile)
 function plan(root, home, ad) {
   const h = ad && ad.name === "codex" ? "codex" : "claude";
@@ -136,7 +152,8 @@ function plan(root, home, ad) {
   const names = shipped.map((f) => f.slice(0, -3));
   const l = load(root, h, names);
   if (l.error) return { error: l.error, file: l.file };
-  const dir = agentsDir(root, h), out = { write: [], remove: [], kept: [], file: l.file, present: l.present, harness: h };
+  const dir = agentsDir(root, h), out = { write: [], remove: [], kept: [], refused: [], file: l.file, present: l.present, harness: h };
+  if (!ownable(root, [DIR(h), "agents"])) { out.refused.push(dir); return out; }
   const want = new Set();
   for (const [name, p] of Object.entries(l.patches)) {
     const f = `${name}.md`;
@@ -146,6 +163,7 @@ function plan(root, home, ad) {
     if (!a) return { error: `${l.file}: "${name}": the shipped agent has no frontmatter to patch`, file: l.file };
     const dest = path.join(dir, a.name);
     want.add(a.name);
+    if (lstat(dest) && lstat(dest).isSymbolicLink()) { out.refused.push(dest); continue; }
     const cur = read(dest);
     // an unmarked file there is the project's own copy: never overwritten
     if (cur !== null && !isGenerated(cur)) { out.kept.push({ path: dest, name }); continue; }
@@ -175,13 +193,13 @@ function exclude(root, rels) {
   fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + add.join("\n") + "\n");
 }
 
-// carries the plan out: {error} or {written, removed, kept: [{path, name}], file} with paths relative
+// carries the plan out: {error} or {written, removed, kept: [{path, name}], refused, file} with paths relative
 // to root, "/"-separated. remove: removes a file and returns true (install.js passes its guarded remover).
 function apply(root, home, ad, remove) {
   try {
     const p = plan(root, home, ad);
     if (p.error) return p;
-    const r = { written: [], removed: [], kept: p.kept.map((k) => ({ ...k, path: relOf(root, k.path) })), file: p.file, present: p.present };
+    const r = { written: [], removed: [], kept: p.kept.map((k) => ({ ...k, path: relOf(root, k.path) })), refused: p.refused.map((x) => relOf(root, x)), file: p.file, present: p.present };
     for (const w of p.write) {
       fs.mkdirSync(path.dirname(w.path), { recursive: true });
       fs.writeFileSync(w.path, w.text);
