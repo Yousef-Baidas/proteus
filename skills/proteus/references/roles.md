@@ -63,8 +63,14 @@ Long jobs, report-once and scratch rules as above. Caveman lite.
 
 ## Guide (human review gate)
 ```
-Run <run>, milestone <name>, mode <attended|unattended>. Tickets: #<n>, ... Diff: <merge-base>..proteus/<run>. QA: WAVE-GREEN. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
+Run <run>, milestone <name>, mode <attended|unattended>. Tickets: #<n>, ... Diff: <merge-base>..proteus/<run>. QA: WAVE-GREEN. Gates: <commands>. Debt issue: #<d>. Acceptance: <run-log comment url>. Scratch key: <run>.
 Open the review issue with brief, evidence, and the open debt lines per your agent instructions, post REVIEW <milestone> <url> to the task, exit.
+```
+
+## Grader (unattended gate, `top`)
+```
+Run <run>, milestone <name>, mode grade. Review issue #<r>. Acceptance: <run-log comment url>. Scratch key: <run>.
+Grade the evidence against the frozen checks per your agent instructions, comment AUTO-ACCEPT or AUTO-HOLD on #<r>, exit.
 ```
 
 ## QA (wave | milestone | close)
