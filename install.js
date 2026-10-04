@@ -499,7 +499,7 @@ function excludeLocal(root, list = EXCLUDE, what = "settings.local.json, Proteus
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, text + add.join("\n") + "\n");
   }
-  log(`exclude  -> ${path.relative(root, file) || file} (${what})`);
+  if (what) log(`exclude  -> ${path.relative(root, file) || file} (${what})`);
 }
 
 // teams/.gitignore is the repo's once copied; a pattern shipped since (a new CLI's skill links)
@@ -511,6 +511,75 @@ function teamsIgnore(teams, act) {
   if (act && text === null) fs.copyFileSync(path.join(SHIPPED_TEAMS, ".gitignore"), ign);
   else if (act && add.length) fs.appendFileSync(ign, (text && !text.endsWith("\n") ? "\n" : "") + add.join("\n") + "\n");
   return add;
+}
+
+// teams/.proteus-base.json: {"<rel>": {"sha256": ...}} per repo-owned team file, the hashText of the
+// shipped text it was copied from; committed with teams/ (in guest mode it lives in the guest dir).
+// A missing file is copied and recorded; one with no record gets the current shipped hash, silently.
+// When the shipped text moved past the record and the copy differs from the new text, the new text
+// goes beside the copy as <file>.upstream and the recorded one, found in this checkout's history, as
+// <file>.base, both git-excluded; one line says how to merge, and the record moves on. A record this
+// checkout never shipped (a teammate's newer release) is left alone, so an older checkout never
+// offers its text as an update.
+const BASE_FILE = ".proteus-base.json";
+function teamUpstream(root, teams, rels) {
+  const file = path.join(teams, BASE_FILE), base = readJson(file) || {}, next = { ...base };
+  const guest = !!GUEST && samePath(real(root), real(GUEST)), excl = [];
+  const shown = (p) => (guest ? p : path.relative(root, p).split(path.sep).join("/"));
+  for (const rel of rels) {
+    const src = path.join(SHIPPED_TEAMS, ...rel.split("/")), dest = path.join(teams, ...rel.split("/"));
+    const text = fs.readFileSync(src, "utf8"), h = hashText(text), rec = base[rel] && typeof base[rel] === "object" ? base[rel] : null;
+    const record = () => { next[rel] = { sha256: h }; };
+    if (!lstat(dest)) { fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest); record(); continue; }
+    if (!rec || typeof rec.sha256 !== "string") { record(); continue; }
+    if (rec.sha256 === h) continue;
+    const past = teamHistory(rel);
+    if (past && !past.has(rec.sha256)) continue;
+    record();
+    const cur = readText(dest);
+    if (cur !== null && hashText(cur) === h) continue; // the copy already has the new text
+    const up = `${dest}.upstream`, old = `${dest}.base`;
+    // a merge still pending from an earlier release keeps its .base: the copy was made from that text
+    const pending = !!lstat(up);
+    fs.writeFileSync(up, norm(text));
+    let hasBase = pending && !!lstat(old);
+    if (!pending) {
+      hasBase = !!past && past.get(rec.sha256) !== undefined;
+      if (hasBase) fs.writeFileSync(old, past.get(rec.sha256)); else if (lstat(old)) safeRemove(old, ownedRoots());
+    }
+    excl.push(up, ...(hasBase ? [old] : []));
+    log(hasBase ? `upstream -> ${shown(up)}: this release changed the shipped ${rel}; merge it: git merge-file ${shown(dest)} ${shown(old)} ${shown(up)}, then delete the .upstream and .base files`
+      : `upstream -> ${shown(up)}: this release changed the shipped ${rel}; merge it into ${shown(dest)} by hand (git diff --no-index ${shown(dest)} ${shown(up)}), then delete it`);
+  }
+  if (!guest && excl.length) excludeLocal(root, excl.map((p) => path.relative(root, p).split(path.sep).join("/")), null);
+  if (JSON.stringify(next) !== JSON.stringify(base)) writeJson(file, Object.fromEntries(Object.keys(next).sort().map((k) => [k, next[k]])));
+}
+// every version of templates/teams/<rel> in this checkout's history as hashText -> text (LF); null
+// when the checkout has no git history to read
+function teamHistory(rel) {
+  const p = `templates/teams/${rel}`, r = git(["log", "--format=%H", "--no-renames", "--", p], HERE);
+  if (!r.ok) return null;
+  const want = r.out.split("\n").filter((l) => /^[0-9a-f]{40}$/.test(l)).map((c) => `${c}:${p}`);
+  const out = want.length ? spawnSync("git", ["cat-file", "--batch"], { cwd: HERE, input: want.join("\n") + "\n", maxBuffer: 1 << 28 }).stdout : null;
+  const m = new Map();
+  let at = 0;
+  for (let i = 0; out && i < want.length; i++) {
+    const nl = out.indexOf(10, at), head = out.toString("utf8", at, nl).split(" ");
+    at = nl + 1;
+    if (head[1] !== "blob") continue;
+    const size = Number(head[2]), t = norm(out.toString("utf8", at, at + size));
+    if (!m.has(hashText(t))) m.set(hashText(t), t);
+    at += size + 1;
+  }
+  return m;
+}
+// pending <file>.upstream files under teams/, "/"-separated relative to teams/
+function upstreamPending(teams) {
+  const out = [];
+  const look = (rel) => { if (isFile(path.join(teams, ...rel.split("/")))) out.push(rel); };
+  look("ROUTING.md.upstream");
+  for (const p of isDir(teams) ? L.profiles(teams) : []) for (const f of ["PROFILE.md", "skills.txt"]) look(`${p}/${f}.upstream`);
+  return out;
 }
 
 // root: where teams/ goes (the checkout, or its guest dir)
@@ -530,14 +599,13 @@ function copyTeams(root) {
       && crypto.createHash("sha256").update(norm(t)).digest("hex") === OLD_WORKER_SETTINGS && safeRemove(stale, ownedRoots())) {
     log("removed  teams/templates/hooks/settings.local.json (renamed to worktree-settings.local.json)");
   }
-  // the routing table is the repo's once copied, like PROFILE.md
-  if (!lstat(path.join(teams, "ROUTING.md"))) fs.copyFileSync(path.join(SHIPPED_TEAMS, "ROUTING.md"), path.join(teams, "ROUTING.md"));
+  // the routing table, PROFILE.md and skills.txt are the repo's once copied; a later shipped change
+  // to one the repo has comes as <file>.upstream to merge (teamUpstream)
+  const owned = ["ROUTING.md", ...L.profiles(SHIPPED_TEAMS).flatMap((p) => ["PROFILE.md", "skills.txt"].map((f) => `${p}/${f}`))];
+  teamUpstream(root, teams, owned.filter((rel) => isFile(path.join(SHIPPED_TEAMS, rel))));
   for (const p of L.profiles(SHIPPED_TEAMS)) {
     const src = path.join(SHIPPED_TEAMS, p), dest = path.join(teams, p);
     fs.mkdirSync(dest, { recursive: true });
-    for (const f of ["PROFILE.md", "skills.txt"]) {
-      if (isFile(path.join(src, f)) && !lstat(path.join(dest, f))) fs.copyFileSync(path.join(src, f), path.join(dest, f));
-    }
     // required.txt is the pipeline's, not the scout's or the repo's: always refreshed
     if (isFile(path.join(src, "required.txt"))) copyFile(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
@@ -1266,6 +1334,13 @@ async function doctor(fix) {
     } else {
       check(() => isFile(path.join(base, "teams", "ROUTING.md")) ? ["ok", "teams/ROUTING.md"]
         : ["WARN", "teams/ROUTING.md missing", `${self} --project`]);
+      // a release changed a team file the repo owns; --project left the new text beside it
+      check(() => {
+        const up = upstreamPending(path.join(base, "teams"));
+        return up.length ? ["WARN", `shipped team file changes not merged: ${up.map((u) => `teams/${u}`).join(", ")}`,
+          "merge each into the file beside it (--project printed the git merge-file line), then delete the .upstream and .base files"]
+          : ["ok", "no pending teams/*.upstream"];
+      });
       if (guest) {
         const ad = () => (cxh ? cx() : require(path.join(HERE, "templates", "hooks", "proteus-harness-claude.js")));
         check(() => {
