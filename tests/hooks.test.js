@@ -209,7 +209,8 @@ ok("guard sub: exact owned file + NotebookEdit", run(LG, sp("NotebookEdit", { no
 r = run(LG, sp("Edit", { file_path: "src/lighting/../other.ts" }));
 ok("guard sub: .. inside worktree normalised", r.code === 2 && /NEEDS src\/other\.ts/.test(r.err), r.err);
 r = run(LG, sp("Edit", { file_path: "../repo/src/x.ts" }));
-ok("guard sub: .. escape into main checkout denied with worktree hint", r.code === 2 && r.err.includes(`yours is ${WT}: edit ${path.join(WT, "src/x.ts")}`), r.err);
+const fw = (p) => p.split(path.sep).join("/");
+ok("guard sub: .. escape into main checkout denied with worktree hint", r.code === 2 && r.err.includes(`yours is ${fw(WT)}: edit ${fw(path.join(WT, "src/x.ts"))}`), r.err);
 ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.join(W, "scratch.txt") })).code === 0);
 // one worker, one worktree: a sibling's worktree is refused even on a path its own list owns
 {
@@ -222,14 +223,14 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   const ed = (id, file, cwd = RB) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd, transcript_path: undefined }), { cwd: RB });
   r = ed("c1", inB, WA);
   ok("guard bind: agent whose cwd is a prepared worktree is refused in a sibling's owned path",
-    r.code === 2 && r.err.includes(`src/lighting/a.ts is in ${WB}, another worker's worktree; yours is ${WA} (your cwd)`) && ed("c1", inA, WA).code === 0, r.err);
+    r.code === 2 && r.err.includes(`src/lighting/a.ts is in ${fw(WB)}, another worker's worktree; yours is ${fw(WA)} (your cwd)`) && ed("c1", inA, WA).code === 0, r.err);
   // a subagent's cwd stays the lead's: its first edit in a prepared worktree binds it there
   ok("guard bind: first edit binds the agent to that worktree", ed("b1", inA).code === 0 && rec("b1") === WA);
   fs.mkdirSync(path.dirname(inA), { recursive: true }); fs.writeFileSync(inA, "x\n");
   r = ed("b1", inB);
-  ok("guard bind: bound agent with uncommitted work is refused in a sibling worktree", r.code === 2 && r.err.includes(`yours is ${WA} (uncommitted work there)`) && /NEEDS src\/lighting\/a\.ts/.test(r.err), r.err);
+  ok("guard bind: bound agent with uncommitted work is refused in a sibling worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)} (uncommitted work there)`) && /NEEDS src\/lighting\/a\.ts/.test(r.err), r.err);
   r = ed("b1", path.join(RB, "src", "x.ts"));
-  ok("guard bind: main-checkout refusal names the bound worktree", r.code === 2 && r.err.includes(`yours is ${WA}: edit ${path.join(WA, "src", "x.ts")}`), r.err);
+  ok("guard bind: main-checkout refusal names the bound worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)}: edit ${fw(path.join(WA, "src", "x.ts"))}`), r.err);
   ok("guard bind: another agent binds to the sibling", ed("b2", inB).code === 0 && ed("b2", inB).code === 0);
   g(WA, "add", "-A"); g(WA, "commit", "-qm", "contract");
   ok("guard bind: committed in its own, the agent moves on (contracts worker)", ed("b1", inB).code === 0 && rec("b1") === WB);

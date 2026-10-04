@@ -25,11 +25,12 @@ const node = (script, args, opts = {}) => spawnSync(process.execPath, [script, .
 let r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/"]);
 ok("worktree script installs the pre-commit hook", r.status === 0 && !r.stderr, r.stdout + r.stderr);
 
+const ID = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 const commit = (file) => {
   fs.mkdirSync(path.dirname(path.join(WT, file)), { recursive: true });
   fs.writeFileSync(path.join(WT, file), "x\n");
   g(WT, "add", file);
-  return spawnSync("git", ["commit", "-qm", "feat: x"], { cwd: WT, encoding: "utf8" });
+  return spawnSync("git", ["commit", "-qm", "feat: x"], { cwd: WT, encoding: "utf8", env: { ...process.env, ...ID } });
 };
 r = commit("docs/notes.md");
 ok("pre-commit: a staged path outside the owned list blocks the commit and is named",
