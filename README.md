@@ -170,7 +170,7 @@ Details and the exact commands: `skills/proteus/references/enforcement.md`.
 
 ## Commit rules
 
-Every agent commits with terse, professional [Conventional Commits](https://www.conventionalcommits.org/). **No AI attribution, no `Co-Authored-By`, ever.** See [`skills/proteus/references/commits.md`](skills/proteus/references/commits.md). The installer sets `attribution` in `~/.claude/settings.json` so Claude Code stops offering the trailer.
+Every agent commits with terse, professional [Conventional Commits](https://www.conventionalcommits.org/). **No AI attribution and no `Co-Authored-By` by default.** See [`skills/proteus/references/commits.md`](skills/proteus/references/commits.md). The installer sets `attribution` in `~/.claude/settings.json` so Claude Code stops offering the trailer. A repo whose own rules require the trailer opts in with the line `attribution: allow` in its `CONVENTIONS.md`: the hook then lets AI trailers through, in local commits and in CI. Its agents still need Claude Code to add the trailer there, so set `attribution` in that repo's `.claude/settings.json` (project settings override `~/.claude/settings.json`). To keep your own machine-wide attribution setting, put `"attribution": "keep"` in `~/.claude/proteus.json`; install, update and `--doctor` then leave it alone.
 
 ## Install
 

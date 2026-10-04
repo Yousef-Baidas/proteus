@@ -251,8 +251,11 @@ function copyAgents() {
   log(`agents   -> ${dir} (${files.length} shipped, others untouched)`);
 }
 
+// "attribution": "keep" in ~/.claude/proteus.json leaves the user's attribution setting as it is
+const keepAttribution = () => (readJson(CONFIG) || {}).attribution === "keep";
 function setAttribution() {
   const file = path.join(CLAUDE, "settings.json");
+  if (keepAttribution()) { log("settings -> attribution left as set (proteus.json attribution: keep)"); return true; }
   const s = readJson(file);
   if (!s) {
     warn(`warning: ${file} is not valid JSON; left alone. Add by hand:`);
@@ -1165,6 +1168,7 @@ async function doctor(fix) {
     const s = readJson(path.join(CLAUDE, "settings.json"));
     const a = s && s.attribution;
     if (!s) return ["FIX", "~/.claude/settings.json is not valid JSON", "fix it by hand, then re-run"];
+    if (keepAttribution()) return ["ok", "attribution: kept as set (proteus.json attribution: keep)"];
     return a && a.commit === "" && a.pr === "" ? ["ok", "attribution off"] : ["FIX", "attribution not disabled", self];
   }, () => setAttribution());
 

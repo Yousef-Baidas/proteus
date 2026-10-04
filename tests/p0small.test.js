@@ -21,6 +21,36 @@ ok("commit-msg: Generated with trailer rejected", msg(head + "\nGenerated with [
 ok("commit-msg: robot emoji trailer rejected", msg(head + "\n🤖 Generated with [Claude Code](https://x)\n\nCo-Authored-By: Claude <a@b.c>\n") === 1);
 ok("commit-msg: AI Signed-off-by name rejected", msg(head + "\nSigned-off-by: Claude <c@x.com>\n") === 1);
 ok("commit-msg: human Signed-off-by on an .ai domain passes", msg(head + "\nSigned-off-by: Ada Lovelace <ada@acme.ai>\n") === 0);
+
+// a repo that requires the trailer opts in with `attribution: allow` in CONVENTIONS.md (issue #94)
+const optRepo = path.join(W, "opt-in");
+lib.g(W, "init", "-q", "-b", "main", optRepo);
+const msgIn = (m, cwd) => { const f = path.join(W, `msg${n++}`); fs.writeFileSync(f, m); return run(CM, "", { args: [f], cwd }).code; };
+const trailer = head + "\nCo-Authored-By: Claude <noreply@anthropic.com>\n";
+fs.writeFileSync(path.join(optRepo, "CONVENTIONS.md"), "# Conventions\n\n## Commits\n\n- Agent commits carry a Co-Authored-By trailer.\n");
+ok("commit-msg: CONVENTIONS.md without the opt-in line still rejects the trailer", msgIn(trailer, optRepo) === 1);
+fs.appendFileSync(path.join(optRepo, "CONVENTIONS.md"), "- attribution: allow\n");
+ok("commit-msg: CONVENTIONS.md line `attribution: allow` lets the trailer through", msgIn(trailer, optRepo) === 0);
+fs.mkdirSync(path.join(optRepo, "sub"));
+ok("commit-msg: the opt-in is read from the repo root, not the cwd", msgIn(trailer, path.join(optRepo, "sub")) === 0);
+ok("commit-msg: the opt-in does not loosen the subject rules", msgIn("Fix thing\n\nCo-Authored-By: Claude <a@b.c>\n", optRepo) === 1);
+
+// "attribution": "keep" in ~/.claude/proteus.json: install and --doctor leave the user's setting alone (issue #94)
+{
+  const INST = path.join(ROOT, "install.js");
+  const h = path.join(W, "keep-home");
+  fs.mkdirSync(path.join(h, ".claude"), { recursive: true });
+  const mine = { attribution: { commit: "Co-Authored-By: Me <me@example.com>", pr: "x" } };
+  fs.writeFileSync(path.join(h, ".claude", "settings.json"), JSON.stringify(mine));
+  fs.writeFileSync(path.join(h, ".claude", "proteus.json"), JSON.stringify({ attribution: "keep" }));
+  const plain = path.join(W, "keep-cwd"); fs.mkdirSync(plain);
+  let r = run(INST, "", { cwd: plain, env: lib.homeEnv(h) });
+  const after = JSON.parse(fs.readFileSync(path.join(h, ".claude", "settings.json"), "utf8"));
+  ok("install: proteus.json attribution keep leaves settings.json attribution as set", JSON.stringify(after.attribution) === JSON.stringify(mine.attribution) && /attribution left as set/.test(r.out), r.out + r.err);
+  ok("install: the keep key survives the config rewrite", JSON.parse(fs.readFileSync(path.join(h, ".claude", "proteus.json"), "utf8")).attribution === "keep");
+  r = run(INST, "", { cwd: plain, env: lib.homeEnv(h), args: ["--doctor"] });
+  ok("doctor: attribution keep is ok, not a FIX", /ok\s+attribution: kept as set/.test(r.out) && !/FIX\s+attribution/.test(r.out), r.out);
+}
 ok("commit-msg: human Co-Authored-By passes", msg(head + "\nCo-Authored-By: Ada Lovelace <ada@acme.ai>\n") === 0);
 ok("commit-msg: body prose starting Generated with passes", msg("fix(x): do a thing\n\nGenerated with the old tool, now replaced.\n\nSecond paragraph.\n") === 0);
 ok("commit-msg: body mentions of AI outside the trailer pass", msg("fix(x): do a thing\n\nCo-Authored-By lines are not parsed here.\nthe ai module is renamed.\n\nSigned-off-by: Ada <a@b.ai>\n") === 0);
