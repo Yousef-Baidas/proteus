@@ -1,4 +1,6 @@
-# Gates for main, hive/** and proteus/**: npm ci, npm run lint, node tests/run.js on push and pull_request; on pull_request also lints every commit message with templates/hooks/commit-msg.js.
+# Gates for main, hive/** and proteus/**: npm ci, npm run lint, node tests/run.js on Linux, macOS and Windows, on push and pull_request;
+# on pull_request the Linux job also lints every commit message with templates/hooks/commit-msg.js. The `gates` job
+# passes only when every OS does: it is the one check name branch rules and rulesets require.
 name: ci
 on:
   push:
@@ -6,8 +8,12 @@ on:
   pull_request:
     branches: [main, "hive/**", "proteus/**"]
 jobs:
-  gates:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,10 +24,21 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run lint
-      - run: node tests/run.js
+      - name: tests
+        run: node tests/run.js
+        env:
+          # tests/lib.js refuses a temp dir inside the home; the Windows default is under the user profile
+          TEMP: ${{ runner.os == 'Windows' && runner.temp || '' }}
+          TMP: ${{ runner.os == 'Windows' && runner.temp || '' }}
       - name: commit messages
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && runner.os == 'Linux'
         run: |
           for c in $(git rev-list origin/${{ github.base_ref }}..HEAD); do
             git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg" && node templates/hooks/commit-msg.js "$RUNNER_TEMP/msg" || exit 1
           done
+  gates:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test.result }}" = success
