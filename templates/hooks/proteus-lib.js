@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -269,6 +269,19 @@ function gitRoot(dir) {
     if (up === d) return null;
     d = up;
   }
+}
+
+// run file with args and no shell. On win32 a .cmd shim (npx, npm) cannot start without one, so that case falls
+// back to cmd.exe with each argument quoted and its metacharacters ^-escaped twice, since the shim re-parses %*
+// (cross-spawn's rules); a single cmd-quoted line would let a quote inside an argument expose > or & to cmd.
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+function spawnArgv(file, args, opts = {}) {
+  const o = { encoding: "utf8", windowsHide: true, ...opts, shell: false };
+  const r = spawnSync(file, args, o);
+  if (process.platform !== "win32" || !r.error || !["ENOENT", "EINVAL"].includes(r.error.code)) return r;
+  const q = (a) => `"${String(a).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
+  const line = [String(file).replace(CMD_META, "^$1"), ...args.map(q)].join(" ");
+  return spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { ...o, windowsVerbatimArguments: true });
 }
 
 // ---- guest mode: a repo the human does not own keeps Proteus's files out of its tree. <common>/proteus/guest.json
@@ -946,7 +959,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

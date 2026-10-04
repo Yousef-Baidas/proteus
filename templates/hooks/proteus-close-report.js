@@ -14,7 +14,6 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 
@@ -133,9 +132,11 @@ function costLine(closedCount) {
   if (!cost) return "cost not read (--no-cost)";
   let raw = "";
   try {
-    raw = cost === "ccusage"
-      ? execFileSync("npx", CCUSAGE[ad.name] || CCUSAGE.claude, { cwd: root, encoding: "utf8", timeout: 180000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], shell: process.platform === "win32", windowsHide: true })
-      : fs.readFileSync(cost, "utf8");
+    if (cost === "ccusage") {
+      const r = lib.spawnArgv("npx", CCUSAGE[ad.name] || CCUSAGE.claude, { cwd: root, timeout: 180000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+      if (r.error || r.status !== 0) throw r.error || new Error(`npx exited ${r.status}`);
+      raw = r.stdout;
+    } else raw = fs.readFileSync(cost, "utf8");
   } catch (e) { return `cost n/a (${cost === "ccusage" ? "ccusage failed" : `cannot read ${cost}`}: ${String(e.message || e).split("\n")[0].slice(0, 80)})`; }
   const j = parse(raw);
   const list = j && (j.sessions || j.session || j.data);

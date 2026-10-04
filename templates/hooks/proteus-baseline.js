@@ -56,13 +56,11 @@ const ignoreSrc = value("--ignore") || (old && old.ignore) || "";
 const match = regex(matchSrc, "--match");
 const ignore = ignoreSrc ? regex(ignoreSrc, "--ignore") : null;
 
-// the gate's command: one argument is a shell line ("npm ci && npm test"); several run as argv. Windows runs argv
-// through cmd too (npx is npx.cmd there), each argument quoted the way the C runtime splits it back.
-const WIN = process.platform === "win32";
-const winArg = (a) => (/[\s"]/.test(a) ? `"${a.replace(/(\\*)"/g, "$1$1\\\"").replace(/(\\+)$/, "$1$1")}"` : a);
+// the gate's command: one argument is a shell line ("npm ci && npm test"); several run as argv, through cmd on
+// Windows only for a .cmd shim such as npx (proteus-lib spawnArgv).
 const r = cmd.length === 1
   ? spawnSync(cmd[0], { cwd: process.cwd(), shell: true, encoding: "utf8", maxBuffer: 512 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_BASELINE_TIMEOUT", 3600000) })
-  : spawnSync(WIN ? cmd.map(winArg).join(" ") : cmd[0], WIN ? [] : cmd.slice(1), { cwd: process.cwd(), shell: WIN, encoding: "utf8", maxBuffer: 512 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_BASELINE_TIMEOUT", 3600000) });
+  : lib.spawnArgv(cmd[0], cmd.slice(1), { cwd: process.cwd(), encoding: "utf8", maxBuffer: 512 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_BASELINE_TIMEOUT", 3600000) });
 process.stdout.write(r.stdout || "");
 process.stderr.write(r.stderr || "");
 if (r.error) { console.error(`proteus-baseline ${gate}: could not run the command: ${r.error.message}`); process.exitCode = 1; return; }

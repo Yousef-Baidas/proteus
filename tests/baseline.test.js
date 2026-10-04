@@ -70,4 +70,23 @@ ok("a single argument runs as a shell line; --file picks the baseline", r.code =
 ok("a subdirectory finds the checkout's teams/baseline.json", (() => { fs.mkdirSync(path.join(REPO, "src"), { recursive: true }); return /was green/.test(bl("test", [], gate(red), path.join(REPO, "src")).err); })());
 ok("usage: no gate name or no command exits 2", bl("--record", [], gate(red)).code === 2 && lib.run(BL, "", { cwd: REPO, args: ["test"] }).code === 2);
 
+// argv reaches the command unchanged, quotes and cmd metacharacters included; on win32 also through a .cmd shim,
+// by path and by bare name on PATH, which is how npx runs there
+const plib = require(path.join(ROOT, "templates", "hooks", "proteus-lib.js"));
+const ARGS = ['a "b" > c', "x & y | z", "plain", "(p) ^ !q", "trail\\", ""];
+const echo = path.join(W, "argv.js");
+fs.writeFileSync(echo, "process.stdout.write(JSON.stringify(process.argv.slice(2)))");
+const same = (x) => x.status === 0 && x.stdout === JSON.stringify(ARGS);
+r = plib.spawnArgv(process.execPath, [echo, ...ARGS]);
+ok("spawnArgv: an executable gets each argument as given", same(r), JSON.stringify(r.stdout) + r.stderr);
+if (process.platform === "win32") {
+  const SHIM = path.join(W, "shim");
+  fs.mkdirSync(SHIM, { recursive: true });
+  fs.writeFileSync(path.join(SHIM, "argv.cmd"), `@"${process.execPath}" "${echo}" %*\r\n`);
+  r = plib.spawnArgv(path.join(SHIM, "argv.cmd"), ARGS);
+  ok("spawnArgv: a .cmd shim by path gets each argument as given", same(r), JSON.stringify(r.stdout) + r.stderr);
+  r = plib.spawnArgv("argv", ARGS, { env: { ...process.env, PATH: SHIM + path.delimiter + process.env.PATH } });
+  ok("spawnArgv: a .cmd shim found on PATH gets each argument as given", same(r), JSON.stringify(r.stdout) + r.stderr);
+}
+
 lib.summary();
