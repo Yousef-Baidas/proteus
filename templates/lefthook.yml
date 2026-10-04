@@ -17,4 +17,5 @@ pre-commit:
 pre-push:
   commands:
     test:
-      run: echo EDIT-test        # e.g. npx vitest run | uv run pytest -q | cargo test
+      # through the gates cache: a tree the worker already passed is not tested again
+      run: node teams/templates/hooks/proteus-gates-cache.js "echo EDIT-test"   # e.g. "npx vitest run" | "uv run pytest -q" | "cargo test"

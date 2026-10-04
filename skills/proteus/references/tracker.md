@@ -24,7 +24,7 @@ Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the secon
 | worker report | `gh issue comment <n> --body "DONE …"` / `NEEDS …` / `RED …` + diff and failing output |
 | CI status | `gh pr checks <pr> --json name,state`; verifier reads it, re-runs only to reproduce a finding |
 | verifier verdict | worker branch has a PR into `proteus/<run>`: `gh pr review <pr> --comment --body "MERGE"` or `--request-changes --body "BACK-TO-WORKER …"` (`--approve` is refused on your own PR); `CONTRACT-WRONG` → comment on the issue, close PR |
-| merge | `git worktree remove <wt>` first, then `gh pr merge <pr> --merge --delete-branch` into `proteus/<run>`, full suite on `proteus/<run>`; `gh issue close <n>` |
+| merge | `git worktree remove <wt>` first, then `gh pr merge <pr> --merge --delete-branch` into `proteus/<run>`, full suite on `proteus/<run>` through `proteus-gates-cache.js` (`stack.md`); `gh issue close <n>` |
 | review brief | `gh issue create --title "Review: <run>/<milestone>" --label proteus-review,needs-human --milestone … --body-file <brief>` |
 | evidence | text transcripts inline in the brief. Screenshots and recordings go on branch `proteus-evidence/<run>`: first milestone `git checkout --orphan`, later ones `git fetch origin proteus-evidence/<run> && git checkout FETCH_HEAD`; add files, commit, `git push origin HEAD:refs/heads/proteus-evidence/<run>`; link raw URLs; branch deleted at close |
 | verdict | a comment on the review issue by the human's login whose first line is `ACCEPT` or `CHANGES`; the unattended grader comments `AUTO-ACCEPT` / `AUTO-HOLD`. Read only through `proteus-verdict.js` (under the table) |

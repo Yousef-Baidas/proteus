@@ -151,12 +151,13 @@ Rules in prompts drift; these are mechanical.
 - **Run-branch rules + CI.** The scaffold ticket adds `.github/workflows/proteus-gates.yml`. `install.js --protect` (once per repo, by its admin) adds a ruleset so nothing reaches a `proteus/<run>` branch except a PR with the `gates` check green, nothing force-pushes it, and nobody bypasses it, you included; without it the lead protects each run branch itself when its login can. The verifier's `MERGE` is a review comment on the PR (one login cannot approve its own PR; #69). The template's `EDIT-*` steps fail until you fill them in, and `--doctor` warns while one is left. On a PR from `proteus-work/<run>/<id>` the same job also checks the changed paths against the `Owned:` line in the PR body, and each worker worktree gets a pre-commit hook that checks staged paths against its owned list, which catches shell writes the edit hooks cannot see. The same hook and a CI `tier` step fail a change larger than its declared tier.
 - **Agents under their own login.** `install.js --agent-login` signs a second GitHub account, one you create for the agents, into a gh config of its own (`~/.config/gh-proteus`, the token in a file there). From the next session every agent shell command runs `gh` as that account, so only your login's `ACCEPT` counts and the agents cannot lift the ruleset; `proteus-state` says `identity=separate`. Without it they post as you (`identity=shared`), and only the guards tell their words from yours.
 - **Path ownership.** A `PreToolUse` hook in each worker's worktree refuses any edit outside the ticket's owned paths and tells the worker to file `NEEDS` instead; the lead's guard also binds each subagent to the worktree of its first edit, so a path another ticket owns is refused in that ticket's worktree; the verifier also refuses a diff outside the team's `Owns`.
-- **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; the lead arms a stall timer while workers run.
+- **No silent waiting.** Workers cannot background a job and wait for a notification; a stop that says "waiting" is sent back; a script watchdog reads each worker's last tool call and wakes the lead only when one has been silent for 40 minutes or stopped without a report.
+- **One suite run per tree.** Worker, lefthook's pre-push, verifier, the lead after a merge, QA and the guide run each gate through `proteus-gates-cache.js`, which keys a pass on the commit's tree and the command and replays it instead of running the suite again. Only a clean checkout is cached; a failure never is.
 - **Commit messages.** lefthook runs a commit-msg check: Conventional Commits, 72 chars, no AI trailer. CI re-checks every commit in the PR, so `--no-verify` does not help.
 - **Security.** The security verifier runs semgrep on the diff first and queries OSV for every `NEEDS dependency` before the human sees the request.
-- **Mutation testing.** Once per milestone, the QA pass mutates the changed files; a surviving mutant is a `WAVE-RED` ticket.
+- **Mechanical QA in CI.** Every merge into `proteus/<run>` pushes it, and the workflow runs the suite, then e2e, a smoke test from a fresh install, a rebuild of the deliverables, and mutation testing on the files the merge changed. The QA pass reads those results (`gh run view`) instead of re-running them; a surviving mutant or a red step is a `WAVE-RED` ticket.
 - **Skill pinning.** `teams/skills-lock.json` pins every linked skill's content hash; the link script warns `drift:` when a machine differs, and the lead guard refuses to spawn workers and verifiers until the copy matches again or you re-lock with `node teams/link-skills.js --relock`.
-- **Cost.** Close reports cost per merged ticket from `ccusage`; OpenTelemetry export is one env var away for trends.
+- **Close report.** At close, `proteus-close-report.js` prints bounce rate, escalation rate, wall-clock per ticket and per team, and cost per ticket from `ccusage` (an average: ccusage counts per session). The lead posts it on the run log and in the close PR, and proposes routing changes from it. OpenTelemetry export is one env var away for trends.
 
 Details and the exact commands: `skills/proteus/references/enforcement.md`.
 
@@ -370,6 +371,9 @@ templates/
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
+    proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
+    proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
+    proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)

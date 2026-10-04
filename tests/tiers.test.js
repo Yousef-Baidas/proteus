@@ -127,7 +127,7 @@ ok("ci: a repo with no tiers block is unchanged: everything is standard and pass
 // the shipped CI template wires the tier step on worker PRs and a docs-only job for Direct batches into main
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8");
 ok("template: PRs into main run, gates on run branches and Quick, a direct job with the docs gate and the tier check",
-  /branches: \["proteus\/\*\*", "main"\]/.test(tpl) && /^  gates:\n    # [^\n]*\n    if: startsWith\(github\.base_ref, 'proteus\/'\) \|\| startsWith\(github\.head_ref, 'proteus-work\/quick\/'\)/m.test(tpl) &&
+  /branches: \["proteus\/\*\*", "main"\]/.test(tpl) && /^  gates:\n    # [^\n]*\n    if: github\.event_name == 'push' \|\| startsWith\(github\.base_ref, 'proteus\/'\) \|\| startsWith\(github\.head_ref, 'proteus-work\/quick\/'\)/m.test(tpl) &&
   /- name: tier\n\s+if: startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-tier\.js --ci/.test(tpl) &&
   /^  direct:\n    if: startsWith\(github\.head_ref, 'proteus-work\/direct\/'\) && !startsWith\(github\.base_ref, 'proteus\/'\)[\s\S]*EDIT-docs[\s\S]*proteus-owned-check\.js --ci[\s\S]*proteus-tier\.js --ci[\s\S]*commit-msg\.js/m.test(tpl));
 const shipped = lib.parseTiers(fs.readFileSync(path.join(ROOT, "templates", "teams", "ROUTING.md"), "utf8"));

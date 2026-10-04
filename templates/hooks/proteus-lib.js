@@ -787,7 +787,7 @@ const relockHint = (drift) => `Drifted from teams/skills-lock.json: ${drift.join
 // the harness's default ladder; none (a CLI whose lineup Proteus does not know) is single-model
 // mode, the lead's own model as the only rung, until models.ladder names one
 const modelDefaults = () => harness().models || { ladder: [], floor: "", solo: [], aliases: {} };
-const TIERS = { judge: "top", build: "mid", helper: "mid" };
+const MODEL_TIERS = { judge: "top", build: "mid", helper: "mid" };
 function tierSpec(v) {
   if (v && typeof v === "object") return { model: String(v.model || "").toLowerCase(), effort: String(v.effort || "").toLowerCase() };
   const [model = "", effort = ""] = String(v || "").toLowerCase().split("@");
@@ -827,7 +827,7 @@ function modelPolicy(root) {
   const aliases = {}, own = cfg.aliases && typeof cfg.aliases === "object" ? cfg.aliases : {};
   for (const [k, v] of Object.entries({ ...d.aliases, ...own })) if (typeof v === "string") aliases[k.toLowerCase()] = v.toLowerCase();
   const tiers = {}, ownTiers = cfg.tiers && typeof cfg.tiers === "object" ? cfg.tiers : {};
-  for (const [k, v] of Object.entries({ ...TIERS, ...d.tiers, ...ownTiers })) if (k in TIERS) tiers[k] = tierSpec(v);
+  for (const [k, v] of Object.entries({ ...MODEL_TIERS, ...d.tiers, ...ownTiers })) if (k in MODEL_TIERS) tiers[k] = tierSpec(v);
   const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo, aliases, tiers };
   let agents = "";
   try { agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"); } catch {}
@@ -836,7 +836,7 @@ function modelPolicy(root) {
     for (const [, k, v] of line[1].matchAll(/(\w+)=(\S+)/g)) {
       if (k === "floor") pol.floor = v.toLowerCase();
       if (k === "solo") pol.solo = list(v);
-      if (k in TIERS) pol.tiers[k] = tierSpec(v);
+      if (k in MODEL_TIERS) pol.tiers[k] = tierSpec(v);
     }
   }
   return pol;
@@ -868,7 +868,7 @@ function modelCaps(ev, root) {
     return { model: named && held === r && rungOf(ladder, t.model, aliases) === r ? t.model : ladder[held], effort: effortParam ? t.effort : "" };
   };
   const tiers = {};
-  for (const k of Object.keys(TIERS)) tiers[k] = tier(pol.tiers[k], TIERS[k]);
+  for (const k of Object.keys(MODEL_TIERS)) tiers[k] = tier(pol.tiers[k], MODEL_TIERS[k]);
   return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[mid], floorName: ladder[floor], effortParam, tiers };
 }
 
@@ -891,6 +891,28 @@ function handoffLines(ev, root) {
   return { window: w, at: envInt("PROTEUS_HANDOFF_AT", Math.round(w * 0.75)), hard: envInt("PROTEUS_HANDOFF_HARD", Math.round(w * 0.9)) };
 }
 
+// Liveness of the lead's workers and verifiers, read by proteus-watchdog.js: one file per agent in
+// <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
+// "ended" (proteus-stall.js, a stop without a report) stamps `ended`, "done" (a stop with a report)
+// removes the file. Other agent types (scout, guide) are not tracked: they end without a report.
+const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
+const beatsDir = (common) => path.join(stateDir(common), "beats");
+function beat(ev, state) {
+  if (!ev.agent || (ev.agentType && !PIPELINE_AGENT.test(ev.agentType))) return;
+  try {
+    const common = gitCommonDir(projectRoot(ev));
+    if (!common) return;
+    const file = path.join(beatsDir(common), `${String(ev.agent).replace(/[^\w.-]/g, "_")}.json`);
+    if (state === "done") { fs.rmSync(file, { force: true }); return; }
+    const prev = readJSON(file, null) || {};
+    const now = new Date().toISOString();
+    // a rewrite drops `flagged`: a tool call after the watchdog's STALL is the agent answering
+    const rec = { agent: ev.agent, type: ev.agentType || prev.type || "", session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
+    if (state === "ended") { rec.last = prev.last || now; rec.ended = now; rec.flagged = prev.flagged; }
+    writeJSON(file, rec);
+  } catch {}
+}
+
 // gh query → cache; on any gh failure the old cache stays and null is returned
 function refreshInbox(root, common, timeout = 10000) {
   let list;
@@ -905,7 +927,7 @@ function refreshInbox(root, common, timeout = 10000) {
 
 module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
-  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON,
+  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, ownedFile, ownedMatch, ownedDenial, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, git, gh,
   release, verifyRelease, changelog,

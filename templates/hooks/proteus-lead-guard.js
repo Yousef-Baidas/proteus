@@ -20,7 +20,7 @@
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
-//   scout's teams/*/skills.txt). All else passes.
+//   scout's teams/*/skills.txt). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 // Linked worktrees and PROTEUS=0 sessions pass untouched.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
@@ -41,6 +41,7 @@ if (process.env.PROTEUS === "0") process.exit(0);
 lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
   if (ev.agent) {
+    lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
     const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev));
     if (why) ad.deny(why);
     return;

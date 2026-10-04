@@ -4,6 +4,7 @@
 // Under GH_CONFIG_DIR the login is the one `auth login` wrote there (FAKE_GH_BOT_LOGIN, default bot), else none.
 // FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets.
 // FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
+// FAKE_GH_RUN (a JSON file) holds a run's issues, PRs and run logs for the close report.
 const a = process.argv.slice(2).join(" ");
 if (process.env.FAKE_GH_LOG) require("fs").appendFileSync(process.env.FAKE_GH_LOG, a + "\n");
 if (process.env.FAKE_GH === "fail") { process.stderr.write("gh: no remote\n"); process.exit(1); }
@@ -46,6 +47,13 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
 }
 const iso = (h) => new Date(Date.UTC(2026, 8, 1) + h * 3600e3).toISOString();
+// FAKE_GH_RUN (a JSON file {issues, prs, logs}) answers the close report's three list calls
+if (process.env.FAKE_GH_RUN) {
+  const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_RUN, "utf8"));
+  if (/^issue list --label (proteus|hive)-log /.test(a)) out(s.logs || []);
+  if (/^issue list --label (proteus|hive) --state all /.test(a)) out(s.issues || []);
+  if (a.startsWith("pr list --base ")) out(s.prs || []);
+}
 if (/^api user --jq \.login$/.test(a)) { process.stdout.write((process.env.FAKE_GH_LOGIN || "human") + "\n"); process.exit(0); }
 if (/issue view 30 --json comments/.test(a)) {
   const fs = require("fs"), c = process.env.FAKE_GH_COUNTER;
