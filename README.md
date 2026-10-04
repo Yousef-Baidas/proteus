@@ -279,7 +279,7 @@ Updates use your own git's trust, so nothing updates until you opt in to the mai
 
 Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
-The maintainer's key: Proteus releases are signed with SSH key `SHA256:A3x02EpaNSOo27K8lsm8H3M2hhUpAeGGvoobs8NOsss` (ED25519), published as a signing key of the GitHub account [Yousef-Baidas](https://api.github.com/users/Yousef-Baidas/ssh_signing_keys). To trust it (bash; check the fingerprint it prints against the one above before you run the `git config` line):
+The maintainer's key: Proteus releases are signed with SSH key `SHA256:A3x02EpaNSOo27K8lsm8H3M2hhUpAeGGvoobs8NOsss` (ED25519), published as a signing key of the GitHub account [Yousef-Baidas](https://api.github.com/users/Yousef-Baidas/ssh_signing_keys). To trust it, check the fingerprint the block prints against the one above before you run its `git config` line. In bash:
 
 ```bash
 mkdir -p ~/.config/proteus
@@ -287,6 +287,18 @@ key=$(gh api users/Yousef-Baidas/ssh_signing_keys -q '.[] | select(.title == "pr
 echo "proteus namespaces=\"git\" $key" > ~/.config/proteus/allowed_signers
 ssh-keygen -lf <(echo "$key")
 git -C ~/proteus config gpg.ssh.allowedSignersFile ~/.config/proteus/allowed_signers
+```
+
+In PowerShell (5.1 or 7; the `ForEach-Object` unrolls the array, which 5.1's `ConvertFrom-Json` passes on as one object):
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\proteus" | Out-Null
+$key = ((gh api users/Yousef-Baidas/ssh_signing_keys | ConvertFrom-Json) | ForEach-Object { $_ } | Where-Object title -eq 'proteus tag signing').key
+if (-not $key) { throw "proteus tag signing key not found on GitHub" }
+"proteus namespaces=`"git`" $key" | Set-Content -Encoding ascii "$HOME\.config\proteus\allowed_signers"
+$key | Set-Content -Encoding ascii "$HOME\.config\proteus\maintainer.pub"
+ssh-keygen -lf "$HOME\.config\proteus\maintainer.pub"
+git -C "$HOME\proteus" config gpg.ssh.allowedSignersFile "$HOME/.config/proteus/allowed_signers"
 ```
 
 ### Coming from hivemind
