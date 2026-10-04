@@ -269,7 +269,8 @@ function humanSaid(root) {
   const files = [lib.legacyStateDir(common), lib.stateDir(common)].flatMap((d) => { const f = path.join(d, "journal.jsonl"); return fs.existsSync(f) ? [f] : []; });
   const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024)))].slice(-10);
   const said = lines.flatMap((l) => {
-    const p = safe(() => JSON.parse(l).prompt, "");
+    // redacted again on the way out: a journal written before redaction existed may hold secrets
+    const p = safe(() => { const raw = JSON.parse(l).prompt; return typeof raw === "string" ? lib.redact(raw) : ""; }, "");
     return typeof p === "string" && p.trim() ? ["- " + (p.length > 400 ? p.slice(0, 400) + "…" : p).replace(/\n/g, "\n  ")] : [];
   });
   return said.length ? ["human said (verbatim, newest last):", ...said].join("\n") : "";
