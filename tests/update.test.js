@@ -93,8 +93,15 @@ else {
   g(HSRC, "tag", "-d", "v9.0.0");
   fs.writeFileSync(path.join(HSRC, "CHANGELOG.md"), "local edit\n");
   r = start();
-  ok("trusted signature, dirty checkout: nothing moves", head() === v100 && !/not updating|updated to/.test(r.out), r.out.slice(0, 1500));
+  ok("trusted signature, dirty checkout: nothing moves, one line says why (#113)", head() === v100 && !/updated to/.test(r.out) &&
+    r.out.split("\n").filter((l) => /^proteus: local changes in .*; not updating to v1\.3\.0$/.test(l) && l.includes(HSRC)).length === 1, r.out.slice(0, 1500));
   g(HSRC, "checkout", "-q", "--", ".");
+  // an untracked file the release would overwrite: the status check passes it, git's merge refuses
+  fs.writeFileSync(path.join(HSRC, "a.txt"), "untracked\n");
+  r = start();
+  ok("trusted signature, merge refused by git: nothing moves, one line says why (#113)", head() === v100 && !/updated to/.test(r.out) &&
+    /^proteus: could not update .* to v1\.3\.0 \(.+\); still on v1\.0\.0$/m.test(r.out), r.out.slice(0, 1500));
+  fs.rmSync(path.join(HSRC, "a.txt"));
   r = start();
   const L = r.out.split("\n");
   const at = L.findIndex((l) => l.startsWith("proteus: updated to v1.3.0"));
