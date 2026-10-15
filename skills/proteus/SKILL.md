@@ -1,6 +1,7 @@
 ---
 name: proteus
-description: Ship a large project as a team of agents: software, editing, 3D, writing, research, or business planning. The session's model designs domain teams and leads by decision only, workers on the same or cheaper models deliver in isolated worktrees, verifiers gate merges, the human gates milestones. Use whenever the user says Proteus, orchestrate, dispatch, swarm, or hands over work bigger than one agent should do alone.
+description: >-
+  Ship a large project as a team of agents: software, editing, 3D, writing, research, or business planning. The session's model designs domain teams and leads by decision only, workers on the same or cheaper models deliver in isolated worktrees, verifiers gate merges, the human gates milestones. Use whenever the user says Proteus, orchestrate, dispatch, swarm, or hands over work bigger than one agent should do alone.
 disable-model-invocation: true
 ---
 
