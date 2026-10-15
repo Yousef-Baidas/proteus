@@ -150,6 +150,30 @@ The lead itself edits only those docs; anything else goes to a worker. For small
 
 The tracker is GitHub via `gh` today. `references/tracker.md` is an operations table with one column per tracker; Jira or anything else slots in by filling the column.
 
+### Worker worktrees
+
+Each worker works in its own git worktree under `.worktrees/<id>/` in your checkout (`.worktrees/direct-<batch>` and `.worktrees/quick-<n>` for the Direct and Quick tiers). `proteus-worktree.js` adds `/.worktrees/` to `.git/info/exclude`, never to `.gitignore`, so `git status` and `git add -A` in the main checkout skip it. A run started under Proteus 1.1 or earlier keeps its worktrees in `../<repo>-proteus/` until they merge; on Codex that folder stays in `writable_roots` until then. `git clean -ffdx` in the main checkout deletes the nested worktrees with everything else.
+
+Some tools walk into `.worktrees/` from the main checkout and run or lint the workers' copies too. Proteus runs the full suite and the bisect from `.worktrees/_run`, a detached checkout with nothing nested in it, and `proteus-gates-cache.js` warns when it runs a command in a folder that holds worktrees. For your own runs from the main checkout, add `.worktrees/` to the ignores of each tool marked yes:
+
+| Tool | Walks into `.worktrees/` | Why (default config) | Ignore it with |
+|---|---|---|---|
+| vitest 4 | yes | exclude is `**/node_modules/**`, `**/.git/**` | `test.exclude`, keeping `configDefaults.exclude` |
+| vite watcher, vitest watch | yes | ignores `.git`, `node_modules` and build output only | `server.watch.ignored` |
+| jest 30 | yes, plus a haste naming collision on the copied `package.json` | `testPathIgnorePatterns` is `/node_modules/`; haste skips only VCS folders | `testPathIgnorePatterns`, `modulePathIgnorePatterns` |
+| eslint 9, flat config | yes | ignores `**/node_modules/`, `.git/`; never reads git's ignores | `globalIgnores([".worktrees/"])` |
+| webpack, chokidar watch | yes | no default ignore | `watchOptions.ignored` |
+| cargo | only with `members = ["*"]`, which then fails to load `.worktrees` | the glob matches dot folders | `exclude = [".worktrees"]` |
+| oxlint 1.x | no | walks hidden folders but honors git's ignores, `info/exclude` included | |
+| ripgrep | no | skips hidden folders and honors `info/exclude` | |
+| tsc 5 | no | `**` never matches a folder whose name starts with a dot | |
+| pytest | no | `norecursedirs` has `.*` | |
+| go | no | `./...` skips `.` and `_` folders; a nested `go.mod` is its own module | |
+
+Run from a main checkout holding a worktree at `.worktrees/x`, on vitest 4.1, jest 30.5, eslint 9.39, oxlint 1.88, vite 8.3, tsc 5.9, pytest 9.1, go 1.27, cargo 1.99 and ripgrep 15.2. Sources: vitest `defaultExclude`; jest-config `testPathIgnorePatterns` and jest-haste-map `VCS_DIRECTORIES`; eslint `lib/config/default-config.js`; oxlint `apps/oxlint/src/walk.rs`; vite `resolveChokidarOptions`; the TypeScript `**` matcher; pytest `norecursedirs`; `go help packages`; the Cargo workspace docs; `rg --help`.
+
+Not under `.git/`, which every tool above skips: Claude Code treats `.git` as a protected path, so each edit there asks outside bypass mode, and Codex's workspace-write sandbox keeps `<root>/.git` read-only, so a Codex session opened at the repo could not edit a worktree there.
+
 ### Guest mode: repos you do not own
 
 In a repo you contribute to but do not own, even those docs and `teams/` are not yours to add. `install.js --project --guest` keeps them out of the tree: `teams/`, `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, `docs/adr/` and `docs/lessons/` go to a guest dir, by default `~/.proteus/guest/<repo>-<hash>/` (`--guest <dir>` picks another), named in `.git/proteus/guest.json`. Bootstrap writes no CI workflow, no lefthook and no root doc, and the repo's own copies of those files stay untouched. The only files in the tree are the CLI's own hook files under `.claude/` or `.codex/`, untracked and excluded from git as in every install. The session gets access to the guest dir through `permissions.additionalDirectories` (Claude Code) or `writable_roots` (Codex). A tracked `.codex/config.toml` is never edited; the installer says what to add instead. The lead guard, the session-start state line, lessons, the skills lock and the baseline ratchet all read the guest dir.
@@ -332,7 +356,7 @@ Proteus was called hivemind. Install Proteus as above, or run `install.js --upda
 
 - It moves hivemind's state, `.git/hive/`, into `.git/proteus/` (the inbox, scratch, the lead journal, the lead model). The session start does the same on its own, so a repo you never re-run the installer in still moves. Nothing already in `.git/proteus/` is overwritten. The append-only logs (`journal.jsonl`, `scratch-ledger.jsonl`) on both sides merge: the old lines first, then the new ones, each line once. Any other file on both sides stays in `.git/hive/` (the `.git/proteus/` copy is the one in use), and so does a worktree git still has registered there; the output names each, and `--doctor` keeps showing them until they are gone. In a Codex repo the session start also adds `../<repo>-proteus` to `writable_roots`, or names `install.js --update` when it cannot.
 
-A run opened under hivemind finishes under its old names: the lead, `--status`, scratch and the lead guard read both `hive/<run>` and `proteus/<run>`, so an open `hive/<run>` still counts as the run and its PRs, labels and log issue are still found. New runs use the Proteus names. With Codex, `--project` keeps `../<repo>-hive/` in `writable_roots` beside `../<repo>-proteus/` while git still has a worktree registered there, says why, and drops it on the first `--project` after the last one is gone. The tracker's label step creates the `proteus*` labels in a repo that only has the `hive*` ones and records `labels: proteus`.
+A run opened under hivemind finishes under its old names: the lead, `--status`, scratch and the lead guard read both `hive/<run>` and `proteus/<run>`, so an open `hive/<run>` still counts as the run and its PRs, labels and log issue are still found. New runs use the Proteus names. With Codex, `--project` keeps `../<repo>-hive/` (like an older run's `../<repo>-proteus/`) in `writable_roots` while git still has a worktree registered there, says why, and drops it on the first `--project` after the last one is gone. The tracker's label step creates the `proteus*` labels in a repo that only has the `hive*` ones and records `labels: proteus`.
 
 Kept as they were: the `hive/<run>` and `hive-evidence/<run>` branches, the `hive*` GitHub labels, and `hive-gates.yml`. A worker worktree already in flight keeps hivemind's hooks until it merges, and the old lines in `.git/info/exclude` stay beside the new ones until then; `--doctor --fix` drops them after. There is no `/hivemind` alias and no `HIVEMIND=0`: use `/proteus` and `PROTEUS=0`.
 
@@ -457,9 +481,9 @@ tests/hooks.test.js          node tests/hooks.test.js: hooks and installer again
 
 ## Uninstall
 
-Delete the links `~/.claude/skills/proteus` and `~/.claude/skills/proteus-review` (the checkout stays), `~/.claude/agents/proteus-*.md`, `~/.claude/proteus.json`, `teams/` in any repo, and the `proteus-` entries and Proteus `statusLine` in its `.claude/settings.local.json`. `.github/workflows/proteus-gates.yml`, `lefthook.yml`, and `.claude/hooks/` are yours to keep or drop; local run state is in `.git/proteus/`. Open `proteus` and `proteus-*` issues and labels stay on GitHub for you to close. Skills you confined are still in `~/.agents/skills/`; re-link them into `~/.claude/skills/` if you want them global again. Remove the `attribution` key from `~/.claude/settings.json` if you want the default trailer back.
+Delete the links `~/.claude/skills/proteus` and `~/.claude/skills/proteus-review` (the checkout stays), `~/.claude/agents/proteus-*.md`, `~/.claude/proteus.json`, `teams/` in any repo, and the `proteus-` entries and Proteus `statusLine` in its `.claude/settings.local.json`. `.github/workflows/proteus-gates.yml`, `lefthook.yml`, and `.claude/hooks/` are yours to keep or drop; local run state is in `.git/proteus/`. Once `git worktree list` shows none left in `.worktrees/`, delete that folder and its `/.worktrees/` line in `.git/info/exclude`. Open `proteus` and `proteus-*` issues and labels stay on GitHub for you to close. Skills you confined are still in `~/.agents/skills/`; re-link them into `~/.claude/skills/` if you want them global again. Remove the `attribution` key from `~/.claude/settings.json` if you want the default trailer back.
 
-For Codex, also delete the links `~/.agents/skills/proteus` and `proteus-review`, `$CODEX_HOME/agents/proteus-*.toml`, and in each repo the `proteus-` entries in `.codex/hooks.json`, `.codex/hooks/`, `.codex/rules/proteus.rules`, and the `<repo>-proteus` entry in `.codex/config.toml`'s `writable_roots`. `codex mcp remove context-mode` drops context-mode.
+For Codex, also delete the links `~/.agents/skills/proteus` and `proteus-review`, `$CODEX_HOME/agents/proteus-*.toml`, and in each repo the `proteus-` entries in `.codex/hooks.json`, `.codex/hooks/`, `.codex/rules/proteus.rules`, and any `<repo>-proteus` entry an older run left in `.codex/config.toml`'s `writable_roots`. `codex mcp remove context-mode` drops context-mode.
 
 ## License
 

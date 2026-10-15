@@ -17,6 +17,8 @@ installed version and the new one.
   `BLOCKED #<n> classifier <tag>: <action>`, and the stall watchdog's re-spawn skips it.
 - `install.js` and `--doctor` on Claude Code suggest an `autoMode.environment` entry describing Proteus when
   `~/.claude/settings.json` has none, and point to `/auto-mode-setup`; they never write it (README, Auto mode).
+- `proteus-gates-cache.js` warns on stderr when it runs a command in a folder that holds worker
+  worktrees.
 
 ### Changed
 
@@ -33,6 +35,18 @@ installed version and the new one.
   worktree, commits, `NEEDS`, retries, review steps) moved from the `roles.md` templates into the agent
   files, and so into Codex's TOML roles. The worker brief went from 604 to 152 words, and no brief talks
   about hooks refusing or bypassing anything, which auto mode's classifier read as evasion.
+- Worker worktrees move into the project: `.worktrees/<id>/` instead of `../<repo>-proteus/<id>/`, with
+  `.worktrees/direct-<batch>` and `.worktrees/quick-<n>` for the Direct and Quick tiers.
+  `proteus-worktree.js` adds `/.worktrees/` to `.git/info/exclude` once and never touches `.gitignore`.
+  A run opened before keeps its worktrees beside the repo until they merge, and they still resume and
+  merge.
+- The lead runs the full suite and the bisect in `.worktrees/_run`, a detached checkout of the run branch
+  with no worktree nested in it, so test runners that walk dot folders (vitest, jest, eslint) do not run
+  the workers' copies. README "Worker worktrees" lists which tools walk into `.worktrees/` and how to
+  exclude it.
+- Codex: `--project` and the session start no longer add `../<repo>-proteus` to `writable_roots`. They
+  keep it, like `../<repo>-hive`, only while git has a worktree registered there, drop it after, and no
+  longer create `.codex/config.toml` when there is nothing to list.
 
 ### Fixed
 
