@@ -11,7 +11,8 @@
 // Ignored files (node_modules, .env, build output) are outside the key, so a gate that depends on them
 // is cached by the tracked files only. Outside a git repo, or with PROTEUS_GATES_CACHE=0, it just runs.
 // Exit code: the command's; 0 on a hit. A store that cannot be written (Codex's sandbox keeps .git
-// read-only) is skipped silently.
+// read-only) is skipped silently. Run from a checkout with worker worktrees in its .worktrees/, it warns on stderr:
+// a runner that does not skip that folder tests their files too.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -39,7 +40,8 @@ function cleanTree() {
   return status === "" ? String(git(["rev-parse", "--verify", "--quiet", "HEAD^{tree}"]) || "").trim() : "";
 }
 
-const top = process.env.PROTEUS_GATES_CACHE === "0" ? "" : String(git(["rev-parse", "--show-toplevel"]) || "").trim();
+const here = String(git(["rev-parse", "--show-toplevel"]) || "").trim();
+const top = process.env.PROTEUS_GATES_CACHE === "0" ? "" : here;
 const common = top ? lib.gitCommonDir(top) : null;
 const tree = common ? cleanTree() : "";
 const prefix = tree ? String(git(["rev-parse", "--show-prefix"]) || "").trim() : "";
@@ -54,6 +56,11 @@ if (hit && hit.tree === tree && hit.cmd === cmd) {
   return;
 }
 if (common && !tree) console.error("gates-cache: uncommitted or untracked changes, running uncached");
+
+// worker worktrees live in <repo>/.worktrees/; a runner or linter that does not skip that folder would run their files
+// too (vitest, jest and eslint do not skip it by default)
+const nested = here ? lib.worktreesUnder(here, cwd) : [];
+if (nested.length) console.error(`gates-cache: ${nested.length} worktree(s) inside this folder (${nested.map((w) => path.relative(cwd, w)).slice(0, 3).join(", ")}); a tool that does not skip them checks their files too. Run the suite from .worktrees/_run, or exclude .worktrees/ in the tool's config.`);
 
 const t0 = Date.now();
 let tail = "";

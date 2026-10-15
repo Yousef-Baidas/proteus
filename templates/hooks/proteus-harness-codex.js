@@ -11,7 +11,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { tailLines, legacyWorktreeDir, legacyWorktrees, git } = require(path.join(__dirname, "proteus-lib.js"));
+const { tailLines, oldWorktreeDirs, worktreesUnder, git } = require(path.join(__dirname, "proteus-lib.js"));
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
 
 const name = "codex";
@@ -317,34 +317,44 @@ function registerLead(root) {
   return { file, changed };
 }
 
-// Worker worktrees live in ../<repo>-proteus/, outside the project, where workspace-write rejects a
-// worker's apply_patch. The project's .codex/config.toml adds that folder to writable_roots; a
-// textual merge (no TOML parser here) that refuses any shape it cannot edit safely. The legacy
-// worktree folder a run from before the rename used stays listed while git still has a worktree
-// registered in it (legacy: {dir, worktrees}), and goes once none is (stale: that dir).
-// Returns {file, dir, created, changed, missing, legacy, stale} or {file, dir, error}; write=false only checks.
-// extra: another folder to list instead (a guest dir, allowDir); the legacy handling is the worktree folder's only.
+// Worker worktrees live in <repo>/.worktrees/, inside the project, which workspace-write already lets a worker
+// write. Older runs kept them beside the project, in ../<repo>-proteus/ (lib.oldWorktreeDirs, which also names
+// the folder used before the rename), listed in writable_roots of the project's .codex/config.toml. This keeps
+// such a folder listed while git still has a worktree registered in it (an in-flight run: kept [{dir, worktrees}], and added back if a
+// hand edit lost it: missing [dir]), and drops it once none is (stale [dir]); it never adds a folder no run uses.
+// A textual merge (no TOML parser here) that refuses any shape it cannot edit safely.
+// Returns {file, kept, missing, stale, created, changed} or {file, error}; write=false only checks.
+// extra: one folder to list instead (a guest dir, allowDir), returned as dir, with missing true or false.
 function sandboxRoots(root, write = true, extra = "") {
   const abs = path.resolve(root);
-  const dir = extra ? path.resolve(extra) : path.join(path.dirname(abs), `${path.basename(abs)}-proteus`);
   const file = path.join(abs, ".codex", "config.toml");
-  const entry = JSON.stringify(dir); // a JSON string is a TOML basic string
-  const table = `[sandbox_workspace_write]\nwritable_roots = [${entry}]\n`;
-  const refuse = (why) => ({ file, dir, error: `${file} ${why}; add ${dir} to writable_roots under [sandbox_workspace_write] yourself` });
+  const old = extra ? [] : oldWorktreeDirs(abs).map((dir) => ({ dir, worktrees: worktreesUnder(abs, dir) }));
+  const kept = old.filter((o) => o.worktrees.length);
+  const want = extra ? [path.resolve(extra)] : kept.map((o) => o.dir);
+  const gone = old.filter((o) => !o.worktrees.length).map((o) => o.dir);
+  const base = extra ? { file, dir: want[0] } : { file, kept, missing: [], stale: [] };
+  const refuse = (why) => (want.length
+    ? { ...base, error: `${file} ${why}; add ${want.join(" and ")} to writable_roots under [sandbox_workspace_write] yourself` }
+    : { ...base, created: false, changed: false }); // nothing to add: a file this cannot read is left as it is
   // a repo may commit .codex or config.toml as a link (to ~/.bashrc, $CODEX_HOME/config.toml): never read or written through (#22)
   const link = [path.join(abs, ".codex"), file].find((p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } });
   if (link) return refuse(`${link === file ? "is a link" : `sits in ${link}, a link`}, never written through`);
   let text = null;
   try { text = fs.readFileSync(file, "utf8"); } catch {}
-  const done = (next, created) => {
-    if (!write) return { file, dir, missing: true };
+  const entries = (dirs) => dirs.map((d) => JSON.stringify(d)).join(", "); // a JSON string is a TOML basic string
+  const result = (missing, stale) => (extra ? { ...base, missing: missing.length > 0 } : { ...base, missing, stale });
+  const done = (next, created, missing, stale) => {
+    if (!write) return result(missing, stale);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, next);
     // bwrap drops a writable root that does not exist yet
-    fs.mkdirSync(dir, { recursive: true });
-    return { file, dir, created, changed: true };
+    for (const d of missing) fs.mkdirSync(d, { recursive: true });
+    return { ...result(missing, stale), created, changed: true };
   };
-  if (text === null) return done(table, true);
+  if (text === null) {
+    if (!want.length) return { ...result([], []), created: false, changed: false };
+    return done(`[sandbox_workspace_write]\nwritable_roots = [${entries(want)}]\n`, true, want, []);
+  }
   // a multi-line string could hold a line that looks like a header
   if (/"""|'''/.test(text)) return refuse("has a multi-line string");
   const lines = text.split("\n");
@@ -356,11 +366,18 @@ function sandboxRoots(root, write = true, extra = "") {
     return refuse("sets sandbox_workspace_write in a form this installer does not edit");
   // keep the file's own line endings (a CRLF file stays CRLF)
   const le = /\r\n/.test(text) ? "\r\n" : "\n";
-  if (!heads.length) return done(`${text}${text && !text.endsWith("\n") ? le : ""}${text.trim() ? le : ""}${table.replace(/\n/g, le)}`, false);
+  const table = `[sandbox_workspace_write]\nwritable_roots = [${entries(want)}]\n`;
+  if (!heads.length) {
+    if (!want.length) return { ...result([], []), created: false, changed: false };
+    return done(`${text}${text && !text.endsWith("\n") ? le : ""}${text.trim() ? le : ""}${table.replace(/\n/g, le)}`, false, want, []);
+  }
   let end = heads[0] + 1;
   while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
   const k = lines.slice(heads[0] + 1, end).findIndex((l) => /^\s*["']?writable_roots["']?\s*=/.test(l));
-  if (k < 0) return done([...lines.slice(0, heads[0] + 1), `writable_roots = [${entry}]${le === "\r\n" ? "\r" : ""}`, ...lines.slice(heads[0] + 1)].join("\n"), false);
+  if (k < 0) {
+    if (!want.length) return { ...result([], []), created: false, changed: false };
+    return done([...lines.slice(0, heads[0] + 1), `writable_roots = [${entries(want)}]${le === "\r\n" ? "\r" : ""}`, ...lines.slice(heads[0] + 1)].join("\n"), false, want, []);
+  }
   // scan the array: strings, commas, whitespace and comments only
   const start = lines.slice(0, heads[0] + 1 + k).reduce((n, l) => n + l.length + 1, 0);
   let i = text.indexOf("=", start) + 1;
@@ -382,38 +399,33 @@ function sandboxRoots(root, write = true, extra = "") {
     vals.push(x); toks.push(x); i += m[0].length - 1;
   }
   if (text[i] !== "]") return refuse("has an unterminated writable_roots array");
-  const old = legacyWorktreeDir(abs);
-  const isOld = (x) => path.resolve(x.v) === old;
-  const live = !extra && vals.some(isOld) ? legacyWorktrees(abs) : [];
-  const legacy = live.length ? { dir: old, worktrees: live } : null;
-  const drop = extra || live.length ? [] : vals.filter(isOld);
-  const stale = drop.length ? old : null;
-  const has = vals.some((x) => path.resolve(x.v) === dir);
-  if (has && !stale) {
-    if (write) fs.mkdirSync(dir, { recursive: true });
-    return { file, dir, created: false, changed: false, legacy };
+  const listed = (d) => vals.some((x) => path.resolve(x.v) === d);
+  const missing = want.filter((d) => !listed(d));
+  const drop = vals.filter((x) => gone.includes(path.resolve(x.v)));
+  const stale = gone.filter(listed);
+  if (!missing.length && !drop.length) {
+    if (write) for (const d of want) fs.mkdirSync(d, { recursive: true });
+    return { ...result([], []), created: false, changed: false };
   }
-  if (!write) return { file, dir, missing: !has, stale, legacy };
+  if (!write) return result(missing, stale);
   // each stale entry goes with one comma token beside it (the next, else the one before), so the rest stays
-  // comma-separated and a comment between them stays put; ours goes in before the ], after a comma when the
-  // last token left is a value. Tokens, not text: a `#` or `,` inside a string is never read as syntax.
-  const gone = new Set();
+  // comma-separated and a comment between them stays put; a missing one goes in before the ], after a comma when
+  // the last token left is a value. Tokens, not text: a `#` or `,` inside a string is never read as syntax.
+  const cut = new Set();
   for (const x of drop) {
     const j = toks.indexOf(x), after = toks[j + 1], before = toks[j - 1];
-    gone.add(x);
-    if (after && after.comma && !gone.has(after)) gone.add(after);
-    else if (before && before.comma && !gone.has(before)) gone.add(before);
+    cut.add(x);
+    if (after && after.comma && !cut.has(after)) cut.add(after);
+    else if (before && before.comma && !cut.has(before)) cut.add(before);
   }
-  const left = toks.filter((t) => !gone.has(t));
+  const left = toks.filter((t) => !cut.has(t));
   let next = text;
-  if (!has) next = `${next.slice(0, i)}${left.length && !left[left.length - 1].comma ? ", " : ""}${entry}${next.slice(i)}`;
-  for (const t of [...gone].sort((a, b) => b.start - a.start)) {
+  if (missing.length) next = `${next.slice(0, i)}${left.length && !left[left.length - 1].comma ? ", " : ""}${entries(missing)}${next.slice(i)}`;
+  for (const t of [...cut].sort((a, b) => b.start - a.start)) {
     const pad = /^[ \t]*/.exec(next.slice(t.end))[0].length; // the blanks after it go too
     next = next.slice(0, t.start) + next.slice(t.end + pad);
   }
-  fs.writeFileSync(file, next);
-  fs.mkdirSync(dir, { recursive: true });
-  return { file, dir, created: false, changed: true, legacy, stale };
+  return done(next, false, missing, stale);
 }
 
 // guest mode: the guest dir outside the project, writable in the workspace-write sandbox (writable_roots)

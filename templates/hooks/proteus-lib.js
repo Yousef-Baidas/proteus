@@ -69,10 +69,33 @@ const scratchDir = (common) => path.join(stateDir(common), "scratch");
 // abs lies under common's scratch root (relPath: null outside it or on another drive, case-insensitive on win32)
 const inScratch = (common, abs) => !!common && !!relPath(scratchDir(common), abs);
 
-// a run's names: its branch prefix, its worker branches' prefix, evidence prefix, labels, and the sibling folder its
-// worker worktrees use. Worker branches are <work><run>/<id>, outside <branch>, so a ruleset on proteus/* binds runs only;
-// a run opened before that keeps <branch><run>-<id> until it closes.
-const CURRENT = { branch: "proteus/", work: "proteus-work/", evidence: "proteus-evidence/", label: "proteus", log: "proteus-log", review: "proteus-review", debt: "proteus-debt", question: "proteus-question", worktrees: "-proteus" };
+// a run's names: its branch prefix, its worker branches' prefix, evidence prefix, labels, and the folder inside the
+// checkout its worker worktrees use (<checkout>/.worktrees/<id>). Worker branches are <work><run>/<id>, outside <branch>,
+// so a ruleset on proteus/* binds runs only; a run opened before that keeps <branch><run>-<id> until it closes.
+const CURRENT = { branch: "proteus/", work: "proteus-work/", evidence: "proteus-evidence/", label: "proteus", log: "proteus-log", review: "proteus-review", debt: "proteus-debt", question: "proteus-question", worktrees: ".worktrees" };
+// the line proteus-worktree.js keeps in <git-common-dir>/info/exclude, so `git add -A` in the checkout skips them
+const WORKTREES_EXCLUDE = `/${CURRENT.worktrees}/`;
+const worktreesDir = (root) => path.join(path.resolve(root), CURRENT.worktrees);
+// Proteus 1.1 and earlier put worker worktrees in a folder beside the checkout, ../<repo>-proteus/; a run opened
+// then keeps its worktrees there until they merge
+const OLD_WORKTREES = "-proteus";
+const besideDir = (root, suffix) => { const abs = path.resolve(root); return path.join(path.dirname(abs), path.basename(abs) + suffix); };
+
+// worktrees git still has registered under dir: <common>/worktrees/*/gitdir, no git call
+function worktreesUnder(root, dir) {
+  const common = gitCommonDir(root);
+  const out = [];
+  let ids = [];
+  try { ids = fs.readdirSync(path.join(common, "worktrees")); } catch { return out; }
+  for (const id of ids) {
+    let wt;
+    try { wt = path.dirname(path.resolve(fs.readFileSync(path.join(common, "worktrees", id, "gitdir"), "utf8").trim())); } catch { continue; }
+    // real paths on both sides: /tmp is /private/tmp on macOS, and git may have stored either
+    const r = path.relative(realOr(dir), realOr(wt));
+    if (r && r !== ".." && !r.startsWith(".." + path.sep) && !path.isAbsolute(r)) out.push(wt);
+  }
+  return out;
+}
 
 // legacy-hive:start
 // hivemind, the old name (#6): a run opened before the rename keeps these names until it closes, and its
@@ -80,23 +103,11 @@ const CURRENT = { branch: "proteus/", work: "proteus-work/", evidence: "proteus-
 const LEGACY = { branch: "hive/", evidence: "hive-evidence/", label: "hive", log: "hive-log", review: "hive-review", debt: "hive-debt", question: "hive-question", worktrees: "-hive", state: "hive", owned: "hive-owned" };
 const legacyStateDir = (common) => path.join(common, LEGACY.state);
 // the worker worktree folder a legacy run used, beside the checkout
-const legacyWorktreeDir = (root) => { const abs = path.resolve(root); return path.join(path.dirname(abs), path.basename(abs) + LEGACY.worktrees); };
-
-// worktrees git still has registered under legacyWorktreeDir(root): <common>/worktrees/*/gitdir, no git call
-function legacyWorktrees(root) {
-  const common = gitCommonDir(root);
-  const dir = legacyWorktreeDir(root);
-  const out = [];
-  let ids = [];
-  try { ids = fs.readdirSync(path.join(common, "worktrees")); } catch { return out; }
-  for (const id of ids) {
-    let wt;
-    try { wt = path.dirname(path.resolve(fs.readFileSync(path.join(common, "worktrees", id, "gitdir"), "utf8").trim())); } catch { continue; }
-    const r = path.relative(dir, wt);
-    if (r && !r.startsWith("..") && !path.isAbsolute(r)) out.push(wt);
-  }
-  return out;
-}
+const legacyWorktreeDir = (root) => besideDir(root, LEGACY.worktrees);
+// worktrees git still has registered under legacyWorktreeDir(root)
+const legacyWorktrees = (root) => worktreesUnder(root, legacyWorktreeDir(root));
+// the folders beside the checkout that older runs kept worker worktrees in: ../<repo>-proteus, ../<repo>-hive
+const oldWorktreeDirs = (root) => [besideDir(root, OLD_WORKTREES), legacyWorktreeDir(root)];
 
 const realOr = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 const within = (dir, p) => { const r = path.relative(dir, p); return r === "" || (r !== ".." && !r.startsWith(".." + path.sep) && !path.isAbsolute(r)); };
@@ -1049,6 +1060,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
+  WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,

@@ -495,7 +495,7 @@ try {
 
     // case 20, Codex sandboxRoots (run at every Codex session start): .codex, or .codex/config.toml, links out of the repo
     const T20 = tmp("codexcfg"), H20 = homeAt(path.join(T20, "home")), probe20 = path.join(TOOLS, "roots20-probe.js");
-    fs.writeFileSync(probe20, `"use strict";\nconst [js, root] = process.argv.slice(2);\nconsole.log(JSON.stringify(require(js).sandboxRoots(root)));\n`);
+    fs.writeFileSync(probe20, `"use strict";\nconst [js, root] = process.argv.slice(2);\nconst m = require(js);\nconsole.log(JSON.stringify([m.sandboxRoots(root), m.sandboxRoots(root, true, root + "-guest")]));\n`);
     const cfg20 = (tag, plant) => {
       const R = path.join(T20, tag), out = path.join(T20, `${tag}-out`);
       fs.mkdirSync(out, { recursive: true });
@@ -503,11 +503,12 @@ try {
       fs.mkdirSync(R, { recursive: true });
       if (!plant(R, out)) return;
       const r = nodeRun(probe20, [path.join(CHK, "templates", "hooks", "proteus-harness-codex.js"), R], R, H20);
-      let w = null;
-      try { w = JSON.parse(r.stdout); } catch {}
+      let w = null, plain = null;
+      try { [plain, w] = JSON.parse(r.stdout); } catch {}
       ok(`case 20 (${tag}): the config outside keeps its bytes`, String(read(path.join(out, "config.toml"))) === "KEEP\n", `${r.status} ${r.stdout}${r.stderr}`);
-      ok(`case 20 (${tag}): sandboxRoots returns an error naming the link`, !!w && typeof w.error === "string" && /link/.test(w.error) && !w.changed, `${r.status} ${r.stdout}${r.stderr}`);
-      ok(`case 20 (${tag}): no worktree folder is made beside the repo`, !lstat(path.join(T20, `${tag}-proteus`)), tag);
+      ok(`case 20 (${tag}): with a root to add, sandboxRoots returns an error naming the link`, !!w && typeof w.error === "string" && /link/.test(w.error) && !w.changed, `${r.status} ${r.stdout}${r.stderr}`);
+      ok(`case 20 (${tag}): with none to add, it changes nothing`, !!plain && !plain.changed, `${r.status} ${r.stdout}${r.stderr}`);
+      ok(`case 20 (${tag}): no folder is made beside the repo`, !lstat(path.join(T20, `${tag}-proteus`)) && !lstat(path.join(T20, `${tag}-guest`)), tag);
     };
     cfg20("dirlink", (R, out) => { fs.symlinkSync(out, path.join(R, ".codex"), "junction"); return true; });
     cfg20("filelink", (R, out) => { fs.mkdirSync(path.join(R, ".codex")); return fileLink(path.join(out, "config.toml"), path.join(R, ".codex", "config.toml")); });

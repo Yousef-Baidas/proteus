@@ -293,7 +293,8 @@ let LR = "", HB = "", PH = "";
   ok("scratch (2): --all-done keeps demo and demo-3 while hive/demo is open", fs.existsSync(sd(RUN)) && fs.existsSync(sd(`${RUN}-3`)), r.out + r.err);
 }
 
-// ---- 3. Codex writable_roots: ../<repo>-hive goes only once no legacy run needs it, and both never stay without a reason
+// ---- 3. Codex writable_roots: ../<repo>-hive goes only once no legacy run needs it; worker worktrees now live in
+// .worktrees/, inside the project, so no folder beside the repo is listed without a worktree in it
 {
   const HE = fakeHome("codex");
   const codexEnv = { CODEX_HOME: path.join(HE, ".codex") };
@@ -308,15 +309,15 @@ let LR = "", HB = "", PH = "";
   withHive(L1);
   let r = run(path.join(SRC, "install.js"), L1, HE, ["--project", "--harness", "codex"], "", codexEnv);
   const d1 = run(path.join(SRC, "install.js"), L1, HE, ["--doctor", "--harness", "codex"], "", codexEnv);
-  ok("codex (3): with a legacy worktree in <repo>-hive, config.toml keeps that root beside <repo>-proteus",
-    r.code === 0 && cfg(L1).includes(JSON.stringify(`${L1}-hive`)) && cfg(L1).includes(JSON.stringify(`${L1}-proteus`)), `${r.code} ${cfg(L1)} ${r.err.slice(0, 200)}`);
+  ok("codex (3): with a legacy worktree in <repo>-hive, config.toml keeps that root and adds no <repo>-proteus",
+    r.code === 0 && cfg(L1).includes(JSON.stringify(`${L1}-hive`)) && !cfg(L1).includes(`${L1}-proteus`), `${r.code} ${cfg(L1)} ${r.err.slice(0, 200)}`);
   ok("codex (3): the kept <repo>-hive root has its reason in the --project or --doctor output", (r.out + d1.out).includes(`${L1}-hive`), (r.out + d1.out).split("\n").filter((l) => /sandbox|writable|hive/.test(l)).join(" | "));
   // no legacy run left: the stale entry goes
   const L2 = legacyRepo("codex-done", { open: false });
   withHive(L2);
   r = run(path.join(SRC, "install.js"), L2, HE, ["--project", "--harness", "codex"], "", codexEnv);
-  ok("codex (3): with no legacy run, --project drops the stale <repo>-hive root and lists <repo>-proteus",
-    r.code === 0 && !cfg(L2).includes(`${L2}-hive`) && cfg(L2).includes(JSON.stringify(`${L2}-proteus`)), `${r.code} ${cfg(L2)}`);
+  ok("codex (3): with no legacy run, --project drops the stale <repo>-hive root and lists no <repo>-proteus",
+    r.code === 0 && !cfg(L2).includes(`${L2}-hive`) && !cfg(L2).includes(`${L2}-proteus`), `${r.code} ${cfg(L2)}`);
 }
 
 // ---- 4. orphaned state dir, part 2: a file already in .git/proteus is never overwritten, and what stays is reported
@@ -396,8 +397,9 @@ function recallsBoth(repo, home, how) {
   ok("journal split (--project): neither --project nor --doctor says to keep one journal and delete the other", !keepOne(r1.out, r1.err, r2.out, r2.err, d.out).length, keepOne(r1.out, r1.err, r2.out, r2.err, d.out).join(" | "));
 }
 
-// ---- Codex root at session start (PR #16 review): an auto-update leaves writable_roots without ../<repo>-proteus. The
-// next session start adds that root and nothing else, or prints the one command that finishes the move.
+// ---- Codex root at session start (PR #16 review): an auto-update leaves writable_roots without ../<repo>-proteus while
+// a run started before worktrees moved into .worktrees/ still has one there. The next session start adds that root
+// and nothing else, or prints the one command that finishes the move.
 {
   const LX = legacyRepo("codex-autostart");
   const HX = fakeHome("codex-autostart");
@@ -405,6 +407,7 @@ function recallsBoth(repo, home, how) {
   fs.mkdirSync(cxEnv.CODEX_HOME);
   newHooks(LX, [".codex", "hooks"], [".agents", "skills", "proteus"]);
   quiet(HX);
+  g(LX, "worktree", "add", "-q", "-b", "proteus-work/inflight/1", path.join(`${LX}-proteus`, "inflight-1"));
   const before = [`${LX}-hive`, "/opt/tools"];
   fs.writeFileSync(path.join(LX, ".codex", "config.toml"), `[sandbox_workspace_write]\nwritable_roots = [${before.map((x) => JSON.stringify(x)).join(", ")}]\n`);
   const s = run(path.join(LX, ".codex", "hooks", "proteus-autostart.js"), LX, HX, [], { hook_event_name: "SessionStart", source: "startup", session_id: "cx-startup", cwd: LX }, cxEnv);
@@ -418,11 +421,12 @@ function recallsBoth(repo, home, how) {
     Array.isArray(roots) && roots.includes("/opt/tools") && roots.every((x) => x === `${LX}-proteus` || before.includes(x)), text);
 }
 
-// ---- Codex TOML (PR #16 review, debt 1): an existing root whose string holds `#` still gets the -proteus root beside it,
-// comma-separated; a regression check, base (hive/pi) writes it correctly
+// ---- Codex TOML (PR #16 review, debt 1): an existing root whose string holds `#` still gets the -proteus root of a run
+// in flight beside it, comma-separated; a regression check, base (hive/pi) writes it correctly
 {
   const LH = legacyRepo("codex-hash", { open: false });
   const HH = fakeHome("codex-hash");
+  g(LH, "worktree", "add", "-q", "-b", "proteus-work/inflight/2", path.join(`${LH}-proteus`, "inflight-2"));
   fs.mkdirSync(path.join(LH, ".codex"), { recursive: true });
   fs.writeFileSync(path.join(LH, ".codex", "config.toml"), "[sandbox_workspace_write]\nwritable_roots = [\"/opt/a,#\"]\n");
   const r = run(path.join(SRC, "install.js"), LH, HH, ["--project", "--harness", "codex"], "", { CODEX_HOME: path.join(HH, ".codex") });
@@ -563,15 +567,15 @@ const appendPre = () => preload("append-mid-merge", `const write = fs.writeFileS
   toml(LO, [`${LO}-hive`]);
   let r = run(INSTALL, LO, HC2, ["--project", "--harness", "codex"], "", cx);
   let roots = rootsOf(LO);
-  ok("pin codex: a registered worktree outside ../<repo>-hive does not keep that root; --project drops it and lists ../<repo>-proteus",
-    r.code === 0 && fs.existsSync(path.join(other, ".git")) && Array.isArray(roots) && !roots.includes(`${LO}-hive`) && roots.includes(`${LO}-proteus`), `${r.code} ${JSON.stringify(roots)}`);
+  ok("pin codex: a registered worktree outside ../<repo>-hive does not keep that root; --project drops it and lists no ../<repo>-proteus",
+    r.code === 0 && fs.existsSync(path.join(other, ".git")) && Array.isArray(roots) && !roots.includes(`${LO}-hive`) && !roots.includes(`${LO}-proteus`), `${r.code} ${JSON.stringify(roots)}`);
 
   const LS = legacyRepo("codex-both", { open: false });
   toml(LS, [`${LS}-hive`, `${LS}-proteus`]);
   r = run(INSTALL, LS, HC2, ["--project", "--harness", "codex"], "", cx);
   roots = rootsOf(LS);
-  ok("pin codex: with ../<repo>-proteus already listed and no legacy worktree, --project still drops the stale ../<repo>-hive root",
-    r.code === 0 && Array.isArray(roots) && !roots.includes(`${LS}-hive`) && roots.includes(`${LS}-proteus`), `${r.code} ${JSON.stringify(roots)}`);
+  ok("pin codex: with ../<repo>-proteus listed and no worktree in either folder, --project drops both roots",
+    r.code === 0 && Array.isArray(roots) && !roots.includes(`${LS}-hive`) && !roots.includes(`${LS}-proteus`), `${r.code} ${JSON.stringify(roots)}`);
 }
 
 // a worker worktree dispatched before the rename carries .claude/hive-owned: the owned-path hook enforces it

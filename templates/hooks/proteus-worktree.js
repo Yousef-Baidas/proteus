@@ -3,7 +3,8 @@
 //   node .claude/hooks/proteus-worktree.js <worktree> [--tier <tier> [--human]] <owned path or glob>...
 // The harness adapter copies the worker hooks in and registers them (Claude Code: .claude/hooks/ and
 // .claude/settings.local.json from worktree-settings.local.json); this writes the owned-path list
-// (one entry per line), keeps those local files out of `git add` via <git-common-dir>/info/exclude, and installs
+// (one entry per line), keeps those local files and the checkout's /.worktrees/ folder out of `git add` via
+// <git-common-dir>/info/exclude (never .gitignore, which is the human's), and installs
 // a pre-commit hook in this worktree only that checks staged paths against the list (proteus-owned-check.js),
 // plus a commit-msg hook running commit-msg.js when the repo has none of its own.
 // --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
@@ -61,10 +62,10 @@ try {
     let cur = "";
     try { cur = fs.readFileSync(file, "utf8"); } catch {}
     const have = new Set(cur.split(/\r?\n/));
-    const add = EXCLUDE.filter((l) => !have.has(l));
+    const add = [...EXCLUDE, lib.WORKTREES_EXCLUDE].filter((l) => !have.has(l));
     if (add.length) {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + "# proteus: machine-local worker files\n" + add.join("\n") + "\n");
+      fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + "# proteus: machine-local worker files and worktrees\n" + add.join("\n") + "\n");
     }
   }
 } catch {}

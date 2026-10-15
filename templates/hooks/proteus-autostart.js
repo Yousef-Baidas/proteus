@@ -261,20 +261,22 @@ function migrateState(root, home, notes) {
   notes.push(`proteus: ${lib.legacyStateDir(common)} still holds ${left.join(", ")}; ${cmd} says why`);
 }
 
-// Codex: an auto-update never re-ran --project, so writable_roots may lack the worker folder. The
-// adapter's own writer adds it (and drops the stale legacy root under its rules) when config.toml
-// exists; any other case only names the command. Silent when the root is already there.
+// Codex: worker worktrees live in .worktrees/, inside the project, so writable_roots needs no entry for them. A
+// folder beside the project that an older run still has worktrees in stays listed (added back if lost) until they
+// merge, then goes. The adapter's own writer does that when config.toml exists; any other case only names the
+// command. Silent when nothing changes.
 function codexRoots(ad, root, home, notes) {
   if (typeof ad.sandboxRoots !== "function") return;
   const check = ad.sandboxRoots(root, false);
-  if (!check.error && !check.missing && !check.stale) return;
+  if (!check.error && !(check.missing || []).length && !(check.stale || []).length) return;
   const w = !check.error && fs.existsSync(check.file) ? ad.sandboxRoots(root) : check;
   if (w.changed) {
-    notes.push(`proteus: ${w.dir} added to writable_roots in ${w.file}${w.stale ? ` (${w.stale} dropped: no worktree of a pre-rename run is left in it)` : ""}`);
+    const did = [...w.missing.map((d) => `${d} added back (an older run still has worktrees there)`), ...w.stale.map((d) => `${d} dropped (no worktree of an older run is left in it)`)];
+    notes.push(`proteus: writable_roots in ${w.file}: ${did.join("; ")}`);
     return;
   }
   const cmd = home ? `node "${path.join(home, "install.js")}" --update` : "install.js --update";
-  notes.push(`proteus: ${w.error || `${w.dir} is not in writable_roots of ${w.file}`}; ${cmd} (install.ps1 -Update on Windows) finishes the move`);
+  notes.push(`proteus: ${w.error || `${w.missing.join(", ")} is not in writable_roots of ${w.file}`}; ${cmd} (install.ps1 -Update on Windows) finishes the move`);
 }
 
 // The agents' GitHub login: with "agentGh" in proteus.json (install.js --agent-login), every agent shell command,

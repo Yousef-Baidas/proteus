@@ -1050,16 +1050,26 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   const e = cx.event({ hook_event_name: "PreToolUse", cwd: "/r", tool_name: "apply_patch", tool_input: { command: "*** Begin Patch\n*** Add File: a/new.ts\n+x\n*** Update File: b.ts\n*** Move to: c.ts\n*** Delete File: /abs/d.ts\n*** End Patch" } });
   ok("codex event: every patch path, resolved against cwd; the patch is not a shell command", JSON.stringify(e.paths) === JSON.stringify(["/r/a/new.ts", "/r/b.ts", "/r/c.ts", "/abs/d.ts"].map((p) => path.resolve(p))) && e.tool === "edit" && e.command === "" && e.path === path.resolve("/r/a/new.ts"), JSON.stringify(e.paths));
 
-  // .codex/config.toml: ../<repo>-proteus/ joins writable_roots without disturbing the rest
-  const SB = path.join(W, "sb", "app"), SBD = JSON.stringify(path.join(W, "sb", "app-proteus")), SBF = path.join(SB, ".codex", "config.toml");
+  // .codex/config.toml: worker worktrees live in .worktrees/, inside the project, so nothing is added for them. An
+  // older run's folder beside the repo, ../<repo>-proteus/, stays (or comes back) while git has a worktree in it,
+  // without disturbing the rest of the file
+  const SB = path.join(W, "sb", "app"), SBO = path.join(W, "sb", "app-proteus"), SBD = JSON.stringify(SBO), SBF = path.join(SB, ".codex", "config.toml");
+  fs.mkdirSync(SB, { recursive: true }); g(SB, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(SB, "a.txt"), "a\n"); g(SB, "add", "-A"); g(SB, "commit", "-qm", "init");
   const sb = (text, write) => {
-    fs.rmSync(path.join(W, "sb"), { recursive: true, force: true }); fs.mkdirSync(SB, { recursive: true });
+    fs.rmSync(path.join(SB, ".codex"), { recursive: true, force: true });
     if (text !== null) { fs.mkdirSync(path.dirname(SBF), { recursive: true }); fs.writeFileSync(SBF, text); }
     const r = cx.sandboxRoots(SB, write);
     return { ...r, text: fs.existsSync(SBF) ? fs.readFileSync(SBF, "utf8") : null };
   };
   let s = sb(null);
-  ok("codex sandboxRoots: no config.toml: created with the table, the worktree folder made", s.created && s.changed && s.text === `[sandbox_workspace_write]\nwritable_roots = [${SBD}]\n` && fs.existsSync(path.join(W, "sb", "app-proteus")), JSON.stringify(s));
+  ok("codex sandboxRoots: no run beside the repo, no config.toml: none created, no folder made", !s.changed && !s.error && s.text === null && !fs.existsSync(SBO), JSON.stringify(s));
+  s = sb('[sandbox_workspace_write]\nwritable_roots = ["/a", ' + SBD + "]\n");
+  ok("codex sandboxRoots: no worktree left beside the repo: that root is dropped, the user's kept", s.changed && s.stale.length === 1 && s.text === '[sandbox_workspace_write]\nwritable_roots = ["/a"]\n', s.text);
+  ok("codex sandboxRoots: no run beside the repo: a shape it cannot read is left alone, no error", !sb("sandbox_workspace_write.network_access = true\n").error && sb("[sandbox_workspace_write]\n").changed === false);
+  // an older run in flight: its worktree is registered in ../app-proteus/
+  g(SB, "worktree", "add", "-q", "-b", "proteus-work/old/7", path.join(SBO, "7"));
+  s = sb(null);
+  ok("codex sandboxRoots: an older run in flight, no config.toml: created listing its folder", s.created && s.changed && s.text === `[sandbox_workspace_write]\nwritable_roots = [${SBD}]\n` && s.kept.length === 1 && s.kept[0].dir === SBO, JSON.stringify(s));
   s = sb('model = "x"\n\n[mcp_servers.a]\ncommand = "a"');
   ok("codex sandboxRoots: no table: appended after the user's content", !s.created && s.changed && s.text === `model = "x"\n\n[mcp_servers.a]\ncommand = "a"\n\n[sandbox_workspace_write]\nwritable_roots = [${SBD}]\n`, s.text);
   s = sb("[sandbox_workspace_write]\nnetwork_access = true\n[other]\nx = 1\n");
@@ -1073,11 +1083,12 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   s = sb(have);
   ok("codex sandboxRoots: already listed: untouched", !s.changed && !s.error && s.text === have);
   s = sb("[sandbox_workspace_write]\n", false);
-  ok("codex sandboxRoots: check only: reports missing, writes nothing", s.missing && s.text === "[sandbox_workspace_write]\n" && !fs.existsSync(path.join(W, "sb", "app-proteus")));
+  ok("codex sandboxRoots: check only: reports missing, writes nothing", s.missing.length === 1 && s.missing[0] === SBO && s.text === "[sandbox_workspace_write]\n");
   const odd = ["sandbox_workspace_write = { network_access = true }\n", "sandbox_workspace_write.network_access = true\n", '[sandbox_workspace_write]\nwritable_roots = "/a"\n',
     '[sandbox_workspace_write]\nwritable_roots = [1]\n', "[sandbox_workspace_write]\n[sandbox_workspace_write]\n", 'x = """\n[sandbox_workspace_write]\n"""\n', "[sandbox_workspace_write]\nwritable_roots = [\"/a\"\n"];
   ok("codex sandboxRoots: a shape it cannot edit safely is refused and left alone",
     odd.every((t) => { const r = sb(t); return r.error && r.error.includes("add ") && r.text === t; }), odd.map((t) => JSON.stringify(sb(t))).join(" | "));
+  ok("codex sandboxRoots: never lists .worktrees/, which the project root already covers", !sb(null).text.includes(".worktrees"));
 }
 
 // ---- installer, --harness codex: temp HOME and CODEX_HOME; the claude CLI is never called
@@ -1138,9 +1149,9 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     !fs.existsSync(path.join(XP, ".agents", "skills", "proteus")) && /removed  \.agents\/skills\/proteus /.test(r.out) && !fs.existsSync(path.join(XP, ".claude", "settings.local.json")) &&
     [".codex/hooks.json", ".codex/hooks/proteus-*.js", ".codex/rules/proteus.rules", ".codex/proteus-owned"].every((l) => excl.includes(l)) && g(XP, "status", "--porcelain") === "?? teams/",
     r.out + r.err + g(XP, "status", "--porcelain"));
-  ok("codex --project: the worktree folder is a writable root in a new, excluded .codex/config.toml",
-    fs.readFileSync(path.join(XP, ".codex", "config.toml"), "utf8") === `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(XP + "-proteus")}]\n` &&
-    excl.includes(".codex/config.toml") && fs.existsSync(XP + "-proteus") && /^sandbox  -> \.codex\/config\.toml \(created, /m.test(r.out), r.out);
+  ok("codex --project: no run beside the repo, so no config.toml and no ../<repo>-proteus; workers write in .worktrees/",
+    !fs.existsSync(path.join(XP, ".codex", "config.toml")) && !excl.includes(".codex/config.toml") && !fs.existsSync(XP + "-proteus") &&
+    /^sandbox  -> worker worktrees in \.worktrees\/, inside the project: writable_roots needs no entry$/m.test(r.out), r.out);
   ok("codex --project: prints the one-time trust and /hooks steps (context-mode already on)",
     /Once, in Codex:\n  1\. open codex in this repo and trust it.*\n  2\. approve the Proteus hooks in \/hooks/.test(r.out) && !/codex mcp add/.test(r.out), r.out);
 
@@ -1149,28 +1160,28 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("codex doctor: skills, agents, hooks, rules ok; untrusted project and the header-less agent WARN; no Claude-only checks",
     /^ok   ~\/\.agents\/skills link/m.test(d) && /^ok   codex agents current$/m.test(d) && /^ok   lead hooks registered$/m.test(d) && /^ok   \.codex\/rules\/proteus\.rules$/m.test(d) &&
     /^ok   context-mode \(MCP server or plugin\)$/m.test(d) && /^WARN project not trusted in codex/m.test(d) && /^WARN codex agents not generated by proteus, left alone \(shipped updates skip them\): .*proteus-guide\.toml/m.test(d) && /deleting one drops its edits/.test(d) &&
-    /^ok   no Claude-only files in \.codex\/hooks$/m.test(d) && /^ok   commit-msg gate not installed yet/m.test(d) && /^ok   worktree folder writable in the Codex sandbox$/m.test(d) &&
+    /^ok   no Claude-only files in \.codex\/hooks$/m.test(d) && /^ok   commit-msg gate not installed yet/m.test(d) && /^ok   worker worktrees in \.worktrees\/, writable in the Codex sandbox$/m.test(d) &&
     !/AGENT_TEAMS|mattpocock|attribution|\.claude\/skills/.test(d), d);
   fs.writeFileSync(path.join(XC, "config.toml"), `[projects."${XP}"]\ntrust_level = "trusted"\n`);
   fs.rmSync(path.join(XP, ".codex", "rules"), { recursive: true }); fs.rmSync(path.join(XP, ".codex", "hooks", "proteus-lead-guard.js")); fs.unlinkSync(link("proteus"));
   fs.writeFileSync(path.join(XP, ".codex", "hooks", "proteus-statusline.js"), "// an older install's\n");
-  fs.writeFileSync(path.join(XP, ".codex", "config.toml"), "[sandbox_workspace_write]\nnetwork_access = true\n");
+  fs.writeFileSync(path.join(XP, ".codex", "config.toml"), `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(XP + "-proteus")}]\nnetwork_access = true\n`);
   // the old scaffold's gate: fine for Claude (it committed .claude/hooks/commit-msg.js), dead on a Codex-only clone
   fs.writeFileSync(path.join(XP, "lefthook.yml"), "commit-msg:\n  commands:\n    conventional:\n      run: node .claude/hooks/commit-msg.js {1}\n");
   d = xdoc();
   ok("codex doctor: broken pieces FIX, a missing context-mode MCP server WARNs with the codex mcp add command",
     /^FIX  ~\/\.agents\/skills\/\{proteus\} not linked/m.test(d) && /^FIX  lead hooks not registered: proteus-lead-guard\.js/m.test(d) && /^FIX  \.codex\/rules\/proteus\.rules missing/m.test(d) &&
-    /^FIX  Claude-only files in \.codex\/hooks: proteus-statusline\.js /m.test(d) && /^FIX  workers cannot write in .*cx-proj-proteus: \.codex\/config\.toml does not list it/m.test(d) &&
+    /^FIX  Claude-only files in \.codex\/hooks: proteus-statusline\.js /m.test(d) && /^FIX  .*cx-proj-proteus still in writable_roots, but no worktree of an older run is left in it/m.test(d) &&
     /^FIX  commit-msg gate: lefthook\.yml runs \.claude\/hooks\/commit-msg\.js, which git does not track — point it at teams\/templates\/hooks\/commit-msg\.js/m.test(d) &&
     /^WARN context-mode \(optional; agents fall back to a scratch file and grep\) is neither an MCP server nor .* — codex mcp add context-mode /m.test(d) && /^ok   project trusted in codex$/m.test(d), d);
   d = xdoc("--fix");
   ok("codex doctor --fix: relinks, re-registers, rewrites the rules; the header-less agent stays",
     /^ok   ~\/\.agents\/skills link .*\(fixed\)$/m.test(d) && /^ok   lead hooks registered \(fixed\)$/m.test(d) && /^ok   \.codex\/rules\/proteus\.rules( \(fixed\))?$/m.test(d) && fs.existsSync(path.join(XP, ".codex", "rules", "proteus.rules")) &&
     fs.readFileSync(AG, "utf8").includes("mine"), d.replace(/\n/g, " / "));
-  ok("codex doctor --fix: the Claude-only leftover removed, the worktree folder writable again; the gate is the repo's to repoint",
+  ok("codex doctor --fix: the Claude-only leftover removed, the stale folder dropped from writable_roots; the gate is the repo's to repoint",
     /^ok   no Claude-only files in \.codex\/hooks( \(fixed\))?$/m.test(d) && !fs.existsSync(path.join(XP, ".codex", "hooks", "proteus-statusline.js")) &&
-    /^ok   worktree folder writable in the Codex sandbox \(fixed\)$/m.test(d) &&
-    fs.readFileSync(path.join(XP, ".codex", "config.toml"), "utf8") === `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(XP + "-proteus")}]\nnetwork_access = true\n` &&
+    /^ok   worker worktrees in \.worktrees\/, writable in the Codex sandbox \(fixed\)$/m.test(d) &&
+    fs.readFileSync(path.join(XP, ".codex", "config.toml"), "utf8") === "[sandbox_workspace_write]\nwritable_roots = []\nnetwork_access = true\n" &&
     /^FIX  commit-msg gate: lefthook\.yml runs/m.test(d), d.split("\n").filter((l) => /Claude-only|commit-msg/.test(l)).join(" / "));
 
   // the shipped gates run the committed teams/ copy, so they work on a clean clone for either CLI
@@ -1198,8 +1209,10 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   g(W, "init", "-q", "-b", "main", XQ);
   fs.mkdirSync(path.join(XQ, ".codex")); fs.writeFileSync(path.join(XQ, ".codex", "config.toml"), 'model = "x"\n');
   g(XQ, "add", "-A"); g(XQ, "commit", "-qm", "init");
+  // an older run still has a worktree beside the repo, so its folder must be writable
+  g(XQ, "worktree", "add", "-q", "-b", "proteus-work/old/1", path.join(XQ + "-proteus", "1"));
   r = run(INST, "", { args: ["--project", "--harness", "codex"], cwd: XQ, env: xenv() });
-  ok("codex --project: a tracked config.toml gains the table, stays tracked, not excluded",
+  ok("codex --project: a tracked config.toml gains the older run's folder, stays tracked, not excluded",
     r.code === 0 && fs.readFileSync(path.join(XQ, ".codex", "config.toml"), "utf8") === `model = "x"\n\n[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(XQ + "-proteus")}]\n` &&
     !fs.readFileSync(path.join(XQ, ".git", "info", "exclude"), "utf8").includes("config.toml") && /^ ?M \.codex\/config\.toml$/m.test(g(XQ, "status", "--porcelain")),
     r.out + r.err + g(XQ, "status", "--porcelain"));
