@@ -273,6 +273,18 @@ function setAttribution() {
   return true;
 }
 
+// auto mode's classifier reads autoMode from user or managed settings only, and treats an agent
+// editing them as self-modification: Proteus suggests an environment entry and never writes it
+const AUTO_MODE_ENTRY = "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails";
+const claudeCode = () => isDir(CLAUDE) || has("claude") !== null;
+function autoModeHint() {
+  const s = readJson(path.join(CLAUDE, "settings.json")) || {};
+  const env = s.autoMode && Array.isArray(s.autoMode.environment) ? s.autoMode.environment : [];
+  if (env.some((e) => /proteus/i.test(String(e)))) return "";
+  const snippet = JSON.stringify({ autoMode: { environment: ["$defaults", AUTO_MODE_ENTRY] } }, null, 2);
+  return `in Claude Code run /auto-mode-setup, or /permissions → Auto mode, and add this entry to ${path.join(CLAUDE, "settings.json")}, keeping "$defaults" and any entries you have (README, Auto mode):\n${snippet}`;
+}
+
 // ~/.claude/proteus.json: { home, autoUpdate, ...keys the hooks own }
 const CONFIG = path.join(CLAUDE, "proteus.json");
 function readConfig() {
@@ -990,6 +1002,12 @@ function install(opt) {
     log(`  ${envCommand()}`);
   }
   log("");
+  const hint = claudeCode() ? autoModeHint() : "";
+  if (hint) {
+    log("");
+    log("Auto mode: its classifier may block Proteus worker spawns until it knows Proteus is yours;");
+    log(hint);
+  }
   log(ok ? "Done. /proteus bootstraps the rest." : "Done, with errors above.");
   if (fresh) log("New to Proteus? Type /proteus tour in any repo for a short walkthrough.");
   return ok;
@@ -1266,6 +1284,11 @@ async function doctor(fix) {
       return c.installed && c.enabled ? ["ok", `${CTX_PLUGIN} plugin`]
         : ["WARN", `${CTX_PLUGIN} plugin (optional; agents fall back to a scratch file and grep) ${c.installed ? "disabled" : "missing"}`, contextModeSteps(c).map((a) => `claude ${a.join(" ")}`).join(" && ")];
     }, () => installContextMode(), true);
+    if (claudeCode()) check(() => {
+      const hint = autoModeHint();
+      return hint ? ["WARN", "auto mode: no autoMode.environment entry in ~/.claude/settings.json names Proteus, so the classifier may block worker spawns", hint]
+        : ["ok", "auto mode: autoMode.environment describes Proteus"];
+    });
     check(() => {
       const bad = SKILLS.filter((s) => {
         const link = path.join(CLAUDE, "skills", s);
