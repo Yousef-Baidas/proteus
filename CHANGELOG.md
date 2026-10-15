@@ -6,6 +6,12 @@ installed version and the new one.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Proteus skill's description was invalid YAML (an unquoted value containing `: `), so Claude Code
+  dropped the skill's whole frontmatter, including `disable-model-invocation`, without any warning. The
+  description is now a block scalar. A test now checks the frontmatter of every shipped markdown file.
+
 ## [1.1.0] - 2026-10-04
 
 ### Added
