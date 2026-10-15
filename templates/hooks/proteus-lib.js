@@ -346,6 +346,50 @@ function ownedDenial(wt, target) {
   return owned.some((g) => ownedMatch(g, rel)) ? "" : needs(`not in ${path.relative(wt, ownedFile(wt)).split(path.sep).join("/")}`);
 }
 
+// a project's `<key>:` line in AGENTS.md (the guest dir's in guest mode): the text after the colon, else null.
+// The human's settings live there: `models:` (below) and `lead-edits:`.
+function agentsLine(root, key) {
+  let agents = "";
+  try { agents = fs.readFileSync(path.join(docRoot(root), "AGENTS.md"), "utf8"); } catch {}
+  const m = new RegExp(`^${key}:(.*)$`, "m").exec(agents);
+  return m ? m[1] : null;
+}
+
+// ---- lead-edits: the human widens what the lead may edit with `lead-edits: .vscode/* .editorconfig` in AGENTS.md,
+// globs relative to the repo root (ownedMatch syntax). In guest mode the line is read from the guest dir's AGENTS.md
+// and its globs still name the repo's own files.
+const leadEdits = (root) => (agentsLine(root, "lead-edits") || "").split(/\s+/).filter(Boolean);
+// Never the lead's, whatever the line says: the CLIs' hooks, settings and owned lists (.claude, .codex), Codex's
+// linked skills (.agents), git's own hooks, config and Proteus state (.git), teams/ (the commit-msg gate and the
+// gate scripts under teams/templates/hooks, the lock, the team files), lefthook's config and scripts in every
+// name it reads, and the CI that runs the gates (.github/workflows, plus .github/actions that workflows call).
+// Matched on fileKey, so case, trailing dots and :streams do not get around it on any OS.
+const LEAD_NEVER = [/^\.(?:claude|codex|agents|git)(?:\/|$)/, /^teams(?:\/|$)/, /^(?:\.config\/)?\.?lefthook[^/]*(?:\/|$)/, /^\.github\/(?:workflows|actions)(?:\/|$)/];
+const neverLeads = (rel) => { const k = fileKey(rel); return LEAD_NEVER.some((re) => re.test(k)) || /~\d/.test(k); }; // ~1: a Windows 8.3 alias (CLAUDE~1)
+// why the lead may not edit target under a lead-edits glob, or "" when it may. rel must be relPath(root, target).
+// A link at target is never written through (syncText, #22), and the real path of its nearest existing ancestor
+// must stay inside the repo and off the never list, so a committed link to .claude/ or out of the repo does not count.
+function leadEditDenial(root, target, rel) {
+  const abs = path.resolve(root, String(target));
+  if (neverLeads(rel)) return `${rel} holds Proteus's hooks, gates or CLI settings; no lead-edits line covers it.`;
+  let st = null;
+  try { st = fs.lstatSync(abs); } catch {}
+  if (st && st.isSymbolicLink()) return `${rel} is a link; the lead does not write through one.`;
+  let d = abs;
+  const rest = [];
+  while (!st && path.dirname(d) !== d) { // the nearest ancestor that exists; a dangling link on the way fails realpath below
+    rest.unshift(path.basename(d));
+    d = path.dirname(d);
+    try { st = fs.lstatSync(d); } catch {}
+  }
+  let real;
+  try { real = path.join(fs.realpathSync(d), ...rest); } catch { return `${rel} sits under a link that does not resolve.`; }
+  const realRel = relPath(realOr(root), real);
+  if (realRel === null) return `${rel} resolves outside the repo (${real.split(path.sep).join("/")}).`;
+  if (realRel !== rel && neverLeads(realRel)) return `${rel} resolves to ${realRel}, which holds Proteus's hooks, gates or CLI settings.`;
+  return "";
+}
+
 // ---- change tiers (SKILL.md rule 3): the tier decides the pipeline's steps, cheapest first
 const TIERS = ["direct", "quick", "standard", "full"];
 // the tiers block of teams/ROUTING.md, a ```tiers fence with one rule per line: <glob> <tier> [lines=<n>] [files=<n>].
@@ -907,11 +951,9 @@ function modelPolicy(root) {
   const tiers = {}, ownTiers = cfg.tiers && typeof cfg.tiers === "object" ? cfg.tiers : {};
   for (const [k, v] of Object.entries({ ...MODEL_TIERS, ...d.tiers, ...ownTiers })) if (k in MODEL_TIERS) tiers[k] = tierSpec(v);
   const pol = { ladder, floor: String(cfg.floor || d.floor).toLowerCase(), solo: "solo" in cfg ? list(cfg.solo) : d.solo, aliases, tiers };
-  let agents = "";
-  try { agents = fs.readFileSync(path.join(docRoot(root), "AGENTS.md"), "utf8"); } catch {}
-  const line = /^models:(.*)$/m.exec(agents);
-  if (line) {
-    for (const [, k, v] of line[1].matchAll(/(\w+)=(\S+)/g)) {
+  const line = agentsLine(root, "models");
+  if (line !== null) {
+    for (const [, k, v] of line.matchAll(/(\w+)=(\S+)/g)) {
       if (k === "floor") pol.floor = v.toLowerCase();
       if (k === "solo") pol.solo = list(v);
       if (k in MODEL_TIERS) pol.tiers[k] = tierSpec(v);
@@ -1007,7 +1049,7 @@ module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

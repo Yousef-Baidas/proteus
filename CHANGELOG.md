@@ -6,8 +6,17 @@ installed version and the new one.
 
 ## [Unreleased]
 
+### Added
+
+- `lead-edits:` line in `AGENTS.md` (#113): globs relative to the repo root that the lead may edit directly,
+  such as `.vscode/* .editorconfig .gitignore`, on Claude Code and Codex, and in guest mode for the repo's own
+  files. `.claude/`, `.codex/`, `.agents/`, `.git/`, `teams/`, lefthook config, `.github/workflows/`,
+  `.github/actions/`, links and paths that resolve outside the repo or onto that list stay refused.
+
 ### Fixed
 
+- Auto-update no longer skips silently: a checkout with local changes, or a merge git refuses, now prints
+  one line saying the update to the new release did not happen (#113).
 - The Proteus skill's description was invalid YAML (an unquoted value containing `: `), so Claude Code
   dropped the skill's whole frontmatter, including `disable-model-invocation`, without any warning. The
   description is now a block scalar. A test now checks the frontmatter of every shipped markdown file.
