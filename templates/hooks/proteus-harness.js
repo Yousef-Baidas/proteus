@@ -11,6 +11,7 @@
 //   model        the session's model when the event carries it
 //   tool         edit | read | shell | monitor | spawn | "" (anything else); toolName is the CLI's own
 //   path, command, background, spawnModel, spawnType, toolUseId   from the tool call (spawnType: the agent spawned)
+//   workdir      the shell tool's own working dir (relative to cwd) when the CLI's shell takes one
 //   paths        every file the call touches (one patch can edit several); path is the first
 //   prompt, fromHuman   a submitted prompt, and whether the human typed it
 //   output, error       a finished tool call's stdout+stderr and error text

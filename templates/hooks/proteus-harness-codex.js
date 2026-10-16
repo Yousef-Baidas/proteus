@@ -75,6 +75,8 @@ function event(raw) {
     path: paths[0] || "",
     paths,
     command: tool === "shell" ? cmd : "",
+    // the shell tool's own working dir, relative to cwd; the command runs there
+    workdir: tool === "shell" && typeof ti.workdir === "string" ? ti.workdir : "",
     background: false,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
     spawnType: typeof ti.agent_type === "string" ? ti.agent_type : "",

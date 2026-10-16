@@ -50,6 +50,7 @@ function event(raw) {
     path: ti.file_path || ti.notebook_path || "",
     paths: ti.file_path || ti.notebook_path ? [ti.file_path || ti.notebook_path] : [],
     command: typeof ti.command === "string" ? ti.command : "",
+    workdir: "", // Bash has no working-dir field; Codex's shell does
     background: ti.run_in_background === true,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
     spawnType: typeof ti.subagent_type === "string" ? ti.subagent_type : "",
