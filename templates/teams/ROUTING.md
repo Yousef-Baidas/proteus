@@ -33,3 +33,39 @@ CHANGELOG.md            direct  lines=30 files=1
 # small single-team code changes, once CI's gates cover them:
 # src/**                quick   lines=80 files=3
 ```
+
+## Security
+
+A PR into the run branch that changes a path one of these globs matches needs the security verifier's signoff: CI (`.github/workflows/proteus-trust.yml`, from the base branch) posts the commit status `proteus/security` as failure naming the paths, and only the security verifier's `MERGE` (`proteus-signoff.js --security`) turns it green; the ruleset on `proteus/*` requires it. One glob per line, matched like the tiers block. Cover auth, input parsing, secrets, file and network I/O, money, personal data, anything published, and CI itself. Edit the patterns to this repo's layout at bootstrap; the lead may still add the security verifier to any ticket. Delete the block and CI checks nothing, the pipeline before the block existed.
+
+```security
+**/auth/**
+**/*auth*.*
+**/session*/**
+**/login*.*
+**/*token*.*
+**/*secret*.*
+**/*crypt*.*
+**/.env*
+**/*parse*.*
+**/*upload*.*
+**/payment*/**
+**/billing/**
+**/*payment*.*
+**/migrations/**
+**/user*/**
+**/publish*.*
+.github/**
+Dockerfile
+**/Dockerfile
+infra/**
+**/package.json
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+**/requirements*.txt
+**/pyproject.toml
+**/uv.lock
+**/Cargo.toml
+**/Cargo.lock
+```

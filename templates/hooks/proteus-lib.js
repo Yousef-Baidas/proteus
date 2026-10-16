@@ -451,6 +451,15 @@ function parseTiers(text) {
   return { rules, errors };
 }
 
+// the security block of teams/ROUTING.md, a ```security fence with one glob per line (tierMatch rules): a PR
+// changing a path one matches needs the security verifier's proteus/security status (proteus-security.js).
+// null when there is none.
+function parseSecurity(text) {
+  const m = /^```security[ \t]*\r?\n([\s\S]*?)^```/m.exec(String(text || ""));
+  if (!m) return null;
+  return m[1].split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, "").trim()).filter(Boolean);
+}
+
 // ownedMatch, where a leading **/ also matches at the root (**/auth/** covers auth/x and src/auth/x)
 const tierMatch = (glob, rel) => ownedMatch(glob, rel) || (glob.startsWith("**/") && ownedMatch(glob.slice(3), rel));
 // The cheapest tier a change may run at. changes: [{ path, lines }] (lines 0 for a planned path or a binary).
@@ -618,7 +627,25 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
-  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd, leadDocsPush) || agentShellDenial(ev);
+  return verdictPost(ev.command, ev.cwd) || signoffDenial(ev) || branchDenial(ev.command, ev.cwd, leadDocsPush) || agentShellDenial(ev);
+}
+// proteus-signoff.js posts the verifier's verdict as the commit status the ruleset requires: only a verifier runs
+// it, and --security (proteus/security) only the security verifier. ev.agentType names the agent; a harness that
+// does not say leaves it "", which passes, so the guard never blocks a verifier it cannot name. The lead's main
+// thread is refused by proteus-lead-guard.js (signsOff). A guard, not a boundary: the token is the agents' one.
+const SIGNOFF = /(^|[\\/])proteus-signoff\.js$/;
+const signsOff = (command) => shellCommands(command).map(unwrap).find((w) => progName(w[0]) === "node" && SIGNOFF.test(w[1] || "")) || null;
+const VERIFIER = /^proteus-(?:[a-z0-9-]+-)?verifier$/;
+const SIGNOFF_MSG = {
+  lead: "proteus: proteus-signoff.js records a verifier's verdict; the lead never posts one. Spawn the verifier for the PR (flow.md step 6).",
+  role: (t) => `proteus: proteus-signoff.js records a verifier's verdict, and ${t} is not a verifier. Report DONE; the lead spawns the verifier.`,
+  security: (t) => `proteus: --security posts proteus/security, the security verifier's signoff; ${t} posts its own verdict without it.`,
+};
+function signoffDenial(ev) {
+  const w = signsOff(ev.command);
+  if (!w || !ev.agentType) return null;
+  if (!VERIFIER.test(ev.agentType)) return SIGNOFF_MSG.role(ev.agentType);
+  return w.includes("--security") && ev.agentType !== "proteus-security-verifier" ? SIGNOFF_MSG.security(ev.agentType) : null;
 }
 // the lead's docs branch, proteus-work/<run>/lead-docs: CI lets its PR change the owned-path records
 // (proteus-owned-check.js), so a worker never pushes it. A guard, not a boundary: the lead merges that PR with
@@ -724,6 +751,7 @@ function shellCommands(command) {
 const BRANCH_MSG = {
   admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
   protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
+  status: "proteus: a commit status or check run on a PR is a verdict the run branch's ruleset requires (proteus/verdict, proteus/security); nobody posts one by hand. A verifier records its verdict with `node <hooks>/proteus-signoff.js <pr> <sha> <WORD>`; CI posts the rest.",
   wide: (flag) => `proteus: \`git push ${flag}\` can reach main or a run branch; push one branch by name.`,
   main: (b) => `proteus: agents never push to ${b}; a run reaches it only as the close PR the human merges.`,
   del: (b) => `proteus: agents never delete ${b}; the human does at close.`,
@@ -798,6 +826,7 @@ function ghBranchDenial(args) {
   const path_ = endpoint.replace(/[?#].*$/, "").replace(/\/+$/, "");
   if (method === "GET") return null;
   if (/(^|\/)rulesets(\/|$)/.test(path_)) return BRANCH_MSG.protect;
+  if (/(?:^|\/)(?:statuses\/[^/]+|check-runs(?:\/.*)?)$/.test(path_)) return BRANCH_MSG.status;
   const p = /(?:^|\/)branches\/([^/]+)\/protection(\/.*)?$/.exec(path_);
   if (!p) return null;
   let branch = p[1];
@@ -1274,8 +1303,8 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
