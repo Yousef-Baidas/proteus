@@ -468,7 +468,7 @@ function tierOverrun(declared, result) {
   const cap = declared.human && declared.tier === "quick" ? "standard" : declared.tier;
   if (TIERS.indexOf(result.tier) <= TIERS.indexOf(cap)) return "";
   return `this change needs the ${result.tier} tier, declared ${declared.tier}${declared.human ? " (human)" : ""}:\n  ${result.why.join("\n  ")}\n` +
-    `The lead re-runs the work order at ${result.tier} from its first step (SKILL.md rule 3); never widen the tier.`;
+    `The lead closes this branch and re-runs the work order at ${result.tier} from its first step; never widen the tier, and keep the work whole rather than trimming it to fit.`;
 }
 
 // last `bytes` of a file as complete lines (first partial line dropped)

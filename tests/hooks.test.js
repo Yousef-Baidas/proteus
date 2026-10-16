@@ -129,6 +129,7 @@ r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
 r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: T190 }));
 ok("guard: context 190k blocks spawn", r.code === 2 && /context at 190k/.test(r.err), r.err);
+ok("guard: the context refusal says finish the step, log the position, /handoff", /Finish the step, log the position on the run log, \/handoff/.test(r.err), r.err);
 ok("guard: context after compaction ok", code(pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: TCOMP })) === 0);
 ok("guard: PROTEUS_HANDOFF_HARD env", run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }), { env: { PROTEUS_HANDOFF_HARD: "90000" } }).code === 2);
 // model ladder: the lead's model from the transcript's newest main-thread reply

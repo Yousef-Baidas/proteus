@@ -75,6 +75,7 @@ r = b.msgCommit("a.txt", "feat(src): add a");
 ok("commit-msg: a valid message commits", r.status === 0, r.stderr);
 r = b.msgCommit("b.txt", "Added b");
 ok("commit-msg: a non-Conventional subject is rejected", r.status !== 0 && /commit rejected/.test(r.stderr), r.stderr);
+ok("commit-msg: the rejection points to references/commits.md", /references\/commits\.md/.test(r.stderr), r.stderr);
 // Codex skips commit-msg.js in its hooks dir: the check comes from the lead's teams/templates/hooks
 b = bare("codexhooks", (repo) => {
   const cxd = path.join(repo, ".codex", "hooks"), tpl = path.join(repo, "teams", "templates", "hooks");

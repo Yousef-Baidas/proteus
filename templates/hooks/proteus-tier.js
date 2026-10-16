@@ -42,7 +42,17 @@ function judge(declared, rules, changes) {
   }
 }
 
+const HELP = `usage: node proteus-tier.js <planned path>... | --staged | --ci <base-ref>
+Classifies a change by the tiers block in ${ROUTING} (no block: standard), cheapest first: ${lib.TIERS.join(", ")}.
+  <planned path>...   the lead, before step 1: prints the cheapest tier these paths allow, then why. Only
+                      file counts are known yet; line limits are checked after the work.
+  --staged            the pre-commit hook in a worktree prepared with --tier: everything since its base
+  --ci <base-ref>     CI on a proteus-work/ PR: the change since <base-ref> against the declared tier
+                      (direct on proteus-work/direct/<batch>, else the PR body's "Tier:" line, else standard)
+Paths decide, not extensions. Multi-team or taste-driven work is full whatever the paths say.
+Exit 1: the change outgrew its tier (the message names the one it needs); 2: usage or a bad tiers block.`;
 const args = process.argv.slice(2);
+if (args[0] === "--help" || args[0] === "-h") { console.log(HELP); process.exit(0); }
 if (args[0] === "--staged") {
   const root = git(["rev-parse", "--show-toplevel"]).trim();
   let list = "";
@@ -69,6 +79,6 @@ if (args[0] === "--staged") {
   const r = lib.classifyTier(block(text), args.map((p) => ({ path: p.replace(/\\/g, "/").replace(/^\.\//, ""), lines: 0 })));
   console.log(`${r.tier}\n  ${r.why.join("\n  ")}`);
 } else {
-  console.error("usage: node proteus-tier.js <planned path>... | --staged | --ci <base-ref>");
+  console.error(HELP.split("\n")[0] + "\n(--help explains each mode)");
   process.exit(2);
 }

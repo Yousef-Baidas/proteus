@@ -9,7 +9,7 @@ const { execFileSync } = require("child_process");
 const msg = fs.readFileSync(process.argv[2], "utf8").split(/^# -+ >8 -+$/m)[0];
 const lines = msg.split(/\r?\n/).filter((l) => !l.startsWith("#"));
 const subject = lines[0] || "";
-const fail = (m) => { fs.writeSync(2, "commit rejected: " + m + "\n"); process.exit(1); };
+const fail = (m) => { fs.writeSync(2, "commit rejected: " + m + "\nThe format is in references/commits.md of the Proteus skill.\n"); process.exit(1); };
 
 const types = "feat|fix|refactor|test|docs|chore|perf|build|ci|style|revert";
 const re = new RegExp(`^(${types})(\\([a-z0-9._/-]+\\))?!?: [A-Za-z][^\\n]*$`);
