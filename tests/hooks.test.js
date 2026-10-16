@@ -114,6 +114,28 @@ r = run(LG, pre("Bash", { command: "npm run render", run_in_background: true }, 
 ok("guard: subagent run_in_background denied", r.code === 2 && /never wait on a background notification/.test(r.err), r.err);
 ok("guard: subagent Monitor denied", code(pre("Monitor", { command: "x" }, sub)) === 2);
 ok("guard: subagent --edit-last denied", code(pre("Bash", { command: "gh pr comment 3 --edit-last -b y" }, sub)) === 2);
+{
+  // the flag refused only on a gh call that carries it; as data (heredoc body, a quoted argument, a comment) it passes
+  const EL = "--edit-last";
+  const both = (command) => [{}, sub].map((x) => code(pre("Bash", { command }, x)));
+  const refused = (command) => both(command).every((c) => c === 2);
+  const passes = (command) => both(command).every((c) => c === 0);
+  const doc = `python3 - <<'EOF'\np = "skills/proteus/references/enforcement.md"\ns = open(p).read().replace("refuses \`gh … ${EL}\`", "refuses a gh call with ${EL}")\nopen(p, "w").write(s)\nEOF`;
+  ok("guard: the flag in a heredoc doc edit passes, lead and subagent", passes(doc), JSON.stringify(both(doc)));
+  ok("guard: the flag as a quoted argument or a comment passes",
+    passes(`echo "gh issue comment 4 ${EL} rewrites the last comment"`) && passes(`grep -rn -- '${EL}' skills`) &&
+    passes(`git commit -m "fix: gh ${EL} as data"`) && passes(`ls # gh issue comment 4 ${EL}`));
+  const call = `gh issue comment 9 ${EL} --body x`;
+  const wrapped = [call, `env GH_TOKEN=x ${call}`, `env -u GH_TOKEN ${call}`, `timeout 30 ${call}`, `timeout -s KILL 30 ${call}`, `nohup ${call}`,
+    `command ${call}`, `builtin ${call}`, `exec ${call}`, `time ${call}`, `nice -n 5 ${call}`, `stdbuf -o0 ${call}`, `sudo -u me ${call}`,
+    `rtk proxy ${call}`, `xargs ${call}`, `GH_REPO=o/r ${call}`, `/usr/bin/gh issue comment 9 ${EL}`, `gh issue comment 9 ${EL}=true`,
+    `node .claude/hooks/proteus-gh.js issue comment 9 ${EL}`, `cd /tmp && ${call}`, `true; ${call}`, `env -S 'timeout 5' ${call}`];
+  const nested = [`sh -c '${call}'`, `bash -c "${call}"`, `bash -lc '${call}'`, `zsh -c 'cd x && ${call}'`, `eval '${call}'`, `eval ${call}`,
+    `sh -c "bash -c '${call}'"`, `echo "$(${call})"`, `x=\`${call}\``, `echo $(${call})`, `bash <<'EOF'\n${call}\nEOF`, `echo '${call}' | sh`,
+    `bash <<< '${call}'`, `timeout 9 bash -c '${call}'`];
+  const missed = [...wrapped, ...nested].filter((c) => !refused(c));
+  ok("guard: gh issue comment with the flag is refused, plain, through every wrapper and inside sh -c, eval and $( )", missed.length === 0, missed.join("\n"));
+}
 // the human's words: an agent's comment opening with ACCEPT, CHANGES or ANSWER is refused, from the lead or a subagent
 const said = (command, extra) => { const res = run(LG, pre("Bash", { command }, extra)); return res.code === 2 && /ACCEPT, CHANGES and ANSWER are the human's words/.test(res.err); };
 ok("guard: an agent's ACCEPT, CHANGES or ANSWER comment is refused, lead and subagent", said("gh issue comment 22 --body ACCEPT") && said("gh issue comment 22 -b 'CHANGES\n- too dark'", sub) &&
