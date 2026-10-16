@@ -32,7 +32,11 @@ const posix = process.platform !== "win32";
     let srv = null;
     if (posix) {
       srv = net.createServer();
-      await new Promise((res) => { srv.once("error", () => { srv = null; res(); }); srv.listen(path.join(old, "sock"), res); });
+      // a relative path: macOS caps a socket path at 104 bytes, and its temp dirs are long
+      const was = process.cwd();
+      process.chdir(old);
+      try { await new Promise((res) => { srv.once("error", () => { srv = null; res(); }); srv.listen("sock", res); }); } finally { process.chdir(was); }
+      try { if (srv && !fs.lstatSync(path.join(old, "sock")).isSocket()) throw new Error(); } catch { if (srv) srv.close(); srv = null; }
     }
     const res = L.migrateState(common, false);
     ok("migrate edges: a folder still moves whole", res.moved.includes("dir") && fs.readFileSync(path.join(cur, "dir", "a.txt"), "utf8") === "a\n", JSON.stringify(res));
