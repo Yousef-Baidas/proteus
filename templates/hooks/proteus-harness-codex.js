@@ -361,6 +361,9 @@ function sandboxRoots(root, write = true, extra = "") {
   const heads = [];
   lines.forEach((l, i) => { if (/^\s*\[\s*sandbox_workspace_write\s*\]\s*(#.*)?\r?$/.test(l)) heads.push(i); });
   if (heads.length > 1) return refuse("has [sandbox_workspace_write] twice");
+  // an array of tables adds one table per header; neither regex below reads it, and an edit would split it
+  if (lines.some((l) => /^\s*\[\[\s*["']?sandbox_workspace_write["']?\s*[\].]/.test(l)))
+    return refuse("has [[sandbox_workspace_write]], an array of tables this installer does not edit");
   // dotted keys or an inline table set the same table from elsewhere
   if (lines.some((l, i) => !heads.includes(i) && /^\s*(\[\s*)?["']?sandbox_workspace_write["']?\s*[.=]/.test(l) && !/^\s*\[\s*sandbox_workspace_write\s*\.\s*\w/.test(l)))
     return refuse("sets sandbox_workspace_write in a form this installer does not edit");
@@ -399,9 +402,11 @@ function sandboxRoots(root, write = true, extra = "") {
     vals.push(x); toks.push(x); i += m[0].length - 1;
   }
   if (text[i] !== "]") return refuse("has an unterminated writable_roots array");
-  const listed = (d) => vals.some((x) => path.resolve(x.v) === d);
+  // macOS and Windows resolve /Users/Me and /users/me to one folder, so a root listed in another case counts as listed
+  const fold = (p) => (process.platform === "win32" || process.platform === "darwin" ? p.toLowerCase() : p);
+  const listed = (d) => vals.some((x) => fold(path.resolve(x.v)) === fold(d));
   const missing = want.filter((d) => !listed(d));
-  const drop = vals.filter((x) => gone.includes(path.resolve(x.v)));
+  const drop = vals.filter((x) => gone.some((d) => fold(d) === fold(path.resolve(x.v))));
   const stale = gone.filter(listed);
   if (!missing.length && !drop.length) {
     if (write) for (const d of want) fs.mkdirSync(d, { recursive: true });
