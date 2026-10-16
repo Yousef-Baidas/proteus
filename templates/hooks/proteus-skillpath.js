@@ -45,8 +45,17 @@ function roots() {
 }
 
 if (require.main === module) {
+  const USAGE = "usage: node proteus-skillpath.js <skill>";
   const name = process.argv[2];
-  if (!name || !/^[\w.-]+$/.test(name)) { console.error("usage: node proteus-skillpath.js <skill>"); process.exit(2); }
+  if (name === "--help" || name === "-h") {
+    console.log(`${USAGE}
+Prints the SKILL.md paths of a skill that is not linked into the skills folder, newest first:
+  <skill>   the skill's directory name
+Searches the harness adapter's skill roots (plugin cache, skills folders), then the dirs in
+PROTEUS_SKILL_DIRS (path-delimited). Exit 1 if none is found; 2 on usage.`);
+    process.exit(0);
+  }
+  if (!name || !/^[\w.-]+$/.test(name)) { console.error(USAGE + "\n(--help explains the argument)"); process.exit(2); }
   const hits = locate(name, roots());
   if (!hits.length) { console.error(`proteus-skillpath: no SKILL.md for "${name}" under the plugin cache or skills folders; set PROTEUS_SKILL_DIRS or install the skill`); process.exit(1); }
   console.log(hits.join("\n"));
