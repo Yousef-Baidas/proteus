@@ -23,6 +23,8 @@
 //   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
+// lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
+//   included, except what lib.leadEditDenial always refuses (.claude, .codex, gates, CI, links, outside the repo).
 // Linked worktrees and PROTEUS=0 sessions pass untouched.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
@@ -80,9 +82,15 @@ lib.run((ev, ad) => {
     return; // lib.run exits 0 once stdout drains
   }
   if (ev.tool !== "edit") return;
-  const guest = lib.guestDir(root);
+  const guest = lib.guestDir(root), extra = lib.leadEdits(root);
   for (const p of ev.paths) {
     const rel = lib.relPath(root, p), mine = (r) => LEAD_MAY_WRITE.some((re) => re.test(r));
+    // the human's lead-edits globs (AGENTS.md) name repo files, in guest mode too; never the guards (lib.leadEditDenial)
+    if (rel && extra.some((g) => lib.ownedMatch(g, rel))) {
+      const why = lib.leadEditDenial(root, p, rel);
+      if (why) ad.deny(`lead-edits: ${why} Dispatch the change to a worker, or the human makes it.` + BYPASS);
+      continue;
+    }
     // guest mode: the docs the lead keeps live in the guest dir, and the repo's own copies are not Proteus's to touch
     if (rel && guest && mine(rel)) ad.deny(`guest mode: this repo keeps no Proteus files; ${rel} lives at ${slash(path.join(guest, rel))}. Edit it there.` + BYPASS);
     if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);

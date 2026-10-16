@@ -109,17 +109,23 @@ function update(home, cfg, notes) {
       const dirty = execFileSync("git", ["-C", home, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
       if (v.error) {
         notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "README.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
-      } else if (!dirty.trim()) {
+      } else if (dirty.trim()) {
+        notes.push(`proteus: local changes in ${home}; not updating to ${rel.tag}`);
+      } else {
         const before = lib.git(["-C", home, "rev-parse", "HEAD"], home);
         // the verified commit, already fetched: no network wait, no race with the background fetch
-        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", v.commit], { timeout: 15000, windowsHide: true, stdio: "ignore" });
+        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", v.commit], { encoding: "utf8", timeout: 15000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
         const log = lib.changelog(home, v.commit, rel.current, rel.tag);
         notes.push(`proteus: updated to ${rel.tag} (${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)})${rel.current ? ` from ${rel.current}` : ""}, signature verified${log.length ? "; CHANGELOG.md:" : ""}`, ...log.map((l) => `  ${l}`));
         behind = 0;
         // an install from before the tour existed gets a what's-new tour from here, not a first-time one
         if (cfg.toured === undefined && before) patch.toured = before;
       }
-    } catch {}
+    } catch (e) {
+      // a merge git refuses (an untracked file in the way, a lock) or a git call that failed: say so, once per start
+      const why = String(e.stderr || e.message || "").trim().split(/\r?\n/)[0];
+      notes.push(`proteus: could not update ${home} to ${rel.tag}${why ? ` (${why})` : ""}; still on ${rel.current || "the old version"}`);
+    }
   }
   if ((cfg.behind || 0) !== behind) patch.behind = behind;
   if (Object.keys(patch).length) patchConfig(cfg, patch);
