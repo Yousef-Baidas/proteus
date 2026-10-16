@@ -9,8 +9,18 @@
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
+const args = process.argv.slice(2);
+if (args[0] === "--help" || args[0] === "-h") {
+  console.log(`usage: node proteus-inbox.js [--refresh | --count]
+The human's inbox: open needs-human issues, split into questions (proteus-question) and reviews
+(proteus-review), cached in <git-common-dir>/proteus/inbox.json.
+  (no flag)   one line per item, from the cache
+  --refresh   query gh, rewrite the cache, then print
+  --count     "<questions> <reviews>"
+gh failing keeps the old cache. Always exits 0.`);
+  return;
+}
 try {
-  const args = process.argv.slice(2);
   // run from anywhere: the repo is the one this script is installed in, else the cwd
   const here = path.resolve(__dirname, "..", "..");
   const root = lib.gitCommonDir(here) ? here : path.resolve(lib.projectRoot());

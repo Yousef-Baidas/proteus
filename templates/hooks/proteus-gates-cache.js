@@ -23,9 +23,18 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 const TAIL = 40; // output lines kept with a pass
 const KEEP = 500; // records kept; the oldest go first
 
+const USAGE = "usage: node proteus-gates-cache.js \"<gate command>\"";
+const HELP = `${USAGE}
+Runs a gate command through the shell unless it already passed on this exact tree:
+  <gate command>   the suite or check to run; several arguments are joined with spaces
+A pass is cached by the tree, the cwd's path in the repo and the command text, in
+<git-common-dir>/proteus/gates/. A hit prints the stored output tail and a \`gates-cache: hit\` line, runs
+nothing, and exits 0. A failure is never stored; a dirty checkout runs uncached.
+PROTEUS_GATES_CACHE=0 always runs. Exit code: the command's; 0 on a hit; 2 on usage.`;
+if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); process.exit(0); }
 const cmd = process.argv.slice(2).join(" ").trim();
 if (!cmd) {
-  console.error("usage: node proteus-gates-cache.js \"<gate command>\"");
+  console.error(USAGE + "\n(--help explains the arguments)");
   process.exit(2);
 }
 
