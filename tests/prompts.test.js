@@ -23,8 +23,10 @@ ok("worker prompt: ponytail is not unconditional", !/Ponytail full\.\s*$/m.test(
 ok("worker prompt: ponytail only on Quick or mechanical tickets, craft on standard and hard", /<Quick or mechanical: Ponytail full[^>]*\| standard or hard:[^>]*good craft[^>]*>/.test(worker), worker);
 ok("worker prompt: no IDEA report line", !/IDEA/.test(worker));
 
-const verifier = block("Verifier");
-ok("verifier prompt: helpers and tests inside owned paths are not extras", /not extras/.test(verifier) && !/nothing extra\)/.test(verifier), verifier);
+for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteus-(\w+-)?verifier\.md$/.test(n) && n !== "proteus-qa-verifier.md")) {
+  const a = read("agents", f);
+  ok(`${f}: helpers and tests inside owned paths are not extras`, /not extras/.test(a) && !/nothing extra\)/.test(a));
+}
 
 for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteus-(\w+-)?worker\.md$/.test(n))) {
   const a = read("agents", f);
