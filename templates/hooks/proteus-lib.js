@@ -626,8 +626,34 @@ function workerDenial(ev) {
   if (ev.tool === "monitor") return WAIT_MSG;
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
-  if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
+  if (editsLast(ev.command)) return EDIT_LAST_MSG;
   return verdictPost(ev.command, ev.cwd) || signoffDenial(ev) || branchDenial(ev.command, ev.cwd, leadDocsPush) || agentShellDenial(ev);
+}
+// a gh call (or node <hooks>/proteus-gh.js) carrying --edit-last, past wrappers and NAME=value, and inside sh -c,
+// eval, $( ) and backticks. The flag as data passes: a heredoc body, a comment, a quoted argument to another
+// program. Two cases err toward refusing, since shellCommands keeps no quote kind and no pipe target: a $( ) or
+// backtick inside single quotes, and any word or heredoc body on a line that also runs sh, bash, … or eval
+// (`bash <<EOF`, `echo … | sh`, `bash <<< …` run that text).
+const HEREDOC_BODY = /<<-?[ \t]*(["']?)([\w.-]+)\1[^\n]*\n([\s\S]*?)(?:\n[ \t]*\2[ \t]*(?:\n|$)|$)/g;
+function editsLast(command, depth = 0) {
+  const cmd = String(command || "");
+  if (!cmd.includes("--edit-last") || depth > 3) return false;
+  const deeper = (t) => editsLast(t, depth + 1);
+  const cmds = shellCommands(cmd).map((all) => [all, unwrap(all)]);
+  const runsText = cmds.some(([, words]) => NESTED_SHELLS.has(progName(words[0])) || progName(words[0]) === "eval");
+  if (runsText && [...cmd.matchAll(HEREDOC_BODY)].some((m) => deeper(m[3]))) return true;
+  for (const [all, words] of cmds) {
+    const prog = progName(words[0]);
+    const gh = prog === "gh" || (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || ""));
+    if (gh && words.some((w) => /^--edit-last(?:=|$)/.test(w))) return true;
+    if (prog === "eval" && deeper(words.slice(1).join(" "))) return true;
+    for (const w of all) {
+      const at = w.search(/\$\(|`/);
+      if (at >= 0 && deeper(w.slice(at).replace(/^\$\(|^`/, ""))) return true;
+      if (runsText && /\s/.test(w) && deeper(w)) return true;
+    }
+  }
+  return false;
 }
 // proteus-signoff.js posts the verifier's verdict as the commit status the ruleset requires: only a verifier runs
 // it, and --security (proteus/security) only the security verifier. ev.agentType names the agent; a harness that
@@ -1305,6 +1331,6 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

@@ -58,7 +58,7 @@ lib.run((ev, ad) => {
   }
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
   if (ev.tool === "shell") {
-    if (/--edit-last\b/.test(ev.command)) ad.deny(lib.EDIT_LAST_MSG);
+    if (lib.editsLast(ev.command)) ad.deny(lib.EDIT_LAST_MSG);
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
     if (why) ad.deny(why);
