@@ -2,7 +2,8 @@
 // fake gh for the hook tests: canned JSON by argument pattern; FAKE_GH=fail → exit 1. FAKE_GH_LOGIN is the authenticated
 // login (default human), FAKE_GH_COMMENTS the comments of issue 30; with FAKE_GH_COUNTER (a file) its first view has none.
 // Under GH_CONFIG_DIR the login is the one `auth login` wrote there (FAKE_GH_BOT_LOGIN, default bot), else none.
-// FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets.
+// FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets;
+// FAKE_GH_REPO names another repo to `repo view -q .nameWithOwner` there.
 // FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
 // FAKE_GH_RUN (a JSON file) holds a run's issues, PRs and run logs for the close report.
 // FAKE_GH_PERMISSION answers `repo view --json viewerPermission` (install.js --project's guest-mode check).
@@ -38,7 +39,7 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   let m;
   if (/^repo view --json nameWithOwner,viewerPermission$/.test(a)) out({ nameWithOwner: "o/r", viewerPermission: s.viewer || "ADMIN" });
   if (/^repo view --json nameWithOwner$/.test(a)) out({ nameWithOwner: "o/r" });
-  if (/^repo view --json nameWithOwner -q \.nameWithOwner$/.test(a)) { process.stdout.write("o/r\n"); process.exit(0); }
+  if (/^repo view --json nameWithOwner -q \.nameWithOwner$/.test(a)) { process.stdout.write((process.env.FAKE_GH_REPO || "o/r") + "\n"); process.exit(0); }
   if (/^api repos\/o\/r\/collaborators\/\w+\/permission --jq \.permission$/.test(a)) { process.stdout.write((s.perm || "none") + "\n"); process.exit(0); }
   if (/^api -X PUT repos\/o\/r\/collaborators\/\w+ -f permission=push$/.test(a)) { s.invited = true; save(); out({ id: 5 }); }
   if (a === "api user/repository_invitations") out(CD && s.invited ? [{ id: 5, repository: { full_name: "o/r" } }] : []);
