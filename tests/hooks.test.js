@@ -258,6 +258,53 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   g(WA, "add", "-A"); g(WA, "commit", "-qm", "docs: add the contract");
   ok("guard bind: committed in its own, the agent moves on (contracts worker)", ed("b1", inB).code === 0 && rec("b1") === WB);
   ok("guard bind: owned list still applies in the bound worktree", ed("b3", path.join(WB, "src", "other.ts")).code === 2);
+
+  // #85: the worktree the brief names binds the agent from its first call. The brief is the first user entry of the
+  // subagent's transcript, <session dir>/<session id>/subagents/agent-<id>.jsonl, or agent_transcript_path.
+  const SESS = path.join(W, "bind-sess"), ST = path.join(SESS, "s1.jsonl");
+  fs.mkdirSync(path.join(SESS, "s1", "subagents"), { recursive: true }); fs.writeFileSync(ST, "");
+  const brief = (file, text) => fs.writeFileSync(file, [
+    { type: "user", isSidechain: true, agentId: "x", message: { role: "user", content: text } },
+    { type: "assistant", isSidechain: true, message: { role: "assistant", content: [{ type: "text", text: `on it; ${WB} is a sibling's` }] } },
+  ].map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const said = (id, text) => brief(path.join(SESS, "s1", "subagents", `agent-${id}.jsonl`), text);
+  const edb = (id, file, extra = {}, opts = {}) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd: RB, transcript_path: ST, ...extra }), { cwd: RB, ...opts });
+  const job = (wt) => `Ticket #7 (gh issue view 7 --json body -q .body), worktree ${wt}, branch proteus-work/rb/1, scratch key rb-7.`;
+  said("d1", job(WA));
+  r = edb("d1", inB);
+  ok("guard brief: a first edit in a sibling's worktree is refused when the brief names another",
+    r.code === 2 && r.err.includes(`src/lighting/a.ts is in ${fw(WB)}, but your brief names ${fw(WA)} as your worktree`) && /NEEDS src\/lighting\/a\.ts/.test(r.err) && rec("d1") === "", r.err);
+  ok("guard brief: an edit in the brief's worktree passes and records it", edb("d1", inA).code === 0 && rec("d1") === WA && edb("d1", inB).code === 2);
+  brief(path.join(SESS, "own-d2.jsonl"), job(WB));
+  ok("guard brief: agent_transcript_path is read when the input carries it",
+    edb("d2", inA, { agent_transcript_path: path.join(SESS, "own-d2.jsonl") }).code === 2 && edb("d2", inB, { agent_transcript_path: path.join(SESS, "own-d2.jsonl") }).code === 0);
+  const WC = path.join(W, "bind-c");
+  g(RB, "worktree", "add", "-q", "-b", "inspect-c", WC, "proteus/rb");
+  r = edb("d1", path.join(WC, "notes.md"));
+  ok("guard brief: leaving the brief's worktree for an unprepared one is refused", r.code === 2 && r.err.includes(`but your brief names ${fw(WA)}`), r.err);
+  ok("guard brief: with no worktree in the brief, an unprepared worktree passes as before", edb("d9", path.join(WC, "notes.md")).code === 0);
+  r = edb("d1", path.join(RB, "src", "x.ts"));
+  ok("guard brief: main-checkout refusal names the brief's worktree", r.code === 2 && r.err.includes(`yours is ${fw(WA)}: edit`), r.err);
+  // no worktree in the brief (helpers, the scout, the guide), or one per ticket (a contracts worker): first edit binds
+  said("d3", "Helper: count the TODOs under src/ and report one line.");
+  ok("guard brief: no path in the brief, the first edit binds as before", edb("d3", inB).code === 0 && rec("d3") === WB);
+  said("d4", `Run rb, team lighting. Tickets: #7 ${WA} proteus-work/rb/1, #8 ${WB} proteus-work/rb/2.`);
+  ok("guard brief: a brief naming several worktrees falls back to the first edit", edb("d4", inA).code === 0 && rec("d4") === WA);
+  ok("guard brief: a missing transcript falls back to the first edit", edb("d5", inB, { transcript_path: path.join(SESS, "none.jsonl") }).code === 0 && rec("d5") === WB);
+  const blib = require(path.join(SRC, "proteus-lib.js"));
+  ok("guard brief: a worktree's longer sibling name is not a match", blib.briefWorktree(`worktree ${WA}-old`, path.join(RB, ".git")) === null && blib.briefWorktree(`worktree ${WA}.`, path.join(RB, ".git")) === WA);
+  // Codex: the spawn message is encrypted in the subagent's rollout, so briefText is "" and the cwd and first-edit
+  // binding stay; a brief file where Claude Code would keep one is not read
+  const codexAd = require(path.join(SRC, "proteus-harness-codex.js"));
+  ok("codex adapter: briefText is empty", codexAd.briefText({ agent: "d6", raw: { transcript_path: ST, session_id: "s1", agent_id: "d6" } }) === "");
+  said("d6", job(WA));
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
+  const cpatch = (file) => ({ command: `*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch` });
+  const cx = (id, file) => run(LG, pre("apply_patch", cpatch(file), { agent_id: id, agent_type: "proteus-worker", cwd: RB, transcript_path: ST }), { cwd: RB, env: { PROTEUS_HARNESS: "codex", PROTEUS_PROJECT_DIR: RB } });
+  ok("codex guard: a subagent's first edit binds it, brief or not", cx("d6", inB).code === 0 && rec("d6") === WB);
+  fs.mkdirSync(path.dirname(inB), { recursive: true }); fs.writeFileSync(inB, "y\n");
+  r = cx("d6", inA);
+  ok("codex guard: bound with uncommitted work, a sibling edit is refused", r.code === 2 && r.err.includes(`yours is ${fw(WB)} (uncommitted work there)`), r.err);
 }
 ok("guard sub: scout skills.txt allowed, other file denied", run(LG, pre("Write", { file_path: "teams/backend/skills.txt" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 0 &&
   run(LG, pre("Write", { file_path: "teams/backend/PROFILE.md" }, { agent_id: "sc", agent_type: "proteus-scout" })).code === 2);
