@@ -19,10 +19,10 @@
 // Links are symlinks, junctions on Windows (no admin needed); removing one never touches
 // its target. install.js requires this file for the same link helpers.
 // A skill name is one path segment ([A-Za-z0-9][A-Za-z0-9._-]*) or it is warned and skipped (#13).
-// Every delete here goes through removeLink, which removes only a link directly in the directory
-// its caller expects: teams/<profile>/{.claude,.agents}/skills or ~/.claude/skills. That dir is the
-// real repo root (or HOME) plus fixed segments, each lstat'd a real directory: a symlinked component
-// below the root refuses the delete, and no mkdir or link is made through one.
+// Every delete and write here goes through proteus-confine.js (C below says where it is found):
+// removeLink removes only a link under teams/<profile>/{.claude,.agents}/skills or ~/.claude/skills,
+// each the real repo root (or HOME) plus fixed segments lstat'd real directories, so a symlinked
+// component below the root refuses the delete, and no mkdir, link or lock write goes through one.
 // Exit 0 on success, 1 when there is no teams/ here, 2 on an unknown flag.
 "use strict";
 const fs = require("fs");
@@ -31,7 +31,10 @@ const os = require("os");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
-const WIN = process.platform === "win32";
+// the guard: beside this file in a repo's teams/, else in its teams/templates/hooks/, else ../hooks/ in the checkout
+const C = require([__dirname, path.join(__dirname, "templates", "hooks"), path.join(__dirname, "..", "hooks")]
+  .map((d) => path.join(d, "proteus-confine.js")).find((f) => fs.existsSync(f)) || path.join(__dirname, "proteus-confine.js"));
+const { WIN, lstat, real, isDir, isFile, samePath, ownDir, linkDir } = C;
 const HOME = os.homedir();
 // Proteus's own global links; never confined
 const OURS = new Set(["proteus", "proteus-review"]);
@@ -40,66 +43,16 @@ const OURS = new Set(["proteus", "proteus-review"]);
 // keeps the lead's cwd, so a Codex worker opens <team>/.agents/skills/<name>/SKILL.md itself.
 const SKILL_DIRS = [path.join(".claude", "skills"), path.join(".agents", "skills")];
 
-function lstat(p) { try { return fs.lstatSync(p); } catch { return null; } }
-function real(p) { try { return fs.realpathSync(p); } catch { return null; } }
-function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
-function isFile(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
-function samePath(a, b) { return !!a && !!b && (WIN ? a.toLowerCase() === b.toLowerCase() : a === b); }
-
 // a skill name from a list file: one path segment, so a link built from it stays in its skills dir
 const validName = (name) => typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 
-// root (resolved once) joined with segs, every component below root lstat'd a real directory, never a
-// link; make creates a missing one. null when any is a link, not a directory, or missing (#13).
-function ownDir(root, segs, make = false) {
-  let d = real(root);
-  if (!d) return null;
-  for (const s of segs) {
-    d = path.join(d, s);
-    if (make && !lstat(d)) { try { fs.mkdirSync(d); } catch {} }
-    const st = lstat(d);
-    if (!st || st.isSymbolicLink() || !st.isDirectory()) return null;
-  }
-  return d;
-}
-
-// Remove a symlink or junction, never what it points to, and only when its real parent is exactly
-// ownDir(root, segs); anything else is refused with a warning. Works on broken links too; never throws.
+// remove a symlink or junction, never what it points to, confined to ownDir(root, segs); anything
+// else is refused with a warning. Works on broken links too; never throws.
 function removeLink(link, root, segs) {
-  const st = lstat(link);
-  if (!st) return false;
-  const parent = real(path.dirname(path.resolve(link)));
   const dir = root && segs ? ownDir(root, segs) : null;
-  if (!st.isSymbolicLink() || !dir || !parent || !samePath(parent, dir)) {
-    const where = root && segs ? path.join(root, ...segs) : "a known dir";
-    console.error(`refused  ${link} (${st.isSymbolicLink() ? `not a link directly in ${where}, or a link on the way` : "not a link"}; left alone)`);
-    return false;
-  }
-  try {
-    try { fs.unlinkSync(link); }
-    catch (e) {
-      if (e.code !== "EPERM" && e.code !== "EISDIR") throw e;
-      fs.rmdirSync(link); // non-recursive: removes a junction, refuses a real directory
-    }
-    return true;
-  } catch (e) {
-    console.error(`warning: ${link} not removed: ${e.message}`);
-    return false;
-  }
-}
-
-// Point link at the directory target. False if a real file or directory is in the way, or if the
-// old link could not be removed. remove(link) does the removal; without one, nothing is removed.
-function linkDir(target, link, remove = () => false) {
-  const st = lstat(link);
-  if (st && !st.isSymbolicLink()) return false;
-  if (st) {
-    if (samePath(real(link), real(target))) return true;
-    if (!remove(link)) return false;
-  }
-  fs.mkdirSync(path.dirname(link), { recursive: true });
-  fs.symlinkSync(target, link, WIN ? "junction" : "dir");
-  return true;
+  if (dir || !lstat(link)) return C.remove(link, [dir], "link");
+  console.error(`refused  ${link} (${root && segs ? `${C.blocker(root, segs)} is a link or not a directory` : "no dir it belongs in"}; left alone)`);
+  return false;
 }
 
 function findSrc(name) {
@@ -204,7 +157,7 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
       lock.skills[name] = { source, hash: h };
     }
     const after = JSON.stringify(lock, null, 2) + "\n";
-    if (after !== before) fs.writeFileSync(lockFile, after);
+    if (after !== before) C.writeFile(lockFile, after, [ownDir(root, ["teams"])]);
     for (const d of drift) log(`drift: ${d}  (npx skills update ${d}, or --relock to accept)`);
     log(`lock -> teams/skills-lock.json (${Object.keys(lock.skills).length} skills${relock ? ", relocked" : ""})`);
   }

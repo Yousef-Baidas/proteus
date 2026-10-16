@@ -5,7 +5,7 @@
 // run gets an explicit fake HOME and CODEX_HOME, a fake gh and claude, and no network. Case 3 reads install.js; the rest spawn.
 // Amendment 2 (#13): a skill name from teams/*/skills.txt is one path segment or it is skipped (cases 5, 6, 8), the confine
 // delete goes through safeRemove (case 7), the doctor never offers --fix for a dupe it will refuse (case 9), safeRemove's
-// win32 branches hold (case 10), and case 3 covers link-skills.js (remover removeLink) and install-lead-hooks.js (safeUnlink).
+// win32 branches hold (case 10), and case 3 checks that all three remove only through proteus-confine.js (#104).
 // Case 7 fakes os.userInfo().homedir with a --require preload passed in NODE_OPTIONS, reading FAKE_USER_HOME, so it reaches
 // install.js and every node it spawns. Case 10 requires install.js in a child that fakes win32 and an in-memory disk: install.js,
 // when required rather than run, exports { allowedRoots, safeRemove } and runs nothing.
@@ -334,6 +334,7 @@ try {
     for (const d of own8) fs.mkdirSync(d, { recursive: true });
     fs.writeFileSync(path.join(R8, "teams", "zz", "skills.txt"), "a/b ../../../../../X\na/b ../../dot8\n");
     fs.copyFileSync(path.join(CHK, "templates", "teams", "link-skills.js"), path.join(R8, "teams", "link-skills.js"));
+    fs.copyFileSync(path.join(CHK, "templates", "hooks", "proteus-confine.js"), path.join(R8, "teams", "proteus-confine.js"));
     const before8 = snapshot(T8, own8);
     const r8 = [[], ["--confine"]].map((a) => nodeRun(path.join(R8, "teams", "link-skills.js"), a, R8, H8));
     const moved8 = drift(before8, snapshot(T8, own8));
@@ -405,6 +406,7 @@ try {
     fs.mkdirSync(path.join(R14, "teams", "zz"), { recursive: true });
     fs.writeFileSync(path.join(R14, "teams", "zz", "skills.txt"), "a/b foo\n");
     fs.copyFileSync(path.join(CHK, "templates", "teams", "link-skills.js"), path.join(R14, "teams", "link-skills.js"));
+    fs.copyFileSync(path.join(CHK, "templates", "hooks", "proteus-confine.js"), path.join(R14, "teams", "proteus-confine.js"));
     const r14 = nodeRun(path.join(R14, "teams", "link-skills.js"), ["--confine"], R14, H14);
     ok("case 14 (symlinked .claude, standalone --confine): foo is linked into the team", linkOf(path.join(R14, "teams", "zz", ".claude", "skills", "foo")) === src14, `${r14.status} ${r14.stdout}${r14.stderr}`);
     ok("case 14 (symlinked .claude, standalone --confine): the real home's skills/foo link survives", linkOf(g14) === src14, `${r14.status} ${r14.stderr}`);
@@ -593,16 +595,16 @@ try {
     }
   }
 
-  // case 3, grep: every rmSync, unlinkSync and rmdirSync in each file sits inside that file's one guard or remover
-  for (const [file, guard] of [["install.js", "safeRemove"], ["templates/teams/link-skills.js", "removeLink"], ["templates/hooks/install-lead-hooks.js", "safeUnlink"]]) {
+  // case 3, grep (#104): every rmSync, unlinkSync and rmdirSync of the three installers sits inside proteus-confine.js's remove
+  for (const [file, guard] of [["templates/hooks/proteus-confine.js", "remove"], ["install.js", null], ["templates/teams/link-skills.js", null], ["templates/hooks/install-lead-hooks.js", null]]) {
     const text = fs.readFileSync(path.join(SRC, ...file.split("/")), "utf8");
-    const body = fnBody(text, guard);
+    const body = guard ? fnBody(text, guard) : null;
     const stray = [];
     for (const m of text.matchAll(/\b(rmSync|unlinkSync|rmdirSync)\b/g)) {
       if (!body || m.index < body[0] || m.index >= body[1]) stray.push(`${file}:${text.slice(0, m.index).split("\n").length} ${m[1]}`);
     }
-    ok(`${file} defines function ${guard}`, !!body);
-    ok(`rmSync, unlinkSync and rmdirSync appear in ${file} only inside ${guard}`, !stray.length, stray.join(", "));
+    if (guard) ok(`${file} defines function ${guard}`, !!body);
+    ok(`rmSync, unlinkSync and rmdirSync appear in ${file} only inside ${guard || "nothing: it removes through proteus-confine.js"}`, !stray.length, stray.join(", "));
   }
 
   // case 10, win32: safeRemove falls back from unlink to rmdir for a junction and matches roots without case
