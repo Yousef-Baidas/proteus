@@ -1,7 +1,8 @@
 # Changelog
 
-Notable changes per release. A release is a signed `vX.Y.Z` tag (README, "Releases"); when tagging, move the
-`Unreleased` notes under a new `## [X.Y.Z] - YYYY-MM-DD` heading. Updates print the sections between the
+Notable changes per release. A release is a signed `vX.Y.Z` tag (README, "Releases"). PRs add their entries as
+fragments in `changelog.d/`, not here; when tagging, run `node scripts/changelog.js --release X.Y.Z` to fold them
+(and any `Unreleased` notes) under a new `## [X.Y.Z] - YYYY-MM-DD` heading. Updates print the sections between the
 installed version and the new one.
 
 ## [Unreleased]
