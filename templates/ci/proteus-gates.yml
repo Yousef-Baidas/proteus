@@ -47,15 +47,20 @@ jobs:
       - run: echo "EDIT-lint not filled in" >&2; exit 1
       - run: echo "EDIT-test not filled in" >&2; exit 1
       - run: echo "EDIT-deadcode not filled in" >&2; exit 1  # npx fallow dead-code | vulture . --min-confidence 80 | cargo machete
-      # a worker's PR (head proteus-work/<run>/<id>) may change only the ticket's owned paths; the PR
-      # body carries them as one line, "Owned: src/a/ tests/a.test.js", copied from the ticket. Shell
-      # writes (sed -i, redirects) skip the edit hooks, so this is their check.
+      # a worker's PR (head proteus-work/<run>/<id>) may change only the ticket's owned paths, as the lead
+      # recorded them in .proteus/owned/<id> on the run branch; the check reads the base's copy, never the
+      # PR's or its body, and runs the base's checker, so the PR changes neither. PRs into main (Quick,
+      # Direct, which the human merges) and runs cut before the records read the PR body's line,
+      # "Owned: src/a/ tests/a.test.js". Shell writes (sed -i, redirects) skip the edit hooks, so this
+      # is their check.
       - name: owned paths
         if: startsWith(github.head_ref, 'proteus-work/')
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.base_ref }}
-        run: node teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
+        run: |
+          git worktree add -q --detach "$RUNNER_TEMP/base" "origin/$BASE_REF"
+          node "$RUNNER_TEMP"/base/teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
       # the change must fit its declared tier (the PR body's "Tier:" line, standard without one) by the
       # tiers block of teams/ROUTING.md as of the base; a change that outgrew it is re-run at the tier named
       - name: tier
@@ -88,7 +93,9 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           BASE_REF: ${{ github.base_ref }}
-        run: node teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
+        run: |
+          git worktree add -q --detach "$RUNNER_TEMP/base" "origin/$BASE_REF"
+          node "$RUNNER_TEMP"/base/teams/templates/hooks/proteus-owned-check.js --ci "origin/$BASE_REF"
       - name: tier
         env:
           PR_BODY: ${{ github.event.pull_request.body }}

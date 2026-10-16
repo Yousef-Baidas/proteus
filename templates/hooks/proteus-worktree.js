@@ -10,6 +10,8 @@
 // --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
 // the list, which the same pre-commit hook checks with proteus-tier.js --staged; --human marks a human's quick:.
 // A re-run keeps the first base, so a Direct batch is measured as a whole.
+// On a worker branch proteus-work/<run>/<id>, the paths are compared with the lead's record .proteus/owned/<id>
+// that the branch carries from the run branch, which CI checks the PR against; a difference is warned about.
 "use strict";
 const fs = require("fs");
 const { execFileSync } = require("child_process");
@@ -119,5 +121,22 @@ function installPreCommit() {
 }
 const hookErr = installPreCommit();
 if (hookErr) console.error(`proteus-worktree: pre-commit owned-path check not installed (${hookErr}); CI still checks the PR`);
+
+// a worker branch proteus-work/<run>/<id> cut from a run branch carrying the lead's record .proteus/owned/<id>:
+// CI checks the PR against that record, so a list that differs from it is named now, not at the PR
+let branch = "";
+try { branch = execFileSync("git", ["-C", wt, "symbolic-ref", "-q", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 10000 }).trim(); } catch {}
+const work = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/.exec(branch);
+if (work && work[1] !== "lead-docs") {
+  const rec = path.join(wt, ...lib.OWNED_RECORDS.split("/"), work[1]);
+  let text = null;
+  try { text = fs.readFileSync(rec, "utf8"); } catch {}
+  const listed = text === null ? [] : text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const same = listed.length === entries.length && listed.every((e) => entries.includes(e));
+  if (text === null && fs.existsSync(path.join(wt, ...lib.OWNED_RECORDS.split("/"))))
+    console.error(`proteus-worktree: ${lib.OWNED_RECORDS}/${work[1]} is not on this branch; CI fails the PR until the lead's record of these paths is on the run branch (flow.md step 4)`);
+  else if (text !== null && !same)
+    console.error(`proteus-worktree: these paths differ from ${lib.OWNED_RECORDS}/${work[1]} (${listed.join(" ")}), which CI checks the PR against`);
+}
 
 console.log(`worktree ${wt}: hooks + ${entries.length} owned paths${tier ? `, tier ${tier}${human ? " (human)" : ""}` : ""}`);

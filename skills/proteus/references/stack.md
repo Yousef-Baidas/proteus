@@ -26,13 +26,18 @@ The lead reads no worker output or diffs (the verifier does) and produces no del
 ## Worktrees
 ```
 git checkout main && git pull --rebase origin main   # merged work under the unpushed lead docs
-git checkout -b proteus/<run> main && git push -u origin proteus/<run>
+git checkout -b proteus/<run> main
+# write .proteus/owned/<id> per ticket: its owned paths and globs, one per line
+git add .proteus/owned && git commit -m "chore(proteus): record owned paths for <run>"
+git push -u origin proteus/<run>
 git worktree add .worktrees/<id> -b proteus-work/<run>/<id> proteus/<run>
-node <hooks>/proteus-worktree.js .worktrees/<id> <owned paths…>
+node <hooks>/proteus-worktree.js .worktrees/<id> <owned paths…>   # the same paths as .proteus/owned/<id>
 git rev-parse proteus/<run>   # fork point, record in task
 ```
 `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex. On Codex run each line as its own command: a `cd`, pipe or `$(…)` keeps git and `gh` inside the sandbox (`harnesses.md`).
 Worktrees live in `.worktrees/` (Direct `direct-<batch>`, Quick `quick-<n>`), git-excluded by `proteus-worktree.js`; an older run's stay in `../<repo>-proteus/` (`git worktree list`). The lead makes each ready ticket's worktree at step 3, forked from `proteus/<run>` after its dependencies merged; the contracts worker commits the contract there and the ticket's worker continues on that branch. Worker branches are `proteus-work/<run>/<id>`, outside `proteus/`, so a rule on `proteus/*` binds run branches and leaves workers free to push (`enforcement.md` §1). An older run keeps `proteus/<run>-<id>`; the hooks read both.
+Owned-path records. `.proteus/owned/<id>` on `proteus/<run>` is what CI's `owned paths` step checks a worker's PR against (`enforcement.md` §2), read from the base and never from the PR, so it is written by the lead and changes only by a merged PR. The run branch's first commit carries the record of every ticket known then. A ticket added later (a fix ticket, a `WAVE-RED`, a contract rewritten, a revision branch) gets its record through the lead-docs PR (`bootstrap.md`), merged before its worktree is cut with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed>`, so a commit you did not push fails the merge. Records stay on the branch and reach `main` with the run; ids are issue numbers, so the next run does not collide with them. `proteus-worktree.js` warns when the paths it is given differ from the branch's record.
+
 Per worktree: own dev-server port (`.env.local`), own DB/container/SQLite, own install dir. Shared services are why "passes alone, fails together". Binaries outside the worktree (a symlinked `.blend`, an absolute path to a media library or a spreadsheet) are shared too: one writer at a time, or each worktree builds its own copy from the committed scripts. A check that reads the shared original while a worker writes it measures nothing (`domains.md`).
 
 Merge: `git worktree remove .worktrees/<id>` (a checked-out branch cannot be deleted), then `gh pr merge <pr> --merge --delete-branch`, and after the batch's last merge `git checkout proteus/<run> && git pull`. Suite and bisect run in `.worktrees/_run`, which nests no worktree for vitest, jest or eslint to walk: `git worktree add --detach .worktrees/_run proteus/<run>` once (own install), `git checkout --detach proteus/<run>` per batch, removed at close; there (Codex: `workdir`, no `cd`), `node ../../<hooks>/proteus-gates-cache.js "<suite>" >/dev/null 2>&1; echo $?` (QA on the same tree replays it); red is bisected (`flow.md`, step 7).

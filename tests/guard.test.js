@@ -78,6 +78,14 @@ ok("subagents are refused the same", denied("gh pr merge 4 --admin", /--admin/, 
 ok("PROTEUS=0 passes", shell("git push origin trunk", {}, { PROTEUS: "0" }).code === 0);
 const hl = require(path.join(SRC, "proteus-lib.js"));
 ok("workerDenial (the worker guard) refuses them too", /--admin/.test(hl.workerDenial({ tool: "shell", command: "gh pr merge 1 --admin", cwd: REPO }) || ""));
+// #86: the lead's docs branch may change the owned-path records CI checks worker PRs against, so no worker pushes it
+ok("lead-docs: a worker's push to proteus-work/<run>/lead-docs is refused in every spelling",
+  !all((c) => denied(c, /lead's docs branch/, sub), ["git push origin HEAD:proteus-work/r1/lead-docs", "git push -u origin proteus-work/r1/lead-docs",
+    "git push origin HEAD:refs/heads/proteus-work/r1/lead-docs", "git push origin HEAD:proteus-work/r1/Lead-Docs", "rtk git push origin x:proteus-work/r1/lead-docs"]).length);
+ok("lead-docs: the worker guard refuses it too",
+  /lead's docs branch/.test(hl.workerDenial({ tool: "shell", command: "git push origin HEAD:proteus-work/r1/lead-docs", cwd: REPO }) || ""));
+ok("lead-docs: the lead pushes it, and a worker still pushes its own branch, even one named like it",
+  allowed("git push -u origin HEAD:proteus-work/r1/lead-docs") && allowed("git push -u origin HEAD:proteus-work/r1/lead-docs-2", sub) && allowed("git push -u origin HEAD:proteus-work/r1/7", sub));
 // scratch (#27): a subagent writes under proteus-scratch.js --path while a run is open; nothing else in the main checkout
 const write = (file) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Write", tool_input: { file_path: file, content: "x" }, ...sub }, { cwd: REPO });
 const SCR = path.join(REPO, ".git", "proteus", "scratch");
