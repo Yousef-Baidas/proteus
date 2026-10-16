@@ -100,6 +100,9 @@ const edit = (file) => run(LG, { hook_event_name: "PreToolUse", session_id: "s1"
 ok("lead write: CLAUDE.md refused", edit("CLAUDE.md").code === 2 || /does not edit CLAUDE.md/.test(edit("CLAUDE.md").out + edit("CLAUDE.md").err));
 ok("lead write: CONTEXT, CONVENTIONS, AGENTS, ADR, lesson allowed", ["CONTEXT.md", "CONVENTIONS.md", "AGENTS.md", "docs/adr/0001-x.md", "docs/lessons/x.md"].every((f) => { const r = edit(f); return r.code === 0 && r.out === ""; }));
 ok("lead write: src file refused", /does not edit src\/a.ts/.test(edit("src/a.ts").out + edit("src/a.ts").err));
+// #86: the lead records each ticket's owned paths on the run branch as .proteus/owned/<id>; nothing else under .proteus/
+ok("lead write: an owned-path record allowed", [".proteus/owned/12", ".proteus/owned/rev1"].every((f) => { const r = edit(f); return r.code === 0 && r.out === ""; }));
+ok("lead write: anything else under .proteus/ refused", [".proteus/owned/a/b", ".proteus/other", ".proteus/owned/.x"].every((f) => /does not edit/.test(edit(f).out + edit(f).err)));
 
 // model ladder: the default floor is Sonnet, so a Haiku spawn is under it and Sonnet is not
 const spawnAs = (model) => run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Agent", tool_input: { subagent_type: "proteus-worker", model, prompt: "x" } }, { cwd: REPO, env: { HOME: path.join(W, "nohome") } });

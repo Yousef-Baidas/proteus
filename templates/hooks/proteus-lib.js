@@ -352,6 +352,11 @@ function isOwnedList(wt, rel) {
   return [f, path.join(path.dirname(f), LEGACY.owned)].some((p) => fileKey(path.relative(wt, p).split(path.sep).join("/")) === fileKey(rel));
 }
 
+// rel names a ticket's owned-path record, .proteus/owned/<id> on the run branch (or the folder): the lead writes
+// those, and CI checks a worker's PR against the base's copy (proteus-owned-check.js --ci)
+const OWNED_RECORDS = ".proteus/owned";
+const isOwnedRecord = (rel) => (fileKey(String(rel).replace(/\\/g, "/")) + "/").startsWith(OWNED_RECORDS + "/");
+
 // why an edit of target breaks the worktree's owned-path list, or "" when allowed or there is no list
 function ownedDenial(wt, target) {
   let list;
@@ -363,6 +368,7 @@ function ownedDenial(wt, target) {
   if (path.isAbsolute(r) || rel === ".." || rel.startsWith("../")) return inScratch(gitCommonDir(wt), abs) ? "" : needs("outside the worktree");
   // no glob covers the list itself (`*/*` and `**` match .claude/), or a worker could widen its own ownership
   if (isOwnedList(wt, rel)) return needs("the owned-path list itself, which only the lead writes");
+  if (isOwnedRecord(rel)) return needs("a ticket's owned-path record, which only the lead writes");
   const owned = list.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
   return owned.some((g) => ownedMatch(g, rel)) ? "" : needs(`not in ${path.relative(wt, ownedFile(wt)).split(path.sep).join("/")}`);
 }
@@ -612,8 +618,13 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
-  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd) || agentShellDenial(ev);
+  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd, leadDocsPush) || agentShellDenial(ev);
 }
+// the lead's docs branch, proteus-work/<run>/lead-docs: CI lets its PR change the owned-path records
+// (proteus-owned-check.js), so a worker never pushes it. A guard, not a boundary: the lead merges that PR with
+// --match-head-commit, so a commit it did not push fails the merge.
+const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch, whose PR may change the owned-path records under .proteus/owned/; only the lead pushes it. Push your own branch (proteus-work/<run>/<id>), or comment "NEEDS <path>: <why>" on the issue and stop.`;
+const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
 // comments API call whose body opens with one is refused. The body is read from --body/-b, a body= field, a
@@ -754,7 +765,7 @@ const GH_API_VALUE = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-f
 const GIT_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
 const PUSH_VALUE = new Set(["--repo", "-o", "--push-option", "--receive-pack", "--exec"]);
 
-function branchDenial(command, cwd) {
+function branchDenial(command, cwd, extra) {
   const cmd = String(command || "");
   if (!/\b(gh|git)\b/.test(cmd)) return null;
   for (const all of shellCommands(cmd)) {
@@ -762,7 +773,7 @@ function branchDenial(command, cwd) {
     let prog = progName(words[0]);
     // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
     if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
-    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || ".")) : null;
+    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || "."), extra) : null;
     if (why) return why;
   }
   return null;
@@ -796,7 +807,8 @@ function ghBranchDenial(args) {
 }
 
 // git <global options> push …: each destination it would write, judged against main and the run branches
-function pushDenial(words, cwd) {
+// extra(dst), when given, may refuse a destination neither main nor a run branch
+function pushDenial(words, cwd, extra) {
   let i = 0, dir = cwd;
   for (; i < words.length && words[i].startsWith("-"); i++) {
     if (words[i] === "-C") dir = path.resolve(dir, words[++i] || ".");
@@ -830,6 +842,8 @@ function pushDenial(words, cwd) {
     if (dst === "HEAD" || dst === "@") dst = cur;
     dst = String(dst || "").replace(/^refs\/heads\//, "");
     if (!dst || dst.startsWith("refs/")) continue;
+    const more = extra && extra(dst);
+    if (more) return more;
     const kind = guardedBranch(dst, dir, remote, g);
     if (!kind) continue;
     if (!src) return BRANCH_MSG.del(dst);
@@ -1260,7 +1274,7 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   workerDenial, verdictPost, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

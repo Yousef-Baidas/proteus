@@ -2,7 +2,8 @@
 // PreToolUse hook for the lead's session (main checkout); tools are the agents' (edit, read, shell,
 // monitor, spawn), mapped from the CLI's by the harness adapter.
 // Main thread:
-// 1. The lead writes no code: Edit/Write inside the repo is refused except the docs it owns.
+// 1. The lead writes no code: Edit/Write inside the repo is refused except the docs it owns and the tickets'
+//    owned-path records (.proteus/owned/<id>).
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Sonnet by default, so Haiku) is refused.
@@ -37,7 +38,9 @@ const { bindFile, bound, cwdWorktree, samePath: same } = lib;
 // docs the lead may write: CONTEXT.md, AGENTS.md, ADRs, lessons, and CONVENTIONS.md (bootstrap writes it; after
 // that it is the human's, and the lead adds a line only on the human's approval, which a hook cannot see).
 // CLAUDE.md is not listed: it is the human's, and a docs-diet ticket edits it through a worker.
-const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/];
+// .proteus/owned/<id> is a ticket's owned paths as the lead records them on the run branch, which CI checks the
+// worker's PR against (proteus-owned-check.js --ci).
+const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/, /^\.proteus\/owned\/[A-Za-z0-9][\w.-]*$/];
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp|tiff?|exr|hdr)$/i;
 // the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
 const PIPELINE = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
@@ -95,7 +98,7 @@ lib.run((ev, ad) => {
     }
     // guest mode: the docs the lead keeps live in the guest dir, and the repo's own copies are not Proteus's to touch
     if (rel && guest && mine(rel)) ad.deny(`guest mode: this repo keeps no Proteus files; ${rel} lives at ${slash(path.join(guest, rel))}. Edit it there.` + BYPASS);
-    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder) as a ticket or a numbered BACK-TO-WORKER. The lead writes only CONTEXT.md, CONVENTIONS.md (bootstrap and human-approved standing rules), AGENTS.md, docs/adr/*.md, docs/lessons/*.md, and files matching the human's \`lead-edits:\` line in AGENTS.md.` + BYPASS);
+    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder) as a ticket or a numbered BACK-TO-WORKER. The lead writes only CONTEXT.md, CONVENTIONS.md (bootstrap and human-approved standing rules), AGENTS.md, docs/adr/*.md, docs/lessons/*.md, the owned-path records .proteus/owned/<id>, and files matching the human's \`lead-edits:\` line in AGENTS.md.` + BYPASS);
     const grel = !rel && guest ? lib.relPath(guest, p) : null;
     if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
   } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps
