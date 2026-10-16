@@ -326,12 +326,103 @@ function registerLead(root) {
   return { file, changed };
 }
 
+// Whether two paths name one folder: on Windows either separator and any case, on macOS any case (both resolve
+// /Users/Me and /users/me to one folder by default).
+function samePath(a, b, platform = process.platform) {
+  const p = platform === "win32" ? path.win32 : path;
+  const key = (x) => (platform === "win32" || platform === "darwin" ? p.resolve(x).toLowerCase() : p.resolve(x));
+  return key(a) === key(b);
+}
+
+// writable_roots under [sandbox_workspace_write] in a config.toml's text (null: no file yet). A textual edit, not a
+// TOML parser: it reads only the shape Codex documents for the key, one [sandbox_workspace_write] table holding an
+// array of strings, and refuses anything else instead of guessing. Adds the folders in add not listed yet, drops the
+// listed ones in remove (paths compared by samePath), and keeps the rest of the file byte for byte.
+// Returns {roots, text, added, removed}, text unchanged when nothing is to do, or {error}: why, to follow the file name.
+function writableRoots(text, { add = [], remove = [] } = {}, platform = process.platform) {
+  const same = (a, b) => samePath(a, b, platform);
+  const fresh = add.filter((d, i) => !add.slice(0, i).some((e) => same(e, d)));
+  const entries = (dirs) => dirs.map((d) => JSON.stringify(d)).join(", "); // a JSON string is a TOML basic string
+  const none = { roots: [], text, added: [], removed: [] };
+  if (text === null) return fresh.length ? { ...none, text: `[sandbox_workspace_write]\nwritable_roots = [${entries(fresh)}]\n`, added: fresh } : none;
+  // a multi-line string could hold a line that looks like a header
+  if (/"""|'''/.test(text)) return { error: "has a multi-line string" };
+  const lines = text.split("\n");
+  const heads = [];
+  lines.forEach((l, i) => { if (/^\s*\[\s*(["']?)sandbox_workspace_write\1\s*\]\s*(#.*)?\r?$/.test(l)) heads.push(i); });
+  if (heads.length > 1) return { error: "has [sandbox_workspace_write] twice" };
+  // an array of tables adds one table per header; neither regex below reads it, and an edit would split it
+  if (lines.some((l) => /^\s*\[\[\s*["']?sandbox_workspace_write["']?\s*[\].]/.test(l)))
+    return { error: "has [[sandbox_workspace_write]], an array of tables, where Codex reads one [sandbox_workspace_write] table; make it one" };
+  // dotted keys or an inline table set the same table from elsewhere
+  if (lines.some((l, i) => !heads.includes(i) && /^\s*(\[\s*)?["']?sandbox_workspace_write["']?\s*[.=]/.test(l) && !/^\s*\[\s*sandbox_workspace_write\s*\.\s*\w/.test(l)))
+    return { error: "sets sandbox_workspace_write in a form this installer does not edit" };
+  // keep the file's own line endings (a CRLF file stays CRLF)
+  const le = /\r\n/.test(text) ? "\r\n" : "\n";
+  if (!heads.length) {
+    if (!fresh.length) return none;
+    const table = `[sandbox_workspace_write]${le}writable_roots = [${entries(fresh)}]${le}`;
+    return { ...none, text: `${text}${text && !text.endsWith("\n") ? le : ""}${text.trim() ? le : ""}${table}`, added: fresh };
+  }
+  let end = heads[0] + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
+  const keys = lines.slice(heads[0] + 1, end).flatMap((l, j) => (/^\s*["']?writable_roots["']?\s*=/.test(l) ? [j] : []));
+  if (keys.length > 1) return { error: "sets writable_roots twice" };
+  if (!keys.length) {
+    if (!fresh.length) return none;
+    return { ...none, text: [...lines.slice(0, heads[0] + 1), `writable_roots = [${entries(fresh)}]${le === "\r\n" ? "\r" : ""}`, ...lines.slice(heads[0] + 1)].join("\n"), added: fresh };
+  }
+  // scan the array: strings, commas, whitespace and comments only
+  const start = lines.slice(0, heads[0] + 1 + keys[0]).reduce((n, l) => n + l.length + 1, 0);
+  let i = text.indexOf("=", start) + 1;
+  while (/[ \t]/.test(text[i] || "")) i++;
+  if (text[i] !== "[") return { error: "sets writable_roots to something other than an array" };
+  // values and commas as tokens with their offsets; comments and whitespace are skipped, never edited
+  const vals = [], toks = [];
+  for (i++; i < text.length; i++) {
+    const c = text[i];
+    if (/\s/.test(c)) continue;
+    if (c === "#") { while (i < text.length && text[i] !== "\n") i++; continue; }
+    if (c === "]") break;
+    if (c === ",") { toks.push({ comma: true, start: i, end: i + 1 }); continue; }
+    const m = c === '"' ? /^"((?:[^"\\\n]|\\.)*)"/.exec(text.slice(i)) : c === "'" ? /^'([^'\n]*)'/.exec(text.slice(i)) : null;
+    if (!m) return { error: "has a writable_roots value this installer cannot read" };
+    let v = m[1];
+    if (c === '"') { try { v = JSON.parse(`"${v}"`); } catch {} }
+    const x = { v, start: i, end: i + m[0].length };
+    vals.push(x); toks.push(x); i += m[0].length - 1;
+  }
+  if (text[i] !== "]") return { error: "has an unterminated writable_roots array" };
+  const roots = vals.map((x) => x.v);
+  const added = fresh.filter((d) => !roots.some((r) => same(r, d)));
+  const removed = remove.filter((d) => roots.some((r) => same(r, d)));
+  const drop = vals.filter((x) => remove.some((d) => same(d, x.v)));
+  if (!added.length && !drop.length) return { ...none, roots };
+  // each dropped entry goes with one comma token beside it (the next, else the one before), so the rest stays
+  // comma-separated and a comment between them stays put; an added one goes in before the ], after a comma when
+  // the last token left is a value. Tokens, not text: a `#` or `,` inside a string is never read as syntax.
+  const cut = new Set();
+  for (const x of drop) {
+    const j = toks.indexOf(x), after = toks[j + 1], before = toks[j - 1];
+    cut.add(x);
+    if (after && after.comma && !cut.has(after)) cut.add(after);
+    else if (before && before.comma && !cut.has(before)) cut.add(before);
+  }
+  const left = toks.filter((t) => !cut.has(t));
+  let next = text;
+  if (added.length) next = `${next.slice(0, i)}${left.length && !left[left.length - 1].comma ? ", " : ""}${entries(added)}${next.slice(i)}`;
+  for (const t of [...cut].sort((a, b) => b.start - a.start)) {
+    const pad = /^[ \t]*/.exec(next.slice(t.end))[0].length; // the blanks after it go too
+    next = next.slice(0, t.start) + next.slice(t.end + pad);
+  }
+  return { roots, text: next, added, removed };
+}
+
 // Worker worktrees live in <repo>/.worktrees/, inside the project, which workspace-write already lets a worker
 // write. Older runs kept them beside the project, in ../<repo>-proteus/ (lib.oldWorktreeDirs, which also names
 // the folder used before the rename), listed in writable_roots of the project's .codex/config.toml. This keeps
 // such a folder listed while git still has a worktree registered in it (an in-flight run: kept [{dir, worktrees}], and added back if a
 // hand edit lost it: missing [dir]), and drops it once none is (stale [dir]); it never adds a folder no run uses.
-// A textual merge (no TOML parser here) that refuses any shape it cannot edit safely.
 // Returns {file, kept, missing, stale, created, changed} or {file, error}; write=false only checks.
 // extra: one folder to list instead (a guest dir, allowDir), returned as dir, with missing true or false.
 function sandboxRoots(root, write = true, extra = "") {
@@ -350,96 +441,19 @@ function sandboxRoots(root, write = true, extra = "") {
   if (link) return refuse(`${link === file ? "is a link" : `sits in ${link}, a link`}, never written through`);
   let text = null;
   try { text = fs.readFileSync(file, "utf8"); } catch {}
-  const entries = (dirs) => dirs.map((d) => JSON.stringify(d)).join(", "); // a JSON string is a TOML basic string
+  const r = writableRoots(text, { add: want, remove: gone });
+  if (r.error) return refuse(r.error);
   const result = (missing, stale) => (extra ? { ...base, missing: missing.length > 0 } : { ...base, missing, stale });
-  const done = (next, created, missing, stale) => {
-    if (!write) return result(missing, stale);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, next);
+  if (r.text === text) {
     // bwrap drops a writable root that does not exist yet
-    for (const d of missing) fs.mkdirSync(d, { recursive: true });
-    return { ...result(missing, stale), created, changed: true };
-  };
-  if (text === null) {
-    if (!want.length) return { ...result([], []), created: false, changed: false };
-    return done(`[sandbox_workspace_write]\nwritable_roots = [${entries(want)}]\n`, true, want, []);
-  }
-  // a multi-line string could hold a line that looks like a header
-  if (/"""|'''/.test(text)) return refuse("has a multi-line string");
-  const lines = text.split("\n");
-  const heads = [];
-  lines.forEach((l, i) => { if (/^\s*\[\s*sandbox_workspace_write\s*\]\s*(#.*)?\r?$/.test(l)) heads.push(i); });
-  if (heads.length > 1) return refuse("has [sandbox_workspace_write] twice");
-  // an array of tables adds one table per header; neither regex below reads it, and an edit would split it
-  if (lines.some((l) => /^\s*\[\[\s*["']?sandbox_workspace_write["']?\s*[\].]/.test(l)))
-    return refuse("has [[sandbox_workspace_write]], an array of tables this installer does not edit");
-  // dotted keys or an inline table set the same table from elsewhere
-  if (lines.some((l, i) => !heads.includes(i) && /^\s*(\[\s*)?["']?sandbox_workspace_write["']?\s*[.=]/.test(l) && !/^\s*\[\s*sandbox_workspace_write\s*\.\s*\w/.test(l)))
-    return refuse("sets sandbox_workspace_write in a form this installer does not edit");
-  // keep the file's own line endings (a CRLF file stays CRLF)
-  const le = /\r\n/.test(text) ? "\r\n" : "\n";
-  const table = `[sandbox_workspace_write]\nwritable_roots = [${entries(want)}]\n`;
-  if (!heads.length) {
-    if (!want.length) return { ...result([], []), created: false, changed: false };
-    return done(`${text}${text && !text.endsWith("\n") ? le : ""}${text.trim() ? le : ""}${table.replace(/\n/g, le)}`, false, want, []);
-  }
-  let end = heads[0] + 1;
-  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
-  const k = lines.slice(heads[0] + 1, end).findIndex((l) => /^\s*["']?writable_roots["']?\s*=/.test(l));
-  if (k < 0) {
-    if (!want.length) return { ...result([], []), created: false, changed: false };
-    return done([...lines.slice(0, heads[0] + 1), `writable_roots = [${entries(want)}]${le === "\r\n" ? "\r" : ""}`, ...lines.slice(heads[0] + 1)].join("\n"), false, want, []);
-  }
-  // scan the array: strings, commas, whitespace and comments only
-  const start = lines.slice(0, heads[0] + 1 + k).reduce((n, l) => n + l.length + 1, 0);
-  let i = text.indexOf("=", start) + 1;
-  while (/[ \t]/.test(text[i] || "")) i++;
-  if (text[i] !== "[") return refuse("sets writable_roots to something other than an array");
-  // values and commas as tokens with their offsets; comments and whitespace are skipped, never edited
-  const vals = [], toks = [];
-  for (i++; i < text.length; i++) {
-    const c = text[i];
-    if (/\s/.test(c)) continue;
-    if (c === "#") { while (i < text.length && text[i] !== "\n") i++; continue; }
-    if (c === "]") break;
-    if (c === ",") { toks.push({ comma: true, start: i, end: i + 1 }); continue; }
-    const m = c === '"' ? /^"((?:[^"\\\n]|\\.)*)"/.exec(text.slice(i)) : c === "'" ? /^'([^'\n]*)'/.exec(text.slice(i)) : null;
-    if (!m) return refuse("has a writable_roots value this installer cannot read");
-    let v = m[1];
-    if (c === '"') { try { v = JSON.parse(`"${v}"`); } catch {} }
-    const x = { v, start: i, end: i + m[0].length };
-    vals.push(x); toks.push(x); i += m[0].length - 1;
-  }
-  if (text[i] !== "]") return refuse("has an unterminated writable_roots array");
-  // macOS and Windows resolve /Users/Me and /users/me to one folder, so a root listed in another case counts as listed
-  const fold = (p) => (process.platform === "win32" || process.platform === "darwin" ? p.toLowerCase() : p);
-  const listed = (d) => vals.some((x) => fold(path.resolve(x.v)) === fold(d));
-  const missing = want.filter((d) => !listed(d));
-  const drop = vals.filter((x) => gone.some((d) => fold(d) === fold(path.resolve(x.v))));
-  const stale = gone.filter(listed);
-  if (!missing.length && !drop.length) {
     if (write) for (const d of want) fs.mkdirSync(d, { recursive: true });
     return { ...result([], []), created: false, changed: false };
   }
-  if (!write) return result(missing, stale);
-  // each stale entry goes with one comma token beside it (the next, else the one before), so the rest stays
-  // comma-separated and a comment between them stays put; a missing one goes in before the ], after a comma when
-  // the last token left is a value. Tokens, not text: a `#` or `,` inside a string is never read as syntax.
-  const cut = new Set();
-  for (const x of drop) {
-    const j = toks.indexOf(x), after = toks[j + 1], before = toks[j - 1];
-    cut.add(x);
-    if (after && after.comma && !cut.has(after)) cut.add(after);
-    else if (before && before.comma && !cut.has(before)) cut.add(before);
-  }
-  const left = toks.filter((t) => !cut.has(t));
-  let next = text;
-  if (missing.length) next = `${next.slice(0, i)}${left.length && !left[left.length - 1].comma ? ", " : ""}${entries(missing)}${next.slice(i)}`;
-  for (const t of [...cut].sort((a, b) => b.start - a.start)) {
-    const pad = /^[ \t]*/.exec(next.slice(t.end))[0].length; // the blanks after it go too
-    next = next.slice(0, t.start) + next.slice(t.end + pad);
-  }
-  return done(next, false, missing, stale);
+  if (!write) return result(r.added, r.removed);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, r.text);
+  for (const d of r.added) fs.mkdirSync(d, { recursive: true });
+  return { ...result(r.added, r.removed), created: text === null, changed: true };
 }
 
 // guest mode: the guest dir outside the project, writable in the workspace-write sandbox (writable_roots)
@@ -513,5 +527,5 @@ module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
-  patchPaths, RULES, sandboxRoots, allowDir, exportEnv,
+  patchPaths, RULES, samePath, writableRoots, sandboxRoots, allowDir, exportEnv,
 };
