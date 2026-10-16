@@ -272,6 +272,53 @@ function agentGhDir() {
   return path.resolve(d.trim().replace(/^~(?=$|[\\/])/, () => os.homedir()));
 }
 
+// ---- the verifier App (#81): "verifierApp": { appId, installationId, keyPath } in proteus.json, recorded by
+// install.js --verifier-app. proteus-signoff.js posts proteus/verdict and proteus/security under it, and the
+// ruleset pins those two to its app id, so a status posted with the agents' token no longer counts. null when unset.
+function verifierApp() {
+  const a = proteusConfig().verifierApp;
+  if (!a || typeof a !== "object" || !/^\d+$/.test(String(a.appId || "")) || typeof a.keyPath !== "string" || !a.keyPath.trim()) return null;
+  return { appId: Number(a.appId), installationId: /^\d+$/.test(String(a.installationId || "")) ? Number(a.installationId) : 0, keyPath: path.resolve(a.keyPath.trim().replace(/^~(?=$|[\\/])/, () => os.homedir())) };
+}
+const apiBase = () => (process.env.PROTEUS_GH_API || "https://api.github.com").replace(/\/+$/, "");
+// the App's own JWT (RS256, node:crypto): iat a minute back for clock drift, 9 minutes of life (GitHub allows 10)
+function appJwt(appId, pem, now = Math.floor(Date.now() / 1000)) {
+  const enc = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const body = `${enc({ alg: "RS256", typ: "JWT" })}.${enc({ iat: now - 60, exp: now + 540, iss: String(appId) })}`;
+  return `${body}.${require("crypto").sign("RSA-SHA256", Buffer.from(body), pem).toString("base64url")}`;
+}
+// one REST call with a bearer (the JWT or a token); the parsed body, else throws a one-line reason that never holds
+// the bearer. e.network: GitHub was not reached.
+async function appApi(method, route, bearer, body) {
+  let r;
+  try {
+    r = await fetch(apiBase() + route, {
+      method, signal: AbortSignal.timeout(20000),
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${bearer}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "proteus", ...(body && { "Content-Type": "application/json" }) },
+      ...(body && { body: JSON.stringify(body) }),
+    });
+  } catch (e) {
+    throw Object.assign(new Error(`${method} ${route}: GitHub not reached (${(e.cause && e.cause.code) || e.name || e.message})`), { network: true });
+  }
+  let j = null;
+  try { j = await r.json(); } catch {}
+  if (!r.ok) throw Object.assign(new Error(`${method} ${route}: HTTP ${r.status}${j && j.message ? ` ${String(j.message).split("\n")[0]}` : ""}`), { status: r.status });
+  return j;
+}
+// an installation token of the verifier App for repo ("owner/name"): commit statuses, that one repo, an hour.
+// Kept in memory by the caller and handed to gh as GH_TOKEN; never written or printed. Throws a one-line reason.
+async function appToken(repo, app = verifierApp()) {
+  if (!app) throw new Error("no verifierApp in proteus.json");
+  if (!app.installationId) throw new Error("verifierApp has no installationId (install.js --verifier-app records it)");
+  let pem;
+  try { pem = fs.readFileSync(app.keyPath, "utf8"); } catch (e) { throw new Error(`cannot read the App key ${app.keyPath} (${e.code || e.message})`); }
+  let jwt;
+  try { jwt = appJwt(app.appId, pem); } catch (e) { throw new Error(`the App key ${app.keyPath} cannot sign (${String(e.message).split("\n")[0]})`); }
+  const r = await appApi("POST", `/app/installations/${app.installationId}/access_tokens`, jwt, { repositories: [String(repo).split("/").pop()], permissions: { statuses: "write" } });
+  if (!r || typeof r.token !== "string" || !r.token) throw new Error("GitHub answered without a token");
+  return r.token;
+}
+
 // repo-relative path with forward slashes; null when outside root (incl. another drive on Windows)
 function relPath(root, target) {
   const rel = path.relative(root, path.resolve(root, String(target)));
@@ -610,10 +657,12 @@ function changelog(home, commit, from, to, max = 8) {
   return out.length > max ? [...out.slice(0, max - 1), `… ${out.length - max + 1} more lines in CHANGELOG.md`] : out;
 }
 
-// configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login
-function gh(args, cwd, timeout = 6000, configDir = "") {
+// configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login;
+// token: a GH_TOKEN for this one call (the verifier App's), in the env only, never on the command line
+function gh(args, cwd, timeout = 6000, configDir = "", token = "") {
   const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
   if (configDir) env.GH_CONFIG_DIR = configDir;
+  if (token) env.GH_TOKEN = token;
   try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
 
@@ -623,6 +672,8 @@ const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); retu
 const WAIT_MSG = "workers never wait on a background notification (it never arrives after your turn ends). Run it in the foreground with timeout up to 600000 ms, or start it detached (nohup … &) and poll its PID/log in this same turn.";
 const EDIT_LAST_MSG = "--edit-last edits the newest comment of the shared GitHub account, which may be another agent's or the lead's ruling. Post a new comment instead.";
 function workerDenial(ev) {
+  const secret = secretDenial(ev);
+  if (secret) return secret;
   if (ev.tool === "monitor") return WAIT_MSG;
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
@@ -668,11 +719,58 @@ const SIGNOFF_MSG = {
   role: (t) => `proteus: proteus-signoff.js records a verifier's verdict, and ${t} is not a verifier. Report DONE; the lead spawns the verifier.`,
   security: (t) => `proteus: --security posts proteus/security, the security verifier's signoff; ${t} posts its own verdict without it.`,
 };
-function signoffDenial(ev) {
+// unnamed: what an agent the harness does not name gets; the worker guard passes the role message, since only a
+// worker's session runs it
+function signoffDenial(ev, unnamed = null) {
   const w = signsOff(ev.command);
-  if (!w || !ev.agentType) return null;
+  if (!w) return null;
+  if (!ev.agentType) return unnamed;
   if (!VERIFIER.test(ev.agentType)) return SIGNOFF_MSG.role(ev.agentType);
   return w.includes("--security") && ev.agentType !== "proteus-security-verifier" ? SIGNOFF_MSG.security(ev.agentType) : null;
+}
+// The verifier App's private key (#81) is no agent's: Read and Edit of it are refused, and so is a shell command
+// naming it (its file name, so any path to it counts). An agent's shell never sets GH_TOKEN or GITHUB_TOKEN either
+// (a token of the command's choosing on its gh calls). Lead and subagents alike. A guard, not a boundary: the agents
+// run as the same OS user, so an interpreter, a glob or a variable still reaches the key (enforcement.md §1).
+const KEY_MSG = (p) => `proteus: ${String(p).replace(/\\/g, "/")} is the verifier App's private key; no agent reads, edits or names it. proteus-signoff.js signs with it for the verifiers. Anything else that needs it is the human's.`;
+const TOKEN_MSG = "proteus: agents never set GH_TOKEN or GITHUB_TOKEN: gh would post with a token of the command's choosing. Run gh as it is; a verifier's status comes from proteus-signoff.js.";
+const TOKEN_VAR = /^(?:\$env:)?(?:GH|GITHUB)(?:_ENTERPRISE)?_TOKEN$/i;
+const DECLARES = new Set(["export", "declare", "typeset", "readonly", "local", "set", "setx"]);
+function secretDenial(ev) {
+  const app = verifierApp();
+  if (app && (ev.tool === "read" || ev.tool === "edit")) {
+    const base = path.resolve(ev.cwd || projectRoot(ev));
+    const key = [app.keyPath, realOr(app.keyPath)];
+    for (const p of ev.paths && ev.paths.length ? ev.paths : [ev.path].filter(Boolean)) {
+      const abs = path.resolve(base, String(p));
+      if ([abs, realTarget(abs)].some((a) => a && key.some((k) => samePath(a, k)))) return KEY_MSG(app.keyPath);
+    }
+  }
+  if (ev.tool !== "shell") return null;
+  if (app && namesKey(ev.command, app.keyPath)) return KEY_MSG(app.keyPath);
+  return setsToken(ev.command) ? TOKEN_MSG : null;
+}
+function namesKey(command, keyPath) {
+  const fold = (s) => (process.platform === "win32" ? String(s).toLowerCase() : String(s));
+  const cmd = fold(command);
+  return [...new Set([path.basename(keyPath), path.basename(realOr(keyPath))])].some((n) => n && cmd.includes(fold(n)));
+}
+// NAME=v before a command or alone (env NAME=v too), PowerShell's $env:NAME=v, export / declare / set / setx NAME
+// (fish's set -e erases, which passes); inside sh -c and eval too
+function setsToken(command, depth = 0) {
+  const cmd = String(command || "");
+  if (!/(?:GH|GITHUB)(?:_ENTERPRISE)?_TOKEN/i.test(cmd) || depth > 3) return false;
+  const named = (w) => TOKEN_VAR.test(String(w).split("=")[0]);
+  for (const all of shellCommands(cmd)) {
+    const words = unwrap(all), prog = progName(words[0]);
+    if (all.slice(0, all.length - words.length).some((w) => w.includes("=") && named(w))) return true;
+    if (/^\$env:/i.test(words[0] || "") && named(words[0])) return true;
+    if (DECLARES.has(prog) && !(prog === "set" && words.some((w) => /^(?:-[a-z]*e[a-z]*|--erase)$/i.test(w))) && words.slice(1).some((w) => !w.startsWith("-") && named(w))) return true;
+    const c = words.findIndex((w) => /^-[a-z]*c$/.test(w));
+    if (NESTED_SHELLS.has(prog) && c > 0 && words[c + 1] !== undefined && setsToken(words[c + 1], depth + 1)) return true;
+    if (prog === "eval" && setsToken(words.slice(1).join(" "), depth + 1)) return true;
+  }
+  return false;
 }
 // the lead's docs branch, proteus-work/<run>/lead-docs: CI lets its PR change the owned-path records
 // (proteus-owned-check.js), so a worker never pushes it. A guard, not a boundary: the lead merges that PR with
@@ -1701,9 +1799,9 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, verifierApp, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   drivePath, expandPath, shellCwd, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
-  workerDenial, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

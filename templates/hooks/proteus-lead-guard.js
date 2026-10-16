@@ -15,10 +15,11 @@
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
 //    deleting either, no lifting or rewriting branch protection or a ruleset, no commit status or check run
 //    posted by hand (lib.branchDenial), and no proteus-signoff.js: the verdict status is a verifier's.
-// 6. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
+// 6. Nobody reads, edits or names the verifier App's key, or sets GH_TOKEN / GITHUB_TOKEN in a shell (lib.secretDenial).
+// 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial), nothing lib.agentShellDenial refuses
+//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
 //   through xargs, find -exec, git checkout/restore/apply/am/stash, patch, rm -r/mv/rsync of a parent). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
@@ -55,7 +56,7 @@ lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev, ad));
+    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev);
@@ -64,12 +65,16 @@ lib.run((ev, ad) => {
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
   if (ev.tool === "shell") {
     if (lib.editsLast(ev.command)) ad.deny(lib.EDIT_LAST_MSG);
+    const secret = lib.secretDenial(ev);
+    if (secret) ad.deny(secret);
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
     if (why) ad.deny(why);
     return shellCheck("leadStart", ev);
   }
   if (ev.tool === "monitor") return;
+  const secret = lib.secretDenial(ev); // the verifier App's key, wherever it lives
+  if (secret) ad.deny(secret);
 
   const root = lib.projectRoot(ev);
   if (lib.isLinked(root)) return;
@@ -134,6 +139,16 @@ function humanNamed(ev, ad, target) {
     // a whole token: not inside a longer name (data.png) or extension (a.png.bak); a sentence's full stop is fine
     return new RegExp(`(?<![\\w.-])${base}(?![\\w-]|\\.\\w)`).test(prompt);
   } catch { return false; }
+}
+
+// proteus-signoff.js from a subagent its harness does not name: refused when its brief names a worktree (roles.md),
+// which only a worker's or helper's brief does
+function unnamedSignoff(ev, ad) {
+  if (ev.tool !== "shell" || ev.agentType || !lib.signsOff(ev.command)) return "";
+  let brief = "";
+  try { brief = String(ad.briefText(ev) || ""); } catch {}
+  const common = lib.gitCommonDir(path.resolve(lib.projectRoot(ev)));
+  return common && lib.briefWorktree(brief, common) ? lib.SIGNOFF_MSG.role("an agent whose brief names a worktree") : "";
 }
 
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run

@@ -8,7 +8,7 @@
         ]
       },
       {
-        "matcher": "Bash|Monitor",
+        "matcher": "Bash|Monitor|Read|Edit|Write|MultiEdit|NotebookEdit",
         "hooks": [
           { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-worker-guard.js\"" }
         ]
