@@ -1,7 +1,9 @@
 # .github/workflows/proteus-gates.yml — written by the Proteus scaffold ticket.
 # Every PR into proteus/* runs the same gates the worker ran. The ruleset on proteus/*
 # (install.js --protect) requires a check named exactly `gates` green; keep the job id.
-# The verifier's MERGE is a review comment, not a required approval.
+# It also requires two commit statuses on the PR head, which this file never posts:
+# proteus/verdict, the verifier's MERGE (proteus-signoff.js), and proteus/security, posted by
+# proteus-trust.yml from the base branch. A push after the review leaves the new head without them.
 # Every push to proteus/* (each merge) runs `gates` again on the integrated tree and then `qa`,
 # the mechanical QA: e2e, smoke from a fresh install, rebuild of the deliverables, mutation
 # testing on the files the merge changed. The QA verifier reads these runs instead of

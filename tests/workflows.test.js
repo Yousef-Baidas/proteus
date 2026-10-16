@@ -1,6 +1,7 @@
 // Workflow hardening tests: node tests/workflows.test.js. Both .github/workflows/ci.yml and the shipped
 // templates/ci/proteus-gates.yml keep ${{ }} out of run: scripts (a fork names its own head branch), hold a read-only
 // token that checkout does not persist, pin every action to a commit SHA, and install without lifecycle scripts.
+// templates/ci/proteus-trust.yml, on pull_request_target, runs only the base's code with one write scope (statuses).
 // Also checks the anti-slop plugin's provenance record. Reads files only; no temp dir.
 // Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
@@ -90,6 +91,29 @@ for (const [name, p] of Object.entries(FILES)) {
   ok(`${name}: npm installs skip lifecycle scripts`,
     /npm ci --ignore-scripts/.test(yml) && !/npm ci(?! --ignore-scripts)/.test(yml), (yml.match(/.*npm ci\b.*/g) || []).join(" | "));
 }
+// proteus-trust.yml runs on pull_request_target with a token that may post statuses: the base's code only, the
+// one write scope on the one job, the same hardening as the gates
+const trust = read("templates", "ci", "proteus-trust.yml");
+const tLines = trust.split("\n");
+const tScripts = runScripts(trust);
+ok("trust: runs on pull_request_target into proteus/** only, no pull_request or push trigger",
+  /^on:\n {2}pull_request_target:\n {4}branches: \["proteus\/\*\*"\]\npermissions:/m.test(trust) && !/^\s+(pull_request|push|workflow_run):/m.test(trust));
+ok("trust: no run: script interpolates ${{ }}", tScripts.length > 0 && !interpolated(trust).length, interpolated(trust).map((s) => s.text.trim()).join(" | "));
+ok("trust: top-level contents: read; the only write scope is statuses, on the one job",
+  /^permissions:\n {2}contents: read\n(?! )/m.test(trust) && (trust.match(/^\s*[\w-]+: write\b/gm) || []).map((l) => l.trim()).join() === "statuses: write"
+  && /^jobs:\n {2}security:\n {4}runs-on: [\w.-]+\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {6}statuses: write\n/m.test(trust) && !/write-all/.test(trust));
+const tUses = tLines.map((l, i) => ({ l, i })).filter(({ l }) => /^\s*- uses:/.test(l));
+ok("trust: every action, commented ones included, pinned to the gates' checkout commit",
+  tUses.length === 1 && tLines.filter((l) => /\buses:/.test(l)).every((l) => /uses: actions\/checkout@([0-9a-f]{40}) # v\d+(\.\d+)*$/.test(l) && checkoutShas.has(/@([0-9a-f]{40})/.exec(l)[1])), tLines.filter((l) => /\buses:/.test(l)).join(" | "));
+ok("trust: the live checkout is the base sha without a persisted token, never the head",
+  tUses.every(({ i }) => /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(stepAt(tLines, i)) && /\n\s+persist-credentials: false(\s|$)/.test(stepAt(tLines, i)))
+  && !tLines.some((l) => /^[^#]*head\.(sha|ref)/.test(l) && !/^\s*HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/.test(l)));
+ok("trust: the one script is the base's proteus-security.js, its values through env",
+  tScripts.length === 1 && tScripts[0].text.trim() === 'node teams/templates/hooks/proteus-security.js --ci "$PR_NUMBER" "$HEAD_SHA"'
+  && /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/.test(trust) && /GH_TOKEN: \$\{\{ github\.token \}\}/.test(trust));
+ok("gates template: no longer calls MERGE a review comment, and names the statuses the ruleset requires",
+  !/MERGE is a review comment/.test(read(...FILES.template)) && /proteus\/verdict/.test(read(...FILES.template)) && /proteus-trust\.yml/.test(read(...FILES.template)));
+
 ok("ci and template pin checkout to the same commit", checkoutShas.size === 1 && !checkoutShas.has(undefined), [...checkoutShas].join(","));
 
 // ci.yml's triggers: worker branches are proteus-work/..., so the old hive/** filter is gone; main and runs stay

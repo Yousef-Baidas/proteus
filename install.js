@@ -1132,14 +1132,16 @@ function agentLogin(dirArg) {
   return true;
 }
 
-// the ruleset on proteus/*: a PR with gates green, no force push, nobody bypasses. Creating proteus/<run> stays
-// allowed (do_not_enforce_on_create), and so does deleting it at close.
+// the ruleset on proteus/*: a PR with gates green, the verifier's MERGE (proteus/verdict) and the security
+// trigger's status (proteus/security, proteus-trust.yml) on its head, no force push, nobody bypasses. Creating
+// proteus/<run> stays allowed (do_not_enforce_on_create), and so does deleting it at close.
+const REQUIRED = ["gates", "proteus/verdict", "proteus/security"];
 const rulesetBody = () => ({
   name: RULESET, target: "branch", enforcement: "active", bypass_actors: [],
   conditions: { ref_name: { include: ["refs/heads/proteus/*"], exclude: [] } },
   rules: [
     { type: "pull_request", parameters: { required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false, require_last_push_approval: false, required_review_thread_resolution: false } },
-    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: [{ context: "gates" }] } },
+    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: REQUIRED.map((context) => ({ context })) } },
     { type: "non_fast_forward" },
   ],
 });
@@ -1150,8 +1152,11 @@ function runRules(repo, dir = "") {
   const rules = r.ok ? json(r.out) : null;
   return Array.isArray(rules) ? rules : null;
 }
+// the contexts the proteus/* rules require, among REQUIRED
+const required = (rules) => new Set((rules || []).filter((x) => x.type === "required_status_checks").flatMap((x) => ((x.parameters || {}).required_status_checks || []).map((c) => c.context)));
 const rulesHold = (rules) => !!rules && rules.some((x) => x.type === "pull_request") && rules.some((x) => x.type === "non_fast_forward")
-  && rules.some((x) => x.type === "required_status_checks" && ((x.parameters || {}).required_status_checks || []).some((c) => c.context === "gates"));
+  && required(rules).has("gates");
+const rulesMissing = (rules) => REQUIRED.filter((c) => !required(rules).has(c));
 
 function protect() {
   const human = loginOf("");
@@ -1191,7 +1196,7 @@ function protect() {
     return false;
   }
   if (!rulesHold(runRules(repo))) { warn(`ruleset "${RULESET}" saved but GitHub does not report it on proteus/*; check Settings > Rules`); return false; }
-  log(`ruleset  -> "${RULESET}" ${found ? "updated" : "added"} on ${repo}: proteus/* merges only by PR with gates green, never force-pushed, no bypass`);
+  log(`ruleset  -> "${RULESET}" ${found ? "updated" : "added"} on ${repo}: proteus/* merges only by PR with gates green and the verifiers' statuses (proteus/verdict, proteus/security), never force-pushed, no bypass`);
   return ok;
 }
 
@@ -1357,16 +1362,19 @@ async function doctor(fix) {
       const r = spawnSync("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { cwd: root, encoding: "utf8", shell: WIN, timeout: 20000 });
       return r.status === 0 ? ["ok", `GitHub repo ${r.stdout.trim()}`] : ["FIX", "gh repo view fails for this repo's remote", "git remote -v; gh repo view"];
     });
-    // what binds proteus/* and who the agents are there; the ruleset is the human's, set once by --protect
+    // what binds proteus/* and who the agents are there; the ruleset is the human's, set once by --protect.
+    // ghAuthed is read when the row runs: the gh row before it sets it, after every row is registered
     let repo = "";
-    if (ghAuthed && isProject) check(() => {
+    if (isProject) check(() => {
+      if (!ghAuthed) return ["WARN", "proteus/* rules not checked (gh not ready)", "gh auth login"];
       repo = json(ghAs("", ["repo", "view", "--json", "nameWithOwner"], { cwd: root }).out)?.nameWithOwner || "";
       if (!repo) return ["WARN", "proteus/* rules not checked (gh repo view fails)", "gh repo view"];
       const rules = runRules(repo);
-      if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates green, no force push`];
+      if (rulesHold(rules) && rulesMissing(rules).length) return ["WARN", `proteus/* ruleset on ${repo} does not require ${rulesMissing(rules).join(", ")}: a PR merges without the verifier's signoff`, `${self} --protect (run by an admin of ${repo}), once no run is open`];
+      if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates, verdict and security green, no force push`];
       return ["WARN", `no ruleset binds proteus/* on ${repo}${rules ? "" : " (or gh cannot read it)"}: the lead falls back to per-run protection, which only an admin's login can set`, `${self} --protect (run by an admin of ${repo})`];
     });
-    if (ghAuthed && isProject) check(() => {
+    if (isProject) check(() => {
       if (!bot || !repo) return ["ok", "agents' access not checked (no agents' login or repo)"];
       const p = ghAs("", ["api", `repos/${repo}/collaborators/${bot}/permission`, "--jq", ".permission"], { cwd: root }).out;
       if (p === "admin") return ["WARN", `${bot} is an admin of ${repo} and can lift the ruleset`, "lower it to write in Settings > Collaborators"];

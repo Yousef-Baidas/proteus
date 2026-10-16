@@ -123,6 +123,23 @@ const checks = ((rs.rules || []).find((x) => x.type === "required_status_checks"
 ok("install --protect: invites the bot with write and accepts as the bot", r.code === 0 && st.perm === "write" && /invited to o\/r with write and accepted/.test(r.out), r.out + r.err);
 ok("install --protect: adds the ruleset on proteus/*: PR, gates, no force push, no bypass", rs.name === "proteus runs" && types === "non_fast_forward,pull_request,required_status_checks"
   && rs.bypass_actors.length === 0 && rs.conditions.ref_name.include[0] === "refs/heads/proteus/*" && checks.required_status_checks[0].context === "gates" && checks.do_not_enforce_on_create === true, JSON.stringify(rs));
+ok("install --protect: the ruleset also requires the verifier's and the security trigger's statuses",
+  checks.required_status_checks.map((c) => c.context).join() === "gates,proteus/verdict,proteus/security", JSON.stringify(checks));
+// the ruleset row runs in a project (a teams/ dir)
+fs.mkdirSync(path.join(repo, "teams"), { recursive: true });
+r = run(IN, "", { cwd: repo, args: ["--doctor"], env: env({ FAKE_GH_STATE: STATE }) });
+ok("doctor: the ruleset requiring gates, verdict and security is ok", /^ok\s+proteus\/\* ruleset: PR with gates, verdict and security green, no force push$/m.test(r.out), r.out.split("\n").filter((l) => /ruleset/.test(l)).join("|") || r.out.slice(0, 600));
+{
+  const old = JSON.parse(fs.readFileSync(STATE, "utf8"));
+  const saved = JSON.stringify(old);
+  for (const x of old.rulesets[0].rules) if (x.type === "required_status_checks") x.parameters.required_status_checks = [{ context: "gates" }];
+  fs.writeFileSync(STATE, JSON.stringify(old));
+  r = run(IN, "", { cwd: repo, args: ["--doctor"], env: env({ FAKE_GH_STATE: STATE }) });
+  ok("doctor: a ruleset from before the verdict statuses is a WARN naming them, with --protect as the fix",
+    /^WARN\s+proteus\/\* ruleset on o\/r does not require proteus\/verdict, proteus\/security: .* — .*--protect/m.test(r.out), r.out.split("\n").filter((l) => /ruleset/.test(l)).join("|") || r.out.slice(0, 600));
+  fs.writeFileSync(STATE, saved);
+}
+fs.rmSync(path.join(repo, "teams"), { recursive: true, force: true });
 r = run(IN, "", { cwd: repo, args: ["--protect"], env: env() });
 st = JSON.parse(fs.readFileSync(STATE, "utf8"));
 ok("install --protect: again updates the one ruleset in place", r.code === 0 && st.rulesets.length === 1 && st.puts === 1 && /already has write/.test(r.out), r.out + r.err);

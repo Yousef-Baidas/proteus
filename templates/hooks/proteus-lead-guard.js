@@ -13,11 +13,12 @@
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
-//    deleting either, no lifting or rewriting branch protection or a ruleset (lib.branchDenial).
+//    deleting either, no lifting or rewriting branch protection or a ruleset, no commit status or check run
+//    posted by hand (lib.branchDenial), and no proteus-signoff.js: the verdict status is a verifier's.
 // 6. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, nothing lib.agentShellDenial refuses
+//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial), nothing lib.agentShellDenial refuses
 //   (force-push, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
@@ -58,6 +59,7 @@ lib.run((ev, ad) => {
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
   if (ev.tool === "shell") {
     if (/--edit-last\b/.test(ev.command)) ad.deny(lib.EDIT_LAST_MSG);
+    if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
     if (why) ad.deny(why);
     return;
