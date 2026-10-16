@@ -108,7 +108,7 @@ if (process.platform !== "win32") {
   ok("ownedMatch: a plain path still covers exactly itself", L.ownedMatch("src/a.js", "src/a.js"));
   ok("ownedMatch: a plain path does not cover a sibling that shares its prefix", !L.ownedMatch("src/auth", "src/authz/x.js") && !L.ownedMatch("src/a.js", "src/a.json") && !L.ownedMatch("src/auth", "other/src/auth/x.js"));
   ok("ownedMatch: wildcard globs are unchanged (* stays inside a segment)", !L.ownedMatch("src/*", "src/a/b.js") && L.ownedMatch("src/*", "src/b.js") && L.ownedMatch("src/", "src/a/b.js") && L.ownedMatch("**", "a/b"));
-  ok("ownedMatch: on win32 a plain path matches in any case", onPlatform("win32", () => L.ownedMatch("Src/Auth", "src/auth/x.js")) && !L.ownedMatch("Src/Auth", "src/auth/x.js"));
+  ok("ownedMatch: on win32 a plain path matches in any case", onPlatform("win32", () => L.ownedMatch("Src/Auth", "src/auth/x.js")) && onPlatform("linux", () => !L.ownedMatch("Src/Auth", "src/auth/x.js")));
 }
 
 // ---- tests/run.js: a crashing file is counted in the total, a chatty one keeps its summary line
