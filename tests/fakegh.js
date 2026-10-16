@@ -48,8 +48,9 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   if ((m = /^api -X PUT repos\/o\/r\/rulesets\/(\d+) --input -$/.exec(a))) { s.rulesets = (s.rulesets || []).map((r) => (r.id === +m[1] ? { id: r.id, ...body() } : r)); s.puts = (s.puts || 0) + 1; save(); out({ id: +m[1] }); }
   if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
 }
-// FAKE_GH_PR (a JSON file {head, branch, files, statuses: {<sha>: [...]}, fail}) answers a PR's head, its branch, its changed files and
-// its commit statuses, and records a posted status (newest first, as GitHub lists them); fail names a call that errors
+// FAKE_GH_PR (a JSON file {head, branch, base, files, routing, statuses: {<sha>: [...]}, fail}) answers a PR's head, its branch and
+// base, its changed files, the base's teams/ROUTING.md (routing, as text) and its commit statuses, and records a posted status
+// (newest first, as GitHub lists them, with the GH_TOKEN it was posted under); fail names a call that errors
 if (process.env.FAKE_GH_PR) {
   const fs = require("fs"), file = process.env.FAKE_GH_PR;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -58,6 +59,14 @@ if (process.env.FAKE_GH_PR) {
   let m;
   if (/^pr view \d+ --json headRefOid -q \.headRefOid$/.test(a)) { no("view"); process.stdout.write(s.head + "\n"); process.exit(0); }
   if (/^pr view \d+ --json headRefName -q \.headRefName$/.test(a)) { no("branch"); process.stdout.write((s.branch || "") + "\n"); process.exit(0); }
+  if (/^pr view \d+ --json baseRefName -q \.baseRefName$/.test(a)) { no("base"); process.stdout.write((s.base || "main") + "\n"); process.exit(0); }
+  if (/^repo view --json nameWithOwner -q \.nameWithOwner$/.test(a)) { no("repo"); process.stdout.write("o/r\n"); process.exit(0); }
+  if (new RegExp(`^api repos/${R}/contents/teams/ROUTING\\.md\\?ref=[\\w%./-]+ -q \\.content$`).test(a)) {
+    if (typeof s.routing !== "string") { process.stderr.write("gh: Not Found (HTTP 404)\n"); process.exit(1); }
+    process.stdout.write(Buffer.from(s.routing).toString("base64").replace(/.{60}/g, "$&\n") + "\n");
+    process.exit(0);
+  }
+  if ((m = new RegExp(`^api repos/${R}/commits/([0-9a-f]{40})/statuses$`).exec(a))) { no("statuses"); out((s.statuses || {})[m[1]] || []); }
   if (new RegExp(`^api --paginate repos/${R}/pulls/\\d+/files --jq `).test(a)) { no("files"); process.stdout.write((s.files || []).join("\n") + "\n"); process.exit(0); }
   if ((m = new RegExp(`^api repos/${R}/commits/([0-9a-f]{40})/status$`).exec(a))) {
     const seen = new Set();
@@ -66,7 +75,7 @@ if (process.env.FAKE_GH_PR) {
   if ((m = new RegExp(`^api -X POST repos/${R}/statuses/([0-9a-f]{40}) -f state=(\\w+) -f context=(\\S+) -f description=(.*) --jq \\.state$`).exec(a))) {
     no("post");
     s.statuses = s.statuses || {};
-    s.statuses[m[1]] = [{ state: m[2], context: m[3], description: m[4] }, ...(s.statuses[m[1]] || [])];
+    s.statuses[m[1]] = [{ state: m[2], context: m[3], description: m[4], ...(process.env.GH_TOKEN && { token: process.env.GH_TOKEN }) }, ...(s.statuses[m[1]] || [])];
     fs.writeFileSync(file, JSON.stringify(s));
     process.stdout.write(m[2] + "\n");
     process.exit(0);

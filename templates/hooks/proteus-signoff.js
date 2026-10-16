@@ -8,9 +8,15 @@
 // <reviewed-sha>, so a verdict never lands on code the verifier did not read, and refuses MERGE while the PR's head
 // branch has an open guard-violation record (proteus-shell-check.js: a shell call changed a guarded path or another
 // worktree, and it is not back as it was).
-// It posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a hand-posted status
-// (lib.branchDenial) and this script from anyone but a verifier (lib.signoffDenial, the lead guard); that is a
-// guard, not a boundary: a worker sharing the agents' token can post a status with its own script (#69).
+// With a verifier App in proteus.json (install.js --verifier-app) it posts with an installation token of that App
+// (lib.appToken; GH_TOKEN on the one gh call, never on disk or argv), and the ruleset counts only the App's two
+// statuses, so a status a worker posts with the agents' token does not count. A token that cannot be minted fails
+// the signoff: never a quiet fall back to the agents' login. With the App, a MERGE without --security also carries
+// CI's no-security-path success over as the App's (securityMirror), and is refused until CI has posted.
+// Without an App it posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a
+// hand-posted status (lib.branchDenial) and this script from anyone but a verifier (lib.signoffDenial, the lead
+// guard); without the App that is a guard, not a boundary: a worker sharing the agents' token can post a status
+// with its own script (#69).
 // Exit 0 posted, 1 refused or gh failed (the message says which), 2 bad usage.
 "use strict";
 const path = require("path");
@@ -37,12 +43,59 @@ async function main(argv) {
     if (open) { console.error(open); return 1; }
   }
   const context = security ? "proteus/security" : "proteus/verdict";
-  const repo = process.env.GITHUB_REPOSITORY || "{owner}/{repo}";
+  const app = lib.verifierApp();
+  let repo = process.env.GITHUB_REPOSITORY || "{owner}/{repo}", token = "", mirror = null;
+  if (app) {
+    if (!process.env.GITHUB_REPOSITORY) repo = run(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { console.error("proteus-signoff: gh repo view failed to name the repo; nothing posted. Retry."); return 1; }
+    try { token = await lib.appToken(repo, app); } catch (e) {
+      console.error(`proteus-signoff: the verifier App ${app.appId} gave no token (${e.message}); nothing posted. The ruleset counts only the App's status: report this to the lead for the human (install.js --doctor names the fix).`);
+      return 1;
+    }
+    if (word === "MERGE" && !security) {
+      mirror = securityMirror(pr, head, repo, run);
+      if (mirror.why) { console.error(`proteus-signoff: ${mirror.why}`); return 1; }
+    }
+  }
+  const post = (ctx, state, description) => lib.gh(["api", "-X", "POST", `repos/${repo}/statuses/${head}`, "-f", `state=${state}`, "-f", `context=${ctx}`, "-f", `description=${description}`, "--jq", ".state"], cwd, 30000, as, token);
   const by = security ? "the security verifier" : "the verifier";
-  const state = run(["api", "-X", "POST", `repos/${repo}/statuses/${head}`, "-f", `state=${WORDS[word]}`, "-f", `context=${context}`, "-f", `description=${word} by ${by}`, "--jq", ".state"]);
+  const state = post(context, WORDS[word], `${word} by ${by}`);
   if (state !== WORDS[word]) { console.error(`proteus-signoff: posting ${context} on ${head.slice(0, 12)} failed (gh api returned "${state}"); the PR has no verdict status. Retry, or report the error to the lead.`); return 1; }
-  console.log(`proteus-signoff: ${context} = ${state} (${word}) on PR #${pr} at ${head.slice(0, 12)}`);
+  console.log(`proteus-signoff: ${context} = ${state} (${word}) on PR #${pr} at ${head.slice(0, 12)}${app ? ` as App ${app.appId}` : ""}`);
+  if (mirror && mirror.note) console.log(`proteus-signoff: ${mirror.note}`);
+  if (mirror && mirror.carry) {
+    const got = post("proteus/security", "success", CARRIED);
+    if (got !== "success") { console.error(`proteus-signoff: carrying CI's proteus/security over to the App failed (gh api returned "${got}"); the verdict is posted, the PR still lacks proteus/security. Run the same signoff again.`); return 1; }
+    console.log(`proteus-signoff: proteus/security = success (CI found no security path) carried over as App ${app.appId}`);
+  }
   return 0;
+}
+
+// With the App, the ruleset counts only the App's proteus/security, so CI's success on a PR that touches no
+// security path (proteus-trust.yml posts it as github-actions) no longer satisfies it. The verifier's MERGE carries
+// that success over as the App's when the head's newest proteus/security is CI's success and the PR's files match
+// no glob of the security block in the base branch's teams/ROUTING.md (read through the API, not the worktree, so a
+// status or a ROUTING.md the PR forged does not count). CI's failure stays for the security verifier's --security.
+// { carry } or { note } or { why }: why refuses the signoff (CI has not posted, or the API failed).
+const CI_LOGIN = "github-actions[bot]";
+const CI_SAYS = ["no security path touched", "no security block in teams/ROUTING.md; nothing checked"]; // proteus-security.js
+const CARRIED = "no security path touched (CI); carried over by the verifier's MERGE";
+function securityMirror(pr, head, repo, run) {
+  let list = null;
+  try { list = JSON.parse(run(["api", `repos/${repo}/commits/${head}/statuses`])); } catch {}
+  if (!Array.isArray(list)) return { why: `cannot read the statuses of ${head.slice(0, 12)}; nothing posted. Retry.` };
+  const ci = list.find((x) => x && x.context === "proteus/security"); // newest first
+  if (!ci) return { why: `CI has not posted proteus/security on ${head.slice(0, 12)} yet; nothing posted. Wait for proteus-trust (gh pr checks ${pr} --watch), then sign off again.` };
+  if (ci.state !== "success" || !ci.creator || ci.creator.login !== CI_LOGIN || !CI_SAYS.includes(ci.description)) return {};
+  const base = run(["pr", "view", pr, "--json", "baseRefName", "-q", ".baseRefName"]);
+  if (!base) return { why: `gh pr view ${pr} failed to name the base branch; nothing posted. Retry.` };
+  const b64 = run(["api", `repos/${repo}/contents/teams/ROUTING.md?ref=${encodeURIComponent(base)}`, "-q", ".content"]);
+  const globs = lib.parseSecurity(b64 ? Buffer.from(b64, "base64").toString("utf8") : "") || [];
+  if (!globs.length) return ci.description === CI_SAYS[1] ? { carry: true } : { note: `proteus/security not carried over: CI read a security block in ${base}'s teams/ROUTING.md that the API does not show; the security verifier signs off with --security.` };
+  const listed = run(["api", "--paginate", `repos/${repo}/pulls/${pr}/files`, "--jq", ".[] | .filename, (.previous_filename // empty)"]);
+  if (!listed) return { why: `cannot list PR #${pr}'s files; nothing posted. Retry.` };
+  const hits = [...new Set(listed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))].filter((p) => globs.some((g) => lib.tierMatch(g, p)));
+  return hits.length ? { note: `proteus/security not carried over: ${hits.slice(0, 3).join(", ")}${hits.length > 3 ? ", ..." : ""} match the security block of ${base}'s teams/ROUTING.md though CI said none; the security verifier signs off with --security.` } : { carry: true };
 }
 
 // a MERGE is refused while the PR's head branch has a guard-violation record (proteus-shell-check.js) whose

@@ -6,7 +6,7 @@
 // it records a fingerprint of the paths the guards protect, in every checkout of the repo: .claude (minus agent
 // memory and nested checkouts), .codex, .agents, .github/workflows and actions, teams/templates/hooks, lefthook
 // config, a linked worktree's .git file; the shared .git/hooks, .git/info, the git config files and the guard's
-// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home. Each file is its
+// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, and the verifier App's key. Each file is its
 // mode and a content hash (cached by size, mtime and inode in <state>/guard-hash.json, so a call hashes only what
 // changed); settings JSON is compared without its `permissions`. A git config file (.git/config, config.worktree)
 // is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream).
@@ -77,6 +77,8 @@ function targets(common) {
   const codex = process.env.CODEX_HOME || path.join(home, ".codex");
   for (const d of [".claude/settings.json", ".claude/hooks", ".claude/agents", ".claude/skills", ".agents"]) out.push([path.join(home, d), "home"]);
   for (const d of ["config.toml", "hooks.json", "hooks", "agents", "rules"]) out.push([path.join(codex, d), "home"]);
+  const app = lib.verifierApp();
+  if (app) out.push([app.keyPath, "home"]); // the verifier App's key, wherever the human keeps it
   return { roots, out };
 }
 

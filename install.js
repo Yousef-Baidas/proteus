@@ -32,7 +32,11 @@
 //                                     agent shell command runs gh as that account; you keep yours
 //   node install.js --protect         in a repo you administer: invite the agents' account with write access and
 //                                     add the "proteus runs" ruleset (a PR with the gates check green, no force push,
-//                                     no bypass, admins included) to every proteus/* branch
+//                                     no bypass, admins included) to every proteus/* branch; with a verifier App,
+//                                     proteus/verdict and proteus/security count only when that App posts them
+//   node install.js --verifier-app <appId> <keyPath>   in the repo: record the GitHub App the verifiers sign off as
+//                                     (only "Commit statuses: write", installed on this repo, its private key kept 0600
+//                                     outside any repo) in ~/.claude/proteus.json, after a test token mints; then --protect
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -1136,12 +1140,14 @@ function agentLogin(dirArg) {
 // trigger's status (proteus/security, proteus-trust.yml) on its head, no force push, nobody bypasses. Creating
 // proteus/<run> stays allowed (do_not_enforce_on_create), and so does deleting it at close.
 const REQUIRED = ["gates", "proteus/verdict", "proteus/security"];
-const rulesetBody = () => ({
+// with a verifier App, the two verdict statuses count only from it (integration_id); gates stays CI's
+const pinned = (context, app) => (app && context !== "gates" ? { context, integration_id: app.appId } : { context });
+const rulesetBody = (app = hl().verifierApp()) => ({
   name: RULESET, target: "branch", enforcement: "active", bypass_actors: [],
   conditions: { ref_name: { include: ["refs/heads/proteus/*"], exclude: [] } },
   rules: [
     { type: "pull_request", parameters: { required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false, require_last_push_approval: false, required_review_thread_resolution: false } },
-    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: REQUIRED.map((context) => ({ context })) } },
+    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: REQUIRED.map((c) => pinned(c, app)) } },
     { type: "non_fast_forward" },
   ],
 });
@@ -1157,6 +1163,9 @@ const required = (rules) => new Set((rules || []).filter((x) => x.type === "requ
 const rulesHold = (rules) => !!rules && rules.some((x) => x.type === "pull_request") && rules.some((x) => x.type === "non_fast_forward")
   && required(rules).has("gates");
 const rulesMissing = (rules) => REQUIRED.filter((c) => !required(rules).has(c));
+// the verdict contexts the rules do not pin to the App (no entry with its integration_id)
+const rulesUnpinned = (rules, app) => REQUIRED.filter((c) => c !== "gates" && !(rules || []).some((x) => x.type === "required_status_checks"
+  && ((x.parameters || {}).required_status_checks || []).some((e) => e.context === c && Number(e.integration_id) === app.appId)));
 
 function protect() {
   const human = loginOf("");
@@ -1197,7 +1206,41 @@ function protect() {
   }
   if (!rulesHold(runRules(repo))) { warn(`ruleset "${RULESET}" saved but GitHub does not report it on proteus/*; check Settings > Rules`); return false; }
   log(`ruleset  -> "${RULESET}" ${found ? "updated" : "added"} on ${repo}: proteus/* merges only by PR with gates green and the verifiers' statuses (proteus/verdict, proteus/security), never force-pushed, no bypass`);
+  const app = hl().verifierApp();
+  if (app) log(`ruleset  -> proteus/verdict and proteus/security count only from the verifier App ${app.appId}`);
+  else warn("no verifier App (--verifier-app): any login with write can post proteus/verdict, the agents' too (enforcement.md §1)");
   return ok;
+}
+
+// The verifier App (#81): an App with only "Commit statuses: write", installed on the repo, its key a .pem the human
+// keeps outside any repo. Checks the key, finds the installation on this repo with the App's JWT, mints a test
+// token (used for nothing, never printed) and records { appId, installationId, keyPath } in proteus.json.
+async function verifierApp(idArg, keyArg) {
+  if (!/^\d+$/.test(String(idArg || "")) || !keyArg) { warn("usage: --verifier-app <appId> <keyPath> (the App ID from the App's settings page, the .pem you downloaded)"); return false; }
+  const appId = Number(idArg), keyPath = path.resolve(String(keyArg).replace(/^~(?=$|[\\/])/, () => HOME));
+  const st = fs.statSync(keyPath, { throwIfNoEntry: false });
+  if (!st || !st.isFile()) { warn(`${keyPath} is not a file: the App's private key (.pem) goes there`); return false; }
+  if (!WIN && st.mode & 0o077) warn(`${keyPath} is readable by others (mode ${(st.mode & 0o777).toString(8)}): chmod 600 it`);
+  const top = spawnSync("git", ["-C", path.dirname(keyPath), "rev-parse", "--show-toplevel"], { encoding: "utf8" });
+  if (top.status === 0) warn(`${keyPath} sits in the git checkout ${top.stdout.trim()}: keep it outside any repo, where no commit or worker reaches it`);
+  const lib = hl();
+  let jwt;
+  try { jwt = lib.appJwt(appId, fs.readFileSync(keyPath, "utf8")); } catch (e) { warn(`${keyPath} is not an RSA private key that signs (${String(e.message).split("\n")[0]})`); return false; }
+  const view = ghAs("", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);
+  const repo = view.ok ? view.out : "";
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { warn(`gh repo view fails here: ${view.err || "no GitHub remote"}; run this inside the repo`); return false; }
+  let inst;
+  try { inst = await lib.appApi("GET", `/repos/${repo}/installation`, jwt); } catch (e) {
+    warn(e.status === 404 ? `App ${appId} is not installed on ${repo}: install it from the App's page (Install App), then run this again` : `App ${appId}: ${e.message}`);
+    return false;
+  }
+  if (!inst || !/^\d+$/.test(String(inst.id))) { warn(`GitHub named no installation of App ${appId} on ${repo}`); return false; }
+  const app = { appId, installationId: Number(inst.id), keyPath };
+  try { await lib.appToken(repo, app); } catch (e) { warn(`App ${appId} is installed on ${repo} but no token mints (${e.message}); give it "Commit statuses: write"`); return false; }
+  writeJson(CONFIG, { ...readConfig(), verifierApp: app });
+  log(`verifier -> App ${appId} (installation ${app.installationId} on ${repo}) signs the verifiers' statuses; key ${keyPath}`);
+  log(`next: node "${path.join(HERE, "install.js")}" --protect, so the ruleset counts only the App's statuses`);
+  return true;
 }
 
 // doctor
@@ -1240,6 +1283,23 @@ async function doctor(fix) {
     if (!bot) return ["FIX", `agents' gh config ${dir} is not logged in`, `${self} --agent-login`];
     if (bot === human || !human) return ["FIX", !human ? "no \"human\" in proteus.json beside agentGh" : `agents' login ${bot} is your own`, `${self} --agent-login`];
     return ["ok", `identity=separate: agents post as ${bot}, you as ${human}`];
+  });
+  // the verifier App (#81), when one is recorded: its key readable here, and a token mints for this repo. GitHub
+  // out of reach is a WARN: the key and the config may be fine
+  const vapp = hl().verifierApp();
+  if (vapp) check(() => {
+    try { fs.accessSync(vapp.keyPath, fs.constants.R_OK); } catch (e) { return ["FIX", `verifier App ${vapp.appId}: key ${vapp.keyPath} is not readable (${e.code}); every signoff fails`, `put the App's .pem back there, or ${self} --verifier-app <appId> <keyPath>`]; }
+    const st = fs.statSync(vapp.keyPath);
+    if (!WIN && st.mode & 0o077) return ["WARN", `verifier App ${vapp.appId}: key ${vapp.keyPath} is readable by others (mode ${(st.mode & 0o777).toString(8)})`, `chmod 600 ${vapp.keyPath}`];
+    return ["ok", `verifier App ${vapp.appId}: key ${vapp.keyPath} readable`];
+  });
+  if (vapp && top.ok) check(async () => {
+    const r = ghAs("", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { cwd: root });
+    if (!r.ok || !r.out) return ["WARN", `verifier App ${vapp.appId}: no token checked (gh repo view fails here)`, "gh repo view"];
+    try { await hl().appToken(r.out, vapp); } catch (e) {
+      return [e.network ? "WARN" : "FIX", `verifier App ${vapp.appId}: no token for ${r.out} (${e.message})`, e.network ? "check the network, then --doctor again" : `install the App on ${r.out} with "Commit statuses: write", then ${self} --verifier-app ${vapp.appId} ${vapp.keyPath}`];
+    }
+    return ["ok", `verifier App ${vapp.appId}: a token mints for ${r.out}`];
   });
   // hivemind, the old name: its leftovers before the install checks, which then see what the fix leaves
   check(() => {
@@ -1371,7 +1431,9 @@ async function doctor(fix) {
       if (!repo) return ["WARN", "proteus/* rules not checked (gh repo view fails)", "gh repo view"];
       const rules = runRules(repo);
       if (rulesHold(rules) && rulesMissing(rules).length) return ["WARN", `proteus/* ruleset on ${repo} does not require ${rulesMissing(rules).join(", ")}: a PR merges without the verifier's signoff`, `${self} --protect (run by an admin of ${repo}), once no run is open`];
-      if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates, verdict and security green, no force push`];
+      const loose = vapp && rulesHold(rules) ? rulesUnpinned(rules, vapp) : [];
+      if (loose.length) return ["WARN", `proteus/* ruleset on ${repo} takes ${loose.join(", ")} from any login, not only the verifier App ${vapp.appId}: an agent's token can post them`, `${self} --protect (run by an admin of ${repo}), once no run is open`];
+      if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates, verdict and security green${vapp ? ` (the verdicts from App ${vapp.appId})` : ""}, no force push`];
       return ["WARN", `no ruleset binds proteus/* on ${repo}${rules ? "" : " (or gh cannot read it)"}: the lead falls back to per-run protection, which only an admin's login can set`, `${self} --protect (run by an admin of ${repo})`];
     });
     if (isProject) check(() => {
@@ -1550,6 +1612,11 @@ function main() {
       opt.agentLogin = a === "--agent-login" ? (argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : true) : a.slice("--agent-login=".length) || true;
       continue;
     }
+    if (a === "--verifier-app") {
+      opt.verifierApp = [argv[i + 1], argv[i + 2]];
+      i += 2;
+      continue;
+    }
     if (a === "--guest" || a.startsWith("--guest=")) {
       opt.guest = a === "--guest" ? (argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[++i] : true) : a.slice("--guest=".length) || true;
       continue;
@@ -1572,13 +1639,14 @@ function main() {
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);
   if (opt.tourDone && Object.keys(opt).length > 1) die("--tour-done takes no other flag", 2);
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
-  if ((opt.agentLogin || opt.protect) && Object.keys(opt).length > 1) die("--agent-login and --protect take no other flag", 2);
+  if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
 
   (async () => {
     if (opt.doctor) process.exitCode = (await doctor(opt.fix)) ? 0 : 1;
     else if (opt.tourDone) tourDone();
     else if (opt.agentLogin) process.exitCode = agentLogin(opt.agentLogin === true ? "" : opt.agentLogin) ? 0 : 1;
     else if (opt.protect) process.exitCode = protect() ? 0 : 1;
+    else if (opt.verifierApp) process.exitCode = (await verifierApp(...opt.verifierApp)) ? 0 : 1;
     else if (opt.update) update(argv);
     else process.exitCode = install(opt) ? 0 : 1;
   })().catch((e) => die(`error: ${e.message}`));
