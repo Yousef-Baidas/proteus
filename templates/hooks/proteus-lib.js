@@ -627,7 +627,8 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (editsLast(ev.command)) return EDIT_LAST_MSG;
-  return verdictPost(ev.command, ev.cwd) || signoffDenial(ev) || branchDenial(ev.command, ev.cwd, leadDocsPush) || agentShellDenial(ev);
+  const cwd = shellCwd(ev);
+  return verdictPost(ev.command, cwd) || signoffDenial(ev) || branchDenial(ev.command, cwd, leadDocsPush) || agentShellDenial(ev, ev.command, cwd);
 }
 // a gh call (or node <hooks>/proteus-gh.js) carrying --edit-last, past wrappers and NAME=value, and inside sh -c,
 // eval, $( ) and backticks. The flag as data passes: a heredoc body, a comment, a quoted argument to another
@@ -836,6 +837,21 @@ function branchDenial(command, cwd, extra) {
 function ghBranchDenial(args) {
   if (args[0] === "pr" && args[1] === "merge" && args.includes("--admin")) return BRANCH_MSG.admin;
   if (args[0] !== "api") return null;
+  const { method, endpoint, path_ } = ghApi(args);
+  if (endpoint === "graphql") return /\b(delete|update)(BranchProtectionRule|RepositoryRuleset)\b/.test(args.join(" ")) ? BRANCH_MSG.protect : null;
+  if (method === "GET") return null;
+  if (/(^|\/)rulesets(\/|$)/.test(path_)) return BRANCH_MSG.protect;
+  if (/(?:^|\/)(?:statuses\/[^/]+|check-runs(?:\/.*)?)$/.test(path_)) return BRANCH_MSG.status;
+  const p = /(?:^|\/)branches\/([^/]+)\/protection(\/.*)?$/.exec(path_);
+  if (!p) return null;
+  let branch = p[1];
+  try { branch = decodeURIComponent(branch); } catch {}
+  const runPut = method === "PUT" && !p[2] && SCHEMES.some((s) => branch.startsWith(s.branch));
+  return runPut ? null : BRANCH_MSG.protect;
+}
+
+// gh api <args>: its method (GET unless -X or a body field says otherwise), endpoint, and the endpoint's path
+function ghApi(args) {
   let method = "", endpoint = "", body = false;
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
@@ -847,18 +863,7 @@ function ghBranchDenial(args) {
       else if (!/^(-H|--header|-q|--jq|-t|--template|--hostname|--cache|-p|--preview)$/.test(flag)) body = true;
     } else if (!a.startsWith("-") && !endpoint) endpoint = a;
   }
-  method = method || (body ? "POST" : "GET");
-  if (endpoint === "graphql") return /\b(delete|update)(BranchProtectionRule|RepositoryRuleset)\b/.test(args.join(" ")) ? BRANCH_MSG.protect : null;
-  const path_ = endpoint.replace(/[?#].*$/, "").replace(/\/+$/, "");
-  if (method === "GET") return null;
-  if (/(^|\/)rulesets(\/|$)/.test(path_)) return BRANCH_MSG.protect;
-  if (/(?:^|\/)(?:statuses\/[^/]+|check-runs(?:\/.*)?)$/.test(path_)) return BRANCH_MSG.status;
-  const p = /(?:^|\/)branches\/([^/]+)\/protection(\/.*)?$/.exec(path_);
-  if (!p) return null;
-  let branch = p[1];
-  try { branch = decodeURIComponent(branch); } catch {}
-  const runPut = method === "PUT" && !p[2] && SCHEMES.some((s) => branch.startsWith(s.branch));
-  return runPut ? null : BRANCH_MSG.protect;
+  return { method: method || (body ? "POST" : "GET"), endpoint, path_: endpoint.replace(/[?#].*$/, "").replace(/\/+$/, "") };
 }
 
 // git <global options> push …: each destination it would write, judged against main and the run branches
@@ -921,12 +926,21 @@ function guardedBranch(dst, dir, remote, g) {
 // ---- a subagent's shell (workerDenial, so both guards): no force-push, no git aimed at another checkout, and no
 // write to what AGENT_NEVER guards. The Edit and Write hooks check owned paths; a shell write reaches none of
 // them, so these name the writes that would let a worker rewrite its own rules. Paths resolve against the cwd
-// after a leading `cd <dir> &&` chain (Claude Code starts every subagent call in the lead's checkout).
-// A guard, not a sandbox: what a script, xargs or find -exec writes is not seen.
+// after a leading `cd <dir> &&` chain (Claude Code starts every subagent call in the lead's checkout), from the
+// shell's workdir when the harness reports one (Codex). The command xargs or find -exec runs is judged too, with {}
+// as find's start points; so are git checkout/restore from another commit, git apply/am, git stash pop/apply and
+// patch, from the paths the patch or stash names; a recursive rm/cp, mv or rsync of a dir holding a guarded path;
+// and pushes set up to force some other way (git config, gh api on git/refs).
+// A guard, not a sandbox: what a script or interpreter writes, or a path built from $VAR, $( ) or a glob, is not
+// seen here. The PostToolUse check (proteus-shell-check.js) catches those after the call.
 const AGENT_MSG = {
   force: (flag) => `proteus: agents never force-push (\`${flag}\`), their own branch included: a rewrite drops commits the verifier and the PR already read. Add a commit on top, or merge the base in (\`git merge origin/<base>\`), and push the branch by name; history that must be rewritten is a NEEDS for the lead.`,
   gitDir: (opt, p, own) => `proteus: \`${opt.endsWith("=") ? opt + p + " git" : "git " + opt + " " + p}\` runs git in ${p}, which is not your worktree${own ? ` (${own})` : ""}, while the gates, tests and hooks beside it run elsewhere. Start the call with \`cd <your worktree> && \` and run git there.`,
   write: (prog, rel) => `proteus: \`${prog}\` writes ${rel}, which holds Proteus's hooks, gates, git internals or CLI settings; a shell write there skips the owned-path check and is never a worker's. Make an owned change with Edit or Write, or comment "NEEDS ${rel}: <why>" on the issue and stop.`,
+  tree: (prog, target, rel) => `proteus: \`${prog}\` on ${target} takes ${rel} with it, which holds Proteus's hooks, gates, git internals or CLI settings; that is never a worker's. Name the paths inside it that you own, or comment "NEEDS ${rel}: <why>" on the issue and stop.`,
+  blind: (prog) => `proteus: \`${prog}\` reads its patch from stdin or from a file this same command writes, so the guard cannot see which paths it changes. Save the patch to a file first (Write it under \`node <hooks>/proteus-scratch.js --path <key>\`) and apply it by name in a later call.`,
+  pushSetup: (what) => `proteus: \`${what}\` sets up a push the guard cannot read: a configured push refspec, a mirror, push.default or an alias can force-push or push every branch. Push your branch by name (\`git push origin <your branch>\`).`,
+  refs: (what) => `proteus: agents never move a branch through the API (\`${what}\`): a ref update there can force it past the push checks. Push your branch by name with git.`,
 };
 const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 // One worker, one worktree: the lead guard's bindingDenial records a subagent's first edit per agent id in
@@ -966,7 +980,11 @@ function cwdWorktree(cwd, common) {
 }
 
 // a word as the shell would name a path: ~ and $HOME/${HOME}, $PWD expanded; any other $ left as written
-const expandPath = (w, dir) => String(w).replace(/^~(?=$|[\\/])/, () => os.homedir()).replace(/^\$(?:\{HOME\}|HOME\b)/, () => os.homedir()).replace(/^\$(?:\{PWD\}|PWD\b)/, () => dir);
+// and on Windows a Git Bash or Cygwin drive path (/c/x, /cygdrive/c/x) as the drive path it names
+const expandPath = (w, dir, win = process.platform === "win32") => drivePath(String(w).replace(/^~(?=$|[\\/])/, () => os.homedir()).replace(/^\$(?:\{HOME\}|HOME\b)/, () => os.homedir()).replace(/^\$(?:\{PWD\}|PWD\b)/, () => dir), win);
+const drivePath = (p, win = process.platform === "win32") => (win ? p.replace(/^[\\/](?:cygdrive[\\/])?([a-zA-Z])(?=$|[\\/])/, (_, d) => `${d.toUpperCase()}:/`).replace(/^([A-Z]:\/)[\\/]/, "$1") : p);
+// the dir a shell call runs in: the event's cwd, moved by the shell tool's own workdir when the harness has one
+const shellCwd = (ev) => { const base = ev.cwd || projectRoot(ev); return ev.workdir ? path.resolve(base, expandPath(ev.workdir, base)) : base; };
 
 // the paths a simple command (unwrapped words) writes, as written: [] for a program it does not judge
 const WRITE_ALL = new Set(["tee", "truncate", "touch", "rm", "unlink", "rmdir", "shred", "mv"]); // every operand
@@ -1061,22 +1079,344 @@ function forcePush(words) {
   return "";
 }
 
+// a word as the paths it may name: a backslash is a separator on Windows, judged as one everywhere, so a path
+// written either way is caught
+const spellings = (t, dir) => [...new Set([t, String(t).replace(/\\/g, "/")])].map((c) => path.resolve(dir, expandPath(c, dir)));
+const writeRel = (t, dir, ev) => spellings(t, dir).map((p) => guardedWrite(p, ev)).find(Boolean) || "";
+// the guarded path t is, or holds: ".github/workflows" for t = .github
+function treeRel(t, dir, ev) {
+  for (const p of spellings(t, dir)) {
+    const rel = guardedWrite(p, ev);
+    if (rel) return rel;
+    const sub = guardedParent(p, ev);
+    if (sub) return `${String(t).replace(/[\\/]+$/, "") || "/"}/${sub}`;
+  }
+  return "";
+}
+// the guarded path (relative to abs, forward slashes) that abs holds as a parent, else "": a guarded dir of any
+// checkout of this repo or of the guest dir, a whole checkout (its .git), or the CLIs' dirs in the home
+const ANCHORS = [".git", ".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks"];
+function guardedParent(abs, ev) {
+  const roots = new Set(), commons = new Set([gitCommonDir(path.resolve(projectRoot(ev)))]);
+  const near = gitRoot(abs);
+  if (near) { roots.add(near); commons.add(gitCommonDir(near)); }
+  for (const c of commons) {
+    if (!c) continue;
+    if (mainRoot(c)) roots.add(mainRoot(c));
+    for (const w of registeredWorktrees(c)) roots.add(w);
+  }
+  const guest = guestDir(projectRoot(ev));
+  if (guest) roots.add(guest);
+  const anchors = [".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d));
+  for (const r of roots) {
+    anchors.push(...ANCHORS.map((a) => path.join(r, a)));
+    try { anchors.push(...fs.readdirSync(path.join(r, ".config")).filter((n) => /^\.?lefthook/i.test(n)).map((n) => path.join(r, ".config", n))); } catch {}
+  }
+  for (const p of new Set([abs, realTarget(abs)].filter(Boolean))) {
+    for (const a of anchors) {
+      if (!fs.existsSync(a)) continue;
+      for (const b of new Set([a, realOr(a)])) {
+        const r = path.relative(p, b);
+        if (r && r !== ".." && !r.startsWith(".." + path.sep) && !path.isAbsolute(r)) return r.split(path.sep).join("/");
+      }
+    }
+  }
+  return "";
+}
+
+// what rm -r, mv, cp -r and rsync write as a whole tree: [target, tree] pairs. tree true: the target and all
+// under it (rm -r and mv sources, a destination that receives a source's contents or loses files to --delete);
+// false: the one path a source lands at inside the destination dir
+const COPY_VALUE = ["-S", "--suffix", "-t", "--target-directory", "-m", "--mode", "-o", "--owner", "-g", "--group", "-e", "--rsh", "--exclude", "--include", "--filter", "-f", "--files-from", "--exclude-from", "--include-from", "--rsync-path", "--log-file", "--partial-dir", "--temp-dir", "-T", "--compare-dest", "--copy-dest", "--link-dest", "--chmod", "--chown", "--backup-dir", "--max-size", "--min-size", "--timeout", "--port", "-B", "--block-size", "--bwlimit"];
+function treeTargets(words) {
+  const prog = progName(words[0]), args = words.slice(1);
+  const has = (re) => args.some((a) => re.test(a));
+  if (prog === "rm") return has(/^(?:-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)$/) ? writeTargets(words).map((t) => [t, true]) : [];
+  if (!["mv", "cp", "rsync"].includes(prog) || (prog === "cp" && !has(/^(?:-[a-zA-Z]*[rRa][a-zA-Z]*|--recursive|--archive)$/))) return [];
+  const ops = [];
+  let dest = null;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k], m = /^--target-directory=(.*)$/.exec(a);
+    if (a === "--") { ops.push(...args.slice(k + 1)); break; }
+    if (m) dest = m[1];
+    else if (prog !== "rsync" && (a === "-t" || a === "--target-directory")) dest = args[++k] || "";
+    else if (COPY_VALUE.includes(a)) k++;
+    else if (!a.startsWith("-")) ops.push(a);
+  }
+  if (dest === null) dest = ops.length > 1 ? ops.pop() : null;
+  if (dest === null) return [];
+  const out = prog === "mv" ? ops.map((s) => [s, true]) : [];
+  const contents = (s) => (prog === "rsync" ? /[\\/]\.?$/.test(s) : /[\\/]\.$/.test(s));
+  if (ops.some(contents) || (prog === "rsync" && has(/^--(?:delete|del$|remove)/))) out.push([dest, true]);
+  for (const s of ops) if (!contents(s)) out.push([path.join(dest, path.basename(s.replace(/[\\/]+$/, ""))), false]);
+  return out;
+}
+
+// find's start points, the commands its -exec / -execdir / -ok / -okdir run, -delete, and the files -fprint & co write
+const FIND_EXEC = new Set(["-exec", "-execdir", "-ok", "-okdir"]);
+function findParts(args) {
+  let i = 0;
+  for (; i < args.length && /^-(?:[HLP]|D|O\d*)$/.test(args[i]); i++) if (args[i] === "-D") i++;
+  const starts = [];
+  for (; i < args.length && !/^[-(!),]/.test(args[i]); i++) starts.push(args[i]);
+  const execs = [], writes = [];
+  let del = false;
+  for (; i < args.length; i++) {
+    const a = args[i];
+    if (FIND_EXEC.has(a)) {
+      const cmd = [];
+      for (i++; i < args.length && args[i] !== ";" && args[i] !== "+"; i++) cmd.push(args[i]);
+      execs.push(cmd);
+    } else if (a === "-delete") del = true;
+    else if (/^-f(?:print0?|printf|ls)$/.test(a)) writes.push(args[++i] || "");
+  }
+  return { starts: starts.length ? starts : ["."], execs, del, writes };
+}
+
+// git -c / --config-env / GIT_CONFIG_* settings and `git config` writes that set up a push the guard cannot read
+const SAFE_PUSH_DEFAULT = /^(?:simple|current|upstream|tracking|nothing)$/i;
+function riskyConfig(key, value) {
+  const k = String(key || "").toLowerCase();
+  if (/^remote\..+\.(?:push|mirror)$/.test(k)) return true;
+  if (k === "push.default") return !SAFE_PUSH_DEFAULT.test(String(value ?? ""));
+  if (k.startsWith("alias.")) return value === undefined || /^\s*!|(?:^|\s)push(?:\s|$)/.test(value);
+  return false;
+}
+const CONFIG_VALUE = new Set(["-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value"]);
+const CONFIG_READ = /^(?:-l|--list|--get(?:-all|-regexp|-urlmatch|-color|colorbool)?|--unset(?:-all)?|--remove-section|--rename-section|-e|--edit|--show-origin|--show-scope|--name-only)$/;
+// git config <args>: [key, value] it sets, else null
+function configSet(args) {
+  const pos = [];
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (CONFIG_VALUE.has(a)) k++;
+    else if (CONFIG_READ.test(a)) return null;
+    else if (!a.startsWith("-")) pos.push(a);
+  }
+  if (pos[0] === "set") return pos[1] ? [pos[1], pos[2]] : null;
+  if (/^(?:get|list|unset|rename-section|remove-section|edit)$/.test(pos[0] || "")) return null;
+  return pos.length >= 2 ? [pos[0], pos[1]] : null;
+}
+// the config a git call carries: -c k[=v], --config-env k=ENV (value unknown), GIT_CONFIG_KEY_<n> and GIT_CONFIG_PARAMETERS
+function gitCallConfig(all, words) {
+  const out = [];
+  for (const a of all.slice(0, all.length - words.length)) {
+    let m;
+    if ((m = /^GIT_CONFIG_KEY_\d+=(.*)$/s.exec(a))) out.push([m[1], undefined]);
+    else if ((m = /^GIT_CONFIG_PARAMETERS=(.*)$/s.exec(a))) for (const p of m[1].matchAll(/'([^']*)'(?:='([^']*)')?/g)) out.push([p[1], p[2]]);
+  }
+  for (let i = 1; i < words.length && words[i].startsWith("-"); i++) {
+    const a = words[i];
+    const c = a === "-c" ? words[++i] || "" : a.startsWith("--config-env=") ? a.slice(13) : a === "--config-env" ? words[++i] || "" : null;
+    if (c === null) { if (GIT_VALUE.has(a)) i++; continue; }
+    const eq = c.indexOf("=");
+    out.push(eq < 0 ? [c, "true"] : [c.slice(0, eq), a === "-c" ? c.slice(eq + 1) : undefined]);
+  }
+  return out;
+}
+
+// a pathspec as [path, the dir it is relative to]: :/x and :(top)x from the checkout root; null for an exclusion
+function specPath(p, dir, root) {
+  const m = /^:(?:\(([^)]*)\)|([/!^]*))(.*)$/s.exec(p);
+  if (!m) return [p, dir];
+  const magic = m[1] !== undefined ? m[1].split(",") : [...m[2]].map((c) => (c === "/" ? "top" : "exclude"));
+  if (magic.includes("exclude")) return null;
+  return [m[3], magic.includes("top") ? root : dir];
+}
+const readSmall = (abs, max = 8 << 20) => { try { const st = fs.statSync(abs); return st.isFile() && st.size <= max ? fs.readFileSync(abs, "utf8") : null; } catch { return null; } };
+function specFile(f, dir, nul) {
+  if (!f || f === "-") return [];
+  const text = readSmall(path.resolve(dir, expandPath(f, dir)), 1 << 20);
+  return text === null ? [] : text.split(nul ? "\0" : /\r?\n/).filter(Boolean);
+}
+
+// git checkout / restore with paths: a restore to HEAD or the index passes (the worker undoing its own change);
+// from any other commit, the guarded paths it would change (git diff <source> against the worktree) are refused
+const CHECKOUT_VALUE = new Set(["-b", "-B", "--orphan", "--conflict", "-U", "--unified", "--inter-hunk-context"]);
+function restoreDenial(sub, args, dir, ev) {
+  const root = gitRoot(dir);
+  if (!root) return null;
+  const dash = args.indexOf("--");
+  const pre = dash < 0 ? args : args.slice(0, dash), post = dash < 0 ? [] : args.slice(dash + 1);
+  let source = null, m;
+  const pos = [], specs = [], nul = args.includes("--pathspec-file-nul");
+  for (let k = 0; k < pre.length; k++) {
+    const a = pre[k];
+    if (sub === "restore" && (m = /^(?:--source=|-s(?=.))(.*)$/s.exec(a))) source = m[1];
+    else if (sub === "restore" && (a === "-s" || a === "--source")) source = pre[++k] || "";
+    else if ((m = /^--pathspec-from-file=(.*)$/s.exec(a))) specs.push(...specFile(m[1], dir, nul));
+    else if (a === "--pathspec-from-file") specs.push(...specFile(pre[++k] || "", dir, nul));
+    else if (CHECKOUT_VALUE.has(a)) k++;
+    else if (!a.startsWith("-")) pos.push(a);
+  }
+  let paths = sub === "restore" ? [...pos, ...post] : dash >= 0 ? post : pos;
+  if (sub === "checkout" && dash >= 0) source = pos[0] || null;
+  const hits = (list) => list.map((p) => specPath(p, dir, root)).filter((x) => x && treeRel(x[0], x[1], ev)).map(([p, base]) => path.resolve(base, expandPath(p, base)));
+  let hit = hits([...paths, ...specs]);
+  if (!hit.length) return null;
+  // without --, a first word naming a commit is the source and the rest are paths
+  if (sub === "checkout" && dash < 0 && pos.length && git(["rev-parse", "-q", "--verify", `${pos[0]}^{tree}`], dir)) {
+    source = pos[0];
+    paths = pos.slice(1);
+    hit = hits([...paths, ...specs]);
+    if (!hit.length) return null;
+  }
+  if (source === null || /^(?:HEAD|@)$/.test(source)) return null;
+  const rel = git(["diff", "--name-only", source, "--", ...hit], dir).split("\n").find((r) => r && keyIn(AGENT_NEVER, r));
+  return rel ? AGENT_MSG.write(`git ${sub} ${source}`, rel) : null;
+}
+
+// git stash pop / apply: the paths the stash holds (tracked changes and untracked files)
+function stashDenial(how, args, dir) {
+  const ref = args.find((a) => !a.startsWith("-")) || "stash@{0}";
+  const sha = git(["rev-parse", "-q", "--verify", `${/^\d+$/.test(ref) ? `stash@{${ref}}` : ref}^{commit}`], dir);
+  if (!sha) return null;
+  const files = [...git(["diff", "--name-only", `${sha}^1`, sha], dir).split("\n"), ...git(["ls-tree", "-r", "--name-only", `${sha}^3`], dir).split("\n")];
+  const rel = files.find((f) => f && keyIn(AGENT_NEVER, f));
+  return rel ? AGENT_MSG.write(`git stash ${how}`, rel) : null;
+}
+
+// the paths a unified or git diff names: diff --git, ---/+++, rename/copy and Index: lines; /dev/null dropped
+function patchPaths(text) {
+  const out = new Set();
+  const unq = (q) => q.replace(/^"([\s\S]*)"$/, "$1").replace(/\\(.)/g, "$1");
+  for (const line of String(text).split(/\r?\n/)) {
+    let m;
+    if ((m = /^diff --git (.+)$/.exec(line))) for (const q of m[1].match(/"(?:[^"\\]|\\.)*"|\S+/g) || []) out.add(unq(q));
+    else if ((m = /^(?:---|\+\+\+) (.+?)(?:\t.*)?$/.exec(line))) out.add(unq(m[1].trim()));
+    else if ((m = /^(?:rename|copy) (?:from|to) (.+)$/.exec(line))) out.add(unq(m[1]));
+    else if ((m = /^Index: (.+)$/.exec(line))) out.add(m[1].trim());
+  }
+  out.delete("/dev/null");
+  return [...out];
+}
+// git apply, git am and patch: the paths their patch writes, read from the patch file before the call. A patch
+// from stdin, or from a file an earlier part of this command line writes, cannot be read in time: refused inside a
+// checkout. Each path is judged as written and with its leading dirs stripped, from the cwd and the checkout root.
+const PATCH_OPTS = {
+  "git apply": { value: ["-p", "-C", "--exclude", "--include", "--directory", "--whitespace", "--build-fake-ancestor"], dry: /^--(?:stat|numstat|summary|check)$/, apply: /^--apply$/ },
+  "git am": { value: ["-p", "-C", "--exclude", "--include", "--directory", "--whitespace", "--patch-format", "--resolvemsg", "--quoted-cr", "--empty"], control: /^(?:--continue|--skip|--abort|--quit|--show-current-patch(?:=.*)?|--resolved|-r|--retry|--allow-empty)$/ },
+  patch: { value: ["-i", "--input", "-d", "--directory", "-p", "--strip", "-o", "--output", "-r", "--reject-file", "-B", "--prefix", "-Y", "--basename-prefix", "-z", "--suffix", "-D", "--ifdef", "-F", "--fuzz", "-V", "--version-control", "-g", "--get", "--quoting-style"], dry: /^--dry-run$/ },
+};
+function patchDenial(prog, args, dir, written, ev) {
+  const o = PATCH_OPTS[prog];
+  const files = [], outs = [];
+  let input = null, strip = null, base = dir, prefix = "", dry = false, apply = false, m;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    const eq = /^(--[\w-]+)=([\s\S]*)$/.exec(a);
+    const [flag, attached] = eq ? [eq[1], eq[2]] : /^-[pCidoD]./.test(a) && prog !== "git am" ? [a.slice(0, 2), a.slice(2)] : /^-[pC]./.test(a) ? [a.slice(0, 2), a.slice(2)] : [a, undefined];
+    if (o.control && o.control.test(a)) return null;
+    if (o.dry && o.dry.test(a)) dry = true;
+    if (o.apply && o.apply.test(a)) apply = true;
+    if (a === "<") { input = args[++k] || ""; continue; }
+    if ((m = /^<([^<].*)$/s.exec(a))) { input = m[1]; continue; }
+    if (o.value.includes(flag)) {
+      const v = attached !== undefined ? attached : args[++k] || "";
+      if (flag === "-p" || flag === "--strip") strip = parseInt(v, 10);
+      else if (prog === "patch" && (flag === "-i" || flag === "--input")) input = v;
+      else if (prog === "patch" && (flag === "-d" || flag === "--directory")) base = path.resolve(dir, expandPath(v, dir));
+      else if (prog !== "patch" && flag === "--directory") prefix = v;
+      else if (prog === "patch" && (flag === "-o" || flag === "--output")) outs.push(v);
+    } else if (a !== "-" && a.startsWith("-")) continue;
+    else files.push(a);
+  }
+  if (dry && !apply) return null;
+  if (prog === "patch") {
+    if (files[0] && files[0] !== "-") outs.push(files[0]);
+    if (input === null && files[1]) input = files[1];
+  }
+  for (const t of outs) { const rel = writeRel(t, base, ev); if (rel) return AGENT_MSG.write(prog, rel); }
+  const sources = prog === "patch" ? [input] : files.length ? files : [input];
+  const root = gitRoot(dir);
+  let text = "";
+  for (const f of sources) {
+    const abs = f && f !== "-" ? path.resolve(dir, expandPath(f, dir)) : null;
+    const body = abs && !written.has(abs) ? readSmall(abs) : null;
+    if (body === null) return root ? AGENT_MSG.blind(prog) : null;
+    text += body + "\n";
+  }
+  // as written, with one dir stripped, with -p's count stripped, and (patch only) the bare file name
+  const strips = (p) => {
+    const parts = p.split("/");
+    const n = [0, 1, ...(strip ? [strip] : [])].flatMap((x) => (x < parts.length ? [parts.slice(x).join("/")] : []));
+    return prog === "patch" ? [...n, parts[parts.length - 1]] : n;
+  };
+  for (const p of patchPaths(text)) {
+    for (const v of new Set(strips(p))) {
+      for (const b of new Set([base, root].filter(Boolean))) {
+        const rel = writeRel(prefix ? path.posix.join(prefix, v) : v, b, ev);
+        if (rel) return AGENT_MSG.write(prog, rel);
+      }
+    }
+  }
+  return null;
+}
+
+// a subagent's gh: no API ref update (a PATCH on git/refs takes force: true) and no gh repo sync --force
+function ghAgentDenial(args) {
+  if (args[0] === "repo" && args[1] === "sync" && args.includes("--force")) return AGENT_MSG.refs("gh repo sync --force");
+  if (args[0] !== "api") return null;
+  const { method, endpoint, path_ } = ghApi(args);
+  if (endpoint === "graphql") return /\b(?:updateRefs?|deleteRef)\b/.test(args.join(" ")) ? AGENT_MSG.refs("gh api graphql updateRef") : null;
+  return method !== "GET" && /(?:^|\/)git\/refs(?:\/|$)/.test(path_) ? AGENT_MSG.refs(`gh api -X ${method} ${endpoint}`) : null;
+}
+
+// git's own subcommands that write the worktree from somewhere the guard can read, or set up a push
+function gitWriteDenial(ev, all, words, dir, written) {
+  for (const [k, v] of gitCallConfig(all, words)) if (riskyConfig(k, v)) return AGENT_MSG.pushSetup(`git -c ${k}${v === undefined ? "" : "=" + v}`);
+  let i = 1, d = dir;
+  for (; i < words.length && words[i].startsWith("-"); i++) {
+    if (words[i] === "-C") d = path.resolve(d, expandPath(words[++i] || ".", d));
+    else if (GIT_VALUE.has(words[i])) i++;
+  }
+  const sub = words[i], args = words.slice(i + 1);
+  if (sub === "config") {
+    const s = configSet(args);
+    return s && riskyConfig(s[0], s[1]) ? AGENT_MSG.pushSetup(`git config ${s[0]}${s[1] === undefined ? "" : " " + s[1]}`) : null;
+  }
+  if (sub === "checkout" || sub === "restore") return restoreDenial(sub, args, d, ev);
+  if (sub === "apply" || sub === "am") return patchDenial(`git ${sub}`, args, d, written, ev);
+  if (sub === "stash" && (args[0] === "pop" || args[0] === "apply")) return stashDenial(args[0], args.slice(1), d);
+  return null;
+}
+
 const NESTED_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
-function agentShellDenial(ev, command = ev.command, cwd = ev.cwd, depth = 0) {
+function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 0) {
   let dir = path.resolve(cwd || projectRoot(ev));
-  for (const all of shellCommands(command)) {
-    const words = unwrap(all), prog = progName(words[0]);
-    // a backslash is a separator on Windows; judged as one everywhere, so a path written either way is caught
-    const judge = (t) => [...new Set([t, t.replace(/\\/g, "/")])].map((c) => guardedWrite(path.resolve(dir, expandPath(c, dir)), ev)).find(Boolean);
-    for (const t of all.redirects) {
+  const written = new Set(); // paths this line writes: a patch made earlier in the same call is not read in time
+  const judge = (t) => writeRel(t, dir, ev);
+  const findDenial = (args) => {
+    const f = findParts(args);
+    for (const w of f.writes) { const rel = judge(w); if (rel) return AGENT_MSG.write("find -fprint", rel); }
+    if (f.del) for (const s of f.starts) { const rel = treeRel(s, dir, ev); if (rel) return AGENT_MSG.tree("find -delete", s, rel); }
+    for (const cmd of f.execs) {
+      const inner = unwrap(cmd);
+      // {} is every path under the start points, so a command that writes it writes under each of them
+      const writesFound = [...writeTargets(inner), ...treeTargets(inner).map(([t]) => t)].some((t) => t.includes("{}"));
+      for (const s of f.starts) {
+        const sub = Object.assign(cmd.map((w) => w.split("{}").join(s)), { redirects: [] });
+        const why = simple(sub, unwrap(sub), true);
+        if (why) return why;
+        const rel = writesFound && treeRel(s, dir, ev);
+        if (rel) return AGENT_MSG.tree(`find -exec ${progName(inner[0])}`, s, rel);
+      }
+    }
+    return null;
+  };
+  // one simple command; inner: run by find -exec, so a cd there moves nothing after it
+  const simple = (all, words, inner = false) => {
+    const prog = progName(words[0]);
+    for (const t of all.redirects || []) {
       const rel = judge(t);
       if (rel) return AGENT_MSG.write(`> ${t}`, rel);
+      for (const p of spellings(t, dir)) written.add(p);
     }
-    if (!words.length) continue;
+    if (!words.length) return null;
     if (prog === "cd" || prog === "pushd") {
       const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-");
-      if (to !== "-") dir = path.resolve(dir, expandPath(to || "~", dir));
-      continue;
+      if (!inner && to !== "-") dir = path.resolve(dir, expandPath(to || "~", dir));
+      return null;
     }
     if (prog === "git") {
       const force = forcePush(words);
@@ -1086,24 +1426,32 @@ function agentShellDenial(ev, command = ev.command, cwd = ev.cwd, depth = 0) {
         const own = ownWorktree(ev, dir, common);
         if (!root || !own || !samePath(realOr(root), realOr(own))) return AGENT_MSG.gitDir(opt, p.split(path.sep).join("/"), own ? `yours is ${own.split(path.sep).join("/")}` : "");
       }
-      continue;
+      return gitWriteDenial(ev, all, words, dir, written);
     }
+    if (prog === "gh") return ghAgentDenial(words.slice(1));
+    if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) return ghAgentDenial(words.slice(2));
     // sh -c '<script>': judged as its own command line, from the same dir
     if (NESTED_SHELLS.has(prog) && depth < 3) {
       const c = words.indexOf("-c");
-      const why = c > 0 && words[c + 1] !== undefined ? agentShellDenial(ev, words[c + 1], dir, depth + 1) : null;
-      if (why) return why;
-      continue;
+      return c > 0 && words[c + 1] !== undefined ? agentShellDenial(ev, words[c + 1], dir, depth + 1) : null;
     }
-    if (prog === "eval" && depth < 3) {
-      const why = agentShellDenial(ev, words.slice(1).join(" "), dir, depth + 1);
-      if (why) return why;
-      continue;
-    }
+    if (prog === "eval" && depth < 3) return agentShellDenial(ev, words.slice(1).join(" "), dir, depth + 1);
+    if (prog === "find") return findDenial(words.slice(1));
+    if (prog === "patch") return patchDenial("patch", words.slice(1), dir, written, ev);
     for (const t of writeTargets(words)) {
       const rel = judge(t);
       if (rel) return AGENT_MSG.write(prog, rel);
+      for (const p of spellings(t, dir)) written.add(p);
     }
+    for (const [t, tree] of treeTargets(words)) {
+      const rel = tree ? treeRel(t, dir, ev) : judge(t);
+      if (rel) return tree ? AGENT_MSG.tree(`${prog}${prog === "rm" || prog === "cp" ? " -r" : ""}`, t, rel) : AGENT_MSG.write(prog, rel);
+    }
+    return null;
+  };
+  for (const all of shellCommands(command)) {
+    const why = simple(all, unwrap(all));
+    if (why) return why;
   }
   return null;
 }
@@ -1355,6 +1703,7 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
+  drivePath, expandPath, shellCwd, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   workerDenial, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

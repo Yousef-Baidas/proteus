@@ -31,7 +31,8 @@
         "matcher": "Bash",
         "hooks": [
           { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-lessons.js\"" },
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-scratch.js\"" }
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-scratch.js\"" },
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-shell-check.js\"" }
         ]
       }
     ],
@@ -39,7 +40,8 @@
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-scratch.js\"" }
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-scratch.js\"" },
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-shell-check.js\"" }
         ]
       }
     ],

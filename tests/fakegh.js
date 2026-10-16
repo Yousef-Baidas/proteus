@@ -48,7 +48,7 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   if ((m = /^api -X PUT repos\/o\/r\/rulesets\/(\d+) --input -$/.exec(a))) { s.rulesets = (s.rulesets || []).map((r) => (r.id === +m[1] ? { id: r.id, ...body() } : r)); s.puts = (s.puts || 0) + 1; save(); out({ id: +m[1] }); }
   if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
 }
-// FAKE_GH_PR (a JSON file {head, files, statuses: {<sha>: [...]}, fail}) answers a PR's head, its changed files and
+// FAKE_GH_PR (a JSON file {head, branch, files, statuses: {<sha>: [...]}, fail}) answers a PR's head, its branch, its changed files and
 // its commit statuses, and records a posted status (newest first, as GitHub lists them); fail names a call that errors
 if (process.env.FAKE_GH_PR) {
   const fs = require("fs"), file = process.env.FAKE_GH_PR;
@@ -57,6 +57,7 @@ if (process.env.FAKE_GH_PR) {
   const no = (k) => { if (s.fail === k) { process.stderr.write(`gh: ${k} failed (HTTP 500)\n`); process.exit(1); } };
   let m;
   if (/^pr view \d+ --json headRefOid -q \.headRefOid$/.test(a)) { no("view"); process.stdout.write(s.head + "\n"); process.exit(0); }
+  if (/^pr view \d+ --json headRefName -q \.headRefName$/.test(a)) { no("branch"); process.stdout.write((s.branch || "") + "\n"); process.exit(0); }
   if (new RegExp(`^api --paginate repos/${R}/pulls/\\d+/files --jq `).test(a)) { no("files"); process.stdout.write((s.files || []).join("\n") + "\n"); process.exit(0); }
   if ((m = new RegExp(`^api repos/${R}/commits/([0-9a-f]{40})/status$`).exec(a))) {
     const seen = new Set();

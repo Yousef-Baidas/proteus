@@ -583,6 +583,9 @@ function bash(command, make, { extra = {}, stdout = "", event = "PostToolUse", s
 }
 ok("scratch: registered for Bash pre, post, failure", ["PreToolUse", "PostToolUse", "PostToolUseFailure"].every((e) => (j1.hooks[e] || []).some((x) => x.matcher === "Bash" && JSON.stringify(x).includes("proteus-scratch.js"))), JSON.stringify(j1.hooks.PostToolUseFailure));
 ok("scratch: in the worktree backup set", fs.existsSync(WH("proteus-scratch.js")) && ["PreToolUse", "PostToolUse", "PostToolUseFailure"].every((e) => JSON.stringify(JSON.parse(fs.readFileSync(path.join(WT, ".claude", "settings.local.json"), "utf8")).hooks[e]).includes("proteus-scratch.js")));
+ok("shell check (#48): registered for Bash post and failure, and in the worktree backup set",
+  ["PostToolUse", "PostToolUseFailure"].every((e) => (j1.hooks[e] || []).some((x) => x.matcher === "Bash" && JSON.stringify(x).includes("proteus-shell-check.js"))) &&
+  fs.existsSync(WH("proteus-shell-check.js")) && ["PostToolUse", "PostToolUseFailure"].every((e) => JSON.stringify(JSON.parse(fs.readFileSync(path.join(WT, ".claude", "settings.local.json"), "utf8")).hooks[e]).includes("proteus-shell-check.js")), JSON.stringify(j1.hooks.PostToolUse));
 // the lead's own Bash: named → ledgered under the one open run; unnamed or a longer name → ignored
 let rr = bash(`mkdir ${t("hs-lead")} && head -c 2097152 /dev/zero > ${t("hs-lead")}/big && echo ok`, () => {
   fs.mkdirSync(t("hs-lead")); fs.writeFileSync(t("hs-lead/big"), Buffer.alloc(2097152));
@@ -1012,6 +1015,7 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
     guardCmd && guardCmd.matcher === "^(apply_patch|Bash|view_image|[a-z_]*spawn_agent)$" && guardCmd.hooks[0].command === `node "${path.join(CX, ".codex", "hooks", "proteus-lead-guard.js").split(path.sep).join("/")}"` &&
     hj.hooks.SessionStart[0].hooks[0].timeout === 60 && !hj.hooks.PostToolUseFailure && !hj.hooks.TeammateIdle &&
     /prefix_rule\(pattern=\["gh"\]/.test(fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8")) && fs.existsSync(path.join(CX, ".codex", "hooks", "proteus-harness-codex.js")), r.out + r.err);
+  ok("codex install: the shell check runs after Bash (#48)", (hj.hooks.PostToolUse || []).some((e) => e.matcher === "Bash" && /proteus-shell-check\.js/.test(JSON.stringify(e))) && fs.existsSync(path.join(CX, ".codex", "hooks", "proteus-shell-check.js")), JSON.stringify(hj.hooks.PostToolUse));
   r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: CX, env: { ...cenvx, PROTEUS_HARNESS: "codex" } });
   ok("codex install: idempotent", /hooks already registered, 0 files updated/.test(r.out), r.out + r.err);
   const CXD = path.join(CX, ".codex", "hooks"), skipped = ["proteus-statusline.js", "worktree-settings.local.json", "commit-msg.js"];
