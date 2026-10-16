@@ -11,7 +11,8 @@ const { ok, workdir, summary } = require(path.join(__dirname, "lib.js"));
 
 const ROOT = path.join(__dirname, "..");
 const SCOPE = ["skills", "agents", "templates", "docs", "README.md", "install.js"];
-const PATTERNS = [/(^|[^a-z])hive(\/|-evidence|-gates|-log|-review|-debt|-question|-branches)/, /"hive"/, /\.git\/hive/];
+// anchored both ends: not inside a longer word, name or path segment (archive/, my-hive-logs, foo.git/hive, .git/hive-x)
+const PATTERNS = [/(^|[^\w.-])hive(\/|(-evidence|-gates|-log|-review|-debt|-question|-branches)(?![\w-]))/, /"hive"/, /(^|[^\w.-])\.git\/hive(?![\w-])/];
 
 // legacy allowlist: file, the line that opens the region, and either `to` (last line, inclusive)
 // or `before` (first line after it); with neither, the region is the opening line alone
@@ -82,6 +83,9 @@ const SELF = ["install.js", "README.md", "skills/proteus/references/tracker.md"]
 const clean = scan(T, SELF);
 ok("the self-check tree resolves every allowlist anchor", clean.missing.length === 0, clean.missing.join("; "));
 ok("hive names inside the legacy regions pass", clean.hits.length === 0, clean.hits.join("; "));
+// near misses: a longer word, name or path segment is not a hive name
+put("skills/proteus/references/near.md", "Open archive/x and the my-hive-logs dir, hive-gates-v2, foo.git/hive and .git/hive-x; also Archive/hive-ish.\n");
+ok("near misses inside a longer word, name or path segment do not match", scan(T, ["skills/proteus/references/near.md"]).hits.length === 0, scan(T, ["skills/proteus/references/near.md"]).hits.join("; "));
 fs.appendFileSync(path.join(T, "skills/proteus/references/tracker.md"), "git push origin hive/x\nlabel \"hive\" and .git/hive\n");
 fs.appendFileSync(path.join(T, "install.js"), "const BRANCH = \"hive/\";\n");
 const dirty = scan(T, SELF);

@@ -12,6 +12,9 @@ const { ok, g } = lib;
 const W = lib.workdir("hooks");
 const { HOME, BIN, ENV } = lib;
 
+// a payload that does not parse fails its own assertion with the text, then falls back, instead of crashing the file
+const jp = (text, fallback) => { try { return JSON.parse(text); } catch (e) { ok(`payload parses as JSON: ${e.message}`, false, String(text).slice(0, 200)); return fallback; } };
+
 const timings = {};
 const run = (script, input, opts = {}) => {
   const r = lib.run(script, input, { cwd: REPO, ...opts });
@@ -338,9 +341,9 @@ if (process.platform !== "win32") {
   console.log(JSON.stringify([lib.ownedDenial("C:\\\\wt", "C:\\\\wt\\\\src\\\\lighting\\\\a.ts"), lib.ownedDenial("C:\\\\wt", "c:\\\\WT\\\\SRC\\\\Lighting\\\\a.ts"),
     lib.ownedDenial("C:\\\\wt", "tests\\\\lighting.test.ts"), lib.ownedDenial("C:\\\\wt", "D:\\\\wt\\\\src\\\\lighting\\\\a.ts"),
     lib.ownedDenial("C:\\\\wt", "..\\\\x.ts"), lib.relPath("C:\\\\wt", "D:\\\\x.ts"), lib.relPath("C:\\\\wt", "C:\\\\wt\\\\..foo")]));`);
-  const wr = JSON.parse(spawnSync(process.execPath, [winJs], { encoding: "utf8" }).stdout || "null") || [];
+  const wr = jp(spawnSync(process.execPath, [winJs], { encoding: "utf8" }).stdout || "null", []) || [];
   ok("win: owned allowed, case-insensitive, backslash glob", wr[0] === "" && wr[1] === "" && wr[2] === "", JSON.stringify(wr));
-  ok("win: other drive + ..\\ escape denied, relPath cross-drive null, ..foo inside", wr[3].startsWith("D:/wt/src/lighting/a.ts is outside the worktree") && wr[4].startsWith("../x.ts is outside") && wr[5] === null && wr[6] === "..foo", JSON.stringify(wr));
+  ok("win: other drive + ..\\ escape denied, relPath cross-drive null, ..foo inside", String(wr[3]).startsWith("D:/wt/src/lighting/a.ts is outside the worktree") && String(wr[4]).startsWith("../x.ts is outside") && wr[5] === null && wr[6] === "..foo", JSON.stringify(wr));
 }
 ok("worker guard: bg denied", run(WH("proteus-worker-guard.js"), wpre("Bash", { command: "x", run_in_background: true }), { cwd: WT }).code === 2);
 ok("worker guard: Monitor denied", run(WH("proteus-worker-guard.js"), wpre("Monitor", {}), { cwd: WT }).code === 2);
@@ -394,11 +397,11 @@ ok("lessons: prompt match lead scope", /lead-only/.test(ctxOf(r)), r.out + r.err
 ok("lessons: lead scope hidden from worker", run(LS, pre("Bash", { command: "release" }, { ...sub, session_id: "s9" })).out === "");
 ok("lessons: worker path scope (worktree)", /paths\.md/.test(ctxOf(run(WH("proteus-lessons.js"), wpre("Edit", { file_path: path.join(WT, "src/lighting/x.ts") }), { cwd: WT }))));
 ok("lessons: worker path hidden from lead", run(LS, pre("Read", { file_path: path.join(REPO, "src/lighting/x.ts") }, { session_id: "s3" })).out === "");
-const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => jp(l, {}));
 const hits = {};
 for (const h of hitLines) hits[h.file] = { hits: ((hits[h.file] || {}).hits || 0) + 1, last: h.at };
-ok("lessons: hits recorded", hits["npm-build.md"].hits === 3 && hits["enospc.md"].hits === 1, JSON.stringify(hits));
-ok("lessons: cache written", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "lessons-cache.json"), "utf8")).lessons.length === 5);
+ok("lessons: hits recorded", (hits["npm-build.md"] || {}).hits === 3 && (hits["enospc.md"] || {}).hits === 1, JSON.stringify(hits));
+ok("lessons: cache written", (jp(fs.readFileSync(path.join(REPO, ".git", "proteus", "lessons-cache.json"), "utf8"), {}).lessons || []).length === 5);
 for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(LD, `many${i}.md`), `---\ntrigger: deploy\n---\nmany ${i}\n`);
 r = run(LS, pre("Bash", { command: "deploy" }, { session_id: "s4" }));
 ok("lessons: max 2 per event, cache invalidated", (ctxOf(r).match(/proteus lesson/g) || []).length === 2, r.out);
@@ -433,8 +436,8 @@ ok("journal: rotates to 500", jl.length === 500 && JSON.parse(jl[499]).prompt ==
 const IB = hook("proteus-inbox.js");
 r = run(IB, "", { args: ["--refresh"] });
 ok("inbox: refresh prints items", r.out.trim().split("\n").length === 3 && /question #21/.test(r.out) && /review #22/.test(r.out), r.out + r.err);
-const cache = JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "inbox.json"), "utf8"));
-ok("inbox: cache shape", cache.at && cache.questions.length === 2 && cache.reviews[0].n === 22);
+const cache = jp(fs.readFileSync(path.join(REPO, ".git", "proteus", "inbox.json"), "utf8"), {});
+ok("inbox: cache shape", cache.at && (cache.questions || []).length === 2 && ((cache.reviews || [])[0] || {}).n === 22);
 ok("inbox: --count", run(IB, "", { args: ["--count"] }).out.trim() === "2 1");
 r = run(IB, "", { args: ["--refresh", "--count"], env: { FAKE_GH: "fail" } });
 ok("inbox: gh fail keeps cache", r.code === 0 && r.out.trim() === "2 1", r.out);

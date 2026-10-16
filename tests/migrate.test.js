@@ -502,8 +502,12 @@ const tmpLeft = (repo) => { try { return fs.readdirSync(path.join(repo, ".git", 
 {
   const LK = legacyRepo("exdev");
   const HK = fakeHome("exdev");
-  const pre = preload("exdev", "fs.linkSync = () => { throw Object.assign(new Error(\"EXDEV: cross-device link not permitted\"), { code: \"EXDEV\" }); };");
+  // each refused link is appended to a marker file, so the test can tell the preload fired and not merely that the run passed
+  const fired = path.join(T, "exdev.fired");
+  const pre = preload("exdev", `fs.linkSync = (s, d) => { fs.appendFileSync(${JSON.stringify(fired)}, d + "\\n"); throw Object.assign(new Error("EXDEV: cross-device link not permitted"), { code: "EXDEV" }); };`);
   const r = runPre(pre, INSTALL, LK, HK, ["--project"]);
+  const refused = (read(T, "exdev.fired") || "").split("\n").filter(Boolean);
+  ok("pin exdev: the preload fired (linkSync was called and refused at least once, into .git/proteus)", refused.length > 0 && refused.every((d) => d.includes("proteus")), `${refused.length} refused: ${refused.slice(0, 3).join(" | ")}`);
   ok("pin exdev: with linkSync throwing EXDEV, --project exits 0 and reports no failed entry", r.code === 0 && !/EXDEV/.test(r.out + r.err), `${r.code} ${(r.out + r.err).split("\n").filter((l) => /state|failed|EXDEV/.test(l)).join(" | ")}`);
   ok("pin exdev: the journal and the inbox cache are copied into .git/proteus byte for byte and .git/hive is gone",
     read(LK, ".git", "proteus", "journal.jsonl") === JOURNAL && /"questions"/.test(read(LK, ".git", "proteus", "inbox.json") || "") && !exists(LK, ".git", "hive"),
