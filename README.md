@@ -458,6 +458,7 @@ agents/
 templates/teams/             the shipped roster, copied into your repo's teams/ by install.js --project
   ROUTING.md                 deliverable type or path -> owning team; path -> tier ceiling
   link-skills.js (.sh .ps1)  links (or installs) each team's skills
+  proteus-confine.js         its write and delete guard, copied from templates/hooks/
   package.json               {"type": "commonjs"}: the link script runs in a "type": "module" repo
   <team>/PROFILE.md          role, owns, rules, green additions, verifier checklist
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
@@ -487,6 +488,7 @@ templates/
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
+    proteus-confine.js      the installers' write and delete guard: no link between an owned root and the path
     proteus-harness.js  proteus-harness-claude.js   CLI adapter (PROTEUS_HARNESS picks it)
     package.json            {"type": "commonjs"}: the hooks run in a "type": "module" repo
 install.js                   installer, updater, doctor (install.sh / install.ps1 wrap it)

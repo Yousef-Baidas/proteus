@@ -58,7 +58,9 @@ const os = require("os");
 const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 const L = require(path.join(__dirname, "templates", "teams", "link-skills.js"));
-const { WIN, lstat, real, isDir, isFile, samePath, linkDir } = L;
+// every delete, and every copy into a dir Proteus owns, goes through C (#13, #104)
+const C = require(path.join(__dirname, "templates", "hooks", "proteus-confine.js"));
+const { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, linkDir } = C;
 
 const HERE = __dirname;
 // the shipped roster; teams/ in any repo, this checkout included, is that repo's own
@@ -68,7 +70,8 @@ const CLAUDE = path.join(HOME, ".claude");
 const SKILLS = ["proteus", "proteus-review"];
 // package.json ({"type": "commonjs"}) keeps the CommonJS scripts beside it running in a repo whose
 // own package.json sets "type": "module" (#77); one ships in templates/hooks/ too
-const LINK_SCRIPTS = ["link-skills.js", "link-skills.sh", "link-skills.ps1", "package.json"];
+// proteus-confine.js, link-skills.js's guard, comes from templates/hooks/
+const LINK_SCRIPTS = ["link-skills.js", "link-skills.sh", "link-skills.ps1", "package.json", "proteus-confine.js"];
 const EXCLUDE = [".claude/settings.local.json", ".claude/hooks/proteus-*.js", ".claude/hooks/package.json", ".claude/hooks/worktree-settings.local.json", ".claude/proteus-owned"];
 const TEAMS_ENV = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
 const CTX_PLUGIN = "context-mode@context-mode";
@@ -114,12 +117,8 @@ function has(cmd, args = ["--version"]) {
 }
 const norm = (s) => s.replace(/\r\n/g, "\n");
 const readText = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } };
-const inside = (child, parent) => { const r = path.relative(parent, child); return r === "" || (!r.startsWith("..") && !path.isAbsolute(r)); };
 
 // deletes (#13): every one goes through safeRemove, limited to allowedRoots
-// realpath of the deepest existing ancestor, the rest joined on: a path that does not exist yet resolves too
-const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r; const d = path.dirname(a); return d === a ? a : path.join(realish(d), path.basename(a)); };
-const userHome = () => { try { return realish(os.userInfo().homedir); } catch { return null; } };
 
 // the target's Proteus-owned paths and the project's git toplevel; a toplevel holding a home would open all of it
 function allowedRoots(home, codexHome, projectTop) {
@@ -131,38 +130,16 @@ function allowedRoots(home, codexHome, projectTop) {
   return roots;
 }
 
-// whether safeRemove refuses p: outside roots, a root dir itself, or in the user's real home while HOME is elsewhere
-function refused(p, roots) {
-  const a = path.resolve(p), r = path.join(realish(path.dirname(a)), path.basename(a)), u = userHome();
-  return (u && inside(r, u) && !inside(realish(HOME), u)) || !roots.some((x) => (samePath(x, r) ? !isDir(x) : inside(r, x)));
-}
-
-// true if p was removed; false if absent or refused; never throws
-function safeRemove(p, roots) {
-  try {
-    const st = lstat(p);
-    if (!st) return false;
-    if (refused(p, roots)) {
-      warn(`refused  ${p} (outside what Proteus owns for HOME=${HOME}; left alone)`);
-      return false;
-    }
-    if (!st.isSymbolicLink()) fs.rmSync(p, { recursive: true, force: true });
-    else {
-      // a link, never what it points to; a junction needs rmdir, which refuses a real directory
-      try { fs.unlinkSync(p); } catch (e) { if (e.code !== "EPERM" && e.code !== "EISDIR") throw e; fs.rmdirSync(p); }
-    }
-    return true;
-  } catch (e) {
-    warn(`warning: ${p} not removed: ${e.message}`);
-    return false;
-  }
-}
+// whether safeRemove refuses p (proteus-confine.js refusal)
+const refused = (p, roots) => !!C.refusal(p, roots);
+// true if p was removed; false if absent or refused; never throws. kind: "link", "file" or "any"
+const safeRemove = (p, roots, kind = "any") => C.remove(p, roots, kind);
 
 // the git toplevel of the repo being set up, set by withProject; null outside one. GUEST: its guest dir, if any
 let PROJECT = null, GUEST = "";
 const ownedRoots = () => [...allowedRoots(HOME, CODEX_HOME, PROJECT), ...(GUEST ? [realish(GUEST)] : [])];
-// link-skills.js's removals, when this process drives them (#13)
-const guardedRemove = (p) => safeRemove(p, ownedRoots());
+// link-skills.js's removals, when this process drives them (#13): links only
+const guardedRemove = (p) => safeRemove(p, ownedRoots(), "link");
 function withProject(dir, fn) {
   const was = [PROJECT, GUEST], top = git(["rev-parse", "--show-toplevel"], dir);
   PROJECT = top.ok && top.out ? top.out : null;
@@ -191,13 +168,11 @@ function frontmatterName(dir) {
   return m ? m[1] : null;
 }
 
-// copy unless identical; a link at dest is replaced, never written through
+// copy unless identical; a link at dest is replaced, never written through; a refused copy stops the run
 function copyFile(src, dest) {
   const st = lstat(dest);
-  if (st && !st.isSymbolicLink() && fs.readFileSync(src).equals(fs.readFileSync(dest))) return;
-  if (st && st.isSymbolicLink() && !safeRemove(dest, ownedRoots())) return;
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(src, dest);
+  if (st && st.isFile() && fs.readFileSync(src).equals(fs.readFileSync(dest))) return;
+  if (!C.copyFile(src, dest, ownedRoots())) die(`stopped: ${dest} not written. Move what is there away and re-run.`);
 }
 // skip: source paths left out, with everything under them
 function copyTree(src, dest, skip = []) {
@@ -335,9 +310,7 @@ function copyCodexAgents() {
   const { dir, stale, kept } = codexAgentState();
   for (const a of stale) {
     const p = path.join(dir, a.name);
-    if (lstat(p) && lstat(p).isSymbolicLink() && !safeRemove(p, ownedRoots())) continue;
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(p, a.text);
+    C.writeFile(p, a.text, ownedRoots());
   }
   for (const p of kept) log(`local override kept: ${p} (not generated by proteus; deleting it drops its edits, which a project can keep as "append" in .codex/proteus-agents.json)`);
   log(`agents   -> ${dir} (${codexAgents().length} shipped as TOML, others untouched)`);
@@ -451,7 +424,7 @@ function overrideNote(p, shown = p) {
 // writes the project's patched agents (shipped agent + its proteus-agents.json entry) and removes the
 // ones whose entry is gone; a bad patch file is an error that leaves every agent file as it was
 function agentPatches(root) {
-  const r = withProject(root, () => ap().apply(root, HERE, adapter(), guardedRemove));
+  const r = withProject(root, () => ap().apply(root, HERE, adapter(), (p) => safeRemove(p, ownedRoots(), "file")));
   if (r.error) { warn(`error: ${r.error}; generated agents left as they were`); return false; }
   for (const p of r.written) log(`agent    -> ${p} (shipped agent + ${r.file})`);
   for (const p of r.removed) log(`removed  ${p} (generated; its entry left ${r.file})`);
@@ -494,16 +467,9 @@ function pastShipped(rel, text) {
 }
 
 function registerHooks(root) {
+  // the script removes the adapter's skipped files an older install copied, through proteus-confine.js
   const script = path.join(HERE, "templates", "hooks", "install-lead-hooks.js");
-  // the adapter's skipped files (Codex's only; Claude's list is empty) an older install copied go here,
-  // through safeRemove; the script then removes none
-  withProject(root, () => {
-    for (const f of codex() ? cx().skipHooks : []) {
-      const p = path.join(cx().hooksDir(root), f), st = lstat(p);
-      if (st && st.isFile() && safeRemove(p, ownedRoots())) log(`removed  ${path.relative(root, p).split(path.sep).join("/")} (unused by ${HARNESS})`);
-    }
-  });
-  const env = { ...process.env, PROTEUS_HARNESS: HARNESS, PROTEUS_KEEP_SKIPPED: "1" };
+  const env = { ...process.env, PROTEUS_HARNESS: HARNESS };
   const r = spawnSync(process.execPath, [script], { cwd: root, env, stdio: quiet ? "pipe" : "inherit", encoding: "utf8" });
   if (r.status === 0) return true;
   warn(`error: ${script} exited ${r.status ?? r.error}; lead hooks may be missing`);
@@ -560,7 +526,7 @@ function teamUpstream(root, teams, rels) {
     const src = path.join(SHIPPED_TEAMS, ...rel.split("/")), dest = path.join(teams, ...rel.split("/"));
     const text = fs.readFileSync(src, "utf8"), h = hashText(text), rec = base[rel] && typeof base[rel] === "object" ? base[rel] : null;
     const record = () => { next[rel] = { sha256: h }; };
-    if (!lstat(dest)) { fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.copyFileSync(src, dest); record(); continue; }
+    if (!lstat(dest)) { if (C.copyFile(src, dest, ownedRoots())) record(); continue; }
     if (!rec || typeof rec.sha256 !== "string") { record(); continue; }
     if (rec.sha256 === h) continue;
     const past = teamHistory(rel);
@@ -571,11 +537,11 @@ function teamUpstream(root, teams, rels) {
     const up = `${dest}.upstream`, old = `${dest}.base`;
     // a merge still pending from an earlier release keeps its .base: the copy was made from that text
     const pending = !!lstat(up);
-    fs.writeFileSync(up, norm(text));
+    if (!C.writeFile(up, norm(text), ownedRoots())) { next[rel] = rec; continue; } // offered again next run
     let hasBase = pending && !!lstat(old);
     if (!pending) {
       hasBase = !!past && past.get(rec.sha256) !== undefined;
-      if (hasBase) fs.writeFileSync(old, past.get(rec.sha256)); else if (lstat(old)) safeRemove(old, ownedRoots());
+      if (hasBase) hasBase = C.writeFile(old, past.get(rec.sha256), ownedRoots()); else if (lstat(old)) safeRemove(old, ownedRoots());
     }
     excl.push(up, ...(hasBase ? [old] : []));
     log(hasBase ? `upstream -> ${shown(up)}: this release changed the shipped ${rel}; merge it: git merge-file ${shown(dest)} ${shown(old)} ${shown(up)}, then delete the .upstream and .base files`
@@ -631,7 +597,7 @@ function copyTeams(root) {
   const ign = lstat(path.join(teams, ".gitignore"));
   if (ign && ign.isSymbolicLink()) die(`refused  ${path.join(teams, ".gitignore")} (a link; nothing written through it). Replace it with a regular file and re-run.`);
   teamsIgnore(teams, true);
-  if (!self) for (const f of LINK_SCRIPTS) copyFile(path.join(SHIPPED_TEAMS, f), path.join(teams, f));
+  if (!self) for (const f of LINK_SCRIPTS) copyFile(isFile(path.join(SHIPPED_TEAMS, f)) ? path.join(SHIPPED_TEAMS, f) : path.join(HERE, "templates", "hooks", f), path.join(teams, f));
   // excluded first: a run that stops partway never leaves the copy showing in git status
   if (self) excludeLocal(root, ["teams/templates/"], "teams/templates, a copy of this checkout's templates/");
   copyTree(path.join(HERE, "templates"), path.join(teams, "templates"), [SHIPPED_TEAMS]);
@@ -651,7 +617,7 @@ function copyTeams(root) {
     // required.txt is the pipeline's, not the scout's or the repo's: always refreshed
     if (isFile(path.join(src, "required.txt"))) copyFile(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
-  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, package.json, "}templates/)`);
+  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, proteus-confine.js, package.json, "}templates/)`);
 }
 
 function projectInstall(root, opt) {
@@ -765,10 +731,13 @@ function migrateState(root) {
 
 // what a state migration left in the legacy dir, and why, one line each
 function stateLeft(r, from, to) {
+  // a FIFO, socket or device is never moved (its reason says so): no retry promised for it
+  const never = r.failed.filter((f) => f.includes("never moved")), retry = r.failed.filter((f) => !never.includes(f));
   return [
     r.kept.length && `kept     ${from}: ${r.kept.join(", ")} (also in ${to}, whose copy is the one in use; delete the old copy once you have compared them)`,
     r.held.length && `kept     ${from}: ${r.held.join(", ")} (a registered git worktree, left where git has it; the rest moves once \`git worktree remove\` drops it)`,
-    r.failed.length && `failed   ${from}: ${r.failed.join(", ")} (not movable now; the next --project retries)`,
+    retry.length && `failed   ${from}: ${retry.join(", ")} (not movable now; the next --project retries)`,
+    never.length && `failed   ${from}: ${never.join(", ")}`,
   ].filter(Boolean);
 }
 
@@ -1653,5 +1622,5 @@ function main() {
 }
 
 // required rather than run (tests): the delete guard only, and nothing runs
-module.exports = { allowedRoots, safeRemove };
+module.exports = { allowedRoots, safeRemove, stateLeft };
 if (require.main === module) main();
