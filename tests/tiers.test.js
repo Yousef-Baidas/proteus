@@ -44,6 +44,9 @@ ok("classify: the highest path wins, unmatched paths are standard", c.tier === "
 const over = (d, ...p) => lib.tierOverrun(lib.parseDeclared(d), cls(...p));
 ok("overrun: fits → empty; outgrown → names the tier it needs and the re-run",
   over("direct", ["docs/a.md", 1]) === "" && /needs the standard tier, declared direct:\n  lib\/y\.ts[\s\S]*re-runs the work order at standard/.test(over("direct", ["lib/y.ts", 1])));
+// SKILL.md's Tiers section leaves the ceiling's procedure to this message
+ok("overrun: the message says close the branch, never widen, keep the work whole",
+  /closes this branch[\s\S]*never widen the tier[\s\S]*keep the work whole/.test(over("direct", ["lib/y.ts", 1])));
 ok("overrun: a human quick: covers standard work, never full", over("quick (human)", ["lib/y.ts", 1]) === "" && over("quick", ["lib/y.ts", 1]) !== "" &&
   /needs the full tier, declared quick \(human\)/.test(over("quick human", ["CONVENTIONS.md", 1])));
 ok("overrun: full fits everything", over("Full", ["CONVENTIONS.md", 900]) === "");

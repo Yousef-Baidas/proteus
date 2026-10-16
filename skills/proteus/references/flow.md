@@ -1,0 +1,74 @@
+# Flow, step by step
+
+The detail behind `SKILL.md`'s flow outline. Read a step's section when you reach it. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex.
+
+## Session start
+
+What `proteus-state` reports present is not redone or re-asked: `/setup-matt-pocock-skills`, `CONTEXT.md`, the conventions interview, `AGENTS.md ## Learned`, the roster and scout (`skills-unscouted=none`), skill linking (`skills-unlinked=none`), gates install, tracker labels (recorded in `## Learned`), `graphify` orientation, `stack.md`.
+
+- **Pending review**: `gh issue list --label proteus-review --label needs-human --state open --json number,title -q …` (a question issue parks only its own tickets). Any open and the run attended → wait at step 7½, dispatching only speculative tickets (`review.md`).
+- **Resume position**, from the tracker, first match wins: open PR into `proteus/<run>` with no verdict → step 6; with `MERGE` → step 7; open `proteus` issue with a `RED`/`NEEDS` comment → step 5; open `proteus` issue, no PR → step 4; the milestone's issues all closed, no review issue → step 7 QA then 7½; every milestone closed → step 8. Read the run-log tail the autostart printed before deciding. Resume an open run rather than start a second beside it.
+- **Baseline on `main`**: `gh run list --branch main --limit 1 --json conclusion -q '.[0].conclusion'`; no CI → the gate command from `## Learned` with `>/dev/null 2>&1; echo $?`. Red → the stabilise ticket first (`bootstrap.md`), no feature dispatch. A gate run through the baseline ratchet counts as green while it reports no new findings (`enforcement.md` §12).
+- **State notes**: `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`); it does not block. `proteus-update` present → tell the human once. `scratch=` present → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once that it is optional and `install.js --doctor --fix` installs it. `skills-unlinked` not `none` → run that command (or ask the human to) before spawning an agent of a listed team, which would otherwise run without its skills. Any `NO` → step 0 for the missing pieces only.
+- **No `models=` line** (no hooks yet): `judge` is your rung (the one under it on a once-per-project model like fable), `build` and `helper` one rung down, on haiku < sonnet < opus < fable; never under sonnet.
+
+## Asking the human
+
+- **Picker** (the run cannot move without the answer: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions per call, concrete options, your recommendation first and marked; it stays pinned until answered. Codex has no picker: plain numbered questions (`harnesses.md`).
+- **Question issue** (everything else: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a proposed roster change): the `question` row of `tracker.md`. Park only the tickets that depend on it and keep dispatching the rest. `PushNotification` once. The human answers in `/proteus-review`, on GitHub, or by typing `questions` here. One issue per decision, not one per worker message.
+- An answer that states a standing rule ("always", "never") also becomes a line in `CONVENTIONS.md` (the human's approval) or a lesson, so it is not asked twice.
+
+## Tiers
+
+`proteus-tier.js` reads the `tiers` block in `teams/ROUTING.md`; no block → Standard. The human's `full:` prefix raises a work order to Full; `quick:` lowers a Standard one to Quick, but not a Full one. Paths decide, not extensions: a skill repo's markdown is its product. Session start and the information gate apply to every tier.
+
+- **Direct** (docs and typos within the block's limits): no ticket, contract, verifier, milestone or guide. A batch branch `proteus-work/direct/<batch>` from `origin/main`, its worktree prepared with `proteus-worktree.js <wt> --tier direct <paths>` (the next change in the batch re-runs it with every path so far). One `helper` with the Direct prompt (`roles.md`) makes the change and opens or extends one PR into `main`, its body the digest. CI's `direct` job runs the mechanical gates only. The human merges; that is the review. Add to a batch only while its PR is open.
+- **Quick** (small, one team): one ticket without a milestone, one worker on `proteus-work/quick/<n>` from `origin/main`, its worktree prepared with `--tier quick` (`--human` after `quick:`). No contracts, debt issue, QA or guide; a verifier on `build` only when CI's gates cannot show the outcome. The PR goes into `main` with `Owned:` and `Tier: quick` (`quick (human)`) lines; the human merges.
+- **Standard**: steps 0–8, `Tier: standard` on each PR; milestones that finish in the same wave share one QA pass and one review issue.
+- **Full**: steps 0–8 as written, `Tier: full` on each PR.
+
+An open Direct or Quick PR into `main` waits on the human and is not a run to resume. The ceiling check is `enforcement.md` §2.
+
+## 0. Bootstrap
+
+Read `bootstrap.md`, `tracker.md`, `domains.md`, `teams.md`; detect blank / mid-project / ready and take that path to its `Ready` line, with the roster approved and the domain's mechanical gates (`enforcement.md` on code, `domains.md` otherwise) installed. Lead docs go on local `main` (never pushed) until `proteus/<run>` exists, then by PR into it (`bootstrap.md`). `guest=<dir>` in the state line → guest mode (`bootstrap.md`): those docs and `teams/` live in that dir, and the repo gets no CI, lefthook or root doc. A `this repo is public` note → tell the human in your first reply that everything posted to the tracker and evidence branches is public.
+
+## 1. Orient and the information gate
+
+Read `AGENTS.md`, `CONTEXT.md`, relevant ADRs, and the taste docs `CONVENTIONS.md` names; their defaults go into every brief and spec now, not discovered in a review round. Unfamiliar repo → `graphify` once; the summary stays with you, since workers get no repo tour (`stack.md`).
+
+Grill with `/grill-with-docs` when `CONTEXT.md` exists, `/grilling` on a blank repo, one question at a time until all six gate items are filled. Work bigger than one milestone or one session → `/wayfinder` first, then the gate per destination. Unattended and a blank remains → park the work order, take the next. Already grilled (the run log says so) → skip.
+
+## 2. Tickets
+
+Read `teams.md` again. `/to-spec`, then `/to-tickets`; every ticket becomes a tracker issue, every milestone a tracker milestone. Route each ticket by `teams/ROUTING.md` (no row → ask the human, then add the row via a ticket); owned paths inside that team's `Owns`; one owner per file among the tickets in flight; hotspot files (routes, registries, config, shared scene or project files) in a ticket that runs first; tags `difficulty:standard|hard` and `profile:<team>`. Two teams in one ticket → two tickets with a contract between them. A ticket whose outcome rests on facts outside the repo gets `needs-research` (its worker runs `/research` first). Milestones per `review.md`, one user-visible result each, acceptance checks frozen from gate item (b).
+
+## 3. Contracts
+
+Per ticket, write into the issue body the interface (code: exported signatures in a code block, `/codebase-design` vocabulary; otherwise the deliverable's shape per `domains.md`) and the check in one sentence: name, input, expected result. Can't write them → `/grilling` until you can. Create and push `proteus/<run>` once, then one worktree per ready ticket with its owned paths, the check's files among them, and `--tier <tier>` (`stack.md`). Then one contracts worker per team with ready tickets (`roles.md`; `judge`), all teams in parallel; it commits each ticket's stubs and check first on its branch and shows the check red twice, on the missing work and on a broken input. You do not open the files.
+
+## 4. Dispatch
+
+A ticket is ready once every ticket in its `depends-on` has merged and no ticket in flight owns one of its paths; each merge batch can make tickets ready, so run steps 3 and 4 for them at once. Protect `proteus/<run>` (`enforcement.md` §1) so nothing merges without green CI. One PR per ticket into `proteus/<run>`, from the worktree made at step 3. Spawn `proteus-<team>-worker` if the repo defines one, else `proteus-worker` with the team named, the spawn's `model` set to `build` (prompt text does not change it). Before each spawn, the pre-dispatch check in `roles.md`. Start the stall watchdog now (`operations.md`). The scaffold and stabilise tickets follow `enforcement.md`.
+
+## 5. Escalate
+
+One rung at a time, no restart: (a) the same worker, failing output pasted back, mechanical failures only; (b) diff and red output to a fresh worker on `judge`, not the ticket; (c) two `judge` fails → the contract is wrong, back to step 3 as a fresh task. `NEEDS dependency` from any worker → OSV query (`enforcement.md` §8), then the result and the request to the human.
+
+## 6. Verify
+
+`proteus-<team>-verifier`, or `proteus-verifier` with the team named, on `judge`, spawned on the worker's `DONE` without waiting for CI; the security verifier beside it when the ticket qualifies. Verdict `MERGE | BACK-TO-WORKER (numbered) | CONTRACT-WRONG` as a PR review comment. Follow-ups are not tickets: a blocker is `BACK-TO-WORKER`; anything else is one line on the milestone's debt issue (`tracker.md`). Back-to-worker goes direct, one round, then it is contract-wrong. The security verifier's scan: `enforcement.md` §4.
+
+## 7. Merge
+
+In batches: every PR whose verdicts all say `MERGE`, in dependency order into `proteus/<run>` with `gh pr merge` (worktree removed first, `stack.md`), then the full suite once in `.worktrees/_run`, read as an exit code through `proteus-gates-cache.js` (`stack.md`). Each PR passed CI alone; one run per batch catches how they interact. Red → `git bisect start --first-parent proteus/<run> <pre-batch sha>`, `git bisect run <suite> | grep 'first bad commit'`, `git bisect reset`, also in `.worktrees/_run`; the merge it names gets a fix ticket for its team on `judge`, and nothing else merges until that lands, so the next bisect starts from green.
+
+Per merged PR: close the issue, then stop the worker and its verifier (`TaskStop`), since an idle agent repeats its report and burns tokens; then `node <hooks>/proteus-scratch.js --sweep <run>-<id>`. A conflict → a `judge` worker of the owning team runs `/resolving-merge-conflicts`. Each merged batch is a wave: `proteus-qa-verifier` once on the branch; `WAVE-RED` failures become tickets, not fixes. Milestone complete → the same agent on `judge` with the word `milestone` (`enforcement.md` §7, §10 on code); its blockers are `WAVE-RED` tickets, and the gate does not open over them.
+
+## 7½. Human review
+
+Milestone complete and `WAVE-GREEN` → the gate in `review.md`: the guide opens the review issue, you poll for the verdict, and the human reviews in `/proteus-review`, not through you. `CHANGES revision`, or changes that are all small tweaks → revision mode (`operations.md`). Human away → continue only on the literal `UNATTENDED` (`review.md`).
+
+## 8. Close
+
+Last milestone accepted → `proteus-qa-verifier` on `judge` with the word `close` (`enforcement.md` §10 on code); red → tickets. Every open debt line is fixed, re-scoped into a future run's issue, or dropped by the human; none stays silent. Lessons pass and upstream proposals (`lessons.md`, At step 8). Open the PR from `proteus/<run>` to `main` linking the milestones; the human merges it. If the run set branch protection, the PR body ends with the `gh api -X DELETE …/protection` command for the human. Delete `proteus-evidence/<run>` after; then `git worktree remove .worktrees/_run` and `node <hooks>/proteus-scratch.js --sweep <run>`. Session ending with open work → `/handoff`. Close report: `node <hooks>/proteus-close-report.js <run>`, posted on the run log and the close PR; propose the routing changes it points to (`enforcement.md` §5).

@@ -17,6 +17,17 @@ const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 
+const HELP = `usage: node proteus-worktree.js <worktree> [--tier ${lib.TIERS.join("|")} [--human]] <owned path or glob>...
+Prepares a worktree made with \`git worktree add\` for one worker, before dispatch:
+  <worktree>        the checkout, e.g. .worktrees/<id> (Direct: direct-<batch>, Quick: quick-<n>)
+  <owned path>...   the ticket's owned paths and globs, the check's files among them; the pre-commit
+                    hook refuses a staged path outside them
+  --tier <tier>     the tier proteus-tier.js classified; the pre-commit hook fails a change that outgrows
+                    it and names the tier it needs
+  --human           with --tier quick: the human's quick: prefix (covers Standard work, never Full)
+Re-run on the same worktree with every path so far to extend a Direct batch; the first base is kept.
+Exit 1 on bad usage or when <worktree> is not a git worktree.`;
+if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); return; }
 const [wtArg, ...rest] = process.argv.slice(2);
 const entries = [];
 let tier = "", human = false, badTier = false;
@@ -27,7 +38,7 @@ for (let i = 0; i < rest.length; i++) {
   else if (p) entries.push(p);
 }
 if (!wtArg || !entries.length || badTier) {
-  console.error(`usage: node proteus-worktree.js <worktree> [--tier ${lib.TIERS.join("|")} [--human]] <owned path or glob>...`);
+  console.error(HELP.split("\n")[0] + "\n(--help explains each argument)");
   process.exitCode = 1;
   return;
 }

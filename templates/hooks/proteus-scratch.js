@@ -26,7 +26,17 @@ const KEY = /^\w[\w.-]*$/;
 const PATH_CMD = /proteus-scratch\.js["']?\s+--path\s+["']?([\w.-]+)/;
 const USAGE = "usage: node proteus-scratch.js --path <key> | --sweep <key>|--all-done|--stale | --size";
 
+const HELP = `${USAGE}
+Per-ticket and per-run temp space, under <git-common-dir>/proteus/scratch/, deleted when the work is done:
+  --path <key>        create (or touch) the dir for <key> and print it; use it instead of /tmp or mktemp
+  --sweep <key>       delete scratch/<key> and scratch/<key>-*, plus the /tmp strays recorded under them
+                      (the lead: <run>-<id> after a ticket merges, <run> at close)
+  --sweep --all-done  the same for every key whose branch is gone (session start, on a scratch= note)
+  --sweep --stale     the autostart's: done and idle 72h, or idle 7 days regardless
+  --size              MB held in scratch dirs and recorded strays
+<key> is a ticket's <run>-<id> (branch proteus-work/<run>/<id>) or a run's <run>. Only paths Proteus made are deleted.`;
 const argv = process.argv.slice(2);
+if (argv[0] === "--help" || argv[0] === "-h") { console.log(HELP); process.exit(0); }
 if (argv.length) cli(argv);
 else if (process.env.PROTEUS !== "0") lib.run(hook);
 
@@ -91,7 +101,7 @@ function cli([cmd, arg]) {
       console.log(`proteus-scratch: freed ${mb(r.bytes)} MB (${r.dirs} scratch dirs, ${r.strays} strays, ${r.worktrees} worktrees); ${mb(r.left)} MB left`);
       for (const k of r.kept) console.log(`kept ${k}`);
     } else if (cmd === "--size") console.log(`${mb(size(common))} MB`);
-    else { console.error(USAGE); process.exitCode = 1; }
+    else { console.error(USAGE + "\n(--help explains each mode)"); process.exitCode = 1; }
   } catch (e) {
     console.error(`proteus-scratch: ${e.message}`);
     process.exitCode = 1;

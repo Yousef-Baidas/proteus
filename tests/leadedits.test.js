@@ -27,6 +27,8 @@ const fails = (fn, list) => list.filter((f) => !fn(f));
 
 agents("");
 ok("no lead-edits line: .editorconfig is refused as before", refused(".editorconfig", /the lead does not edit \.editorconfig\. Decide the fix/));
+// SKILL.md rule 1 leaves the detail to this message: what the lead may write, and how a fix goes out instead
+ok("lead edit refusal: names the ticket route and the lead's own files", refused("src/a.js", /ticket or a numbered BACK-TO-WORKER[\s\S]*CONTEXT\.md, CONVENTIONS\.md[\s\S]*AGENTS\.md, docs\/adr\/[\s\S]*docs\/lessons\/[\s\S]*`lead-edits:` line/));
 
 agents("lead-edits: .vscode/* .editorconfig .gitattributes .gitignore .github/**");
 ok("lead-edits: the listed files pass", !fails(pass, [".editorconfig", ".gitattributes", ".gitignore", ".vscode/settings.json", ".github/CODEOWNERS"]).length);

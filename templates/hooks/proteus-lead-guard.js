@@ -66,7 +66,7 @@ lib.run((ev, ad) => {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
-    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more.`);
+    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more. Finish the step, log the position on the run log, /handoff, and let a fresh lead dispatch; workers in flight keep running.`);
     if (PIPELINE.test(ev.spawnType)) {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
@@ -93,7 +93,7 @@ lib.run((ev, ad) => {
     }
     // guest mode: the docs the lead keeps live in the guest dir, and the repo's own copies are not Proteus's to touch
     if (rel && guest && mine(rel)) ad.deny(`guest mode: this repo keeps no Proteus files; ${rel} lives at ${slash(path.join(guest, rel))}. Edit it there.` + BYPASS);
-    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder).` + BYPASS);
+    if (rel && !mine(rel)) ad.deny(`the lead does not edit ${rel}. Decide the fix, then dispatch it to a proteus-<profile>-worker (model per the ladder) as a ticket or a numbered BACK-TO-WORKER. The lead writes only CONTEXT.md, CONVENTIONS.md (bootstrap and human-approved standing rules), AGENTS.md, docs/adr/*.md, docs/lessons/*.md, and files matching the human's \`lead-edits:\` line in AGENTS.md.` + BYPASS);
     const grel = !rel && guest ? lib.relPath(guest, p) : null;
     if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
   } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps

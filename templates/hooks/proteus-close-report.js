@@ -21,13 +21,21 @@ const CCUSAGE = { claude: ["-y", "ccusage@20.0.26", "session", "--json"], codex:
 const USAGE = "usage: node proteus-close-report.js [run] [--no-cost | --cost-json <file>]";
 
 let arg = "";
+const HELP = `${USAGE}
+Markdown for the run-log issue and the close PR body: one row per ticket, one per team, and a summary
+(bounces, escalations, wall-clock, cost). The team rows are what tunes ROUTING.md and the difficulty call.
+  [run]               the run; default the open proteus/<run> branch
+  --no-cost           skip the ccusage cost columns
+  --cost-json <file>  read a saved \`ccusage session --json\` instead of running ccusage
+Exit 1 when the tracker cannot be read; 2 on bad usage or no run.`;
+if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); process.exit(0); }
 let cost = "ccusage";
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--no-cost") cost = "";
   else if (argv[i] === "--cost-json" && argv[i + 1]) cost = argv[++i];
   else if (!argv[i].startsWith("-") && !arg) arg = argv[i];
-  else { console.error(USAGE); process.exit(2); }
+  else { console.error(USAGE + "\n(--help explains each flag)"); process.exit(2); }
 }
 
 const root = path.resolve(lib.projectRoot());
