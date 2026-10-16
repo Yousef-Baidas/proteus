@@ -60,6 +60,8 @@ The session you start is the lead, on whatever model you started it with, and it
 
 Before any spec the lead must be able to state six things without guessing: the outcome you will see, how you will check it is done, what is out of scope, the areas and teams touched, the constraints, and that no question is open. Any blank and it grills you (`/grill-with-docs`, or `/grilling` on a blank repo), one question at a time. Work bigger than a milestone or a session goes through `/wayfinder` first. Unattended, a work order with a blank is parked, never assumed.
 
+Until you approve the spec the lead is free to explore: it can add spikes, prototypes, research, competing designs sketched by helpers or a devil's-advocate pass, and it can propose a bolder direction or a different scope. That work is thrown away. Once the spec is approved the tier's steps run in order, and skipping one needs your word, a research finding or a settled default, logged on the run log. Workers on `standard` and `hard` tickets choose the design inside their contract and owned paths and favour clear, well-made code over the fewest lines; the minimal-code style is kept for Quick and mechanical tickets.
+
 ## Survives compaction
 
 Tickets, verdicts, and reviews live in the tracker, and the lead logs every decision that lives nowhere else (grilled answers, an `UNATTENDED` grant, allowed deviations, your hand edits to an artifact, pause positions) as one-line comments on a `Run: <run>` issue labelled `proteus-log`. After an auto-compact or `/compact` the autostart re-injects the skill, the run-log tail, and your last ten messages verbatim, which the compaction summary would have paraphrased away. The meter tells the lead to `/handoff` to a fresh session before compaction starts churning.
@@ -190,7 +192,7 @@ Every agent commits with terse, professional [Conventional Commits](https://www.
 4. The [context-mode](https://github.com/mksglu/context-mode) plugin, optional. Without it, agents write large output to a file in the scratch dir (`proteus-scratch.js --path <key>`) and read it with `grep`, `head` and `tail`; Proteus works the same, it just spends more context. `install.js` installs it through the claude CLI and only warns if that fails; if the CLI is not on PATH, run `claude plugin marketplace add mksglu/context-mode` and `claude plugin install context-mode@context-mode` yourself. Research, logs, test output, and web pages go through its sandbox so only the findings enter an agent's context. It is third-party code: its hooks see every tool call in every Claude Code session on the machine, and it keeps session events and indexed content in local SQLite under your home directory (`~/.context-mode/`). Read it before you install it.
 5. Recommended companions (each is its own install; the skill works without them but saves less):
    - [caveman](https://github.com/JuliusBrussee/caveman) — terse agent output
-   - [ponytail](https://github.com/DietrichGebert/ponytail) — minimal code
+   - [ponytail](https://github.com/DietrichGebert/ponytail) — minimal code, on Quick and mechanical tickets
    - [rtk](https://github.com/rtk-ai/rtk) — compressed shell output
    - [Chisle](https://github.com/JayPokale/Chisle) is not a companion: it restates caveman and ponytail in one ruleset and the prose styles fight when stacked. Optional, compress hook only (`CHISLE_DEFAULT_MODE=off`); see `references/stack.md`
    - Claude Code LSP plugin: `/plugin install <language>-lsp@claude-plugins-official`

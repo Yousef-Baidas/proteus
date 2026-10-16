@@ -13,6 +13,18 @@ installed version and the new one.
   files. `.claude/`, `.codex/`, `.agents/`, `.git/`, `teams/`, lefthook config, `.github/workflows/`,
   `.github/actions/`, links and paths that resolve outside the repo or onto that list stay refused.
 
+### Changed
+
+- The lead explores freely before the human approves the spec: it may add spikes, `/prototype`,
+  `/research`, competing designs from helpers or a devil's-advocate pass, and propose a bolder direction
+  or scope. That output stays in scratch and is thrown away. After approval the pipeline is as strict as
+  before: skipping a step still needs the human's word, a `/research` finding or a settled default, and
+  a run-log line.
+- Workers apply ponytail's minimal style only on Quick and mechanical tickets. On `standard` and `hard`
+  tickets the worker chooses the design inside its contract and owned paths and favours clarity and good
+  craft over the fewest lines. The verifier's spec pass counts unrequested behaviour as extra, not
+  helpers, structure or tests inside the owned paths.
+
 ### Fixed
 
 - Auto-update no longer skips silently: a checkout with local changes, or a merge git refuses, now prints
