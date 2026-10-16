@@ -343,7 +343,26 @@ node ~/proteus/install.js --doctor         # from a repo root: global and projec
 node ~/proteus/install.js --doctor --fix   # repair links, duplicates, the optional context-mode plugin, hook registration, team skills
 ```
 
-Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (a `WARN` when missing or disabled, since it is optional; `--fix` installs it), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves (`--fix` fetches and links a missing one, as `link-skills.js --install` does), that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (a `WARN` when missing or disabled, since it is optional; `--fix` installs it), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves (`--fix` fetches and links a missing one, as `link-skills.js --install` does), that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, on Claude Code whether `autoMode.environment` names Proteus (a `WARN` with the snippet below), and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+
+### Auto mode (Claude Code)
+
+Auto mode's classifier judges every tool call and every subagent's task description before it runs. It does not know Proteus, so a worker spawn whose brief talks about hooks and guards can look like an attempt to get around a denial, and it gets blocked. Proteus keeps its briefs short (the standing rules live in the agent files) and never retries a denied call, but only you can tell the classifier that Proteus is your own tooling: it reads `autoMode` from `~/.claude/settings.json` or managed settings only, never from a repo or a plugin.
+
+`install.js` and `--doctor` print this snippet when no `autoMode.environment` entry names Proteus. Add the entry with `/auto-mode-setup` or `/permissions` → Auto mode, or by hand, keeping `"$defaults"` and any entries you already have:
+
+```json
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails"
+    ]
+  }
+}
+```
+
+The installer never writes it: an agent editing your settings is self-modification to auto mode, and the call is yours. When a call is denied anyway, the lead tells you in one line what was denied, the reason tag and why the run needs it, then waits or carries on with other work; reply naming the action to clear it. A worker that hits a denial stops with `BLOCKED #<n> classifier <tag>: <action>` and is not re-spawned.
 
 ### Agents under their own login (recommended)
 

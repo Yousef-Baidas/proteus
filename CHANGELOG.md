@@ -12,6 +12,11 @@ installed version and the new one.
   such as `.vscode/* .editorconfig .gitignore`, on Claude Code and Codex, and in guest mode for the repo's own
   files. `.claude/`, `.codex/`, `.agents/`, `.git/`, `teams/`, lefthook config, `.github/workflows/`,
   `.github/actions/`, links and paths that resolve outside the repo or onto that list stay refused.
+- Auto mode denial rule for the lead, workers and verifiers: a denied call or spawn is never retried,
+  reworded, split or routed elsewhere. The lead tells the human in one line and waits; a worker stops with
+  `BLOCKED #<n> classifier <tag>: <action>`, and the stall watchdog's re-spawn skips it.
+- `install.js` and `--doctor` on Claude Code suggest an `autoMode.environment` entry describing Proteus when
+  `~/.claude/settings.json` has none, and point to `/auto-mode-setup`; they never write it (README, Auto mode).
 
 ### Changed
 
@@ -24,6 +29,10 @@ installed version and the new one.
   tickets the worker chooses the design inside its contract and owned paths and favours clarity and good
   craft over the fewest lines. The verifier's spec pass counts unrequested behaviour as extra, not
   helpers, structure or tests inside the owned paths.
+- Worker and verifier briefs are now the ticket alone: the standing rules (long jobs, report once, scratch,
+  worktree, commits, `NEEDS`, retries, review steps) moved from the `roles.md` templates into the agent
+  files, and so into Codex's TOML roles. The worker brief went from 604 to 152 words, and no brief talks
+  about hooks refusing or bypassing anything, which auto mode's classifier read as evasion.
 
 ### Fixed
 

@@ -36,3 +36,7 @@ Grade (unattended, a fresh instance on another model than the guide): read the f
 Research, logs, test output, diffs over ~50 lines, and web pages go through context-mode when its `ctx_` tools are listed for you (`ctx_batch_execute`, `ctx_execute_file`, `ctx_fetch_and_index`, then `ctx_search`); only derived findings enter your context. Without them, write the output to a file in `$(node .claude/hooks/proteus-scratch.js --path <key>)` (key from the lead's prompt) and read it with `grep -n`, `head` and `tail` rather than reading it whole.
 
 Guide modes: open the review issue: `Review: <run>/<milestone>`, labels `proteus-review,needs-human`, milestone set, body = brief. Post `REVIEW <milestone> <url>` to the task list. Exit. You do not chat; `/proteus-review` does.
+
+## Classifier denial
+
+- **Classifier denial**: a tool call the auto mode classifier denies stays denied. Don't retry it, reword it, split it, or route the same action through another tool or agent: the classifier reads each of those as working around it. Final turn text `BLOCKED #<n> classifier <tag>: <action>` (`<run>` for an agent without a ticket), then stop; the lead asks the human.
