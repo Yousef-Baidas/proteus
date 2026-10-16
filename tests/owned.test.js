@@ -181,8 +181,15 @@ r = rci(WO, "proteus/old", "proteus-work/old/3", "");
 ok("legacy run: no Owned: line still fails", r.status === 1 && /no "Owned:/.test(r.stderr), r.stderr);
 // into main (Quick, Direct: the human merges): the body's line, and never a record
 const WQ = branchWt("quick", "proteus-work/quick/5", "main");
-put(WQ, "src/g.txt", "g\n"); put(WQ, ".Proteus/Owned./5", "**\n");
-commitAll(WQ, "fix(src): g");
+put(WQ, "src/g.txt", "g\n");
+// staged with plumbing, not written: NTFS strips the trailing dot on disk, so a worktree file would
+// reach the tree as .Proteus/Owned/5 on Windows; protectNTFS off lets git keep the spelling a push can
+const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: WQ, input: "**\n", encoding: "utf8" }).stdout.trim();
+g(WQ, "-c", "core.protectNTFS=false", "update-index", "--add", "--cacheinfo", `100644,${blob},.Proteus/Owned./5`);
+g(WQ, "add", "src/g.txt"); // not commitAll: add -A would stage the record's absence from the disk
+spawnSync("git", ["commit", "-qm", "fix(src): g", "--no-verify"], { cwd: WQ, encoding: "utf8", env: { ...process.env, ...ID } });
+ok("into main: the fixture's tree holds the record under its trailing-dot spelling",
+  g(WQ, "ls-tree", "-r", "--name-only", "HEAD").split("\n").includes(".Proteus/Owned./5"));
 r = rci(WQ, "main", "proteus-work/quick/5", "Owned: ** .Proteus/Owned./5");
 ok("into main: the PR body's line counts, but a record (in any NTFS spelling) fails whatever it says",
   r.status === 1 && /\.Proteus\/Owned\.\/5/.test(r.stderr) && !/src\/g\.txt/.test(r.stderr) && !/warning/.test(r.stderr), r.stderr);
