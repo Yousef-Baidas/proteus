@@ -332,15 +332,16 @@ function inboxState(root) {
   return inbox ? `inbox=${inbox.questions.length}q/${inbox.reviews.length}r` : "inbox=unknown";
 }
 
-// a regular file, not a link to one (lstat): a journal that is a link or a FIFO is never opened
-const regularFile = (f) => { try { return fs.lstatSync(f).isFile(); } catch { return false; } };
+// a regular file, not a link to one (lstat), in a state dir that is not a link either: a journal that is a link
+// or a FIFO is never opened, and the open itself does not follow a link swapped in since (lib.tailLines regular)
+const regularFile = (f) => { try { return fs.lstatSync(path.dirname(f)).isDirectory() && fs.lstatSync(f).isFile(); } catch { return false; } };
 
 function humanSaid(root) {
   const common = lib.gitCommonDir(root);
   if (!common) return "";
   // a legacy journal the migration could not merge yet is still read, its lines first, each line once
   const files = [lib.legacyStateDir(common), lib.stateDir(common)].flatMap((d) => { const f = path.join(d, "journal.jsonl"); return regularFile(f) ? [f] : []; });
-  const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024)))].slice(-10);
+  const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024, true)))].slice(-10);
   const said = lines.flatMap((l) => {
     // redacted again on the way out: a journal written before redaction existed may hold secrets
     const p = safe(() => { const raw = JSON.parse(l).prompt; return typeof raw === "string" ? lib.redact(raw) : ""; }, "");
