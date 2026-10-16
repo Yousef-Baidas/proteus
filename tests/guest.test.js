@@ -125,7 +125,7 @@ const CX = repo("codex-guest");
 r = install(CX, ["--harness", "codex", "--guest"], CODEX);
 const toml = read(CX, ".codex", "config.toml") || "";
 const CXD = (marker(CX) || {}).dir || "";
-ok("codex: --guest lists the guest dir and the worktree folder in writable_roots", r.code === 0 && CXD && toml.includes(JSON.stringify(CXD)) && toml.includes(JSON.stringify(`${CX}-proteus`)), `${both(r).slice(-600)}\n${toml}`);
+ok("codex: --guest lists the guest dir in writable_roots, and no folder beside the repo", r.code === 0 && CXD && toml.includes(JSON.stringify(CXD)) && !toml.includes(`${CX}-proteus`), `${both(r).slice(-600)}\n${toml}`);
 ok("codex: git status stays clean", g(CX, "status", "--porcelain") === "", g(CX, "status", "--porcelain"));
 const CT = repo("codex-tracked");
 fs.mkdirSync(path.join(CT, ".codex"));

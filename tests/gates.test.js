@@ -88,6 +88,21 @@ for (const cli of ["claude", "codex"]) {
   ok(`worktree hooks (${cli}): the gates cache is copied`, fs.existsSync(path.join(ad.hooksDir(wt), "proteus-gates-cache.js")));
 }
 
+// worker worktrees nested in .worktrees/: a run from the checkout that holds them warns, one from inside a worktree
+// does not; a hit runs nothing, so it never warns
+fs.appendFileSync(path.join(REPO, ".git", "info", "exclude"), "/.worktrees/\n");
+const NW = path.join(REPO, ".worktrees", "n1");
+g(REPO, "worktree", "add", "-q", "--detach", NW);
+const NG = `${GATE} nested`;
+r = gate(REPO, { TAG: "nested" }, NG);
+ok("nested: a run from the checkout holding .worktrees/n1 warns and names it", r.code === 0 && /gates-cache: 1 worktree\(s\) inside this folder \(\.worktrees[\\/]n1\).*\.worktrees\/_run/.test(r.err), r.err);
+r = gate(NW, { TAG: "nested" }, `${GATE} inner`);
+ok("nested: a run from inside the nested worktree does not warn", r.code === 0 && !/inside this folder/.test(r.err), r.err);
+r = gate(path.join(REPO, "sub"), { TAG: "nested" }, `${GATE} sub`);
+ok("nested: a run from a subfolder that holds no worktree does not warn", r.code === 0 && /suite ok nested/.test(r.out) && !/inside this folder/.test(r.err), r.err);
+r = gate(REPO, { TAG: "nested" }, NG);
+ok("nested: a hit from the checkout runs nothing and does not warn", /gates-cache: hit/.test(r.out) && !/inside this folder/.test(r.err), r.out + r.err);
+
 ok("usage: no command exits 2", lib.run(GC, "", { cwd: REPO }).code === 2);
 
 lib.summary();

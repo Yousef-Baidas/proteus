@@ -24,7 +24,7 @@ Reply with those two parts on one line. Nothing is dispatched, nothing is re-rea
 3. Tell a subagent to stop any detached heavy job the workers left (render, encode, training, test farm): find it by the PID or log path in their reports, stop it, confirm the GPU and CPU are free in one line.
 4. Stop the watchdog (`TaskStop`; Codex: stop the timed waits) and `node <hooks>/proteus-watchdog.js --forget all`. Reply `paused at <position>`. Dispatch nothing until `resume`.
 
-`resume`: read the position line from the run log, start the watchdog again, and re-dispatch each interrupted ticket to a fresh worker on its existing worktree with `resume from the last commit on the branch; the previous worker was stopped, not failed`. A pause is not an escalation rung.
+`resume`: read the position line from the run log, start the watchdog again, and re-dispatch each interrupted ticket to a fresh worker on its existing worktree (`git worktree list`: an older run's are in `../<repo>-proteus/`) with `resume from the last commit on the branch; the previous worker was stopped, not failed`. A pause is not an escalation rung.
 
 ## Stall check
 

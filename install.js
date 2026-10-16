@@ -36,8 +36,8 @@
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
-//                                     and .codex/rules/proteus.rules, ../<repo>-proteus writable in
-//                                     .codex/config.toml; --update reinstalls every
+//                                     and .codex/rules/proteus.rules, a worktree folder an older run
+//                                     left beside the repo writable in .codex/config.toml; --update reinstalls every
 //                                     harness recorded in ~/.claude/proteus.json
 //   --scan <dir>                      where to look for repos still on hivemind (default ~/Projects)
 //   --migrate-all                     also move every repo found there from hivemind to Proteus
@@ -668,14 +668,16 @@ function projectInstall(root, opt) {
   if (codex()) {
     const tracked = git(["ls-files", "--error-unmatch", "--", ".codex/config.toml"], root).ok;
     if (guest && tracked) {
-      warn(`warning: guest mode leaves the repo's tracked .codex/config.toml alone; add ${path.join(path.dirname(path.resolve(root)), `${path.basename(path.resolve(root))}-proteus`)} and ${guest} to writable_roots under [sandbox_workspace_write] in your Codex config`);
+      warn(`warning: guest mode leaves the repo's tracked .codex/config.toml alone; add ${guest} to writable_roots under [sandbox_workspace_write] in your Codex config`);
       excludeLocal(root, CODEX_EXCLUDE, "hooks.json, Proteus hooks, rules, proteus-owned");
       return ok;
     }
+    const cfg = path.join(root, ".codex", "config.toml"), had = !!lstat(cfg);
     const w = sandboxRoots(root);
     if (guest) ok = allowGuest(root, guest) && ok;
     // a config.toml the repo already had may be tracked or the user's: never exclude it
-    excludeLocal(root, w.created ? [...CODEX_EXCLUDE, ".codex/config.toml"] : CODEX_EXCLUDE, `hooks.json, Proteus hooks, rules, proteus-owned${w.created ? ", config.toml" : ""}`);
+    const made = !had && !!lstat(cfg);
+    excludeLocal(root, made ? [...CODEX_EXCLUDE, ".codex/config.toml"] : CODEX_EXCLUDE, `hooks.json, Proteus hooks, rules, proteus-owned${made ? ", config.toml" : ""}`);
     return ok && !w.error;
   }
   if (guest) ok = allowGuest(root, guest) && ok;
@@ -723,13 +725,16 @@ function allowGuest(root, dir) {
   return true;
 }
 
-// workspace-write keeps a Codex worker out of ../<repo>-proteus/ unless the project names it
+// workspace-write already lets a Codex worker write in <repo>/.worktrees/; a folder beside the repo that an older
+// run still has worktrees in (../<repo>-proteus, ../<repo>-hive) stays in writable_roots until they merge
 function sandboxRoots(root) {
   const w = cx().sandboxRoots(root);
-  if (w.error) warn(`warning: ${w.error}`);
-  else log(`sandbox  -> ${path.relative(root, w.file).split(path.sep).join("/")} (${w.changed ? `${w.created ? "created, " : ""}worker worktrees in ${w.dir} writable` : "worktree folder already writable"})`);
-  if (w.stale) log(`sandbox  -> ${w.stale} dropped from writable_roots (no worktree of a pre-rename run is left in it)`);
-  if (w.legacy) log(`sandbox  -> ${w.legacy.dir} kept in writable_roots: a pre-rename run still has worktrees there (${w.legacy.worktrees.join(", ")}); the next --project drops it once they are gone`);
+  if (w.error) { warn(`warning: ${w.error}`); return w; }
+  const rel = path.relative(root, w.file).split(path.sep).join("/");
+  for (const d of w.missing) log(`sandbox  -> ${rel} (${w.created ? "created, " : ""}${d} listed: an older run still has worktrees there)`);
+  for (const d of w.stale) log(`sandbox  -> ${d} dropped from writable_roots (no worktree of an older run is left in it)`);
+  for (const k of w.kept) if (!w.missing.includes(k.dir)) log(`sandbox  -> ${k.dir} kept in writable_roots: an older run still has worktrees there (${k.worktrees.join(", ")}); the next --project drops it once they are gone`);
+  if (!w.changed && !w.kept.length) log("sandbox  -> worker worktrees in .worktrees/, inside the project: writable_roots needs no entry");
   return w;
 }
 
@@ -1433,10 +1438,11 @@ async function doctor(fix) {
           : ["FIX", ".codex/rules/proteus.rules missing or stale", `${self} --project`], () => registerHooks(root));
         check(() => {
           const w = cx().sandboxRoots(root, false);
-          if (w.error) return ["FIX", w.error.replace(/; add .*/, ""), `add ${w.dir} to writable_roots under [sandbox_workspace_write] in .codex/config.toml`];
-          if (w.missing) return ["FIX", `workers cannot write in ${w.dir}: .codex/config.toml does not list it in writable_roots`, `${self} --project`];
-          if (w.stale) return ["FIX", `${w.stale} still in writable_roots, but no pre-rename worktree is left in it`, `${self} --project`];
-          return ["ok", `worktree folder writable in the Codex sandbox${w.legacy ? `; ${w.legacy.dir} kept while a pre-rename run has worktrees there (${w.legacy.worktrees.join(", ")})` : ""}`];
+          const old = w.kept.map((k) => `${k.dir} (${k.worktrees.join(", ")})`).join(", ");
+          if (w.error) return ["FIX", w.error.replace(/; add .*/, ""), `add ${w.kept.map((k) => k.dir).join(" and ")} to writable_roots under [sandbox_workspace_write] in .codex/config.toml`];
+          if (w.missing.length) return ["FIX", `workers of an older run cannot write in ${w.missing.join(", ")}: .codex/config.toml does not list it in writable_roots`, `${self} --project`];
+          if (w.stale.length) return ["FIX", `${w.stale.join(", ")} still in writable_roots, but no worktree of an older run is left in it`, `${self} --project`];
+          return ["ok", `worker worktrees in .worktrees/, writable in the Codex sandbox${old ? `; kept while an older run has worktrees there: ${old}` : ""}`];
         }, () => { if (sandboxRoots(root).created) excludeLocal(root, [".codex/config.toml"], "config.toml"); });
         check(() => codexTrusted(root) ? ["ok", "project trusted in codex"]
           : ["WARN", "project not trusted in codex: its .codex/ hooks do not load", "open codex here, trust the project, approve the hooks in /hooks"]);

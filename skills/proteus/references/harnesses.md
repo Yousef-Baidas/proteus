@@ -8,8 +8,8 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | Skills folders | `~/.claude/skills`, `.claude/skills`, plugin caches (`node <hooks>/proteus-skillpath.js <skill>` finds a plugin's `SKILL.md` on either CLI) | `~/.agents/skills`, `.agents/skills`; no Skill tool, every skill is read from its `SKILL.md` and followed. Codex ignores `disable-model-invocation`; its equivalent, `policy.allow_implicit_invocation: false` in the skill's `agents/openai.yaml` (Proteus and proteus-review ship one), only hides a skill from the model's list. Team skills: `teams/<team>/.agents/skills/`, read by the worker itself (`teams.md`) |
 | Project instructions | `CLAUDE.md` (and `AGENTS.md`) | `AGENTS.md` only; `docs-diet.md`'s `CLAUDE.md` rules apply to it |
 | `<hooks>`: hooks and lead scripts | `.claude/hooks` | `.codex/hooks` |
-| Owned-paths file | `<wt>/.claude/proteus-owned` | `<wt>/.codex/proteus-owned` (read-only to the worker's sandbox) |
-| Worktree folder `../<repo>-proteus/` | writable | writable because `install.js --project --harness codex` adds it to `[sandbox_workspace_write] writable_roots` in `.codex/config.toml`; `--doctor` checks it |
+| Owned-paths file | `<wt>/.claude/proteus-owned` | `<wt>/.codex/proteus-owned` (the guard refuses a worker's `apply_patch` on it; the sandbox does not) |
+| Worktree folder `.worktrees/` | writable | inside the project, so writable; an older run's `../<repo>-proteus/` stays in `writable_roots` (`.codex/config.toml`) until its worktrees go; `--doctor` checks it |
 | Agents' GitHub login | `GH_CONFIG_DIR` from the autostart's `CLAUDE_ENV_FILE`, this session | under `[shell_environment_policy.set]` in `.codex/config.toml`, written by the autostart and read from the next session; it applies to every Codex session in the project, `PROTEUS=0` ones too, and only in a trusted project |
 | Lead hook registration | `.claude/settings.local.json` | `.codex/hooks.json` plus `.codex/rules/proteus.rules`; the human trusts the project and approves the hooks in `/hooks` once |
 | Plain session, no lead hooks | `PROTEUS=0 claude` | `PROTEUS=0 codex` |
