@@ -14,3 +14,9 @@
   back, and is recorded in `<git-common-dir>/proteus/tamper/`. Meanwhile `proteus-signoff.js` refuses MERGE
   on that branch. The hash cache in `<git-common-dir>/proteus/guard-hash.json` holds only the current
   fingerprint's paths, at most 8000. Pre and Post together add about 70 ms to a subagent shell call.
+- The git config files are compared by key, not by hash: `user.*`, `color.*`, line endings, the file mode
+  bit and the agent's own branch's upstream pass, and any other key an agent sets (`core.hooksPath`,
+  `alias.*`, `remote.*`, `include*`, ...) is named in the block.
+- What changes while one of the lead's own shell calls overlaps an agent's is not pinned on the agent: the
+  lead is shown a notice with the paths (`proteus-shell-check.js --list`, `--clear <n>`), and its call
+  re-baselines the agents' snapshots and open records.

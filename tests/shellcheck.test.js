@@ -65,11 +65,13 @@ r = call("(the lead removes it meanwhile)", ["git", "-C", REPO, "worktree", "rem
 ok("build: ...nor one it removes", !r.blocked && !fs.existsSync(WT3), r.why);
 
 // an interpreter writing an agent definition
-const PY = ["python3", "python"].find((p) => spawnSync(p, ["-c", "print(1)"], { encoding: "utf8" }).status === 0);
+// looked up on the PATH the call runs with (lib.ENV's, stripped), not the test's own
+const PY = ["python3", "python"].find((p) => spawnSync(p, ["-c", "print(1)"], { encoding: "utf8", env: lib.ENV }).status === 0);
 const agentFile = path.join(WT1, ".claude", "agents", "x.md");
 r = PY ? call(`${PY} -c "open('.claude/agents/x.md','w').write('x')"`, [PY, "-c", "import os; os.makedirs('.claude/agents', exist_ok=True); open('.claude/agents/x.md','w').write('x')"])
   : call("node -e \"...\"", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/x.md','x')"));
 ok("interpreter: python -c writing .claude/agents/x.md passes the shell parser", r.pre.code === 0, r.pre.err);
+ok("interpreter: ...and the write happened", fs.existsSync(agentFile), PY || "node");
 ok("interpreter: ...and is caught after the call, naming the path", r.blocked && r.why.includes(slash(agentFile)) && /Put each back/.test(r.why), r.why);
 let t = record();
 ok("interpreter: a record names the agent, its branch and the path", t && t.open && t.branch === "proteus-work/r1/1" && t.items.some((i) => i.path === agentFile && i.before === null), JSON.stringify(t));
@@ -164,13 +166,78 @@ ok("codex: an interpreter write to .codex/agents is caught after the call", r.pr
 
 // the guard's own records: deleting one stays on the new record until the lead clears it
 const d1 = { who: { agent_id: "d1", agent_type: "proteus-backend-worker" } };
-r = call("node -e ...", node("require('fs').writeFileSync('.claude/agents/y.md','x')"), d1);
+r = call("node -e ...", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/y.md','x')"), d1);
 ok("records: d1's write is recorded", r.blocked && record("agent-d1") && record("agent-d1").open, r.why);
-fs.rmSync(path.join(WT1, ".claude", "agents", "y.md"));
+fs.rmSync(path.join(WT1, ".claude", "agents", "y.md"), { force: true });
 r = call("node -e unlink", node(`require('fs').rmSync(${JSON.stringify(path.join(STATE, "tamper", "agent-d1.json"))})`), d1);
 ok("records: deleting the guard's record is caught", r.blocked && r.why.includes("tamper/agent-d1.json") && /only the lead clears it/.test(r.why), r.why);
 r = call("ls", null, d1);
 ok("records: ...and stays open after it is written again", r.blocked && record("agent-d1").open, r.why);
+
+// git config: compared by key; identity, colours and the agent's own branch's upstream pass, the rest is caught
+const gitc = (...a) => node(`require('child_process').execFileSync('git',${JSON.stringify(["config", ...a])})`);
+r = call("git config user.email x", gitc("user.email", "x@example.com"));
+ok("config: git config user.email passes", !r.blocked, r.why);
+r = call("git branch --set-upstream-to=origin/main", ["git", "branch", "--set-upstream-to=origin/main"]);
+ok("config: setting the agent's own branch's upstream passes", !r.blocked && g(WT1, "config", "branch.proteus-work/r1/1.merge") === "refs/heads/main", r.why);
+for (const [what, key, val] of [
+  ["alias.p", "alias.p", "push --force"],
+  ["remote.origin.push", "remote.origin.push", "+refs/heads/*:refs/heads/main"],
+  ["includeIf", "includeIf.gitdir:/x/.path", path.join(W, "evil.cfg")],
+  ["another agent's branch upstream", "branch.proteus-work/r1/2.remote", "origin"],
+  ["a pushRemote other than the branch's remote", "branch.proteus-work/r1/1.pushRemote", "elsewhere"],
+]) {
+  r = call("node -e ...", gitc(key, val)); // past Layer 1, which reads the command line
+  ok(`config: ${what} is caught, naming the key`, r.blocked && r.why.includes(".git/config") && r.why.toLowerCase().includes(key.toLowerCase()), r.why);
+  r = call(`git config --unset ${key}`, gitc("--unset", key));
+  ok(`config: ...unsetting it again passes and closes the record`, !r.blocked && record().open === false, r.why + JSON.stringify(record()));
+}
+
+// the lead's own shell calls: what changes while one overlaps an agent's call is a notice to the lead, not a block
+let m = 0;
+const evOf = (who, cwd, command) => ({ session_id: "s1", cwd, tool_name: "Bash", tool_input: { command }, tool_use_id: `toolu_lead${++m}`, ...who });
+const pre = (b) => lib.run(LG, { hook_event_name: "PreToolUse", ...b }, { cwd: REPO });
+const post = (b) => {
+  const p = lib.run(SC, { hook_event_name: "PostToolUse", ...b, tool_response: { stdout: "", stderr: "" } }, { cwd: REPO });
+  let j = null;
+  try { j = JSON.parse(p.out); } catch {}
+  return { blocked: !!(j && j.decision === "block"), why: (j && j.reason) || "", ctx: (j && j.hookSpecificOutput && j.hookSpecificOutput.additionalContext) || "" };
+};
+const prepare = (wt, ...owned) => lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [wt, ...owned] });
+const notices = () => { try { return fs.readdirSync(path.join(STATE, "unattributed")); } catch { return []; } };
+const ownedWT2 = slash(path.join(WT2, ".claude", "proteus-owned"));
+let a = evOf(sub, WT1, "npm test"), l = evOf({}, REPO, "node .claude/hooks/proteus-worktree.js .worktrees/r1-2 ...");
+pre(a); pre(l);
+prepare(WT2, "src/**", "dist/**", "lib/**");
+let lp = post(l), ap = post(a);
+ok("lead: proteus-worktree.js run by the lead during an agent's call does not block the agent", !lp.blocked && !ap.blocked && record().open === false, ap.why);
+ok("lead: ...the lead is shown a notice naming the agent and the path, and how to clear it", lp.ctx.includes(ownedWT2) && lp.ctx.includes("a1") && /--clear \d+/.test(lp.ctx) && notices().length === 1, lp.ctx);
+a = evOf(sub, WT1, "npm test"); l = evOf({}, REPO, "node .claude/hooks/proteus-worktree.js .worktrees/r1-2 ...");
+pre(a); pre(l);
+prepare(WT2, "src/**", "dist/**");
+ap = post(a); lp = post(l);
+ok("lead: ...also when the agent's call ends first, while the lead's still runs", !ap.blocked && record().open === false && lp.ctx.includes(ownedWT2) && notices().length === 2, ap.why + lp.ctx);
+ok("lead: a notice is shown once", !post(evOf({}, REPO, "ls")).ctx, "");
+const listed = lib.run(SC, "", { cwd: REPO, args: ["--list"] });
+ok("lead: --list prints the notices", listed.code === 0 && listed.out.includes(ownedWT2), listed.out + listed.err);
+// the notices name r1-2's paths; its branch has no record of its own
+fs.writeFileSync(PR, JSON.stringify({ head: HEAD, branch: "proteus-work/r1/2", files: [], statuses: {} }));
+s = sign("MERGE");
+ok("lead: signoff does not refuse on a notice", s.code === 0, s.err);
+fs.writeFileSync(PR, JSON.stringify({ head: HEAD, branch: "proteus-work/r1/1", files: [], statuses: {} }));
+const cleared = lib.run(SC, "", { cwd: REPO, args: ["--clear", "all"] });
+ok("lead: --clear all removes them", cleared.code === 0 && notices().length === 0, cleared.out + cleared.err);
+r = call("node -e ...", node("require('fs').writeFileSync('.claude/agents/z.md','x')"));
+ok("lead: an agent write with no lead call overlapping still blocks", r.blocked && r.why.includes(".claude/agents/z.md"), r.why);
+r = call("node -e ...", node("require('fs').rmSync('.claude/agents/z.md')"));
+ok("lead: ...and passes once put back", !r.blocked && record().open === false, r.why);
+// re-baseline: a path on an open record that the lead's call then rewrites takes the lead's state as its state before
+r = call("node -e ...", node("require('fs').appendFileSync('.claude/proteus-owned','\\n**')"));
+ok("lead: an agent's write to its owned list is recorded", r.blocked && record().open, r.why);
+r = call("node .claude/hooks/proteus-worktree.js .worktrees/r1-1 ...", [process.execPath, path.join(SRC, "proteus-worktree.js"), WT1, "src/**", "dist/**", "lib/**"], { who: {}, cwd: REPO, env: { CLAUDE_PROJECT_DIR: REPO } });
+ok("lead: ...the lead re-prepares the worktree with a new list", !r.blocked && /lib\/\*\*/.test(fs.readFileSync(path.join(WT1, ".claude", "proteus-owned"), "utf8")), r.why);
+r = call("ls", null);
+ok("lead: ...and the agent's next call is not blocked on the lead's change", !r.blocked && record().open === false, r.why + JSON.stringify(record()));
 
 // the lead's own calls are not checked
 r = call("node -e ...", node("require('fs').writeFileSync('.claude/agents/lead.md','x')"), { who: {}, cwd: REPO });

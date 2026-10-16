@@ -26,6 +26,7 @@
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 //   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
+//   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
@@ -57,7 +58,7 @@ lib.run((ev, ad) => {
     const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
-    if (ev.tool === "shell") return shellSnapshot(ev);
+    if (ev.tool === "shell") return shellCheck("snapshot", ev);
     return;
   }
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
@@ -66,7 +67,7 @@ lib.run((ev, ad) => {
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
     if (why) ad.deny(why);
-    return;
+    return shellCheck("leadStart", ev);
   }
   if (ev.tool === "monitor") return;
 
@@ -136,11 +137,12 @@ function humanNamed(ev, ad, target) {
 }
 
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run
-// the fingerprint proteus-shell-check.js compares after the call; a hook copy without it (an old install) skips it
-async function shellSnapshot(ev) {
+// proteus-shell-check.js before a call it lets through: a subagent's fingerprint (snapshot), the lead's window
+// (leadStart); a hook copy without it (an old install) skips it
+async function shellCheck(fn, ev) {
   let check;
   try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
-  try { await check.snapshot(ev); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
+  try { if (typeof check[fn] === "function") await check[fn](ev); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
 }
 
 function subagentEdit(ev, ad) {
