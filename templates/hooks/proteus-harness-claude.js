@@ -96,6 +96,11 @@ function keepGoing(ev, reason) {
   process.stdout.write(JSON.stringify({ decision: "block", reason }) + "\n");
 }
 
+// after the tool already ran (PostToolUse): the reason reaches the model as feedback it must act on
+function postBlock(ev, reason) {
+  process.stdout.write(JSON.stringify({ decision: "block", reason }) + "\n");
+}
+
 // ---- transcripts: JSONL, one entry per line; main-thread entries lack isSidechain
 
 // newest-first iteration over main-thread transcript entries
@@ -274,6 +279,8 @@ const LEAD_HOOKS = [
   ["PreToolUse", "proteus-scratch.js", "Bash"],
   ["PostToolUse", "proteus-scratch.js", "Bash"],
   ["PostToolUseFailure", "proteus-scratch.js", "Bash"],
+  ["PostToolUse", "proteus-shell-check.js", "Bash"],
+  ["PostToolUseFailure", "proteus-shell-check.js", "Bash"],
   ["SubagentStop", "proteus-stall.js"],
   ["TeammateIdle", "proteus-stall.js"],
 ];
@@ -338,7 +345,7 @@ function allowDir(root, dir, write = true) {
 
 // a worker's worktree: its hooks, registered by the worktree settings template beside this file, and
 // package.json, which keeps them CommonJS in a "type": "module" repo (#77)
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
 const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js", "/.claude/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
@@ -369,7 +376,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

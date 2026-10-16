@@ -20,6 +20,7 @@
 //
 // Adapter contract (see proteus-harness-claude.js for the reference):
 //   answers      deny(why, {json}) · context(ev, text, kind) · keepGoing(ev, reason)
+//                postBlock(ev, reason) (after the tool ran: the reason reaches the model as feedback to act on)
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
 //                briefText(ev) (a subagent's brief, the lead's spawn prompt; "" when the CLI cannot show it)
 //   window       modelWindow(model, ev) (the model's nominal context window) · contextCap(ev, model) (the

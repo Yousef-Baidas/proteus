@@ -4,6 +4,7 @@
 // lib.branchDenial refuses (--admin merges, pushes to main or a run branch, protection changes), and what
 // lib.agentShellDenial refuses (force-push, git -C elsewhere, shell writes to .claude/, .git/, the gates): a worker whose
 // turn ends waiting on a notification never wakes, --edit-last can overwrite another agent's comment, and those words are the human's.
+// A shell call it lets through gets the fingerprint proteus-shell-check.js compares after the call.
 // Only active when the owned-path list exists (a dispatched worker's worktree).
 // Exit 2 = block; the message on stderr reaches the worker as the tool's error.
 "use strict";
@@ -13,8 +14,12 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 if (process.env.PROTEUS === "0") process.exit(0);
 
-lib.run((ev, ad) => {
+lib.run(async (ev, ad) => {
   if (!fs.existsSync(lib.ownedFile(lib.projectRoot(ev)))) return;
   const why = lib.workerDenial(ev);
   if (why) ad.deny(why);
+  if (ev.tool !== "shell") return;
+  let check;
+  try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
+  try { await check.snapshot(ev); } catch {}
 });

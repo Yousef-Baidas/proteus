@@ -25,6 +25,7 @@
 //   its cwd's, else the one its brief names, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+//   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
@@ -55,6 +56,8 @@ lib.run((ev, ad) => {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
     const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
+    // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
+    if (ev.tool === "shell") return shellSnapshot(ev);
     return;
   }
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
@@ -133,6 +136,13 @@ function humanNamed(ev, ad, target) {
 }
 
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run
+// the fingerprint proteus-shell-check.js compares after the call; a hook copy without it (an old install) skips it
+async function shellSnapshot(ev) {
+  let check;
+  try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
+  try { await check.snapshot(ev); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
+}
+
 function subagentEdit(ev, ad) {
   let brief = null; // read once per call, and only when an edit lands in a git checkout
   const briefOf = () => (brief ??= (() => { try { return String(ad.briefText(ev) || ""); } catch { return ""; } })());

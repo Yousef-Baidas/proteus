@@ -97,7 +97,7 @@ function outputText(res) {
   return res && typeof res === "object" && typeof res.output === "string" ? res.output : "";
 }
 
-const { deny, context, keepGoing } = claude;
+const { deny, context, keepGoing, postBlock } = claude;
 
 // ---- rollouts: JSONL, {timestamp, type, payload}; each subagent has its own file
 
@@ -275,6 +275,7 @@ const LEAD_HOOKS = [
   ["PostToolUse", "proteus-lessons.js", "Bash"],
   ["PreToolUse", "proteus-scratch.js", "Bash"],
   ["PostToolUse", "proteus-scratch.js", "Bash"],
+  ["PostToolUse", "proteus-shell-check.js", "Bash"],
   ["SubagentStop", "proteus-stall.js"],
 ];
 
@@ -446,7 +447,7 @@ const allowDir = (root, dir, write = true) => sandboxRoots(root, write, dir);
 
 // Subagents run in the lead's session under its hooks, which enforce owned paths; the copies
 // here are the backup for a codex session opened inside the worktree.
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
 const WORKER_EXCLUDE = ["/.codex/proteus-owned", "/.codex/hooks/proteus-*.js", "/.codex/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
@@ -509,7 +510,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, sandboxRoots, allowDir, exportEnv,

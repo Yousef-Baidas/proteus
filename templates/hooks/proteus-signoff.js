@@ -5,7 +5,9 @@
 // MERGE posts success, the other two failure, on proteus/verdict, or with --security on proteus/security (the
 // security verifier's). A status belongs to one commit, so a push after the review leaves the new head without
 // one: the PR cannot merge until a verifier reviews that head. The script refuses when the PR head is no longer
-// <reviewed-sha>, so a verdict never lands on code the verifier did not read.
+// <reviewed-sha>, so a verdict never lands on code the verifier did not read, and refuses MERGE while the PR's head
+// branch has an open guard-violation record (proteus-shell-check.js: a shell call changed a guarded path or another
+// worktree, and it is not back as it was).
 // It posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a hand-posted status
 // (lib.branchDenial) and this script from anyone but a verifier (lib.signoffDenial, the lead guard); that is a
 // guard, not a boundary: a worker sharing the agents' token can post a status with its own script (#69).
@@ -17,7 +19,7 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 const WORDS = { MERGE: "success", "BACK-TO-WORKER": "failure", "CONTRACT-WRONG": "failure" };
 const USAGE = "usage: proteus-signoff.js <pr> <reviewed-sha> MERGE|BACK-TO-WORKER|CONTRACT-WRONG [--security]";
 
-function main(argv) {
+async function main(argv) {
   const security = argv.includes("--security");
   const [pr, sha, word, ...rest] = argv.filter((a) => a !== "--security");
   if (!/^\d+$/.test(pr || "") || !/^[0-9a-f]{7,40}$/i.test(sha || "") || !WORDS[word] || rest.length) { console.error(USAGE); return 2; }
@@ -30,6 +32,10 @@ function main(argv) {
     console.error(`proteus-signoff: PR #${pr}'s head is ${head.slice(0, 12)}, not the ${sha.slice(0, 12)} you reviewed; nothing posted. Review the new commits (gh pr diff ${pr}) and sign off on the head you read.`);
     return 1;
   }
+  if (word === "MERGE") {
+    const open = await tampered(cwd, pr, run);
+    if (open) { console.error(open); return 1; }
+  }
   const context = security ? "proteus/security" : "proteus/verdict";
   const repo = process.env.GITHUB_REPOSITORY || "{owner}/{repo}";
   const by = security ? "the security verifier" : "the verifier";
@@ -39,4 +45,23 @@ function main(argv) {
   return 0;
 }
 
-process.exitCode = main(process.argv.slice(2));
+// a MERGE is refused while the PR's head branch has a guard-violation record (proteus-shell-check.js) whose
+// paths still differ from their state before: the PR asks for review, not the worktree that holds the change
+async function tampered(cwd, pr, run) {
+  const common = lib.gitCommonDir(lib.gitRoot(cwd) || cwd);
+  if (!common) return "";
+  let check;
+  try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return ""; }
+  const fs = require("fs");
+  let any = false;
+  try { any = fs.readdirSync(check.tamperDir(common)).some((n) => n.endsWith(".json")); } catch {}
+  if (!any) return "";
+  const branch = run(["pr", "view", pr, "--json", "headRefName", "-q", ".headRefName"]);
+  if (!branch) return `proteus-signoff: gh pr view ${pr} failed to name the head branch, and the guard has violation records to check it against; nothing posted. Retry.`;
+  const open = await check.openFor(common, branch);
+  if (!open.length) return "";
+  const paths = open.flatMap((r) => r.left.map((i) => i.path || i.worktree || "the guard's snapshot")).map((p) => String(p).split(path.sep).join("/"));
+  return `proteus-signoff: ${branch} has an open guard-violation record (a shell call changed ${paths.slice(0, 6).join(", ")}${paths.length > 6 ? ", ..." : ""}, which hold Proteus's hooks, gates, git internals or another worktree); no MERGE is posted while they differ from their state before. Send the ticket BACK-TO-WORKER to restore them, or raise it to the lead.`;
+}
+
+main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
