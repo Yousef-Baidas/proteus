@@ -145,6 +145,7 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   if (!isDir(teams)) throw new Error("no teams/ here; run from the repo root");
   const missing = [];
   const linked = [];
+  let confined = 0; // global links actually removed
   const homeSkills = [".claude", "skills"];
   for (const p of profiles(teams)) {
     const dir = path.join(teams, p);
@@ -175,7 +176,7 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
       n++;
       linked.push({ name, source, src });
       const g = path.join(HOME, ...homeSkills, name);
-      if (confine && !OURS.has(name) && lstat(g) && lstat(g).isSymbolicLink()) remove(g, HOME, homeSkills);
+      if (confine && !OURS.has(name) && lstat(g) && lstat(g).isSymbolicLink() && remove(g, HOME, homeSkills)) confined++;
     }
     log(`teams/${p} -> ${n} skills linked`);
   }
@@ -185,7 +186,7 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
     log("missing; install then re-run (or pass --install):");
     for (const m of missing) log(`  ${m}`);
   }
-  if (confine) log("confined: linked skills removed from ~/.claude/skills (restart Claude Code)");
+  if (confine) log(confined ? `confined: ${confined} linked skill${confined === 1 ? "" : "s"} removed from ~/.claude/skills (restart Claude Code)` : "confine : nothing to remove from ~/.claude/skills");
 
   // lock; a link at it or on the way (a repo may commit one) is neither read nor written through (#22)
   const lockFile = path.join(teams, "skills-lock.json"), lockSt = lstat(lockFile);
