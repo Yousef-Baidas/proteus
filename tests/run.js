@@ -12,17 +12,20 @@ let pass = 0, fail = 0, bad = 0;
 for (const f of files) {
   // maxBuffer: the 1 MiB default kills a chatty file and loses its summary line
   const r = spawnSync(process.execPath, [path.join(__dirname, f)], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-  process.stdout.write(r.stdout || "");
-  process.stderr.write(r.stderr || "");
+  // one block per file on one stream, so a crash's stderr trace stays next to its stdout and its FAIL line
   const m = /^(\d+) passed, (\d+) failed$/m.exec(r.stdout || "");
+  let out = (r.stdout || "") + (r.stderr ? (r.stdout && !r.stdout.endsWith("\n") ? "\n" : "") + r.stderr : "");
+  if (out && !out.endsWith("\n")) out += "\n";
   if (m) { pass += +m[1]; fail += +m[2]; }
   if (r.status !== 0 || !m) {
     bad++;
-    if (r.error || r.signal) console.log(`FAIL ${f}: ${r.error ? r.error.message : `killed by ${r.signal}`}`);
-    else if (!m) console.log(`FAIL ${f}: no summary line (exit ${r.status})`);
+    if (r.error || r.signal) out += `FAIL ${f}: ${r.error ? r.error.message : `killed by ${r.signal}`}\n`;
+    else if (!m) out += `FAIL ${f}: no summary line (exit ${r.status})\n`;
+    else out += `FAIL ${f}: exit ${r.status} after its summary line\n`;
     // a file that crashed after printing a clean summary, or exited non-zero with 0 failed, still counts once
     if (!m || !+m[2]) fail++;
   }
+  process.stdout.write(out);
 }
 console.log(`\n${pass} passed, ${fail} failed across ${files.length} files${bad ? ` (${bad} did not finish cleanly)` : ""}`);
 process.exitCode = bad || !files.length ? 1 : 0;
