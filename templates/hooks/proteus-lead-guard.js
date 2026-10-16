@@ -16,7 +16,8 @@
 // 6. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses. An edit inside a checkout with .claude/proteus-owned
+//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, nothing lib.agentShellDenial refuses
+//   (force-push, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
@@ -31,6 +32,7 @@
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+const { bindFile, bound, cwdWorktree, samePath: same } = lib;
 
 // docs the lead may write: CONTEXT.md, AGENTS.md, ADRs, lessons, and CONVENTIONS.md (bootstrap writes it; after
 // that it is the human's, and the lead adds a line only on the human's approval, which a hook cannot see).
@@ -191,14 +193,4 @@ function bindingDenial(ev, cwd, wt, common, abs) {
   return "";
 }
 
-const bindFile = (common, agent) => path.join(lib.stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
-function bound(common, agent) {
-  try { return fs.readFileSync(bindFile(common, agent), "utf8").trim() || null; } catch { return null; }
-}
-// the cwd's checkout when it is a prepared (owned-list) linked worktree of this repo
-function cwdWorktree(cwd, common) {
-  const own = lib.gitRoot(cwd);
-  return own && lib.isLinked(own) && fs.existsSync(lib.ownedFile(own)) && lib.gitCommonDir(own) === common ? own : null;
-}
-const same = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 const slash = (p) => String(p).replace(/\\/g, "/");
