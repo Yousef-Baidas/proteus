@@ -7,6 +7,7 @@
 //   - a shell call's background mode (yield_time_ms) is not in the hook input: background=false
 //   - no failed-tool event, no teammate idle event, no running-task list on SubagentStop
 //   - no scriptable status line
+//   - a subagent's brief is encrypted in its rollout (briefText ""), so it is bound by its cwd or first edit
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -131,6 +132,11 @@ function lastAssistantText(ev) {
   }
   return "";
 }
+
+// a subagent's brief: none. Multi-agent v2 delivers the spawn message to the subagent's rollout as an
+// agent_message whose payload is encrypted_content (seen live on 0.159), so the worktree path in it cannot be
+// read; the guard keeps binding a Codex subagent by its cwd, else its first edit.
+const briefText = () => "";
 
 // user-role text Codex injects itself: instructions, environment, skills, notifications
 const INJECTED = /^\s*(# AGENTS\.md instructions|<(environment_context|environments_state|external_|skill|skills_instructions|user_shell_command|turn_aborted|subagent_notification|git_attribution|hook_prompt|agent_message_board|user_instructions))/;
@@ -502,7 +508,7 @@ function exportEnv(root, vars) {
 
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, sandboxRoots, allowDir, exportEnv,
 };

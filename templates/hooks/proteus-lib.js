@@ -935,6 +935,30 @@ const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent
 function bound(common, agent) {
   try { return fs.readFileSync(bindFile(common, agent), "utf8").trim() || null; } catch { return null; }
 }
+// the prepared worktree of this repo a subagent's brief names (roles.md: "worktree <absolute path>"), else null.
+// A path counts written absolute (either slash, or its real path) or relative to the main checkout, as a whole
+// token. None named, or several (a contracts worker's brief lists one per ticket), is null: the cwd and
+// first-edit binding then apply as before.
+function briefWorktree(text, common) {
+  const brief = String(text || "");
+  if (!brief || !common) return null;
+  const main = path.dirname(common);
+  let ids = [];
+  try { ids = fs.readdirSync(path.join(common, "worktrees")); } catch { return null; }
+  const named = new Map(); // real path -> the path as git recorded it
+  for (const id of ids) {
+    let wt;
+    try { wt = path.dirname(path.resolve(fs.readFileSync(path.join(common, "worktrees", id, "gitdir"), "utf8").trim())); } catch { continue; }
+    if (!fs.existsSync(ownedFile(wt))) continue;
+    const rel = path.relative(main, wt);
+    const spellings = new Set([wt, realOr(wt), rel && !path.isAbsolute(rel) ? rel : ""].filter(Boolean).flatMap((p) => [p, p.split(path.sep).join("/")]));
+    for (const p of spellings) {
+      const re = new RegExp(`(?<![\\w.-])${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-]|\\.\\w)`, process.platform === "win32" ? "i" : "");
+      if (re.test(brief)) { named.set(realOr(wt), wt); break; }
+    }
+  }
+  return named.size === 1 ? [...named.values()][0] : null;
+}
 // the cwd's checkout when it is a prepared (owned-list) linked worktree of this repo
 function cwdWorktree(cwd, common) {
   const own = gitRoot(cwd);
@@ -1331,6 +1355,6 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

@@ -141,6 +141,36 @@ function lastAssistantText(ev) {
   return "";
 }
 
+// a subagent's brief: the first user message of its own transcript. The hook input names that file as
+// agent_transcript_path where Claude Code sends it; else it is <session dir>/<session id>/subagents/agent-<id>.jsonl
+// beside the session's transcript. "" on the main thread, or when the file or message is missing.
+function briefText(ev) {
+  const r = ev && ev.raw ? ev.raw : {};
+  if (!ev || !ev.agent) return "";
+  const t = r.transcript_path, sid = r.session_id;
+  const file = r.agent_transcript_path || (t && sid ? path.join(path.dirname(t), String(sid), "subagents", `agent-${String(ev.agent).replace(/[^\w.-]/g, "_")}.jsonl`) : "");
+  for (const l of headLines(file)) {
+    let e;
+    try { e = JSON.parse(l); } catch { continue; }
+    if (!e || e.type !== "user" || !e.message) continue;
+    return textOf(e.message.content);
+  }
+  return "";
+}
+// the first `bytes` of a file as complete lines
+function headLines(file, bytes = 1024 * 1024) {
+  if (!file) return [];
+  let fd;
+  try {
+    fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(Math.min(bytes, fs.fstatSync(fd).size));
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    const lines = buf.subarray(0, n).toString("utf8").split("\n");
+    if (n === bytes) lines.pop();
+    return lines.filter((l) => l.trim());
+  } catch { return []; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+}
+
 // newest prompt the human typed, from the transcript tail; null when none is found.
 // Newer transcripts tag it origin.kind "human"; older ones are told apart by their prefix.
 const NOT_HUMAN = /^\s*(<task-notification|<local-command|<cross-session-message|\[Request interrupted|Another Claude session)/;
@@ -339,6 +369,6 @@ function exportEnv(root, vars) {
 
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, modelWindow, contextCap,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
 };

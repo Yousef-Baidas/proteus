@@ -21,7 +21,7 @@
 //   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial), nothing lib.agentShellDenial refuses
 //   (force-push, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
-//   its cwd's, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
+//   its cwd's, else the one its brief names, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
@@ -52,7 +52,7 @@ lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev));
+    const why = lib.workerDenial(ev) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
     return;
   }
@@ -132,15 +132,17 @@ function humanNamed(ev, ad, target) {
 }
 
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run
-function subagentEdit(ev) {
+function subagentEdit(ev, ad) {
+  let brief = null; // read once per call, and only when an edit lands in a git checkout
+  const briefOf = () => (brief ??= (() => { try { return String(ad.briefText(ev) || ""); } catch { return ""; } })());
   for (const target of ev.paths) {
-    const why = subagentPath(ev, target);
+    const why = subagentPath(ev, target, briefOf);
     if (why) return why;
   }
   return "";
 }
 
-function subagentPath(ev, target) {
+function subagentPath(ev, target, briefOf) {
   const cwd = path.resolve(ev.cwd || lib.projectRoot(ev));
   const abs = path.resolve(cwd, String(target));
   const guest = guestPath(ev, abs);
@@ -149,13 +151,18 @@ function subagentPath(ev, target) {
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
   if (lib.inScratch(common, abs)) return ""; // proteus-scratch.js --path: the agents' sanctioned temp space
-  if (fs.existsSync(lib.ownedFile(wt))) return bindingDenial(ev, cwd, wt, common, abs) || lib.ownedDenial(wt, abs);
-  if (lib.isLinked(wt)) return "";
+  if (fs.existsSync(lib.ownedFile(wt))) return bindingDenial(ev, cwd, wt, common, abs, briefOf) || lib.ownedDenial(wt, abs);
+  if (lib.isLinked(wt)) {
+    // an unprepared linked worktree (the lead's _run, an inspection checkout) is no worker's, so leaving the
+    // brief's worktree for it is refused; with no worktree in the brief it passes as before
+    const named = common && lib.briefWorktree(briefOf(), common);
+    return named && !same(lib.realOr(named), lib.realOr(wt)) ? leftBrief(lib.relPath(wt, abs), wt, named) : "";
+  }
   if (!common || common !== lib.gitCommonDir(path.resolve(lib.projectRoot(ev))) || !lib.runOpen(common)) return "";
   const rel = lib.relPath(wt, abs);
   if (ev.agentType === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
   const fromCwd = lib.gitRoot(cwd);
-  const own = fromCwd && fromCwd !== wt && lib.isLinked(fromCwd) && lib.gitCommonDir(fromCwd) === common ? fromCwd : bound(common, ev.agent);
+  const own = fromCwd && fromCwd !== wt && lib.isLinked(fromCwd) && lib.gitCommonDir(fromCwd) === common ? fromCwd : lib.briefWorktree(briefOf(), common) || bound(common, ev.agent);
   const hint = own && !same(own, wt) && fs.existsSync(own)
     ? `yours is ${slash(own)}: edit ${slash(path.join(own, rel))}`
     : "none found from your cwd; comment NEEDS on the issue and stop";
@@ -174,11 +181,17 @@ function guestPath(ev, abs) {
 }
 
 // One worker, one worktree. A subagent's worktree is its cwd's when that is a prepared worktree (a
-// session opened there); else the prepared worktree of its first edit, recorded per agent id in
-// <git-common-dir>/proteus/agents/ (Claude Code and Codex both report agent_id; a subagent's cwd stays
-// the lead's). An edit in another prepared worktree is refused while the agent's own has uncommitted
-// work; once that is committed (a contracts worker moving to its next ticket) the binding moves.
-function bindingDenial(ev, cwd, wt, common, abs) {
+// session opened there); else the one prepared worktree its brief names (ad.briefText, read from the
+// subagent's transcript; Codex cannot show it), which binds from the first call, so a first edit in a
+// sibling's worktree is refused; else the prepared worktree of its first edit. Each binding is recorded
+// per agent id in <git-common-dir>/proteus/agents/ (Claude Code and Codex both report agent_id; a
+// subagent's cwd stays the lead's). With no worktree in the brief (helpers, the scout, the guide, a
+// contracts worker naming one per ticket), an edit in another prepared worktree is refused while the
+// agent's own has uncommitted work; once that is committed (a contracts worker moving to its next
+// ticket) the binding moves.
+const leftBrief = (rel, wt, named) => `${rel} is in ${slash(wt)}, but your brief names ${slash(named)} as your worktree. ` +
+  `Edit under ${slash(named)}, or comment "NEEDS ${rel}: <why>" on the issue and stop.`;
+function bindingDenial(ev, cwd, wt, common, abs, briefOf = () => "") {
   if (!common || !lib.isLinked(wt)) return "";
   const rel = lib.relPath(wt, abs);
   const deny = (own, why) => `${rel} is in ${slash(wt)}, another worker's worktree; yours is ${slash(own)}${why}. ` +
@@ -186,6 +199,14 @@ function bindingDenial(ev, cwd, wt, common, abs) {
   const fromCwd = cwdWorktree(cwd, common);
   if (fromCwd) return same(fromCwd, wt) ? "" : deny(fromCwd, " (your cwd)");
   const file = bindFile(common, ev.agent);
+  const named = lib.briefWorktree(briefOf(), common);
+  if (named) {
+    if (!same(lib.realOr(named), lib.realOr(wt))) return leftBrief(rel, wt, named);
+    if (bound(common, ev.agent) !== named) {
+      try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, named + "\n"); } catch {}
+    }
+    return "";
+  }
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, wt + "\n", { flag: "wx" }); // the first edit binds; exclusive, so two parallel calls cannot both bind
