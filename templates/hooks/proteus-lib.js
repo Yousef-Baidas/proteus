@@ -375,8 +375,25 @@ const leadEdits = (root) => (agentsLine(root, "lead-edits") || "").split(/\s+/).
 // gate scripts under teams/templates/hooks, the lock, the team files), lefthook's config and scripts in every
 // name it reads, and the CI that runs the gates (.github/workflows, plus .github/actions that workflows call).
 // Matched on fileKey, so case, trailing dots and :streams do not get around it on any OS.
-const LEAD_NEVER = [/^\.(?:claude|codex|agents|git)(?:\/|$)/, /^teams(?:\/|$)/, /^(?:\.config\/)?\.?lefthook[^/]*(?:\/|$)/, /^\.github\/(?:workflows|actions)(?:\/|$)/];
-const neverLeads = (rel) => { const k = fileKey(rel); return LEAD_NEVER.some((re) => re.test(k)) || /~\d/.test(k); }; // ~1: a Windows 8.3 alias (CLAUDE~1)
+// GUARDED is the part a subagent's shell may never write either (agentShellDenial): there teams/ is a worker's to
+// edit, all but the gate scripts under teams/templates/hooks.
+const GUARDED = [/^\.(?:claude|codex|agents|git)(?:\/|$)/, /^(?:\.config\/)?\.?lefthook[^/]*(?:\/|$)/, /^\.github\/(?:workflows|actions)(?:\/|$)/];
+const LEAD_NEVER = [...GUARDED, /^teams(?:\/|$)/];
+const AGENT_NEVER = [...GUARDED, /^teams\/templates\/hooks(?:\/|$)/];
+const keyIn = (list, rel) => { const k = fileKey(rel); return list.some((re) => re.test(k)) || /~\d/.test(k); }; // ~1: a Windows 8.3 alias (CLAUDE~1)
+const neverLeads = (rel) => keyIn(LEAD_NEVER, rel);
+// abs with its nearest existing ancestor's links resolved; null when a link on the way does not resolve
+function realTarget(abs) {
+  let d = abs, st = null;
+  const rest = [];
+  try { st = fs.lstatSync(d); } catch {}
+  while (!st && path.dirname(d) !== d) {
+    rest.unshift(path.basename(d));
+    d = path.dirname(d);
+    try { st = fs.lstatSync(d); } catch {}
+  }
+  try { return path.join(fs.realpathSync(d), ...rest); } catch { return null; }
+}
 // why the lead may not edit target under a lead-edits glob, or "" when it may. rel must be relPath(root, target).
 // A link at target is never written through (syncText, #22), and the real path of its nearest existing ancestor
 // must stay inside the repo and off the never list, so a committed link to .claude/ or out of the repo does not count.
@@ -386,15 +403,8 @@ function leadEditDenial(root, target, rel) {
   let st = null;
   try { st = fs.lstatSync(abs); } catch {}
   if (st && st.isSymbolicLink()) return `${rel} is a link; the lead does not write through one.`;
-  let d = abs;
-  const rest = [];
-  while (!st && path.dirname(d) !== d) { // the nearest ancestor that exists; a dangling link on the way fails realpath below
-    rest.unshift(path.basename(d));
-    d = path.dirname(d);
-    try { st = fs.lstatSync(d); } catch {}
-  }
-  let real;
-  try { real = path.join(fs.realpathSync(d), ...rest); } catch { return `${rel} sits under a link that does not resolve.`; }
+  const real = realTarget(abs); // a dangling link on the way fails realpath
+  if (!real) return `${rel} sits under a link that does not resolve.`;
   const realRel = relPath(realOr(root), real);
   if (realRel === null) return `${rel} resolves outside the repo (${real.split(path.sep).join("/")}).`;
   if (realRel !== rel && neverLeads(realRel)) return `${rel} resolves to ${realRel}, which holds Proteus's hooks, gates or CLI settings.`;
@@ -592,7 +602,7 @@ function workerDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (ev.background) return WAIT_MSG;
   if (/--edit-last\b/.test(ev.command)) return EDIT_LAST_MSG;
-  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd);
+  return verdictPost(ev.command, ev.cwd) || branchDenial(ev.command, ev.cwd) || agentShellDenial(ev);
 }
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
@@ -616,12 +626,18 @@ function verdictPost(command, cwd) {
 
 // a command line as simple commands, each a list of words: quotes removed, split at ; & | ( ) ` and newlines,
 // comments and heredoc bodies skipped. Enough to find a git or gh call and its arguments; not a shell.
+// An output redirect (>, >>, >|, &>, N>, >&file) is no word: its target goes on the command's .redirects list,
+// and a >&N descriptor copy is dropped.
 function shellCommands(command) {
   const s = String(command || "");
   const out = [];
-  let words = [], word = null, heredocs = [];
-  const endWord = () => { if (word !== null) words.push(word); word = null; };
-  const endCmd = () => { endWord(); if (words.length) out.push(words); words = []; };
+  let words = [], word = null, heredocs = [], redirs = [], redir = "";
+  const endWord = () => {
+    if (word !== null && !redir) words.push(word);
+    else if (word !== null) { if (redir === "file" || !/^(?:\d+|-)$/.test(word)) redirs.push(word); redir = ""; }
+    word = null;
+  };
+  const endCmd = () => { endWord(); redir = ""; if (words.length || redirs.length) out.push(Object.assign(words, { redirects: redirs })); words = []; redirs = []; };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === "\\") {
@@ -661,6 +677,13 @@ function shellCommands(command) {
         i = k - 1;
       }
       heredocs = [];
+    } else if (c === ">" || (c === "&" && s[i + 1] === ">")) {
+      if (word !== null && /^\d+$/.test(word)) word = null; // 2>file: the descriptor, not a word
+      endWord();
+      if (c === "&") i++;
+      if (s[i + 1] === ">" || s[i + 1] === "|") i++;
+      redir = s[i + 1] === "&" ? "dup" : "file";
+      if (redir === "dup") i++;
     } else if (";&|()`".includes(c)) endCmd();
     else if (c === " " || c === "\t" || c === "\r") endWord();
     else if (c === "#" && word === null) {
@@ -814,6 +837,172 @@ function guardedBranch(dst, dir, remote, g) {
   if (dst === "main" || dst === "master" || dst === head) return "main";
   if (!SCHEMES.some((s) => dst.startsWith(s.branch))) return "";
   return runBranches(gitCommonDir(dir)).some((a) => a !== dst && dst.startsWith(a + "-")) ? "" : "run";
+}
+
+// ---- a subagent's shell (workerDenial, so both guards): no force-push, no git aimed at another checkout, and no
+// write to what AGENT_NEVER guards. The Edit and Write hooks check owned paths; a shell write reaches none of
+// them, so these name the writes that would let a worker rewrite its own rules. Paths resolve against the cwd
+// after a leading `cd <dir> &&` chain (Claude Code starts every subagent call in the lead's checkout).
+// A guard, not a sandbox: what a script, xargs or find -exec writes is not seen.
+const AGENT_MSG = {
+  force: (flag) => `proteus: agents never force-push (\`${flag}\`), their own branch included: a rewrite drops commits the verifier and the PR already read. Add a commit on top, or merge the base in (\`git merge origin/<base>\`), and push the branch by name; history that must be rewritten is a NEEDS for the lead.`,
+  gitDir: (opt, p, own) => `proteus: \`${opt.endsWith("=") ? opt + p + " git" : "git " + opt + " " + p}\` runs git in ${p}, which is not your worktree${own ? ` (${own})` : ""}, while the gates, tests and hooks beside it run elsewhere. Start the call with \`cd <your worktree> && \` and run git there.`,
+  write: (prog, rel) => `proteus: \`${prog}\` writes ${rel}, which holds Proteus's hooks, gates, git internals or CLI settings; a shell write there skips the owned-path check and is never a worker's. Make an owned change with Edit or Write, or comment "NEEDS ${rel}: <why>" on the issue and stop.`,
+};
+const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+// One worker, one worktree: the lead guard's bindingDenial records a subagent's first edit per agent id in
+// <git-common-dir>/proteus/agents/; its cwd's prepared worktree counts first.
+const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
+function bound(common, agent) {
+  try { return fs.readFileSync(bindFile(common, agent), "utf8").trim() || null; } catch { return null; }
+}
+// the cwd's checkout when it is a prepared (owned-list) linked worktree of this repo
+function cwdWorktree(cwd, common) {
+  const own = gitRoot(cwd);
+  return own && isLinked(own) && fs.existsSync(ownedFile(own)) && (!common || gitCommonDir(own) === common) ? own : null;
+}
+
+// a word as the shell would name a path: ~ and $HOME/${HOME}, $PWD expanded; any other $ left as written
+const expandPath = (w, dir) => String(w).replace(/^~(?=$|[\\/])/, () => os.homedir()).replace(/^\$(?:\{HOME\}|HOME\b)/, () => os.homedir()).replace(/^\$(?:\{PWD\}|PWD\b)/, () => dir);
+
+// the paths a simple command (unwrapped words) writes, as written: [] for a program it does not judge
+const WRITE_ALL = new Set(["tee", "truncate", "touch", "rm", "unlink", "rmdir", "shred", "mv"]); // every operand
+const WRITE_LAST = new Set(["cp", "ln", "link", "install", "rsync"]); // the last operand, or -t DIR
+const IN_PLACE = { sed: /^-(?:[a-zA-Z]*i|-in-place(?:=|$))/, perl: /^-[a-ln-zA-HJ-LN-Z0-9]*i/, ruby: /^-[a-ln-zA-HJ-LN-Z0-9]*i/ }; // -M, -m, -I take the rest
+const VALUE_OPT = { truncate: ["-s", "--size", "-r", "--reference"], touch: ["-r", "--reference", "-d", "--date", "-t"], tee: [], rm: [], unlink: [], rmdir: [], shred: ["-n", "--iterations", "-s", "--size"], mv: ["-S", "--suffix"] };
+function writeTargets(words) {
+  const prog = progName(words[0]), args = words.slice(1);
+  const operands = (skip = []) => {
+    const out = [];
+    for (let k = 0; k < args.length; k++) {
+      if (args[k] === "--") { out.push(...args.slice(k + 1)); break; }
+      if (skip.includes(args[k])) k++;
+      else if (!args[k].startsWith("-") || args[k] === "-") out.push(args[k]);
+    }
+    return out;
+  };
+  if (prog === "dd") return args.filter((a) => a.startsWith("of=")).map((a) => a.slice(3));
+  if (WRITE_ALL.has(prog)) return operands(VALUE_OPT[prog]);
+  if (IN_PLACE[prog]) {
+    if (!args.some((a) => IN_PLACE[prog].test(a))) return [];
+    // the script is the first operand unless an option gave it
+    const script = prog === "sed" ? ["-e", "--expression", "-f", "--file", "-l", "--line-length"] : ["-e", "-E"];
+    const ops = operands(script);
+    return args.some((a) => script.includes(a) || /^--(?:expression|file)=/.test(a)) ? ops : ops.slice(1);
+  }
+  if (prog === "install" && args.some((a) => a === "-d" || a === "--directory")) return operands(["-m", "--mode", "-o", "--owner", "-g", "--group"]);
+  if (WRITE_LAST.has(prog)) {
+    for (let k = 0; k < args.length; k++) {
+      const m = /^--target-directory=(.*)$/.exec(args[k]);
+      if (m) return [m[1]];
+      if (args[k] === "-t" || args[k] === "--target-directory") return [args[k + 1] || ""];
+    }
+    const ops = operands(["-S", "--suffix", "-m", "--mode", "-o", "--owner", "-g", "--group"]);
+    return ops.length > 1 ? [ops[ops.length - 1]] : [];
+  }
+  return [];
+}
+
+// rel (forward slashes) under which root abs falls, judged against AGENT_NEVER; "" when allowed
+function guardedWrite(abs, ev) {
+  const wt = gitRoot(path.dirname(abs));
+  if (wt && inScratch(gitCommonDir(wt), abs)) return ""; // proteus-scratch.js --path: the agents' sanctioned temp space under .git
+  const roots = [wt, guestDir(projectRoot(ev))].filter(Boolean);
+  for (const p of [abs, realTarget(abs)].filter(Boolean)) {
+    for (const r of [...roots, gitRoot(path.dirname(p))].filter(Boolean)) {
+      const rel = relPath(realOr(r), p) ?? relPath(r, p);
+      if (rel && keyIn(AGENT_NEVER, rel)) return rel;
+    }
+    // the CLIs' own settings, hooks and skills in the user's home, outside any checkout
+    const home = relPath(realOr(os.homedir()), p) ?? relPath(os.homedir(), p);
+    if (home && /^\.(?:claude|codex|agents)(?:\/|$)/.test(fileKey(home))) return "~/" + home;
+  }
+  return "";
+}
+
+// the worker's own worktree for dir, else null: the prepared worktree of its cwd (as given or after cd), else
+// the one its first edit bound it to
+function ownWorktree(ev, dir, common) {
+  return cwdWorktree(dir, common) || (ev.cwd && cwdWorktree(path.resolve(ev.cwd), common)) || (ev.agent && common ? bound(common, ev.agent) : null);
+}
+// git's own options that move it to another checkout, each with its path; GIT_DIR / GIT_WORK_TREE assignments too
+function gitDirs(all, words, dir) {
+  const out = [];
+  for (const a of all.slice(0, all.length - words.length)) {
+    const m = /^(GIT_DIR|GIT_WORK_TREE)=(.*)$/.exec(a);
+    if (m) out.push([m[1] + "=", path.resolve(dir, expandPath(m[2], dir))]);
+  }
+  let d = dir;
+  for (let i = 1; i < words.length && words[i].startsWith("-"); i++) {
+    const a = words[i], m = /^(--git-dir|--work-tree)=(.*)$/.exec(a);
+    if (a === "-C") { d = path.resolve(d, expandPath(words[++i] || ".", d)); out.push(["-C", d]); }
+    else if (m) out.push([m[1], path.resolve(d, expandPath(m[2], d))]);
+    else if (a === "--git-dir" || a === "--work-tree") out.push([a, path.resolve(d, expandPath(words[++i] || ".", d))]);
+    else if (GIT_VALUE.has(a)) i++;
+  }
+  return out;
+}
+// git <global options> push with a force flag or a +refspec: the flag, else ""
+function forcePush(words) {
+  let i = 1;
+  for (; i < words.length && words[i].startsWith("-"); i++) if (GIT_VALUE.has(words[i])) i++;
+  if (words[i] !== "push") return "";
+  const args = words.slice(i + 1);
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === "--") return args.slice(k + 1).find((s) => s.startsWith("+")) || "";
+    if (PUSH_VALUE.has(a)) k++;
+    else if (/^--force(?:-with-lease(?:=.*)?|-if-includes)?$/.test(a) || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(a)) return a;
+    else if (a.startsWith("+")) return a;
+  }
+  return "";
+}
+
+const NESTED_SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish"]);
+function agentShellDenial(ev, command = ev.command, cwd = ev.cwd, depth = 0) {
+  let dir = path.resolve(cwd || projectRoot(ev));
+  for (const all of shellCommands(command)) {
+    const words = unwrap(all), prog = progName(words[0]);
+    // a backslash is a separator on Windows; judged as one everywhere, so a path written either way is caught
+    const judge = (t) => [...new Set([t, t.replace(/\\/g, "/")])].map((c) => guardedWrite(path.resolve(dir, expandPath(c, dir)), ev)).find(Boolean);
+    for (const t of all.redirects) {
+      const rel = judge(t);
+      if (rel) return AGENT_MSG.write(`> ${t}`, rel);
+    }
+    if (!words.length) continue;
+    if (prog === "cd" || prog === "pushd") {
+      const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-");
+      if (to !== "-") dir = path.resolve(dir, expandPath(to || "~", dir));
+      continue;
+    }
+    if (prog === "git") {
+      const force = forcePush(words);
+      if (force) return AGENT_MSG.force(force);
+      for (const [opt, p] of gitDirs(all, words, dir)) {
+        const root = gitRoot(p), common = root && gitCommonDir(root);
+        const own = ownWorktree(ev, dir, common);
+        if (!root || !own || !samePath(realOr(root), realOr(own))) return AGENT_MSG.gitDir(opt, p.split(path.sep).join("/"), own ? `yours is ${own.split(path.sep).join("/")}` : "");
+      }
+      continue;
+    }
+    // sh -c '<script>': judged as its own command line, from the same dir
+    if (NESTED_SHELLS.has(prog) && depth < 3) {
+      const c = words.indexOf("-c");
+      const why = c > 0 && words[c + 1] !== undefined ? agentShellDenial(ev, words[c + 1], dir, depth + 1) : null;
+      if (why) return why;
+      continue;
+    }
+    if (prog === "eval" && depth < 3) {
+      const why = agentShellDenial(ev, words.slice(1).join(" "), dir, depth + 1);
+      if (why) return why;
+      continue;
+    }
+    for (const t of writeTargets(words)) {
+      const rel = judge(t);
+      if (rel) return AGENT_MSG.write(prog, rel);
+    }
+  }
+  return null;
 }
 
 // copy src → dst only when the bytes differ; true when written
@@ -1063,6 +1252,6 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  workerDenial, verdictPost, shellCommands, branchDenial, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, verdictPost, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, cwdWorktree, samePath, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
