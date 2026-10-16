@@ -1,5 +1,5 @@
 // Small hardening items from #104 and #96: Codex writable_roots case folding and the [[sandbox_workspace_write]]
-// refusal, migration refusing non-regular files and oversize logs, the journal recall not following links,
+// refusal, migration refusing non-regular files, the journal recall not following links,
 // link-skills saying "confined" only when it removed something, owned-path globs naming a plain directory, and
 // tests/run.js totals for a file that crashes or is chatty. Temp dirs only; no network.
 "use strict";
@@ -54,16 +54,12 @@ function onPlatform(name, fn) {
   fs.mkdirSync(cur, { recursive: true });
   fs.writeFileSync(path.join(old, "note.txt"), "plain\n");
   const fifo = process.platform !== "win32" && spawnSync("mkfifo", [path.join(old, "pipe")]).status === 0;
-  const big = path.join(old, "journal.jsonl");
-  fs.writeFileSync(big, "x".repeat(8 * 1024 * 1024 + 1) + "\n");
+  fs.writeFileSync(path.join(old, "journal.jsonl"), '{"prompt":"old"}\n');
   fs.writeFileSync(path.join(cur, "journal.jsonl"), '{"prompt":"new"}\n');
   const res = L.migrateState(common, false);
   ok("migrate: a regular file still moves", res.moved.includes("note.txt") && fs.existsSync(path.join(cur, "note.txt")), JSON.stringify(res));
   if (fifo) ok("migrate: a FIFO is refused and stays where it was", res.failed.some((f) => f.startsWith("pipe (")) && fs.lstatSync(path.join(old, "pipe")).isFIFO() && !fs.existsSync(path.join(cur, "pipe")), JSON.stringify(res));
-  ok("migrate: a log past 8 MB is not merged; both sides are untouched", res.failed.some((f) => f.startsWith("journal.jsonl (EFBIG")) && fs.statSync(big).size > 8 * 1024 * 1024 && fs.readFileSync(path.join(cur, "journal.jsonl"), "utf8") === '{"prompt":"new"}\n', JSON.stringify(res));
-  fs.writeFileSync(big, '{"prompt":"old"}\n');
-  const again = L.migrateState(common, false);
-  ok("migrate: a log within the cap still merges, older lines first", again.merged.includes("journal.jsonl") && fs.readFileSync(path.join(cur, "journal.jsonl"), "utf8") === '{"prompt":"old"}\n{"prompt":"new"}\n', JSON.stringify(again));
+  ok("migrate: a log within the cap still merges, older lines first", res.merged.includes("journal.jsonl") && fs.readFileSync(path.join(cur, "journal.jsonl"), "utf8") === '{"prompt":"old"}\n{"prompt":"new"}\n', JSON.stringify(res));
 }
 
 // ---- compaction recall reads the journal as a regular file only

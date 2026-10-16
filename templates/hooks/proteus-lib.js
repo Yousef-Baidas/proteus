@@ -128,13 +128,41 @@ const TAKEN = new Set(["EEXIST", "ENOTEMPTY", "ENOTDIR", "EISDIR"]);
 // a filesystem with no hard links: copy instead, still refusing an existing target
 const NO_LINK = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV", "EMLINK"]);
 
+// a FIFO, socket or device: never opened or moved, named in the report
+function notRegular(st) {
+  const kind = st.isFIFO() ? "a FIFO" : st.isSocket() ? "a socket" : st.isCharacterDevice() || st.isBlockDevice() ? "a device" : "not a regular file";
+  return Object.assign(new Error(`${kind}, never moved; delete or move it by hand`), { code: "ENOTREG" });
+}
+// open f for reading only if it is a regular file: a link is not followed (O_NOFOLLOW; Windows has none, so
+// callers lstat first) and a FIFO swapped in does not block the open (O_NONBLOCK) and is refused by fstat
+function openRegular(f) {
+  const c = fs.constants, fd = fs.openSync(f, c.O_RDONLY | (c.O_NOFOLLOW || 0) | (c.O_NONBLOCK || 0));
+  const st = fs.fstatSync(fd);
+  if (st.isFile()) return { fd, st };
+  fs.closeSync(fd);
+  throw notRegular(st);
+}
+// the last max bytes of a regular file as complete lines; cut: anything before them went unread
+function readTail(f, max) {
+  const { fd, st } = openRegular(f);
+  try {
+    const len = Math.min(st.size, max), buf = Buffer.alloc(len);
+    let n = 0;
+    for (let k; n < len && (k = fs.readSync(fd, buf, n, len - n, st.size - len + n)); ) n += k;
+    const lines = buf.toString("utf8", 0, n).split("\n");
+    const cut = st.size > len;
+    if (cut) lines.shift();
+    return { lines: lines.filter(Boolean), cut, st };
+  } finally { fs.closeSync(fd); }
+}
+
 // one entry into a spot found empty. A file goes by link then unlink and a symlink is recreated (never
 // followed), so a file that appeared there meanwhile fails with EEXIST instead of being replaced; a
 // directory is renamed, which a non-empty target refuses. If the source cannot be unlinked, the copy goes.
 function moveEntry(s, d, st) {
   if (st.isDirectory()) { fs.renameSync(s, d); return; }
   if (st.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(s), d);
-  else if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "ENOTREG" }); // a FIFO, socket or device stays put
+  else if (!st.isFile()) throw notRegular(st); // a FIFO, socket or device stays put
   else {
     try { fs.linkSync(s, d); } catch (e) {
       if (!NO_LINK.has(e.code)) throw e;
@@ -147,18 +175,24 @@ function moveEntry(s, d, st) {
 const MERGE_LOG_MAX = 8 * 1024 * 1024;
 // an append-only log on both sides: the legacy lines first, then the current file's lines not among them,
 // written to a temp file beside the current one and renamed over it; the legacy file goes only after that.
-// A line appended to the current file meanwhile aborts the pass (a rerun merges again, each line once).
-function mergeLog(s, d) {
-  // both files are read whole: past the cap the pass fails (EFBIG) and the legacy log stays where it is
-  for (const f of [s, d]) if (fs.statSync(f).size > MERGE_LOG_MAX) throw Object.assign(new Error("log too large to merge"), { code: "EFBIG" });
-  const old = fs.readFileSync(s, "utf8").split("\n").filter(Boolean);
-  const cur = fs.readFileSync(d, "utf8");
-  const seen = new Set(old);
-  const all = [...old, ...cur.split("\n").filter((l) => l && !seen.has(l))];
+// The result is capped at max bytes: past it the oldest lines go and a marker line says so (each side is
+// read for at most max bytes from its end). A line appended to the current file meanwhile aborts the pass
+// (a rerun merges again, each line once).
+function mergeLog(s, d, max = MERGE_LOG_MAX) {
+  const old = readTail(s, max), cur = readTail(d, max);
+  const seen = new Set(old.lines);
+  let all = [...old.lines, ...cur.lines.filter((l) => !seen.has(l))];
+  const mark = JSON.stringify({ merge_truncated: new Date().toISOString(), note: `older lines dropped: a merged log keeps its newest ${max} bytes` });
+  let size = all.reduce((n, l) => n + Buffer.byteLength(l) + 1, 0), drop = 0;
+  if (old.cut || cur.cut || size > max) {
+    while (drop < all.length && size > max - Buffer.byteLength(mark) - 1) size -= Buffer.byteLength(all[drop++]) + 1;
+    all = [mark, ...all.slice(drop)];
+  }
   const tmp = `${d}.${process.pid}.${Date.now()}.merge.tmp`;
   fs.writeFileSync(tmp, all.length ? all.join("\n") + "\n" : "", { flag: "wx" });
   try {
-    if (fs.readFileSync(d, "utf8") !== cur) throw Object.assign(new Error("appended during the merge"), { code: "EAGAIN" });
+    const now = fs.lstatSync(d);
+    if (!now.isFile() || now.size !== cur.st.size || now.mtimeMs !== cur.st.mtimeMs) throw Object.assign(new Error("appended during the merge"), { code: "EAGAIN" });
     fs.renameSync(tmp, d);
   } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
   fs.unlinkSync(s); // a regular file (lstat) in a tree whose every dir was lstat-checked under the legacy dir
@@ -175,7 +209,7 @@ function migrateState(common, dry) {
   try { top = from && fs.lstatSync(from); } catch {}
   if (!top || !top.isDirectory()) return res;
   const wts = registeredWorktrees(common);
-  const fail = (r, e) => res.failed.push(`${r} (${(e && e.code) || "error"})`);
+  const fail = (r, e) => res.failed.push(`${r} (${e && e.code === "ENOTREG" ? e.message : (e && e.code) || "error"})`);
   const walk = (src, dst, rel) => {
     let names = [];
     try { names = fs.readdirSync(src).sort(); } catch (e) { if (rel) fail(rel, e); return; }
@@ -553,12 +587,12 @@ function tierOverrun(declared, result) {
     `The lead closes this branch and re-runs the work order at ${result.tier} from its first step; never widen the tier, and keep the work whole rather than trimming it to fit.`;
 }
 
-// last `bytes` of a file as complete lines (first partial line dropped)
-function tailLines(file, bytes = 256 * 1024) {
+// last `bytes` of a file as complete lines (first partial line dropped); regular: only a regular file, never via a link
+function tailLines(file, bytes = 256 * 1024, regular = false) {
   if (!file) return [];
   let fd;
   try {
-    fd = fs.openSync(file, "r");
+    fd = regular ? openRegular(file).fd : fs.openSync(file, "r");
     const size = fs.fstatSync(fd).size;
     const start = Math.max(0, size - bytes);
     const buf = Buffer.alloc(size - start);
@@ -1797,7 +1831,7 @@ function refreshInbox(root, common, timeout = 10000) {
 module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
-  CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState,
+  CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
