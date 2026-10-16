@@ -134,6 +134,7 @@ const NO_LINK = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV", "E
 function moveEntry(s, d, st) {
   if (st.isDirectory()) { fs.renameSync(s, d); return; }
   if (st.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(s), d);
+  else if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "ENOTREG" }); // a FIFO, socket or device stays put
   else {
     try { fs.linkSync(s, d); } catch (e) {
       if (!NO_LINK.has(e.code)) throw e;
@@ -143,10 +144,13 @@ function moveEntry(s, d, st) {
   try { fs.unlinkSync(s); } catch (e) { try { fs.unlinkSync(d); } catch {} throw e; }
 }
 
+const MERGE_LOG_MAX = 8 * 1024 * 1024;
 // an append-only log on both sides: the legacy lines first, then the current file's lines not among them,
 // written to a temp file beside the current one and renamed over it; the legacy file goes only after that.
 // A line appended to the current file meanwhile aborts the pass (a rerun merges again, each line once).
 function mergeLog(s, d) {
+  // both files are read whole: past the cap the pass fails (EFBIG) and the legacy log stays where it is
+  for (const f of [s, d]) if (fs.statSync(f).size > MERGE_LOG_MAX) throw Object.assign(new Error("log too large to merge"), { code: "EFBIG" });
   const old = fs.readFileSync(s, "utf8").split("\n").filter(Boolean);
   const cur = fs.readFileSync(d, "utf8");
   const seen = new Set(old);
@@ -318,9 +322,15 @@ const docRoot = (root) => guestDir(root) || root;
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
-// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory
+// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory, a plain path without
+// wildcards covers itself and anything below it
 function ownedMatch(glob, rel) {
   const g = glob.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "/**");
+  // a plain path with no wildcard names a file or a directory; a file has nothing under it, so it also covers what lies below
+  if (!g.includes("*")) {
+    const [a, b] = process.platform === "win32" ? [g.toLowerCase(), rel.toLowerCase()] : [g, rel];
+    if (b === a || b.startsWith(a + "/")) return true;
+  }
   const re = "^" + g.split("**").map((p) => p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join(".*") + "$";
   return new RegExp(re, process.platform === "win32" ? "i" : "").test(rel);
 }
