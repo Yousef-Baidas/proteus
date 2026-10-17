@@ -7,6 +7,23 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-17
+
+Upgrading from 1.1.0:
+
+- Run `node install.js --project` in each repo (or let the session-start sync do it). It now also copies
+  `teams/proteus-confine.js`, which `teams/link-skills.js` needs; commit it with the rest of `teams/`. Worker
+  worktrees now live under `.worktrees/` in the repo, not in `../<repo>-proteus/`; a run opened before the
+  upgrade keeps its old worktrees until they merge.
+- The verdict is now a commit status. Re-run `node install.js --protect` (as an admin of the repo, once no run
+  is open) so the `proteus/*` ruleset requires `proteus/verdict` and `proteus/security`; until then
+  `--doctor` warns that a PR merges without the verifier's signoff.
+- Optional: a GitHub App for the verifiers, so the agents' shared login cannot post those statuses. Create it
+  with only "Commit statuses: write", then run `node install.js --verifier-app <appId> <keyPath>` in the repo
+  (once per repo owner), and `--protect` again so the ruleset counts only the App's statuses.
+- `PROTEUS_KEEP_SKIPPED` is gone; setting it does nothing, and the hook files a harness skips are always removed.
+- A run branch cut before this release keeps the PR body's `Owned:` line check until its close PR merges.
+
 ### Added
 
 - `lead-edits:` line in `AGENTS.md` (#113): globs relative to the repo root that the lead may edit directly,
@@ -20,6 +37,9 @@ installed version and the new one.
   `~/.claude/settings.json` has none, and point to `/auto-mode-setup`; they never write it (README, Auto mode).
 - `proteus-gates-cache.js` warns on stderr when it runs a command in a folder that holds worker
   worktrees.
+- The lead may write `.proteus/owned/<id>`. The run branch's first commit records every ticket known then; a later
+  ticket is recorded through the lead-docs PR, merged with `--match-head-commit` (`stack.md`).
+- `proteus-worktree.js` warns when the paths it is given differ from the branch's record.
 
 ### Changed
 
@@ -48,6 +68,45 @@ installed version and the new one.
 - Codex: `--project` and the session start no longer add `../<repo>-proteus` to `writable_roots`. They
   keep it, like `../<repo>-hive`, only while git has a worktree registered there, drop it after, and no
   longer create `.codex/config.toml` when there is nothing to list.
+- The Codex `writable_roots` editing is one function, `writableRoots` in `proteus-harness-codex.js`,
+  tested on its own.
+- `SKILL.md` is a short core: what Proteus is for, seven rules each with its reason, and the flow in outline.
+  Each step's detail moved to the new `references/flow.md`, read when the run reaches the step. The body is
+  ~3,650 tokens instead of ~7,750 (haiku 5.5), so the autostart injection on every start and compaction halves
+  too.
+- Hook refusals carry the rule the prose no longer repeats: the lead guard names the files the lead may write
+  and how a fix goes out, the context refusal says to log the position before `/handoff`, the tier ceiling
+  says to close the branch and keep the work whole, and `commit-msg.js` points to `references/commits.md`.
+- `proteus-worktree.js`, `proteus-tier.js`, `proteus-scratch.js`, `proteus-close-report.js` and
+  `proteus-status.js` explain their flags with `--help`; a usage error points to it.
+- Agent files no longer repeat their own rule blocks in the opening paragraph, and the lead pre-dispatch check
+  in `roles.md` no longer restates what the guard enforces.
+- Verifiers watch CI with `gh pr checks <pr> --watch` without `--fail-fast` and skip `proteus/verdict` and
+  `proteus/security` there: a red `proteus/security` is a signoff still owed, not a failed check.
+- The lead-docs PR needs a verifier's signoff like any PR into the run branch.
+- README: the Verifier App steps follow GitHub's current settings layout (the private key under Credentials >
+  Key pairs, the App ID on the General tab, Install App with "Only select repositories"), and the Codex
+  `writable_roots` text says a new repo gets no entry: `../<repo>-proteus/` stays only while an older run
+  still has worktrees there.
+- `install.js`, `teams/link-skills.js` and `install-lead-hooks.js` share one write and delete guard,
+  `proteus-confine.js` (in `templates/hooks/`; `--project` copies it beside `teams/link-skills.js`). A path is
+  removed or written only under a root its caller owns with no link between the root and the path, and only
+  when it is the kind expected: a link, a regular file, or (for `install.js`) a directory.
+  `install.js` now also refuses a link below one of its roots (it followed one that stayed inside), a FIFO,
+  socket or device, and a file `--project` cannot copy stops the run with the path to move.
+- `install-lead-hooks.js`, refusing a linked `.claude` or `.claude/hooks`, names the link and says to replace
+  it with a real directory and re-run.
+
+### Deprecated
+
+- On a run branch whose base has no `.proteus/owned/` (a run cut before this release), the step still reads the
+  PR body's `Owned:` line and prints a warning, until that run's close PR merges. This fallback is removed in the
+  next minor release. PRs into `main` (Quick, Direct) keep the body's line, since the human merges them.
+
+### Removed
+
+- `PROTEUS_KEEP_SKIPPED`: `install-lead-hooks.js` always removes the hook files its CLI skips, through the
+  shared guard, and `install.js` no longer removes them first.
 
 ### Fixed
 
@@ -56,6 +115,123 @@ installed version and the new one.
 - The Proteus skill's description was invalid YAML (an unquoted value containing `: `), so Claude Code
   dropped the skill's whole frontmatter, including `disable-model-invocation`, without any warning. The
   description is now a block scalar. A test now checks the frontmatter of every shipped markdown file.
+- Codex `writable_roots`: a `["sandbox_workspace_write"]` header written with quotes is read as the
+  table instead of getting a second `[sandbox_workspace_write]` table appended, which Codex rejects, and a
+  table that sets `writable_roots` twice is refused instead of edited. On Windows a root listed with `/`
+  separators counts as the same folder as one with `\`. The `[[sandbox_workspace_write]]` refusal now
+  says to make it a single table.
+- The guards' `--edit-last` rule no longer refuses a command that only mentions the flag. It used to match the
+  text anywhere, so a heredoc editing a doc that quotes it, an `echo` or a `grep` was refused. Now only a `gh`
+  call (or `proteus-gh.js`) that carries the flag is refused, read with the shell parser past `env`, `timeout`
+  and the other wrappers, and inside `sh -c`, `eval`, `$( )` and backticks. A line that also runs a shell or
+  `eval` has its quoted words and heredoc bodies judged as commands too, so `bash <<EOF` and `… | sh` stay caught.
+- State migration merges a `*.jsonl` log past 8 MB instead of leaving it behind: the merged log keeps its
+  newest 8 MB, with a first line marking that older lines were dropped. Each side is read only from its end.
+- State migration names what it refused to move: a FIFO, a socket or a device, instead of `ENOTREG`.
+- The compaction recall opens `journal.jsonl` without following a link (also one swapped in after the
+  check, where the OS has `O_NOFOLLOW`), never blocks on a FIFO, and skips a state folder that is a link.
+- `proteus-gates-cache.js --help` no longer runs `--help` as a shell command, `proteus-skillpath.js --help` no
+  longer looks for a skill named `--help`, and `proteus-inbox.js --help` no longer lists the inbox. Each prints
+  its usage and exits 0 without side effects, and the usage errors of the first two point to `--help`.
+- `proteus-status.js --help` no longer reads `--help` as a run name.
+- Codex `writable_roots` are compared case-insensitively on macOS and Windows, so a root listed as
+  `/Users/Me/x` is not added again as `/users/me/x`. A `[[sandbox_workspace_write]]` array of tables is
+  refused with a message, like the other forms the installer does not edit, instead of being missed.
+- State migration no longer moves a FIFO, socket or device from the legacy folder, and no longer merges a
+  `*.jsonl` log over 8 MB; both are reported as failed and left where they are.
+- The compaction recall no longer reads a `journal.jsonl` that is a link or not a regular file.
+- `link-skills.js --confine` prints how many global links it removed, and says there was nothing to remove
+  instead of "confined" when it removed none.
+- An owned path with no wildcard, such as `src/auth`, covers the files below it, not only a path ending in `/`.
+- `tests/run.js` names a test file that crashes, counts it in the failed total, and no longer loses the
+  summary line of a file that prints more than 1 MiB.
+- `install.js --doctor` checked whether `gh` was logged in after deciding to skip the ruleset and collaborator
+  rows, so those rows never ran. They run now, and the ruleset row warns when it does not require the new
+  statuses.
+- The verifier App now keeps one installation per repo owner (`verifierApp.installations` in
+  `~/.claude/proteus.json`). An installation belongs to one account or org, so before, repos under a second
+  owner (your account and an org) got a token request against the first owner's installation, which GitHub
+  refuses with HTTP 422 and every signoff there failed with no hint. `--verifier-app` run in a repo of another
+  owner adds that owner and keeps the rest; a signoff picks the repo owner's installation and, when there is
+  none, fails naming `--verifier-app`; `--doctor` checks the current repo's owner and `--protect` warns when it
+  has none. An older config's lone `installationId` keeps working and moves into the map on the next
+  `--verifier-app`.
+- A state migration that leaves a FIFO, socket or device behind no longer says the next `--project`
+  retries it; its reason already says to delete or move it by hand.
+
+### Security
+
+- On Claude Code the lead guard binds a subagent to the prepared worktree its brief names (#85), read from the
+  first message of the subagent's transcript (`agent_transcript_path`, else
+  `<session>/subagents/agent-<id>.jsonl`), through a new adapter method, `briefText`. Before, a subagent
+  outside a prepared cwd was bound by its first edit, so one whose first edit landed in a sibling's worktree was
+  bound there and not refused. Now that edit is refused, and so is an edit in any other linked worktree of the
+  repo, with a message naming the brief's worktree. A brief that names no worktree (helpers, the scout, the
+  guide) or several (a contracts worker) keeps the first-edit binding.
+- Codex keeps the cwd and first-edit binding: multi-agent v2 stores the spawn message encrypted in the
+  subagent's rollout, so its `briefText` is empty.
+- A subagent's shell is judged more deeply before it runs (#48). `lib.agentShellDenial` now also judges the
+  command `xargs` and `find -exec`/`-execdir`/`-ok` run. It refuses `git checkout`/`restore` of a guarded path
+  from another commit, and `git apply`, `git am`, `patch` and `git stash pop`/`apply` that would write one.
+  It refuses `rm -r`, `mv`, `cp -r` and `rsync` of a dir that holds one, and a force-push set up through git
+  config, `push.default`, an alias or a `gh api` ref update. Git Bash drive paths (`/c/...`) and Codex's shell
+  `workdir` are read. `git checkout -- <file>` in the agent's own worktree, `find -print` and `xargs grep`
+  still pass.
+- New `proteus-shell-check.js` (`PostToolUse` on `Bash`) catches what the command line hides: an interpreter
+  write (`python -c`, `node -e`, a build script), a path in a variable or a glob. The guards fingerprint the
+  guarded paths before each subagent shell call, with the other workers' idle worktrees' `git status`, and
+  compare after it. A change git does not explain blocks the agent with the paths named until it puts them
+  back, and is recorded in `<git-common-dir>/proteus/tamper/`. Meanwhile `proteus-signoff.js` refuses MERGE
+  on that branch. The hash cache in `<git-common-dir>/proteus/guard-hash.json` holds only the current
+  fingerprint's paths, at most 8000. Pre and Post together add about 70 ms to a subagent shell call.
+- The git config files are compared by key, not by hash: `user.*`, `color.*`, line endings, the file mode
+  bit and the agent's own branch's upstream pass, and any other key an agent sets (`core.hooksPath`,
+  `alias.*`, `remote.*`, `include*`, ...) is named in the block.
+- What changes while one of the lead's own shell calls overlaps an agent's is not pinned on the agent: the
+  lead is shown a notice with the paths (`proteus-shell-check.js --list`, `--clear <n>`), and its call
+  re-baselines the agents' snapshots and open records.
+- CI's `owned paths` step no longer trusts the PR body on a run branch (#86). A worker's PR from
+  `proteus-work/<run>/<id>` is checked against `.proteus/owned/<id>` as committed on the base `proteus/<run>`,
+  which the lead writes and which changes only through a merged PR with `gates` green. The step reads the base's
+  copy, never the PR's, runs the base's `proteus-owned-check.js` from a detached worktree of the base, refuses any
+  PR that touches `.proteus/owned/` except the lead's docs PR, and fails when the ticket has no record. Editing the
+  PR body's `Owned:` line no longer widens what CI lets through.
+- The worker guard refuses a push to the lead's docs branch `proteus-work/<run>/lead-docs`, whose PR may change
+  the records, and the pre-commit owned check refuses a staged record whatever the worktree's list covers.
+- The verifier's verdict is now a commit status the run branch requires (#81). `proteus-signoff.js <pr> <sha>
+  <WORD>` posts `proteus/verdict` on the PR head the verifier reviewed (success on `MERGE`, failure otherwise) and
+  refuses a head that moved since. `install.js --protect` and the per-run protection in `enforcement.md` §1
+  require `gates`, `proteus/verdict` and `proteus/security`, so no tool merges a PR without the verdict, and a
+  push after the review needs a new one. `enforcement.md` no longer calls `MERGE` a record.
+- Security triggers come from the `security` block of `teams/ROUTING.md` (path globs) instead of the lead's
+  judgement alone. The new `proteus-trust.yml` workflow runs on `pull_request_target` from the base branch, never
+  the PR's code, and posts `proteus/security`: success when no changed path matches, failure naming the paths
+  until the security verifier signs off with `--security`. Semgrep findings in changed files can trigger it too
+  (opt-in steps in the workflow, `--findings`).
+- The guards refuse a commit status or check run posted by hand to everyone, `proteus-signoff.js` to the lead
+  and to any agent that is not a verifier, and `--security` to any verifier but the security verifier. The
+  agents still share one login, so a worker's own script could post a status; a verifier identity of its own is
+  #69.
+- The verifiers can sign off as a GitHub App of their own (#81). `install.js --verifier-app <appId> <keyPath>`
+  records an App that has only "Commit statuses: write" and its private key; `proteus-signoff.js` then posts
+  `proteus/verdict` and `proteus/security` with a short-lived installation token of the App (in the `gh`
+  call's environment only, never on disk or a command line), and `--protect` pins those two statuses to the
+  App's id, so a status posted with the agents' shared login no longer counts. A signoff whose token does not
+  mint fails with the reason; it never falls back to the agents' login. With the App, a verifier's `MERGE`
+  also carries CI's no-security-path `proteus/security` over as the App's, after checking the PR's files
+  against the base's security block itself. `--doctor` checks the key, a token and the pinned ruleset.
+- The guards refuse every agent, the lead included, reading, editing or naming the App's key, and any agent
+  shell that sets `GH_TOKEN` or `GITHUB_TOKEN`; `proteus-shell-check.js` fingerprints the key. A worker's
+  session refuses `proteus-signoff.js` whatever the agent is called, and the lead guard refuses it from an
+  unnamed subagent whose brief names a worktree. The worker guard now also sees `Read` and edit tools.
+- Both guards refuse more from a subagent's shell (#48). A force-push to any branch, the worker's own included
+  (`--force`, `-f`, `--force-with-lease`, a `+refspec`). `git -C`, `--git-dir`, `--work-tree` or `GIT_DIR`
+  aimed anywhere but the agent's own worktree. A write to `.claude/`, `.codex/`, `.agents/`, `.git/` (scratch
+  excepted), lefthook config, `.github/workflows/`, `.github/actions/`, `teams/templates/hooks/` or the user's
+  `~/.claude`, `~/.codex` and `~/.agents` by `sed -i`, `perl -i`, `ruby -i`, a redirect, `tee`, `cp`, `mv`,
+  `ln`, `install`, `dd of=`, `truncate`, `touch` or `rm`. Paths resolve after a leading `cd` chain, through
+  wrappers, `sh -c` and `eval`, and match case-insensitively with either path separator. Writes to owned
+  paths, a plain push of the worker's branch, and git in its own worktree still pass.
 
 ## [1.1.0] - 2026-10-04
 
