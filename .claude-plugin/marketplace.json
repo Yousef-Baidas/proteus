@@ -1,0 +1,14 @@
+{
+  "name": "proteus",
+  "owner": {
+    "name": "Yousef-Baidas"
+  },
+  "description": "Proteus, a multi-agent pipeline for Claude Code, from its source repo.",
+  "plugins": [
+    {
+      "name": "proteus",
+      "source": "./",
+      "description": "Multi-agent pipeline for Claude Code: a lead that plans, workers and verifiers that build and review, and hooks that keep each in its lane."
+    }
+  ]
+}

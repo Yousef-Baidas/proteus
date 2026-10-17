@@ -6,7 +6,7 @@
 // it records a fingerprint of the paths the guards protect, in every checkout of the repo: .claude (minus agent
 // memory and nested checkouts), .codex, .agents, .github/workflows and actions, teams/templates/hooks, lefthook
 // config, a linked worktree's .git file; the shared .git/hooks, .git/info, the git config files and the guard's
-// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, and the verifier App's key. Each file is its
+// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, the plugin's own folder (CLAUDE_PLUGIN_ROOT), and the verifier App's key. Each file is its
 // mode and a content hash (cached by size, mtime and inode in <state>/guard-hash.json, so a call hashes only what
 // changed); settings JSON is compared without its `permissions`. A git config file (.git/config, config.worktree)
 // is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream).
@@ -86,6 +86,9 @@ function targets(common) {
   for (const d of ["settings.json", "hooks", "agents", "skills"]) out.push([path.join(lib.claudeDir(), d), "home"]);
   out.push([path.join(home, ".agents"), "home"]);
   for (const d of ["config.toml", "hooks.json", "hooks", "agents", "rules"]) out.push([path.join(codex, d), "home"]);
+  // the plugin's own folder (CLAUDE_PLUGIN_ROOT), less a git clone's .git
+  const plug = lib.pluginAnchor(common);
+  if (plug) { try { for (const n of fs.readdirSync(plug)) if (n !== ".git") out.push([path.join(lib.realOr(plug), n), "home"]); } catch {} }
   const app = lib.verifierApp();
   if (app) out.push([app.keyPath, "home"]); // the verifier App's key, wherever the human keeps it
   return { roots, out };
@@ -719,7 +722,8 @@ function cli(argv) {
 
 module.exports = { snapshot, check, leadStart, leadRun, closeAgent, openFor, fingerprint, tamperDir, noticeDir, MSG };
 
-if (require.main === module) {
+// run by node, or by proteus-plugin.js (which sets argv[1] to this file)
+if (require.main === module || process.argv[1] === __filename) {
   const argv = process.argv.slice(2);
   if (argv.length) process.exitCode = cli(argv);
   else if (process.env.PROTEUS !== "0") lib.run(check);

@@ -25,6 +25,8 @@ const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r
 const userHome = () => { try { return realish(os.userInfo().homedir); } catch { return null; } };
 // Claude Code's config dir: $CLAUDE_CONFIG_DIR, else ~/.claude (here: install.js, link-skills.js and the hooks all load this file)
 const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+// the plugin's own folder when these hooks run as a Claude Code plugin's (it sets CLAUDE_PLUGIN_ROOT), else ""
+const pluginRoot = () => (process.env.CLAUDE_PLUGIN_ROOT ? path.resolve(process.env.CLAUDE_PLUGIN_ROOT) : "");
 
 // the first of base's segs that is a link, not a directory, or missing (made first when make); null when none
 function blocker(base, segs = [], make = false) {
@@ -118,4 +120,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
