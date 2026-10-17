@@ -24,7 +24,7 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 if (process.env.PROTEUS === "0") process.exit(0);
 
-lib.run((ev, ad) => {
+lib.run(async (ev, ad) => {
   if (ev.agent) return;
   const root = path.resolve(lib.projectRoot(ev));
   if (lib.isLinked(root)) return;
@@ -36,13 +36,23 @@ lib.run((ev, ad) => {
   const cfg = lib.proteusConfig();
   const home = typeof cfg.home === "string" && fs.existsSync(cfg.home) ? path.resolve(cfg.home) : null;
   let pending = "";
-  if (home) {
-    pending = safe(() => update(home, cfg, notes), "");
-    safe(() => sync(ad, home, root, notes));
-    safe(() => agentPatches(ad, home, root, notes));
-  }
-  safe(() => migrateState(root, home, notes));
-  safe(() => codexRoots(ad, root, home, notes));
+  // what these write is the lead's: a lead window for proteus-shell-check.js, so an agent's shell call in flight
+  // (a compact mid-run) gets a notice, not a block, and compares against the state after
+  const writes = () => {
+    if (home) {
+      pending = safe(() => update(home, cfg, notes), "");
+      safe(() => sync(ad, home, root, notes));
+      safe(() => agentPatches(ad, home, root, notes));
+    }
+    safe(() => migrateState(root, home, notes));
+    safe(() => codexRoots(ad, root, home, notes));
+  };
+  let check = null;
+  try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch {}
+  if (check && typeof check.leadRun === "function") {
+    const seen = await check.leadRun(ev, writes).catch(() => "");
+    if (seen) notes.push(seen);
+  } else writes();
   safe(() => publicNote(root, notes));
   const identity = safe(() => agentIdentity(ad, root, home, notes), "identity=unknown");
   const runs = lib.runBranches(lib.gitCommonDir(root)).slice(0, 10);

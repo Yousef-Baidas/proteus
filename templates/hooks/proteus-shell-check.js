@@ -25,6 +25,9 @@
 // it becomes a notice in <state>/unattributed/<seq>.json, shown to the lead after its call, instead of a block and
 // a record. The lead's PostToolUse also re-baselines: the agents' calls in flight compare against the state after
 // the lead's call, and an open record's path the lead's call changed takes that state as its state before.
+// The session-start sync is a lead window too (leadRun, from proteus-autostart.js). An agent's calls end with it:
+// its SubagentStop (closeAgent, from proteus-stall.js) drops their markers and snapshots, and a call silent for
+// the watchdog's idle window counts as no longer in flight.
 //   node <hooks>/proteus-shell-check.js --list | --clear <seq>|all   (the lead reads and clears the notices)
 // Accepted residuals: see enforcement.md (layer 2).
 "use strict";
@@ -39,6 +42,11 @@ const MAX_ENTRIES = 8000;
 const MAX_HASH = 4 << 20;
 const FLIGHT_MAX = 3600e3; // a call older than this left its marker behind (denied after the snapshot, or killed)
 const LEAD_MAX = 15 * 60e3; // a lead window never closed (its call denied by a later hook) ends after this
+const STALE = 40 * 60e3; // proteus-watchdog.js's default --idle: a call this old is not in flight (its agent died)
+const NOTICE_CAP = 4000; // characters of paths in one notice
+// lead commands that rewrite guarded paths themselves: named in a notice as the likely cause
+const CAUSES = [[/\binstall\.js\b/, "install.js"], [/\bproteus-shell-check\.js\b/, "proteus-shell-check.js"]];
+const SYNC = "the session-start sync";
 // the remote branches whose commits are reviewed: main, master and every run branch, current or legacy (lib.SCHEMES)
 const PROTECTED = ["main", "master", ...lib.SCHEMES.map((s) => `${s.branch}*`)].map((b) => `--remotes=*/${b}`);
 // git config keys an agent may set anywhere: its identity, colours, line endings, the file mode bit, per-worktree config
@@ -225,7 +233,7 @@ function flights(common, except) {
   for (const n of names) {
     const f = path.join(dir, n);
     const m = lib.readJSON(f, null);
-    if (!m || now - m.at > FLIGHT_MAX) { try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) fs.unlinkSync(f); } catch {} continue; }
+    if (!m || now - m.at > STALE) { try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) fs.unlinkSync(f); } catch {} continue; }
     if (n !== `${except}.json`) out.push(m);
   }
   return out;
@@ -283,25 +291,62 @@ function readLead(common) {
   return f && Array.isArray(f.windows) ? f : { seq: (f && +f.seq) || 0, windows: [] };
 }
 
+function openWindow(common, id, cause) {
+  const now = Date.now(), lf = readLead(common);
+  lf.seq = (+lf.seq || 0) + 1;
+  const w = { seq: lf.seq, id, start: now, end: null };
+  if (cause) w.cause = cause;
+  lf.windows = [...lf.windows.filter((x) => (x.end ?? x.start + LEAD_MAX) > now - FLIGHT_MAX), w];
+  lib.writeJSON(leadFile(common), lf);
+  return w;
+}
+
 // the lead guard, before a lead shell call it lets through
 function leadStart(ev) {
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common || ev.tool !== "shell") return;
-  const now = Date.now(), lf = readLead(common);
-  lf.seq = (+lf.seq || 0) + 1;
-  lf.windows = [...lf.windows.filter((w) => (w.end ?? w.start + LEAD_MAX) > now - FLIGHT_MAX), { seq: lf.seq, id: callId(ev), start: now, end: null }];
-  lib.writeJSON(leadFile(common), lf);
+  openWindow(common, callId(ev), (CAUSES.find(([re]) => re.test(ev.command || "")) || [])[1]);
+}
+
+// proteus-autostart.js: the session-start sync as a lead window; returns the notices to show the lead
+async function leadRun(ev, fn) {
+  let common = "", w = null;
+  try {
+    common = lib.gitCommonDir(lib.projectRoot(ev));
+    if (common) w = openWindow(common, `start-${ev.session || "unknown"}-${Date.now()}`.replace(/[^\w.-]/g, "_"), SYNC);
+  } catch {}
+  try { fn(); } catch {}
+  return w ? leadEnd(common, w) : "";
+}
+
+// an agent's SubagentStop (proteus-stall.js, once the stop passes): its calls are over, so no later lead call
+// overlaps them; their markers and snapshots go
+function closeAgent(ev) {
+  const common = lib.gitCommonDir(lib.projectRoot(ev));
+  if (!common || !ev.agent) return;
+  const key = whoKey(ev);
+  for (const [dir, ext] of [[flightDir(common), ".json"], [snapDir(common), ".guard"]]) {
+    let names = [];
+    try { names = fs.readdirSync(dir).filter((n) => n.endsWith(ext)); } catch {}
+    for (const n of names) {
+      const f = path.join(dir, n), m = lib.readJSON(f, null);
+      if (m && m.key === key) try { fs.unlinkSync(f); } catch {}
+    }
+  }
 }
 
 // the lead's windows that overlap [from, to]; one that ended at from (the re-baseline's own time) does not
 const overlapping = (lf, from, to) => lf.windows.filter((w) => w.start <= to && (w.end ?? Math.min(to, w.start + LEAD_MAX)) > from);
 
-// a notice: what changed while lead call `w` overlapped an agent's call; one file per lead call
+// a notice: what changed while lead call `w` overlapped an agent's call; one file per lead call, one entry per agent
 function addNotice(common, w, entry) {
   const f = path.join(noticeDir(common), `${w.seq}.json`);
   const n = lib.readJSON(f, null) || { seq: w.seq, lead: { start: w.start, end: w.end }, agents: [] };
   n.lead = { start: w.start, end: w.end ?? n.lead.end ?? null };
-  n.agents.push(entry);
+  if (w.cause) n.cause = w.cause;
+  const had = n.agents.find((a) => a.key === entry.key);
+  if (had) Object.assign(had, { start: Math.min(had.start, entry.start), end: entry.end ?? had.end, paths: [...new Set([...had.paths, ...entry.paths])] });
+  else n.agents.push(entry);
   n.shown = false;
   lib.writeJSON(f, n);
 }
@@ -313,11 +358,28 @@ function notices(common) {
 }
 
 const iso = (t) => (t ? new Date(t).toISOString() : "still running");
-const NOTICE_MSG = (n) => `proteus: guarded paths changed while your shell call #${n.seq} (${iso(n.lead.start)} to ${iso(n.lead.end)}) overlapped a subagent's: ${n.agents.map((a) => `${a.agent || a.key}${a.branch ? ` on ${a.branch}` : ""} (its call ${iso(a.start)} to ${iso(a.end)}): ${a.paths.slice(0, 8).join("; ")}${a.paths.length > 8 ? `; and ${a.paths.length - 8} more` : ""}`).join(" | ")}. The guard cannot tell whose change it was, so it did not block the agent or open a record. Check each path: what your call did not write, have the agent put back (or restore it yourself). Then clear the notice: node ${slash(path.join(__dirname, "proteus-shell-check.js"))} --clear ${n.seq}`;
+// each path once, with the agents whose calls overlapped, up to NOTICE_CAP characters
+function byPath(n) {
+  const m = new Map();
+  for (const a of n.agents) for (const p of a.paths || []) {
+    if (!m.has(p)) m.set(p, new Set());
+    m.get(p).add(`${a.agent || a.key}${a.branch ? ` on ${a.branch}` : ""}`);
+  }
+  const out = [];
+  let len = 0;
+  for (const [p, who] of m) {
+    const s = `${p} (${[...who].join(", ")})`;
+    if (out.length && len + s.length > NOTICE_CAP) break;
+    out.push(s.slice(0, NOTICE_CAP));
+    len += s.length + 2;
+  }
+  return out.join("; ") + (m.size > out.length ? `; and ${m.size - out.length} more` : "");
+}
+const NOTICE_MSG = (n) => `proteus: guarded paths changed while ${n.cause === SYNC ? `${SYNC} (#${n.seq}, ` : `your shell call #${n.seq} (`}${iso(n.lead.start)} to ${iso(n.lead.end)}) overlapped a subagent's: ${byPath(n)}. ${n.cause === SYNC ? "The sync rewrites hook copies, agents and settings, so those are most likely its own. " : n.cause ? `Your call ran ${n.cause}, so the paths it writes are most likely its own. ` : ""}The guard cannot tell whose change it was, so it did not block the agent or open a record. Check each path: what your call did not write, have the agent put back (or restore it yourself). Then clear the notice: node ${slash(path.join(__dirname, "proteus-shell-check.js"))} --clear ${n.seq}`;
 
 // the lead's PostToolUse: close its window, re-baseline the agents' calls in flight and their open records,
-// and show the lead any notice it has not seen
-async function leadEnd(ev, ad, common, w) {
+// and return any notice the lead has not seen
+async function leadEnd(common, w) {
   const now = Date.now();
   const lf = readLead(common);
   for (const x of lf.windows) if (x.id === w.id) x.end = now;
@@ -326,13 +388,18 @@ async function leadEnd(ev, ad, common, w) {
   for (const [f, n] of notices(common)) if (n.seq === w.seq) { n.lead.end = now; lib.writeJSON(f, n); }
   let snaps = [];
   try { snaps = fs.readdirSync(snapDir(common)).filter((n) => n.endsWith(".guard")).map((n) => path.join(snapDir(common), n)); } catch {}
+  // a call that never got its PostToolUse or its agent's stop (killed, crashed) is no longer in flight
+  snaps = snaps.flatMap((f) => {
+    const snap = lib.readJSON(f, null);
+    if (snap && snap.entries && now - snap.at <= STALE) return [[f, snap]];
+    try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) fs.unlinkSync(f); } catch {}
+    return [];
+  });
   if (snaps.length) {
     const fp = fingerprint(common), fl = flights(common, ""), agents = boundAgents(common);
     const heads = Object.fromEntries(fp.roots.map((r) => [r, headOf(r, common)]));
     const st = new Map();
-    for (const f of snaps) {
-      const snap = lib.readJSON(f, null);
-      if (!snap || !snap.entries) continue;
+    for (const [f, snap] of snaps) {
       const items = (await diffSnap(snap, fp, common, fl, agents)).filter((i) => !(i.path && under(i.path, lib.realOr(noticeDir(common)))));
       if (items.length) addNotice(common, w, { key: snap.key, agent: snap.agent, branch: snap.branch || "", start: snap.base || snap.at, end: null, paths: items.map(shown) });
       const siblings = {};
@@ -346,9 +413,8 @@ async function leadEnd(ev, ad, common, w) {
   }
   rebaseRecords(common, w);
   const fresh = notices(common).filter(([, n]) => !n.shown);
-  if (!fresh.length) return;
   for (const [f, n] of fresh) lib.writeJSON(f, { ...n, shown: true });
-  ad.context(ev, fresh.map(([, n]) => NOTICE_MSG(n)).join("\n"));
+  return fresh.map(([, n]) => NOTICE_MSG(n)).join("\n");
 }
 
 // an open record's path that changed since the agent last left it (so the lead's call changed it) takes its state
@@ -558,7 +624,7 @@ async function check(ev, ad) {
   let id = callId(ev);
   if (!ev.agent) {
     const w = readLead(common).windows.find((x) => x.id === id && x.end == null);
-    if (w) return leadEnd(ev, ad, common, w);
+    if (w) { const msg = await leadEnd(common, w); if (msg) ad.context(ev, msg); return; }
   }
   const key = whoKey(ev);
   // the CLI names the call in both events; if it did not, this agent's newest snapshot is the one
@@ -651,7 +717,7 @@ function cli(argv) {
   return gone.length || arg === "all" ? 0 : 1;
 }
 
-module.exports = { snapshot, check, leadStart, openFor, fingerprint, tamperDir, noticeDir, MSG };
+module.exports = { snapshot, check, leadStart, leadRun, closeAgent, openFor, fingerprint, tamperDir, noticeDir, MSG };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

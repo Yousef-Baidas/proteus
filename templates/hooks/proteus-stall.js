@@ -6,7 +6,8 @@
 // Never loops: stop_hook_active → pass; the same message is never blocked twice.
 // Final reports (DONE, VERDICT, RED, NEEDS, WAVE-…, MERGE, BACK-TO-WORKER, CONTRACT-WRONG) never block.
 // A subagent's stop also updates its beat for proteus-watchdog.js: a report removes it, a stop that
-// passes without one marks it ended, a blocked stop counts as activity.
+// passes without one marks it ended, a blocked stop counts as activity. A subagent's stop that passes also ends
+// its shell calls for proteus-shell-check.js (closeAgent).
 "use strict";
 const crypto = require("crypto");
 const path = require("path");
@@ -20,15 +21,21 @@ const BACKGROUND = /\b(background(ed)?|job|render(ing)?|process|build|task|pid|n
 
 lib.run((ev, ad) => {
   const text = String(ad.lastAssistantText(ev) || "");
-  if (FINAL.test(text)) { lib.beat(ev, "done"); return; }
-  if (ev.stopActive || !text.trim()) { lib.beat(ev, "ended"); return; }
+  if (FINAL.test(text)) { lib.beat(ev, "done"); return closeFlights(ev); }
+  if (ev.stopActive || !text.trim()) { lib.beat(ev, "ended"); return closeFlights(ev); }
   const end = text.slice(-800); // the waiting sentence sits at the end of the message
   const waiting = WAITING_ON.test(end) || (WAIT_VERB.test(end) && (BACKGROUND.test(end) || ev.busy));
-  if (!waiting || seenBefore(ev, text)) { lib.beat(ev, "ended"); return; }
+  if (!waiting || seenBefore(ev, text)) { lib.beat(ev, "ended"); return closeFlights(ev); }
 
   lib.beat(ev, "tool");
   ad.keepGoing(ev, REASON);
 });
+
+// the subagent stopped: its shell calls are over (a hook copy without closeAgent, an old install, skips it)
+function closeFlights(ev) {
+  if (ev.kind !== "subagent-stop" || !ev.agent) return;
+  try { require(path.join(__dirname, "proteus-shell-check.js")).closeAgent(ev); } catch {}
+}
 
 // one block per distinct message: an idle teammate has no stopActive
 function seenBefore(ev, text) {
