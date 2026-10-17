@@ -239,6 +239,8 @@ Run from a subfolder, `--project` sets up the repo's root. `--project --install 
 
 The global install links `~/.claude/skills/proteus` and `proteus-review` to this checkout (a symlink on Linux and macOS, a junction on Windows, no admin rights needed), so there is exactly one copy of each skill and `git pull` updates every repo at once. `--project` removes old per-repo copies of the two skills and of unmodified agents; that is why `/proteus` used to show up twice. An agent you changed is kept and reported as a local override, with the fields it changes, and no later release reaches it. To change a shipped agent and keep its updates, patch it instead ([Agent patches](#agent-patches)). Nothing is written or removed through a link the repo commits: a linked `.claude`, `.codex`, `teams/` or dir in it, hook file, generated agent, `teams/skills-lock.json`, `teams/.proteus-base.json`, `.upstream` or `.base` file, or `.codex/config.toml` is refused by name and left alone. A link you made on purpose has to become a real directory or file.
 
+If you set `CLAUDE_CONFIG_DIR`, the installer and the hooks use it wherever this README says `~/.claude` (`proteus.json`, `settings.json`, skills, agents, plugins).
+
 ### Agent patches
 
 A project changes a shipped agent by writing only the change in `.claude/proteus-agents.json`, committed with the repo (in guest mode it stays in `.claude/` but is excluded from git):

@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { tailLines } = require(path.join(__dirname, "proteus-lib.js"));
+const { claudeDir } = require(path.join(__dirname, "proteus-confine.js"));
 
 const name = "claude";
 // the default model ladder, lowest first; solo models run once per project. Claude Mythos is
@@ -241,8 +242,10 @@ function contextCap(ev, model) {
 
 // ---- install: where things live, and the hook registrations
 
-const home = path.join(os.homedir(), ".claude");
-const skillDirs = (root) => [path.join(root, ".claude", "skills", "proteus"), path.join(home, "skills", "proteus")];
+const home = claudeDir();
+// the project's, the user's, then the plugin's (Claude Code sets CLAUDE_PLUGIN_ROOT for a plugin's hooks)
+const skillDirs = (root) => [path.join(root, ".claude", "skills", "proteus"), path.join(home, "skills", "proteus"),
+  ...(process.env.CLAUDE_PLUGIN_ROOT ? [path.join(process.env.CLAUDE_PLUGIN_ROOT, "skills", "proteus")] : [])];
 const agentsDir = path.join(home, "agents");
 const hooksDir = (root) => path.join(root, ".claude", "hooks");
 // loaded once a worker reads a file in the team folder
@@ -345,7 +348,7 @@ function allowDir(root, dir, write = true) {
 
 // a worker's worktree: its hooks, registered by the worktree settings template beside this file, and
 // package.json, which keeps them CommonJS in a "type": "module" repo (#77)
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-confine.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
 const WORKER_EXCLUDE = ["/.claude/proteus-owned", "/.claude/settings.local.json", "/.claude/hooks/proteus-*.js", "/.claude/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);

@@ -2,7 +2,8 @@
 // Install, update or check the Proteus skill for Claude Code or Codex, on any OS (Node 22.5+, which the context-mode plugin needs).
 // install.sh and install.ps1 are thin wrappers around this file.
 //
-//   node install.js                   link skills/{proteus,proteus-review} into ~/.claude/skills
+//   node install.js                   link skills/{proteus,proteus-review} into ~/.claude/skills ($CLAUDE_CONFIG_DIR
+//                                     when set, here and below)
 //                                     (every repo; `git pull` here updates them), copy agents/*.md
 //                                     to ~/.claude/agents, record this checkout in ~/.claude/proteus.json,
 //                                     install the optional context-mode plugin through the claude CLI
@@ -68,7 +69,7 @@ const HERE = __dirname;
 // the shipped roster; teams/ in any repo, this checkout included, is that repo's own
 const SHIPPED_TEAMS = path.join(HERE, "templates", "teams");
 const HOME = os.homedir();
-const CLAUDE = path.join(HOME, ".claude");
+const CLAUDE = C.claudeDir(); // $CLAUDE_CONFIG_DIR, else ~/.claude
 const SKILLS = ["proteus", "proteus-review"];
 // package.json ({"type": "commonjs"}) keeps the CommonJS scripts beside it running in a repo whose
 // own package.json sets "type": "module" (#77); one ships in templates/hooks/ too
@@ -123,9 +124,9 @@ const readText = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { ret
 // deletes (#13): every one goes through safeRemove, limited to allowedRoots
 
 // the target's Proteus-owned paths and the project's git toplevel; a toplevel holding a home would open all of it
-function allowedRoots(home, codexHome, projectTop) {
+function allowedRoots(home, codexHome, projectTop, claude = path.join(home, ".claude")) {
   const h = realish(home), u = userHome();
-  const roots = [[".claude", "skills"], [".claude", "agents"], [".agents", "skills"], [".claude", "proteus.json"], [".claude", "hivemind.json"]].map((p) => realish(path.join(h, ...p)));
+  const roots = [[claude, "skills"], [claude, "agents"], [home, ".agents", "skills"], [claude, "proteus.json"], [claude, "hivemind.json"]].map((p) => realish(path.join(...p)));
   roots.push(realish(path.join(codexHome, "agents")));
   const top = projectTop ? realish(projectTop) : null;
   if (top && !inside(h, top) && !(u && inside(u, top))) roots.push(top);
@@ -139,7 +140,7 @@ const safeRemove = (p, roots, kind = "any") => C.remove(p, roots, kind);
 
 // the git toplevel of the repo being set up, set by withProject; null outside one. GUEST: its guest dir, if any
 let PROJECT = null, GUEST = "";
-const ownedRoots = () => [...allowedRoots(HOME, CODEX_HOME, PROJECT), ...(GUEST ? [realish(GUEST)] : [])];
+const ownedRoots = () => [...allowedRoots(HOME, CODEX_HOME, PROJECT, CLAUDE), ...(GUEST ? [realish(GUEST)] : [])];
 // link-skills.js's removals, when this process drives them (#13): links only
 const guardedRemove = (p) => safeRemove(p, ownedRoots(), "link");
 function withProject(dir, fn) {

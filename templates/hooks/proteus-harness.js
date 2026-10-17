@@ -1,6 +1,8 @@
 // The harness adapter for this process: everything that differs between coding-agent CLIs.
 // PROTEUS_HARNESS names it; else the CLI whose folder these hooks are installed in (<root>/.codex/hooks
-// is codex), else claude. An adapter is proteus-harness-<name>.js beside this file.
+// is codex: install.js put them there, and unlike env it is not inherited); elsewhere (a plugin cache) the
+// CLI's own env: Claude Code sets CLAUDE_PROJECT_DIR for every hook, Codex never does but copies its
+// CLAUDE_PLUGIN_ROOT for a plugin's hooks; else claude. An adapter is proteus-harness-<name>.js beside this file.
 // The hooks never read a CLI's hook JSON themselves: they get one Proteus event and answer through
 // the adapter, so a new CLI is one new adapter file, not a change to every hook.
 //
@@ -38,7 +40,9 @@
 const path = require("path");
 
 const INSTALLED = { ".codex": "codex" };
-const want = String(process.env.PROTEUS_HARNESS || INSTALLED[path.basename(path.dirname(__dirname))] || "claude").toLowerCase().replace(/[^a-z0-9-]/g, "");
+const env = process.env;
+const fromEnv = env.CLAUDE_PROJECT_DIR ? "claude" : env.CLAUDE_PLUGIN_ROOT ? "codex" : "";
+const want = String(env.PROTEUS_HARNESS || INSTALLED[path.basename(path.dirname(__dirname))] || fromEnv || "claude").toLowerCase().replace(/[^a-z0-9-]/g, "");
 let adapter;
 try { adapter = require(path.join(__dirname, `proteus-harness-${want}.js`)); } catch { adapter = require(path.join(__dirname, "proteus-harness-claude.js")); }
 
