@@ -3,7 +3,7 @@
 // as if the human had typed /proteus. Prints the skill body plus a local state line
 // so the lead knows what bootstrap can skip without spending a tool call.
 // Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile),
-// regenerates the project's patched agents (proteus-agent-patch.js),
+// regenerates the project's patched agents (proteus-agent-patch.js; none under the plugin),
 // checks the checkout for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
@@ -42,8 +42,9 @@ lib.run(async (ev, ad) => {
     if (home) {
       pending = safe(() => update(home, cfg, notes), "");
       safe(() => sync(ad, home, root, notes));
-      safe(() => agentPatches(ad, home, root, notes));
+      if (!lib.agentPrefix()) safe(() => agentPatches(ad, home, root, notes));
     }
+    if (lib.agentPrefix()) safe(() => pluginPatches(root, notes));
     safe(() => migrateState(root, home, notes));
     safe(() => codexRoots(ad, root, home, notes));
   };
@@ -78,8 +79,8 @@ lib.run(async (ev, ad) => {
   ad.context(
     ev,
     [
-      "proteus autostart: this repo runs on Proteus. The skill below is loaded exactly as if the human had typed /proteus; do not wait for the command.",
-      "The human's first message is the work order (or a question about the run). Void only if that message is /proteus-review, another slash command, or says \"no proteus\".",
+      `proteus autostart: this repo runs on Proteus. The skill below is loaded exactly as if the human had typed ${lib.skillCommand()}; do not wait for the command.`,
+      `The human's first message is the work order (or a question about the run). Void only if that message is ${lib.skillCommand("proteus-review")}, another slash command, or says "no proteus".`,
       `References live in ${path.join(skillDir, "references")}${path.sep}.`,
       state,
       src === "compact"
@@ -213,6 +214,12 @@ function agentPatches(ad, home, root, notes) {
   else if (r.written.length + r.removed.length) notes.push(`proteus: ${[...r.written.map((p) => `${p} regenerated`), ...r.removed.map((p) => `${p} removed`)].join(", ")} (${r.file}); agent types load at session start, so the change applies from the next session`);
   // a link the repo commits (#22); an older checkout's module has no refused list
   if (!r.error && r.refused && r.refused.length) notes.push(`proteus: refused ${r.refused.join(", ")} (a link, or a link on the way); no generated agent written or removed through it. Tell the human`);
+}
+
+// under the plugin nothing is patched: a generated copy would sit beside the plugin's own proteus:<agent> under the bare name
+// (agentPrefix is "" on Codex, so this is Claude Code's patch file)
+function pluginPatches(root, notes) {
+  if (fs.existsSync(path.join(root, ".claude", "proteus-agents.json"))) notes.push("proteus: .claude/proteus-agents.json is not applied under the plugin; its agents run as shipped");
 }
 
 // keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does
@@ -411,6 +418,7 @@ function localState(ad, root, runs, home, pending, drift) {
       ...(scratch > 1024 ? [`scratch=${scratch}MB`] : []),
       ...(ad.contextModeOn() ? [] : ["context-mode=missing"]),
       `proteus-src=${home || "none"}`,
+      ...(lib.agentPrefix() ? [`agent-prefix=${lib.agentPrefix()}`] : []),
       ...(pending ? [`proteus-update=${pending} (node ${path.join(home, "install.js")} --update)`] : []),
     ].join(" ")
   );

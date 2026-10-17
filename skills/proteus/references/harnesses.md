@@ -1,6 +1,6 @@
 # Harnesses
 
-The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn_agent`, hooks live in `.codex/hooks`) read this once per session and translate every name below; the pipeline, the rules, and the tracker do not change. The hooks pick their adapter by where they are installed; `proteus-harness.js` in the hooks folder holds the contract, `docs/harnesses.md` in the Proteus checkout the details.
+The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn_agent`, hooks live in `.codex/hooks`) read this once per session and translate every name below; the pipeline, the rules, and the tracker do not change. The hooks pick their adapter by where they are installed; `proteus-harness.js` in the hooks folder holds the contract, `docs/harnesses.md` in the Proteus checkout the details. Under the Claude Code plugin the command is `/proteus:proteus`, and every agent name takes the `agent-prefix` from `proteus-state`.
 
 | Thing | Claude Code | Codex CLI |
 |---|---|---|
