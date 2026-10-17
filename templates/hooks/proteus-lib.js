@@ -891,7 +891,8 @@ function verdictPost(command, cwd) {
 // a command line as simple commands, each a list of words: quotes removed, split at ; & | ( ) ` and newlines,
 // comments and heredoc bodies skipped. Enough to find a git or gh call and its arguments; not a shell.
 // An output redirect (>, >>, >|, &>, N>, >&file) is no word: its target goes on the command's .redirects list,
-// and a >&N descriptor copy is dropped. With a clock ({left: ms}), the time spent comes off clock.left, and
+// and a >&N descriptor copy is dropped. A > inside $(( )), (( )) or [[ ]] compares, so it is no redirect, unless
+// its operand names a literal path: dash, a common sh, has neither and runs `((x > f))` as subshells. With a clock ({left: ms}), the time spent comes off clock.left, and
 // running past it throws tooComplex (a worker's judging deadline, #48).
 const tooComplex = () => Object.assign(new Error("too complex"), { tooComplex: true });
 function shellCommands(command, clock = null) {
@@ -902,9 +903,15 @@ function shellCommands(command, clock = null) {
 }
 function tokens(s, late) {
   const out = [];
-  let words = [], word = null, heredocs = [], redirs = [], redir = "";
+  let words = [], word = null, heredocs = [], redirs = [], redir = "", arith = 0, cond = false;
   const endWord = () => {
-    if (word !== null && !redir) words.push(word);
+    if (word === "[[" && !words.length && !redir) cond = true;
+    else if (word === "]]" && !redir) cond = false;
+    if (word !== null && redir === "cmp") {
+      if (/^(?:[.~]|\$(?:\{?(?:HOME|PWD)\b))|^[^$`]*[\\/]/.test(word) && !/[$`](?!\{?(?:HOME|PWD)\b)/.test(word)) redirs.push(word);
+      else words.push(word);
+      redir = "";
+    } else if (word !== null && !redir) words.push(word);
     else if (word !== null) { if (redir === "file" || !/^(?:\d+|-)$/.test(word)) redirs.push(word); redir = ""; }
     word = null;
   };
@@ -950,6 +957,20 @@ function tokens(s, late) {
         i = k - 1;
       }
       heredocs = [];
+    } else if (c === "(" && s[i + 1] === "(" && !redir) {
+      // $(( )) and (( )): arithmetic, where > and < compare
+      arith++;
+      i++;
+      endCmd();
+    } else if (c === ")" && s[i + 1] === ")" && arith) {
+      arith--;
+      i++;
+      endCmd();
+    } else if ((arith || cond) && c === ">") {
+      // a comparison or shift (>, >=, >>), unless the operand is a literal path
+      endWord();
+      while (s[i + 1] === ">" || s[i + 1] === "=") i++;
+      redir = "cmp";
     } else if (c === ">" || (c === "&" && s[i + 1] === ">")) {
       if (word !== null && /^\d+$/.test(word)) word = null; // 2>file: the descriptor, not a word
       endWord();
@@ -989,7 +1010,7 @@ const BRANCH_MSG = {
 // words that run the rest of the line as a command, each with its options that take the next word as a value;
 // timeout also takes a DURATION before the command. xargs appends words from stdin, which no guard can see.
 const WRAPPERS = new Map(Object.entries({
-  rtk: [], proxy: [], command: [], builtin: [], nohup: [], exec: ["-a"], time: ["-f", "--format", "-o", "--output"],
+  rtk: [], proxy: [], command: [], builtin: [], nohup: [], busybox: [], exec: ["-a"], time: ["-f", "--format", "-o", "--output"],
   env: ["-u", "--unset", "-C", "--chdir", "-S", "--split-string", "-P"],
   sudo: ["-u", "--user", "-g", "--group", "-C", "--close-from", "-D", "--chdir", "-h", "--host", "-p", "--prompt", "-r", "--role", "-t", "--type", "-U", "--other-user", "-T", "--command-timeout", "-R", "--chroot"],
   timeout: ["-s", "--signal", "-k", "--kill-after"], nice: ["-n", "--adjustment"], stdbuf: ["-i", "--input", "-o", "--output", "-e", "--error"],
@@ -1074,6 +1095,7 @@ function pushDenial(words, cwd, extra) {
   let i = 0, dir = cwd;
   for (; i < words.length && words[i].startsWith("-"); i++) {
     if (words[i] === "-C") dir = path.resolve(dir, words[++i] || ".");
+    else if (words[i].startsWith("-C")) dir = path.resolve(dir, words[i].slice(2));
     else if (GIT_VALUE.has(words[i])) i++;
   }
   if (words[i] !== "push") return null;
@@ -1146,6 +1168,10 @@ const AGENT_MSG = {
   tree: (prog, target, rel) => `proteus: \`${prog}\` on ${target} takes ${rel} with it, which holds Proteus's hooks, gates, git internals or CLI settings; that is never a worker's. Name the paths inside it that you own, or comment "NEEDS ${rel}: <why>" on the issue and stop.`,
   blind: (prog) => `proteus: \`${prog}\` reads its patch from stdin or from a file this same command writes, so the guard cannot see which paths it changes. Save the patch to a file first (Write it under \`node <hooks>/proteus-scratch.js --path <key>\`) and apply it by name in a later call.`,
   pushSetup: (what) => `proteus: \`${what}\` sets up a push the guard cannot read: a configured push refspec, a mirror, push.default or an alias can force-push or push every branch. Push your branch by name (\`git push origin <your branch>\`).`,
+  gitConfig: (what) => `proteus: \`${what}\` sets git config that runs a program or reads config from elsewhere (hooks, fsmonitor, ssh, editor, pager, aliases, filters, textconv, credential helpers, includes); a worker never sets it. Comment "NEEDS git config: <why>" on the issue and stop.`,
+  noTree: (what) => `proteus: \`${what}\` writes from a worker's shell, and there is no worktree known for this worker; the lead spawns workers into one. Comment NEEDS on the issue and stop.`,
+  link: (what, link, target, why) => `proteus: \`${what}\` makes ${link} a link to ${target}, ${why}; a write through the link lands there. Link only to your owned paths or scratch dir, or comment "NEEDS ${target}: <why>" on the issue and stop.`,
+  xargs: (prog) => `proteus: \`xargs ${prog}\` writes the paths xargs reads at run time, which the guard cannot judge. Name the paths literally, under your owned paths or scratch dir.`,
   refs: (what) => `proteus: agents never move a branch through the API (\`${what}\`): a ref update there can force it past the push checks. Push your branch by name with git.`,
 };
 const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
@@ -1196,6 +1222,8 @@ const shellCwd = (ev) => { const base = ev.cwd || projectRoot(ev); return ev.wor
 const WRITE_ALL = new Set(["tee", "truncate", "touch", "rm", "unlink", "rmdir", "shred", "mv"]); // every operand
 const WRITE_LAST = new Set(["cp", "ln", "link", "install", "rsync"]); // the last operand, or -t DIR
 const IN_PLACE = { sed: /^-(?:[a-zA-Z]*i|-in-place(?:=|$))/, perl: /^-[a-ln-zA-HJ-LN-Z0-9]*i/, ruby: /^-[a-ln-zA-HJ-LN-Z0-9]*i/ }; // -M, -m, -I take the rest
+const OUTPUT_OPT = { sort: ["o", "--output"], curl: ["o", "--output"], wget: ["O", "--output-document"] };
+const AWK = /^(?:awk|gawk|mawk|nawk|busybox-awk)$/;
 const VALUE_OPT = { truncate: ["-s", "--size", "-r", "--reference"], touch: ["-r", "--reference", "-d", "--date", "-t"], tee: [], rm: [], unlink: [], rmdir: [], shred: ["-n", "--iterations", "-s", "--size"], mv: ["-S", "--suffix"] };
 function writeTargets(words) {
   const prog = progName(words[0]), args = words.slice(1);
@@ -1209,6 +1237,39 @@ function writeTargets(words) {
     return out;
   };
   if (prog === "dd") return args.filter((a) => a.startsWith("of=")).map((a) => a.slice(3));
+  if (OUTPUT_OPT[prog]) {
+    // sort -o F, curl -o F / --output F, wget -O F / --output-document F: separate, attached or with =
+    const [short, long] = OUTPUT_OPT[prog], out = [];
+    const keep = (t) => { if (prog === "sort" || t !== "-") out.push(t); }; // - is curl's and wget's stdout
+    let m;
+    for (let k = 0; k < args.length && args[k] !== "--"; k++) {
+      const a = args[k];
+      if (a === long || new RegExp(`^-[a-zA-Z]*${short}$`).test(a)) keep(args[++k] || "");
+      else if ((m = new RegExp(`^-[a-zA-Z]*${short}(.+)$`).exec(a)) && !a.startsWith("--")) keep(m[1]);
+      else if (a.startsWith(long + "=")) keep(a.slice(long.length + 1));
+    }
+    return out;
+  }
+  if (prog === "tar" && (args.some((a) => a === "--extract" || a === "--get" || /^-[a-zA-Z]*x/.test(a)) || /^[a-zA-Z]*x/.test(args[0] || ""))) {
+    // extracting writes under -C / --directory, else the cwd
+    let to = ".";
+    for (let k = 0; k < args.length; k++) {
+      if (args[k] === "-C" || args[k] === "--directory") to = args[++k] || "";
+      else if (args[k].startsWith("--directory=")) to = args[k].slice(12);
+      else if (/^-C./.test(args[k])) to = args[k].slice(2);
+    }
+    return [to];
+  }
+  if (prog === "unzip") {
+    if (args.some((a) => /^-[a-zA-Z]*[lptvzZ]/.test(a))) return [];
+    const k = args.findIndex((a) => a.startsWith("-d"));
+    return [k < 0 ? "." : args[k].length > 2 ? args[k].slice(2) : args[k + 1] || ""];
+  }
+  if (AWK.test(prog) && args.some((a, k) => a === "inplace" && /^(?:-i|--include)$/.test(args[k - 1] || ""))) {
+    // gawk -i inplace: every file operand, after the program text
+    const ops = operands(["-f", "--file", "-F", "--field-separator", "-v", "--assign", "-i", "--include", "-l", "--load", "-e", "--source"]);
+    return args.some((a) => /^(?:-f|--file|-e|--source)(?:=|$)/.test(a)) ? ops : ops.slice(1);
+  }
   if (WRITE_ALL.has(prog)) return operands(VALUE_OPT[prog]);
   if (IN_PLACE[prog]) {
     if (!args.some((a) => IN_PLACE[prog].test(a))) return [];
@@ -1222,7 +1283,7 @@ function writeTargets(words) {
     for (let k = 0; k < args.length; k++) {
       const m = /^--target-directory=(.*)$/.exec(args[k]);
       if (m) return [m[1]];
-      if (args[k] === "-t" || args[k] === "--target-directory") return [args[k + 1] || ""];
+      if ((prog === "rsync" ? args[k] === "-t" : /^-[a-zA-Z]*t$/.test(args[k])) || args[k] === "--target-directory") return [args[k + 1] || ""];
     }
     const ops = operands(["-S", "--suffix", "-m", "--mode", "-o", "--owner", "-g", "--group"]);
     return ops.length > 1 ? [ops[ops.length - 1]] : [];
@@ -1270,7 +1331,8 @@ function guardedWrite(abs, ev) {
 function ownWorktree(ev, dir, common) {
   return cwdWorktree(dir, common) || (ev.cwd && cwdWorktree(path.resolve(ev.cwd), common)) || (ev.agent && common ? bound(common, ev.agent) : null);
 }
-// git's own options that move it to another checkout, each with its path; GIT_DIR / GIT_WORK_TREE assignments too
+// git's own options that move it to another checkout, each with its path (-C <p>, -C<p>, --git-dir[=]<p>,
+// --work-tree[=]<p>); GIT_DIR / GIT_WORK_TREE assignments too
 function gitDirs(all, words, dir) {
   const out = [];
   for (const a of all.slice(0, all.length - words.length)) {
@@ -1281,6 +1343,7 @@ function gitDirs(all, words, dir) {
   for (let i = 1; i < words.length && words[i].startsWith("-"); i++) {
     const a = words[i], m = /^(--git-dir|--work-tree)=(.*)$/.exec(a);
     if (a === "-C") { d = path.resolve(d, expandPath(words[++i] || ".", d)); out.push(["-C", d]); }
+    else if (a.startsWith("-C")) { d = path.resolve(d, expandPath(a.slice(2), d)); out.push(["-C", d]); }
     else if (m) out.push([m[1], path.resolve(d, expandPath(m[2], d))]);
     else if (a === "--git-dir" || a === "--work-tree") out.push([a, path.resolve(d, expandPath(words[++i] || ".", d))]);
     else if (GIT_VALUE.has(a)) i++;
@@ -1587,18 +1650,51 @@ function ghAgentDenial(args) {
   return method !== "GET" && /(?:^|\/)git\/refs(?:\/|$)/.test(path_) ? AGENT_MSG.refs(`gh api -X ${method} ${endpoint}`) : null;
 }
 
+// config a worker never sets (#48): keys that run a program, or read config from another file
+const RUNS_CONFIG = /^(?:core\.(?:hookspath|fsmonitor|sshcommand|editor|pager)|alias\..+|filter\..+|diff\..+\.textconv|credential(?:\..+)?|include\..+|includeif\..+)$/i;
+// a worker's git checkout / restore / reset: each pathspec (after --, or a bare word) judged like a shell write
+// to it, whatever the source commit
+function pathspecDenial(sub, args, dir, ev) {
+  const root = gitRoot(dir) || dir;
+  const dash = args.indexOf("--");
+  const pre = dash < 0 ? args : args.slice(0, dash), post = dash < 0 ? [] : args.slice(dash + 1);
+  const specs = [...post];
+  for (let k = 0; k < pre.length; k++) {
+    const a = pre[k];
+    if (CHECKOUT_VALUE.has(a) || a === "-s" || a === "--source" || a === "--pathspec-from-file") k++;
+    else if (!a.startsWith("-")) specs.push(a);
+  }
+  for (const p of specs) {
+    const sp = specPath(p, dir, root);
+    const rel = sp && sp[0] && writeRel(sp[0], sp[1], ev);
+    // a bare word naming a commit (git reset HEAD~1) is no pathspec
+    if (rel && !(post.includes(p) || !git(["rev-parse", "-q", "--verify", `${p}^{commit}`], dir))) continue;
+    if (rel) return AGENT_MSG.write(`git ${sub} ${p}`, rel);
+  }
+  return null;
+}
+
 // git's own subcommands that write the worktree from somewhere the guard can read, or set up a push
-function gitWriteDenial(ev, all, words, dir, written) {
-  for (const [k, v] of gitCallConfig(all, words)) if (riskyConfig(k, v)) return AGENT_MSG.pushSetup(`git -c ${k}${v === undefined ? "" : "=" + v}`);
+function gitWriteDenial(ev, all, words, dir, written, worker = false) {
+  for (const [k, v] of gitCallConfig(all, words)) {
+    if (riskyConfig(k, v)) return AGENT_MSG.pushSetup(`git -c ${k}${v === undefined ? "" : "=" + v}`);
+    if (worker && RUNS_CONFIG.test(k)) return AGENT_MSG.gitConfig(`git -c ${k}`);
+  }
   let i = 1, d = dir;
   for (; i < words.length && words[i].startsWith("-"); i++) {
     if (words[i] === "-C") d = path.resolve(d, expandPath(words[++i] || ".", d));
+    else if (words[i].startsWith("-C")) d = path.resolve(d, expandPath(words[i].slice(2), d));
     else if (GIT_VALUE.has(words[i])) i++;
   }
   const sub = words[i], args = words.slice(i + 1);
   if (sub === "config") {
     const s = configSet(args);
-    return s && riskyConfig(s[0], s[1]) ? AGENT_MSG.pushSetup(`git config ${s[0]}${s[1] === undefined ? "" : " " + s[1]}`) : null;
+    if (s && riskyConfig(s[0], s[1])) return AGENT_MSG.pushSetup(`git config ${s[0]}${s[1] === undefined ? "" : " " + s[1]}`);
+    return worker && s && RUNS_CONFIG.test(s[0]) ? AGENT_MSG.gitConfig(`git config ${s[0]}`) : null;
+  }
+  if (worker && (sub === "checkout" || sub === "restore" || sub === "reset")) {
+    const why = pathspecDenial(sub, args, d, ev);
+    if (why) return why;
   }
   if (sub === "checkout" || sub === "restore") return restoreDenial(sub, args, d, ev);
   if (sub === "apply" || sub === "am") return patchDenial(`git ${sub}`, args, d, written, ev);
@@ -1640,11 +1736,12 @@ function takeAllow(wt, what) {
   lines.splice(i, 1);
   try { if (lines.length) fs.writeFileSync(allowFile(wt), lines.join("\n") + "\n"); else fs.rmSync(allowFile(wt)); return true; } catch { return false; }
 }
-// the prepared worktree a worker's shell is judged against
+// the prepared worktree a worker's shell is judged against: the one its first edit bound it to, its cwd's, and
+// for the worker guard's own session (no agent id) its project dir's; null when none (#48 F1: it then writes nothing)
 function workerTree(ev, dir) {
-  const common = gitCommonDir(path.resolve(projectRoot(ev)));
+  const root = path.resolve(projectRoot(ev)), common = gitCommonDir(root);
   const b = ev.agent && common ? bound(common, ev.agent) : null;
-  return (b && fs.existsSync(ownedFile(b)) ? b : null) || (ev.cwd && cwdWorktree(path.resolve(ev.cwd), common)) || cwdWorktree(dir, common);
+  return (b && fs.existsSync(ownedFile(b)) ? b : null) || (ev.cwd && cwdWorktree(path.resolve(ev.cwd), common)) || cwdWorktree(dir, common) || (!ev.agent && cwdWorktree(root, common)) || null;
 }
 // a word as each path it may name: as written, without backslash escapes, and its value after the first =
 const wordForms = (w) => [...new Set([w, w.replace(/\\(.)/g, "$1")].flatMap((v) => [v, v.slice(v.indexOf("=") + 1)]))];
@@ -1710,13 +1807,70 @@ function inlineDenial(ev, code, dir, wt, what, clock) {
   return "";
 }
 
+// a writer whose operands xargs would append from stdin (#48 F4)
+function writesOperands(words) {
+  const prog = progName(words[0]), args = words.slice(1);
+  return WRITE_ALL.has(prog) || WRITE_LAST.has(prog) || prog === "dd" || (IN_PLACE[prog] && args.some((a) => IN_PLACE[prog].test(a))) || (AWK.test(prog) && args.includes("inplace"));
+}
+// awk's program text: -f FILE runs a file (judged like a script on disk); -e / --source TEXT, else the first operand
+const AWK_VALUE = ["-F", "--field-separator", "-v", "--assign", "-i", "--include", "-l", "--load"];
+function awkProgram(words) {
+  const args = words.slice(1), out = [];
+  let file = false;
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === "--") { if (!out.length && !file && args[k + 1] !== undefined) out.push(args[k + 1]); break; }
+    if (a === "-e" || a === "--source") out.push(args[++k] ?? "");
+    else if (a.startsWith("--source=")) out.push(a.slice(9));
+    else if (a === "-f" || a === "--file" || a.startsWith("--file=")) { file = true; if (!a.includes("=")) k++; }
+    else if (AWK_VALUE.includes(a)) k++;
+    else if (a.startsWith("-")) continue;
+    else { if (!out.length && !file) out.push(a); break; }
+  }
+  return out;
+}
+// ln / link: a link whose target is outside the worker's owned paths and scratch dir (#48 F7). A symbolic target
+// resolves from the link's dir (from the cwd with -r), a hard link's from the cwd
+function linkDenial(words, dir, wt) {
+  const prog = progName(words[0]), args = words.slice(1);
+  const sym = prog === "ln" && args.some((a) => /^(?:-[a-zA-Z]*s[a-zA-Z]*|--symbolic)$/.test(a));
+  const rel = args.some((a) => /^(?:-[a-zA-Z]*r[a-zA-Z]*|--relative)$/.test(a));
+  let into = null;
+  const ops = [];
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k];
+    if (a === "--") { ops.push(...args.slice(k + 1)); break; }
+    if (/^-[a-zA-Z]*t$/.test(a) || a === "--target-directory") into = args[++k] || "";
+    else if (a.startsWith("--target-directory=")) into = a.slice(19);
+    else if (a === "-S" || a === "--suffix") k++;
+    else if (!a.startsWith("-")) ops.push(a);
+  }
+  if (into === null && ops.length > 1) into = ops.pop();
+  for (const t of ops) {
+    const link = into === null ? path.basename(t) : into;
+    const linkAbs = path.resolve(dir, expandPath(link, dir));
+    if (relPath(realOr(wt), realOr(linkAbs)) === null && relPath(wt, linkAbs) === null) continue; // a link outside: confined as a write
+    let base = dir;
+    if (sym && !rel) { try { base = fs.statSync(linkAbs).isDirectory() ? linkAbs : path.dirname(linkAbs); } catch { base = path.dirname(linkAbs); } }
+    const abs = /^(?:[\\/]|[a-zA-Z]:|[~$])/.test(t) ? t : path.resolve(base, t);
+    if (confineDenial(abs, dir, wt, prog)) return AGENT_MSG.link(`${prog}${sym ? " -s" : ""}`, link, t, "outside your owned paths and scratch dir");
+  }
+  return "";
+}
+
 function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 0, ctx = { worker: false }) {
   let dir = path.resolve(cwd || projectRoot(ev));
   const written = new Set(); // paths this line writes: a patch made earlier in the same call is not read in time
   const judge = (t) => writeRel(t, dir, ev);
   // owned/scratch confinement is reported after every other rule, so a guarded path keeps its own message
   const late = [];
-  const confine = (t, what) => { const wt = ctx.worker && !late.length && workerTree(ev, dir); const why = wt && confineDenial(t, dir, wt, what); if (why) late.push(why); };
+  // a worker with no worktree known writes nothing but the console devices (#48 F1)
+  const confine = (t, what) => {
+    if (!ctx.worker || late.length) return;
+    const wt = workerTree(ev, dir);
+    const why = wt ? confineDenial(t, dir, wt, what) : wordForms(t).every((v) => DEVICES.test(v)) ? "" : AGENT_MSG.noTree(what);
+    if (why) late.push(why);
+  };
   const cmds = shellCommands(command, ctx.clock);
   // what a shell or interpreter in this line reads on stdin: the heredoc bodies, and the other commands' words
   const stdin = (self, spaced) => {
@@ -1773,29 +1927,46 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
         const own = ownWorktree(ev, dir, common);
         if (!root || !own || !samePath(realOr(root), realOr(own))) return AGENT_MSG.gitDir(opt, p.split(path.sep).join("/"), own ? `yours is ${own.split(path.sep).join("/")}` : "");
       }
-      return gitWriteDenial(ev, all, words, dir, written);
+      return gitWriteDenial(ev, all, words, dir, written, ctx.worker);
     }
     if (prog === "gh") return ghAgentDenial(words.slice(1));
     if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) return ghAgentDenial(words.slice(2));
     // sh -c '<script>': judged as its own command line, from the same dir; a worker's sh reading stdin judges
     // what it reads, and nesting past 3 is too complex for a worker
     if ((NESTED_SHELLS.has(prog) || prog === "eval") && depth >= 3 && ctx.worker) throw tooComplex();
-    if (NESTED_SHELLS.has(prog) && depth < 3) {
-      const c = words.indexOf("-c");
-      if (c > 0 && words[c + 1] !== undefined) return agentShellDenial(ev, words[c + 1], dir, depth + 1, ctx);
-      if (!ctx.worker) return null;
+    // what a shell (or source / .) reads on stdin: heredocs, pipes and a here-string
+    const fromStdin = () => {
       for (const text of [...stdin(all, true), ...(String(command).includes("<<<") ? words.slice(1).filter((w) => /\s/.test(w)) : [])]) {
         const why = agentShellDenial(ev, text, dir, depth + 1, ctx);
         if (why) return why;
       }
       return null;
+    };
+    if (NESTED_SHELLS.has(prog) && depth < 3) {
+      // -c, alone or ending a flag cluster (-lc, -ec, -xc); -o / -O take a value
+      let c = -1;
+      for (let k = 1; k < words.length && /^[-+]/.test(words[k]) && words[k] !== "--"; k++) {
+        if (/^-[a-zA-Z]*c$/.test(words[k])) { c = k; break; }
+        if (/^[-+][oO]$/.test(words[k])) k++;
+      }
+      if (c > 0 && words[c + 1] !== undefined) return agentShellDenial(ev, words[c + 1], dir, depth + 1, ctx);
+      return ctx.worker ? fromStdin() : null;
+    }
+    if ((prog === "source" || prog === ".") && ctx.worker) {
+      // a file in the worktree runs like any script there; stdin, /dev/stdin or <( ) is judged as it is read
+      if (depth >= 3) throw tooComplex();
+      const f = words[1];
+      if (f === undefined || /^(?:-|<.*|\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0)$/.test(f)) return fromStdin();
+      return null;
     }
     if (prog === "eval" && depth < 3) return agentShellDenial(ev, words.slice(1).join(" "), dir, depth + 1, ctx);
     if (prog === "find") return findDenial(words.slice(1));
     if (prog === "patch") return patchDenial("patch", words.slice(1), dir, written, ev);
-    if (ctx.worker && interpreter(prog)) {
-      const code = inlineCode(words), wt = workerTree(ev, dir);
-      for (const text of code || stdin(all, false)) {
+    if (ctx.worker && (interpreter(prog) || AWK.test(prog))) {
+      const wt = workerTree(ev, dir);
+      const code = AWK.test(prog) ? awkProgram(words) : inlineCode(words) || stdin(all, false);
+      if (!wt && code.length) return AGENT_MSG.noTree(prog);
+      for (const text of code) {
         const why = inlineDenial(ev, text, dir, wt, prog, ctx.clock);
         if (why) return why;
       }
@@ -1809,6 +1980,12 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
     for (const [t, tree] of treeTargets(words)) {
       const rel = tree ? treeRel(t, dir, ev) : judge(t);
       if (rel) return tree ? AGENT_MSG.tree(`${prog}${prog === "rm" || prog === "cp" ? " -r" : ""}`, t, rel) : AGENT_MSG.write(prog, rel);
+    }
+    // after the guarded-path rules, so a guarded target keeps its own message
+    if (ctx.worker && all.slice(0, all.length - words.length).some((w) => progName(w) === "xargs") && writesOperands(words)) return AGENT_MSG.xargs(prog);
+    if (ctx.worker && (prog === "ln" || prog === "link")) {
+      const wt = workerTree(ev, dir), why = wt && linkDenial(words, dir, wt);
+      if (why) return why;
     }
     return null;
   };

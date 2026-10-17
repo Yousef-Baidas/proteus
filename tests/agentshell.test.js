@@ -135,6 +135,8 @@ ok("worker guard: its own worktree, a plain push and an owned write pass",
 // Codex routes Bash through the same lead guard and lib.workerDenial
 const cx = { PROTEUS_HARNESS: "codex", CODEX_HOME: path.join(lib.HOME, ".codex") };
 const cxSub = { agent_id: "c1", agent_type: "proteus-backend-worker" };
+// prepared for Codex too (.codex/proteus-owned): a worker with no worktree known writes nothing (#48 F1)
+lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [WT1, "src/**", "teams/backend/**"], env: cx });
 ok("codex: a subagent's force-push, git -C and sed -i of .codex refused",
   !denied(cd1 + "git push -f origin proteus-work/r1/1", /never force-push/, cxSub, cx) && !denied(`git -C ${JSON.stringify(slash(WT2))} status`, /not your worktree/, cxSub, cx) &&
   !denied(cd1 + "sed -i s/a/b/ .codex/hooks/proteus-lib.js", /\.codex\/hooks\/proteus-lib\.js/, cxSub, cx));

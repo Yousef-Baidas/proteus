@@ -120,7 +120,8 @@ ok("guard: subagent --edit-last denied", code(pre("Bash", { command: "gh pr comm
 {
   // the flag refused only on a gh call that carries it; as data (heredoc body, a quoted argument, a comment) it passes
   const EL = "--edit-last";
-  const both = (command) => [{}, sub].map((x) => code(pre("Bash", { command }, x)));
+  // a verifier: a worker with no worktree known (this checkout is none) writes nothing at all (#48 F1)
+  const both = (command) => [{}, { agent_id: "v1", agent_type: "proteus-verifier" }].map((x) => code(pre("Bash", { command }, x)));
   const refused = (command) => both(command).every((c) => c === 2);
   const passes = (command) => both(command).every((c) => c === 0);
   const doc = `python3 - <<'EOF'\np = "skills/proteus/references/enforcement.md"\ns = open(p).read().replace("refuses \`gh … ${EL}\`", "refuses a gh call with ${EL}")\nopen(p, "w").write(s)\nEOF`;

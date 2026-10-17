@@ -92,7 +92,7 @@ bad = each((c) => denied(c, /cannot see which paths it changes/), [
 ]);
 ok("git apply / am / patch from stdin or a file the same line writes refused", !bad.length, bad.join("\n"));
 bad = each(allowed, [
-  cd1 + "git status", cd1 + "git checkout -- src/a.js", cd1 + "git checkout src/a.js", cd1 + "git checkout -- .", cd1 + "git checkout HEAD -- .github", cd1 + "git restore .github/workflows/ci.yml",
+  cd1 + "git status", cd1 + "git checkout -- src/a.js", cd1 + "git checkout src/a.js", cd1 + "git checkout -- .", cd1 + "git checkout HEAD -- .github", cd1 + "git restore docs/x.md",
   cd1 + "git restore --staged -- .", cd1 + "git checkout side -- src/a.js", cd1 + "git checkout -b proteus-work/r1/x", cd1 + "git switch proteus-work/r1/2", cd1 + "git restore -s side src/a.js",
   cd1 + "git apply src/ok.diff", cd1 + "git apply --check src/evil.diff", cd1 + "git apply --stat src/evil.diff", cd1 + "patch -p1 < src/ok.diff", cd1 + "patch --dry-run -p0 < src/wf.patch",
   cd1 + "git am --abort", cd1 + "git stash pop", cd1 + "git stash list", cd1 + "git commit -qm x", cd1 + "git diff side -- .github",
@@ -125,7 +125,7 @@ bad = each((c) => denied(c, /sets up a push the guard cannot read/), [
 ok("force setup: push refspec, mirror, push.default, a push alias, through -c, --config-env and GIT_CONFIG_* refused", !bad.length, bad.join("\n"));
 bad = each(allowed, [
   cd1 + "git config user.name x", cd1 + "git config push.default simple", cd1 + "git config --get remote.origin.push", cd1 + "git config --unset remote.origin.push",
-  cd1 + "git config alias.st status", cd1 + "git -c core.pager=cat log -1", cd1 + "git config -l",
+  cd1 + "git config core.autocrlf false", cd1 + "git -c color.ui=never log -1", cd1 + "git config -l",
 ]);
 ok("force setup: ordinary config, push.default simple, reads and unsets pass", !bad.length, bad.join("\n"));
 bad = each((c) => denied(c, /never move a branch through the API/), [
@@ -145,6 +145,8 @@ ok("drive paths: /c/x and /cygdrive/d/x read as drive paths on Windows only",
   hl.drivePath("/c/x", false) === "/c/x" && hl.drivePath("/cache/x", true) === "/cache/x" && hl.expandPath("/c/x", "/", true) === "C:/x");
 const cx = { PROTEUS_HARNESS: "codex", CODEX_HOME: path.join(lib.HOME, ".codex") };
 const cxSub = { agent_id: "a1", agent_type: "proteus-backend-worker" };
+// prepared for Codex too (.codex/proteus-owned): a worker with no worktree known writes nothing (#48 F1)
+lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [WT1, "src/**", "docs/**"], env: cx });
 ok("codex workdir: a write relative to the shell's workdir is judged from there",
   !denied("sed -i s/a/b/ agents/x.md", GUARDED, cxSub, cx, { workdir: slash(path.join(WT1, ".claude")) }) && !denied("echo x > workflows/ci.yml", GUARDED, cxSub, cx, { workdir: ".worktrees/r1-1/.github" }));
 ok("codex workdir: git with a workdir in the agent's own worktree passes, and an owned write there too",

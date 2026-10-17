@@ -131,7 +131,8 @@ ok("git: reverting it passes and closes the record", !r.blocked && record().open
 r = call("node -e ... .git/hooks", node(`require('fs').writeFileSync(${JSON.stringify(path.join(REPO, ".git", "hooks", "pre-push"))}, 'exit 0')`));
 ok("git dir: a hook written into the shared .git/hooks is caught", r.blocked && r.why.includes(".git/hooks/pre-push"), r.why);
 fs.rmSync(path.join(REPO, ".git", "hooks", "pre-push"));
-r = call("git config core.hooksPath /dev/null", ["git", "config", "core.hooksPath", "/dev/null"]);
+// a script on disk sets it: the pre-check refuses a worker's own git config core.hooksPath (#48 F8)
+r = call("sh tools/setup.sh", ["git", "config", "core.hooksPath", "/dev/null"]);
 ok("git dir: core.hooksPath set in the shared config is caught", r.blocked && r.why.includes(".git/config"), r.why);
 g(WT1, "config", "--unset", "core.hooksPath");
 r = call("git push -u origin proteus-work/r1/1", ["git", "push", "-q", "-u", "origin", "proteus-work/r1/1"]);
@@ -162,7 +163,7 @@ ok("worker: put back, it passes; owned work too", !r.blocked && !call("node -e .
 
 // Codex: the same check through its adapter
 const cx = { PROTEUS_HARNESS: "codex", CODEX_HOME: path.join(lib.HOME, ".codex") };
-r = call("python3 -c ...", node("require('fs').mkdirSync('.codex/agents',{recursive:true});require('fs').writeFileSync('.codex/agents/x.toml','x')"), { env: cx, who: { agent_id: "c1", agent_type: "proteus-backend-worker" } });
+r = call("python3 tools/gen.py", node("require('fs').mkdirSync('.codex/agents',{recursive:true});require('fs').writeFileSync('.codex/agents/x.toml','x')"), { env: cx, who: { agent_id: "c1", agent_type: "proteus-backend-worker" } });
 ok("codex: an interpreter write to .codex/agents is caught after the call", r.pre.code === 0 && r.blocked && r.why.includes(".codex/agents/x.toml"), r.pre.err + r.why);
 
 // the guard's own records: deleting one stays on the new record until the lead clears it

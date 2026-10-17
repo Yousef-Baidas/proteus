@@ -65,7 +65,7 @@ const ISSUE = {
   writes: ["cat > /abs/outside/f <<EOF\nx\nEOF", "echo x > ../r1-2/src/a.js", "echo x | tee /tmp/null", "echo x >> README.md", "sed -i s/a/b/ README.md", "cp src/a.js /tmp/x"],
   guarded: ["sed -i s/Read/Agent/ .claude/agents/proteus-verifier.md", "echo x > .claude/proteus-owned"],
 };
-let bad = each(refused(FORCE), ISSUE.force);
+let bad = each(refused(FORCE), ISSUE.force), r;
 ok("issue: every force-push form refused on both routes", !bad.length, bad.join("\n"));
 bad = each(refused(/proteus: `git (?:-C|--git-dir|--work-tree)/), ISSUE.gitDir);
 ok("issue: git -C, --git-dir and --work-tree outside the worktree refused on both routes", !bad.length, bad.join("\n"));
@@ -142,9 +142,100 @@ bad = each(passes(), [
 ]);
 ok("inline: code on worktree paths, regex literals, URLs and scripts on disk pass", !bad.length, bad.join("\n"));
 
+// #151 review (F1-F11): the probes that got through, and what must still pass
+const PLAIN = path.join(W, "plain");
+fs.mkdirSync(PLAIN, { recursive: true });
+const w3 = { agent_id: "a3", agent_type: "proteus-frontend-worker" };
+const NO_TREE = /no worktree known for this worker; the lead spawns workers into one/;
+// F1: an in-process worker with no worktree known (no binding, the lead's checkout as cwd). The worker guard runs
+// only in a prepared worktree, its project dir, so from any cwd it judges against that one
+const noTreeLead = (c, guard = LG) => lib.run(guard, ev("Bash", { command: c }, w3), { cwd: REPO });
+const fromPlain = (c) => lib.run(path.join(WT1, ".claude", "hooks", "proteus-worker-guard.js"), { hook_event_name: "PreToolUse", session_id: "s3", cwd: PLAIN, tool_name: "Bash", tool_input: { command: c } }, { cwd: PLAIN, env: { CLAUDE_PROJECT_DIR: WT1 } });
+bad = ["echo x > README.md", "touch src/a.js", "sed -i s/a/b/ README.md", "python3 -c \"print(1)\"", "cp README.md /tmp/x", "awk '{print}' README.md", "bash -c 'echo x > src/a.js'"].flatMap((c) => {
+  const x = noTreeLead(c);
+  return x.code === 2 && NO_TREE.test(x.err) ? [] : [`${c} => ${x.code} ${x.err}`];
+});
+ok("F1: a worker with no worktree known has every write refused", !bad.length, bad.join("\n"));
+bad = ["ls -la", "git status", "ls > /dev/null 2>&1", "cat README.md"].flatMap((c) => { const x = noTreeLead(c); return x.code === 0 ? [] : [`${c} => ${x.code} ${x.err}`]; });
+ok("F1: ...while reads and the console devices pass", !bad.length, bad.join("\n"));
+r = fromPlain("echo x > README.md");
+ok("F1: the worker guard, from a cwd outside its worktree, confines to its project dir's worktree", r.code === 2 && CONFINE.test(r.err), r.err);
+r = fromPlain(`echo x > ${q(path.join(WT1, "src", "a.js"))}`);
+ok("F1: ...and lets its owned paths through", r.code === 0, r.err);
+// F2: -c ending a flag cluster, other shells, and source / . reading stdin
+bad = each(refused(CONFINE), [
+  "bash -lc 'echo x > README.md'", "sh -ec 'rm README.md'", "bash -xc 'touch README.md'", "zsh -c 'echo x > README.md'", "dash -c 'rm README.md'",
+  "bash -o pipefail -c 'rm README.md'", "source /dev/stdin <<< 'rm README.md'", ". /dev/stdin <<< 'echo x > README.md'", "echo 'rm README.md' | source /dev/stdin",
+  "source <(echo 'rm README.md')", "echo 'rm README.md' | . /dev/fd/0", "echo 'touch README.md' | source",
+]);
+ok("F2: sh -lc/-ec/-xc, zsh and dash -c, and source/. of stdin or a here-string are judged", !bad.length, bad.join("\n"));
+bad = each(passes(), ["bash -lc 'ls'", "source src/env.sh", ". ./src/env.sh", "bash -ec 'echo x > src/a.js'", "bash src/run.sh"]);
+ok("F2: a script in the worktree, sourced or run, and a -c that writes owned paths pass", !bad.length, bad.join("\n"));
+// F3: busybox applets
+bad = each(refused(CONFINE), ["busybox rm README.md", "busybox sh -c 'echo x > README.md'", "busybox sed -i s/a/b/ README.md", "/bin/busybox touch README.md"]);
+ok("F3: busybox <applet> is judged as the applet, and busybox sh -c recurses", !bad.length, bad.join("\n"));
+ok("F3: ...while busybox ls passes", passes()("busybox ls") === "", passes()("busybox ls"));
+// F4: xargs feeding a writer
+const XARGS = /writes the paths xargs reads at run time/;
+bad = each(refused(XARGS), ["echo README.md | xargs rm", "ls | xargs -I{} cp {} src/", "git ls-files | xargs sed -i s/a/b/", "echo x | xargs touch", "find . -name '*.js' | xargs -0 truncate -s0", "ls | xargs -n1 ln -s"]);
+ok("F4: xargs followed by a writer is refused as unjudgeable", !bad.length, bad.join("\n"));
+bad = each(passes(), ["ls | xargs echo", "git ls-files | xargs grep foo", "ls | xargs wc -l", "find src -name '*.js' | xargs cat"]);
+ok("F4: ...while xargs followed by a reader passes", !bad.length, bad.join("\n"));
+// F5: attached git -C
+bad = each(refused(/proteus: `git (?:-C|--git-dir|--work-tree)/), ["git -C/x status", `git -C${q(WT2)} status`, "git -C.. status", `git --git-dir=${q(path.join(REPO, ".git"))} log`, `git --work-tree=${q(WT2)} status`]);
+ok("F5: git -C<path>, -C\"<path>\", --git-dir= and --work-tree= outside the worktree refused", !bad.length, bad.join("\n"));
+ok("F5: ...while git -Csrc passes", passes()("git -Csrc status") === "", passes()("git -Csrc status"));
+// F6: sort -o, curl -o, wget -O, tar -x, unzip, awk
+bad = each(refused(CONFINE), [
+  "sort -o README.md src/a.js", "sort src/a.js -oREADME.md", "sort --output=README.md src/a.js", "curl -o README.md http://127.0.0.1:9/x", "curl -sSLo /tmp/x http://127.0.0.1:9/x",
+  "curl --output=/tmp/x http://127.0.0.1:9/x", "wget -O README.md http://127.0.0.1:9/x", "wget --output-document=/tmp/x http://127.0.0.1:9/x", "wget -qO/tmp/x http://127.0.0.1:9/x",
+  "tar -xf x.tar", "tar -xf x.tar -C /tmp", "tar --extract --file=x.tar --directory=/tmp", "tar xzf x.tgz", "unzip x.zip -d /tmp", "unzip -o x.zip", "gawk -i inplace '{print}' README.md",
+]);
+ok("F6: sort -o, curl -o, wget -O, tar -x (its -C or the cwd), unzip (its -d or the cwd) and gawk -i inplace outside refused", !bad.length, bad.join("\n"));
+bad = each(refused(INLINE), ["awk '{print > \"/tmp/x\"}' src/a.js", "gawk 'BEGIN{print 1 > \"../r1-2/src/a.js\"}'", "awk -e '{print > \"/tmp/y\"}' src/a.js"]);
+ok("F6: awk program text naming a path outside is refused like inline code", !bad.length, bad.join("\n"));
+ok("F6: ...and naming a guarded path", refused(GUARDED, o2)("awk 'BEGIN{print 1 > \".claude/settings.json\"}'") === "", refused(GUARDED, o2)("awk 'BEGIN{print 1 > \".claude/settings.json\"}'"));
+bad = each(passes(), [
+  "sort -o src/s.txt src/a.js", "curl -o src/x http://127.0.0.1:9/x", "curl -o - http://127.0.0.1:9/x", "wget -O- http://127.0.0.1:9/x", "wget -qO - http://127.0.0.1:9/x",
+  "tar -xf x.tar -C src", "tar -tf x.tar", "tar -cf src/x.tar src", "unzip x.zip -d src/z", "unzip -l x.zip", "awk '{print $1}' src/a.js", "awk -F, '{print $2}' src/a.js",
+  "awk -f src/prog.awk src/a.js", "awk '{print > \"src/out.txt\"}' src/a.js",
+]);
+ok("F6: the same tools on owned paths, stdout or a listing pass", !bad.length, bad.join("\n"));
+// F7: a link from the worktree to a path outside the owned paths and scratch
+const LINK = /a write through the link lands there/;
+bad = each(refused(LINK), ["ln -s /etc/passwd src/p", "ln -s ../README.md src/r", "ln -sf ../../r1-2/src src/x", "ln README.md src/h", "ln -s ../owned.js ../README.md src/", "ln -st src /etc/hosts"]);
+ok("F7: ln and ln -s from the worktree to a path outside the owned paths and scratch refused", !bad.length, bad.join("\n"));
+bad = each(passes(), ["ln -s a.js src/b.js", `ln -s ${q(SCR)}/f src/s`, "ln -sr src/a.js src/c.js", "ln src/a.js src/d.js", "ln -s ../owned.js src/o"]);
+ok("F7: ...while links to owned paths and scratch pass", !bad.length, bad.join("\n"));
+// F8: git config that runs a program or reads another file
+const GITCFG = /sets git config that runs a program|sets up a push/;
+bad = each(refused(GITCFG), [
+  "git config core.hooksPath /tmp/h", "git config --global core.fsmonitor x", "git config --local alias.st status", "git -c core.sshCommand=x fetch", "git -c core.pager=x log",
+  "git config filter.lfs.clean x", "git config diff.foo.textconv x", "git config credential.helper store", "git config include.path /tmp/c",
+  "git config includeIf.gitdir:/x.path /tmp/c", "git config --worktree core.editor vim", "git config set --system core.hooksPath /tmp/h", "git -c alias.x=status x",
+]);
+ok("F8: git config and git -c setting hooks, fsmonitor, ssh, editor, pager, alias, filter, textconv, credential and include refused", !bad.length, bad.join("\n"));
+bad = each(passes(), ["git config user.name x", "git config --get core.hooksPath", "git -c color.ui=never log -1", "git config --list"]);
+ok("F8: ...while other config, and reading it, pass", !bad.length, bad.join("\n"));
+// F9: checkout / restore / reset pathspecs against the guarded paths
+bad = each(refused(GUARDED, o2), [
+  "git checkout -- .claude/settings.json", "git restore .claude/hooks/proteus-lib.js", "git reset -- .claude/agents/x.md", "git checkout HEAD .claude/settings.json",
+  "git restore --source=HEAD -- .claude/proteus-owned", "git reset HEAD .claude/hooks",
+]);
+ok("F9: git checkout, restore and reset of a guarded pathspec refused, whatever the source", !bad.length, bad.join("\n"));
+bad = each(passes(o2), ["git checkout -- README.md", "git restore src/a.js", "git checkout main", "git reset --hard", "git checkout -b feat/x", "git checkout .", "git reset HEAD^"]);
+ok("F9: ...while owned pathspecs, branches and a bare reset pass", !bad.length, bad.join("\n"));
+// F10: > inside $(( )), (( )) and [[ ]] compares
+bad = each(passes(), ["echo $((1 > 0))", "(( 2 > 1 )) && echo y", "[[ b > a ]] && echo y", "x=$(( 3 >> 1 )); echo $x", "[[ \"$a\" > \"$b\" ]]", "(( n >= 2 ))"]);
+ok("F10: a comparison or shift inside $(( )), (( )) and [[ ]] is no redirect", !bad.length, bad.join("\n"));
+bad = each(refused(CONFINE), ["echo $((1 > 0)) > README.md", "[[ a > b ]] && echo x > README.md", "((echo x > ./README.md))"]);
+ok("F10: ...while a redirect after one, or a literal path dash would write, is still judged", !bad.length, bad.join("\n"));
+// F11: inline code that only reads outside stays refused (enforcement.md §13 documents it)
+ok("F11: inline code reading a path outside is refused by design", refused(INLINE)("python3 -c \"print(open('/etc/hostname').read())\"") === "", refused(INLINE)("python3 -c \"print(open('/etc/hostname').read())\""));
+
 // G2: the lead's one-off force-push allow, consumed by the first force-push it lets through
 const allow = (wt, what = "force-push") => prepare(wt, "--allow", what);
-let r = allow(WT1, "rebase");
+r = allow(WT1, "rebase");
 ok("allow: an unknown authorisation is bad usage", r.code === 1 && /--allow force-push/.test(r.err), r.err);
 r = allow(path.join(W, "nowhere"));
 ok("allow: a worktree with no owned list is refused", r.code === 1, r.err);
@@ -215,7 +306,23 @@ ok(`bench: a worker's no-write command costs no more than a verifier's (${tw.toF
 
 // red on broken: each rule neutralised in a copy of the hooks lets its case through
 const BROKEN = [
-  ["confinement", "const why = wt && confineDenial(t, dir, wt, what);", "const why = \"\";", "echo x >> README.md"],
+  ["confinement", "const why = wt ? confineDenial(t, dir, wt, what) :", "const why = wt ? \"\" :", "echo x >> README.md"],
+  ["no worktree", ": AGENT_MSG.noTree(what);", ": \"\";", "echo x >> README.md", { run: noTreeLead }],
+  ["-c in a flag cluster", "if (/^-[a-zA-Z]*c$/.test(words[k])) { c = k; break; }", "if (words[k] === \"-c\") { c = k; break; }", "bash -lc 'echo x > README.md'"],
+  ["source of stdin", "      if (f === undefined || ", "      if (false && ", "source /dev/stdin <<< 'rm README.md'"],
+  ["busybox", "busybox: [], ", "", "busybox rm README.md"],
+  ["xargs writer", "&& writesOperands(words)) return AGENT_MSG.xargs(prog);", "&& false) return null;", "echo README.md | xargs rm"],
+  ["attached git -C", "else if (a.startsWith(\"-C\")) { d = path.resolve(d, expandPath(a.slice(2), d)); out.push([\"-C\", d]); }", "", "git -C/x status"],
+  ["output options", "if (OUTPUT_OPT[prog]) {", "if (false) {", "curl -o /tmp/x http://127.0.0.1:9/x"],
+  ["tar -x", "if (prog === \"tar\" && (", "if (false && (", "tar -xf x.tar -C /tmp"],
+  ["unzip", "if (prog === \"unzip\") {", "if (false) {", "unzip x.zip -d /tmp"],
+  ["awk program", "(interpreter(prog) || AWK.test(prog))", "interpreter(prog)", "awk '{print > \"/tmp/x\"}' src/a.js"],
+  ["link target", "const wt = workerTree(ev, dir), why = wt && linkDenial(words, dir, wt);", "const why = \"\";", "ln -s /etc/passwd src/p"],
+  ["git config", "worker && s && RUNS_CONFIG.test(s[0]) ?", "false ?", "git config core.hooksPath /tmp/h"],
+  ["git -c", "if (worker && RUNS_CONFIG.test(k))", "if (false)", "git -c core.sshCommand=x fetch"],
+  ["pathspecs", "const why = pathspecDenial(sub, args, d, ev);", "const why = null;", "git checkout -- .claude/settings.json"],
+  // inverted: the comparison passes, and neutralised it reads as a redirect
+  ["arithmetic", "} else if ((arith || cond) && c === \">\") {", "} else if (false) {", "echo $((1 > 0))", { invert: true }],
   ["inline code", "const why = inlineDenial(ev, text, dir, wt, prog, ctx.clock);", "const why = \"\";", "node -e \"require('fs').writeFileSync('/tmp/x','y')\""],
   ["stdin to a shell", "const why = agentShellDenial(ev, text, dir, depth + 1, ctx);", "const why = null;", "echo 'echo x > README.md' | sh"],
   ["force-push", "      if (force) {\n", "      if (false) {\n", "git push -f origin proteus-work/r1/1"],
@@ -223,14 +330,15 @@ const BROKEN = [
   ["deadline", "if (late && !(i & 1023) && late()) throw tooComplex();", "", HUGE],
   ["runtime target", "return AGENT_MSG.runtime(what, t);", "continue;", "F=README.md; echo x > \"$F\""],
 ];
-for (const [name, from, to, cmd] of BROKEN) {
+for (const [name, from, to, cmd, { run = (c, guard) => viaLead(c, { guard }), invert = false } = {}] of BROKEN) {
   const dir = path.join(W, "broken-" + name.replace(/\W+/g, "-"));
   fs.cpSync(SRC, dir, { recursive: true });
   const file = path.join(dir, "proteus-lib.js"), text = fs.readFileSync(file, "utf8");
   const n = text.split(from).length - 1;
   fs.writeFileSync(file, text.replace(from, to));
-  const good = viaLead(cmd), broke = viaLead(cmd, { guard: path.join(dir, "proteus-lead-guard.js") });
-  ok(`red on broken: ${name} refuses its case, and passes it once neutralised`, n === 1 && good.code === 2 && broke.code === 0, `${n} ${good.code} ${broke.code} ${broke.err}`);
+  const good = run(cmd, LG), broke = run(cmd, path.join(dir, "proteus-lead-guard.js"));
+  const [g0, b0] = invert ? [0, 2] : [2, 0];
+  ok(`red on broken: ${name} ${invert ? "passes" : "refuses"} its case, and ${invert ? "refuses" : "passes"} it once neutralised`, n === 1 && good.code === g0 && broke.code === b0, `${n} ${good.code} ${broke.code} ${good.err} ${broke.err}`);
 }
 // the G5 anchor: neutralised, the confinement still refuses, but no longer as a guarded path
 {
