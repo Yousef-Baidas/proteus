@@ -737,10 +737,11 @@ const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); retu
 const WAIT_MSG = "workers never wait on a background notification (it never arrives after your turn ends). Run it in the foreground with timeout up to 600000 ms, or start it detached (nohup … &) and poll its PID/log in this same turn.";
 const EDIT_LAST_MSG = "--edit-last edits the newest comment of the shared GitHub account, which may be another agent's or the lead's ruling. Post a new comment instead.";
 function workerDenial(ev) {
-  const secret = secretDenial(ev);
+  const secret = secretDenial(ev) || humanGhDenial(ev);
   if (secret) return secret;
   if (ev.tool === "monitor") return WAIT_MSG;
   if (ev.tool !== "shell") return null;
+  if (postsVerdict(ev.command)) return ev.agent || ev.teammate ? POST_MSG.agent : POST_MSG.worker;
   if (ev.background) return WAIT_MSG;
   if (editsLast(ev.command)) return EDIT_LAST_MSG;
   const cwd = shellCwd(ev);
@@ -873,7 +874,7 @@ const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? L
 // comments API call whose body opens with one is refused. The body is read from --body/-b, a body= field, a
 // heredoc, or a --body-file/-F file under cwd. A guard, not a boundary: the verdict script's author check is.
 const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
-const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`.";
+const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`. The human's own verdict goes out as `node <hooks>/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>` from their review session, which asks them first.";
 function verdictPost(command, cwd) {
   const cmd = String(command || "");
   if (!/\b(?:gh|proteus-gh\.js)\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
@@ -886,6 +887,199 @@ function verdictPost(command, cwd) {
     try { bodies.push(fs.readFileSync(path.resolve(cwd || ".", m[2]), "utf8").slice(0, 4096)); } catch {}
   }
   return bodies.some((b) => HUMAN_WORD.test(b.replace(/^\$\(\s*cat\s*<<[\s\S]*$/, ""))) ? VERDICT_MSG : null;
+}
+
+// ---- the human's verdict post (#157): `node <hooks>/proteus-verdict.js <issue> --post --body-file <f> --sha <sha256>`
+// runs gh under the human's own config. The main session's hook asks the human first (humanPost); agents never
+// run it, and never reach the human's gh config any other way (humanGhDenial). Guards, not a boundary: the
+// agents run as the same OS user (enforcement.md §1); the boundary is the human's click and proteus-verdict.js's
+// author check.
+
+// gh's config dir the way gh resolves it: GH_CONFIG_DIR, else $XDG_CONFIG_HOME/gh, else %AppData%\GitHub CLI on
+// Windows, else ~/.config/gh. env and platform are parameters so a test can fake win32.
+function ghConfigDir(env = process.env, platform = process.platform) {
+  const win = platform === "win32", p = win ? path.win32 : path.posix;
+  const get = (k) => { const n = Object.keys(env).find((x) => (win ? x.toUpperCase() === k.toUpperCase() : x === k)); return n ? String(env[n] || "") : ""; };
+  if (get("GH_CONFIG_DIR")) return p.resolve(get("GH_CONFIG_DIR"));
+  if (get("XDG_CONFIG_HOME")) return p.join(get("XDG_CONFIG_HOME"), "gh");
+  if (win && get("AppData")) return p.join(get("AppData"), "GitHub CLI");
+  return p.join(os.homedir(), ".config", "gh");
+}
+// this process's env without GH_CONFIG_DIR (any case: Windows env names are case-blind)
+const envSansGhDir = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== "GH_CONFIG_DIR"));
+// the human's gh config dir: "humanGh" in proteus.json (a leading ~ allowed), else gh's default with the agents'
+// GH_CONFIG_DIR removed
+function humanGhDir() {
+  const d = proteusConfig().humanGh;
+  if (typeof d === "string" && d.trim()) return path.resolve(d.trim().replace(/^~(?=$|[\\/])/, () => os.homedir()));
+  return ghConfigDir(envSansGhDir());
+}
+// gh as the human: GH_CONFIG_DIR removed, or set to "humanGh". input: stdin for the call
+function ghHuman(args, cwd, { input, timeout = 15000 } = {}) {
+  const env = { ...envSansGhDir(), GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
+  const own = proteusConfig().humanGh;
+  if (typeof own === "string" && own.trim()) env.GH_CONFIG_DIR = humanGhDir();
+  const r = spawnSync("gh", args, { cwd, input, encoding: "utf8", timeout, windowsHide: true, env });
+  return { ok: r.status === 0, out: String(r.stdout || "").trim(), err: String(r.stderr || "").trim() || (r.error ? r.error.message : "") };
+}
+// who a --post would post as: { login, human, error }; error says how to fix it, "" when login is the human
+function humanLogin(cwd) {
+  const dir = humanGhDir(), human = String(proteusConfig().human || "").trim();
+  const login = ghHuman(["api", "user", "--jq", ".login"], cwd).out;
+  const fix = `in your own terminal run \`gh auth login\`${human ? ` (or \`gh auth switch --user ${human}\`)` : ""}, or set "humanGh" in ${configFile()} to the gh config dir you log in with`;
+  if (!human && agentGhDir()) return { login, human, error: `no "human" in ${configFile()} beside agentGh; install.js --agent-login writes it` };
+  if (!login) return { login, human, error: `gh in ${fwd(dir)} is not logged in: ${fix}` };
+  if (human && login !== human) return { login, human, error: `gh in ${fwd(dir)} is logged in as ${login}, not ${human}: ${fix}` };
+  return { login, human: human || login, error: "" };
+}
+// the human's gh dir as a guarded path, only while the agents have a login of their own (agentGh): { human, agent }, else null
+function humanGhGuard() {
+  const agent = agentGhDir();
+  if (!agent) return null;
+  const human = humanGhDir();
+  return samePath(realOr(human), realOr(agent)) ? null : { human, agent };
+}
+const inDir = (dir, p) => (relPath(realOr(dir), p) ?? relPath(dir, p)) !== null;
+// p (absolute) as a forward-slash path when it is in the human's gh dir and not in the agents' own, else ""
+function inHumanGh(p, g = humanGhGuard()) {
+  return g && p && inDir(g.human, p) && !inDir(g.agent, p) ? fwd(p) : "";
+}
+const HUMAN_GH_MSG = {
+  path: (p) => `${p} is in the human's gh config (their GitHub login); no agent reads, writes or names it. Agents post as their own login; the human's verdicts go out through proteus-verdict.js --post, which the human approves.`,
+  env: "agents never set or unset GH_CONFIG_DIR or GH_HOST, nor clear the environment with env -i: their gh runs under the agents' login, and only proteus-verdict.js --post, which the human approves, posts as the human.",
+  auth: (w) => `\`gh ${w}\` can reach past the agents' own login (gh keeps one keyring entry per host for every config dir); agents never run it. \`gh auth status\` shows who they are.`,
+};
+const GH_VAR = /^(?:\$?env:)?GH_(?:CONFIG_DIR|HOST)$/i;
+const UNSETS = new Set(["unset", "remove-item", "ri", "del", "rm", "rv", "remove-variable", "clear-item"]);
+// sets, unsets or clears GH_CONFIG_DIR or GH_HOST: NAME=v before a command or alone, $env:NAME=v, export / declare /
+// set / setx / unset NAME (fish's set -e too), env -u NAME or env -i, PowerShell's Remove-Item env:NAME; inside
+// sh -c and eval too. Reading it ($GH_CONFIG_DIR, grep GH_CONFIG_DIR) passes.
+function movesGhEnv(command, depth = 0) {
+  const cmd = String(command || "");
+  if (depth > 3 || !/GH_(?:CONFIG_DIR|HOST)|\benv\b/i.test(cmd)) return false;
+  const named = (w) => GH_VAR.test(String(w).split("=")[0]);
+  for (const all of shellCommands(cmd)) {
+    const words = unwrap(all), prog = progName(words[0]), pre = all.slice(0, all.length - words.length);
+    if (pre.some((w) => w.includes("=") && named(w))) return true;
+    for (let i = 0; i < pre.length; i++) {
+      if (progName(pre[i]) !== "env") continue;
+      for (let j = i + 1; j < pre.length && pre[j].startsWith("-"); j++) {
+        const a = pre[j];
+        if (/^(?:-[a-zA-Z]*i[a-zA-Z]*|--ignore-environment|-)$/.test(a)) return true;
+        if ((a === "-u" || a === "--unset") && named(pre[j + 1])) return true;
+        if (/^(?:-u|--unset=)/.test(a) && named(a.replace(/^(?:-u|--unset=)/, ""))) return true;
+      }
+    }
+    if (/^\$env:/i.test(words[0] || "") && named(words[0])) return true;
+    if ((DECLARES.has(prog) || UNSETS.has(prog)) && words.slice(1).some((w) => !w.startsWith("-") && named(w))) return true;
+    const c = words.findIndex((w) => /^-[a-z]*c$/.test(w));
+    if (NESTED_SHELLS.has(prog) && c > 0 && words[c + 1] !== undefined && movesGhEnv(words[c + 1], depth + 1)) return true;
+    if (prog === "eval" && movesGhEnv(words.slice(1).join(" "), depth + 1)) return true;
+  }
+  return false;
+}
+const GH_AUTH_REACH = new Set(["login", "logout", "switch", "token", "refresh"]);
+// an agent reaching the human's gh identity: a Read or Edit in the human's gh dir; a shell command naming that
+// dir, setting or unsetting GH_CONFIG_DIR or GH_HOST, passing gh --hostname, or running gh auth login/logout/switch/token/refresh.
+// Only with agentGh set: under one shared login there is nothing to keep apart. Lead and subagents alike.
+function humanGhDenial(ev) {
+  const g = humanGhGuard();
+  if (!g) return null;
+  const base = path.resolve(ev.cwd || projectRoot(ev));
+  if (ev.tool === "read" || ev.tool === "edit") {
+    for (const p of ev.paths && ev.paths.length ? ev.paths : [ev.path].filter(Boolean)) {
+      const abs = path.resolve(base, String(p)), hit = inHumanGh(abs, g) || inHumanGh(realTarget(abs), g);
+      if (hit) return HUMAN_GH_MSG.path(hit);
+    }
+    return null;
+  }
+  if (ev.tool !== "shell") return null;
+  const cmd = String(ev.command || "");
+  if (movesGhEnv(cmd)) return HUMAN_GH_MSG.env;
+  const dir = shellCwd(ev);
+  for (const all of shellCommands(cmd)) {
+    const words = unwrap(all), prog = progName(words[0]);
+    const gh = prog === "gh" || (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || ""));
+    const args = gh ? words.slice(prog === "gh" ? 1 : 2) : [];
+    if (args.some((w) => /^--hostname(?:=|$)/.test(w))) return HUMAN_GH_MSG.auth("--hostname");
+    if (args[0] === "auth" && GH_AUTH_REACH.has(args[1])) return HUMAN_GH_MSG.auth(`auth ${args[1]}`);
+    for (const w of [...all, ...(all.redirects || [])]) {
+      for (const t of new Set([w, String(w).split("=").pop()])) {
+        if (!/[\\/~]|^\$/.test(t)) continue;
+        for (const p of spellings(t, dir)) {
+          const hit = inHumanGh(p, g) || inHumanGh(realTarget(p), g);
+          if (hit) return HUMAN_GH_MSG.path(hit);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+const POST_SCRIPT = path.join(__dirname, "proteus-verdict.js");
+const POST_MAX = 65536; // GitHub's comment limit, in characters; bytes here, a little stricter
+const VERDICT_LINE = /^(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
+const POST_MSG = {
+  agent: "proteus-verdict.js --post posts the human's verdict under the human's own login; only the human's main session runs it, after the human approves. Report the verdict text to the lead or the human instead.",
+  worker: "proteus-verdict.js --post never runs from a worker's worktree: workers never post verdicts. The human's review session posts it.",
+};
+// any mention of proteus-verdict.js with --post: the gate judges every spelling, and refuses all but one usage
+const postsVerdict = (command) => /proteus-verdict/.test(String(command || "")) && /--post\b/.test(String(command || ""));
+const quoteArg = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
+const postCommand = (issue, file, sha) => `node ${quoteArg(fwd(POST_SCRIPT))} ${issue} --post --body-file ${quoteArg(fwd(file))} --sha ${sha}`;
+// { issue, file, sha } from the one accepted usage, `node <this hooks dir>/proteus-verdict.js <issue> --post
+// --body-file <f> [--sha <h>]` alone on the line; else { error }
+function postArgs(command, dir) {
+  const cmd = String(command || "");
+  const usage = `run it alone, exactly as \`node <hooks>/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>\`, nothing before or after it`;
+  const cmds = shellCommands(cmd);
+  if (cmds.length !== 1 || /`|\$\(|<\(|>\(/.test(cmd) || (cmds[0].redirects || []).length) return { error: `proteus-verdict.js --post: ${usage}.` };
+  const all = cmds[0];
+  if (unwrap(all).length !== all.length || progName(all[0]) !== "node") return { error: `proteus-verdict.js --post: ${usage}.` };
+  const script = path.resolve(dir, expandPath(all[1] || "", dir));
+  if (!samePath(realOr(script), realOr(POST_SCRIPT))) return { error: `proteus-verdict.js --post runs only as this install's script, ${fwd(POST_SCRIPT)}: ${usage}.` };
+  const out = { issue: "", file: "", sha: "" };
+  let post = false;
+  for (let i = 2; i < all.length; i++) {
+    const a = all[i], m = /^(--body-file|--sha)=(.*)$/.exec(a);
+    if (/^\d+$/.test(a) && !out.issue) out.issue = a;
+    else if (a === "--post") post = true;
+    else if (m) out[m[1] === "--sha" ? "sha" : "file"] = m[2];
+    else if ((a === "--body-file" || a === "--sha") && i + 1 < all.length) out[a === "--sha" ? "sha" : "file"] = all[++i];
+    else return { error: `proteus-verdict.js --post: unexpected ${a}; ${usage}.` };
+  }
+  if (!post || !out.issue || !out.file || out.file === "-") return { error: `proteus-verdict.js --post needs the issue and --body-file <file>; ${usage}.` };
+  out.file = path.resolve(dir, expandPath(out.file, dir));
+  out.sha = out.sha.toLowerCase();
+  return out;
+}
+// the gate on the human's verdict post, for a shell call: null when the command is no --post; else { ask } with
+// the dialog text for the human, or { deny } with why. Reads the body file once: the hash it checks and the
+// lines it shows come from the same bytes, and --post refuses a file whose hash no longer matches.
+// ad: the harness adapter, whose noAsk(ev) says why a PreToolUse "ask" would show the human no dialog here.
+function humanPost(ev, ad) {
+  if (ev.tool !== "shell" || !postsVerdict(ev.command)) return null;
+  if (ev.agent || ev.teammate) return { deny: POST_MSG.agent };
+  const dir = shellCwd(ev);
+  for (const r of new Set([projectRoot(ev), gitRoot(dir)].filter(Boolean))) if (isLinked(r) && fs.existsSync(ownedFile(r))) return { deny: POST_MSG.worker };
+  const p = postArgs(ev.command, dir);
+  if (p.error) return { deny: p.error };
+  let body;
+  try { body = fs.readFileSync(p.file); } catch { return { deny: `proteus-verdict.js --post: cannot read ${fwd(p.file)}; write the verdict to that file first.` }; }
+  if (body.length > POST_MAX) return { deny: `proteus-verdict.js --post: ${fwd(p.file)} is over ${POST_MAX} bytes, more than one GitHub comment holds; shorten it.` };
+  const text = body.toString("utf8"), lines = text.replace(/\s+$/, "").split(/\r?\n/);
+  if (!VERDICT_LINE.test(lines[0].trim())) return { deny: "a verdict's first line is ACCEPT, CHANGES, CHANGES revision or ANSWER <pick>; fix the body file's first line." };
+  const sha = require("crypto").createHash("sha256").update(body).digest("hex");
+  const cmd = postCommand(p.issue, p.file, sha);
+  if (p.sha !== sha) return { deny: `${fwd(p.file)} has sha256 ${sha}${p.sha ? `, not ${p.sha} (the file changed since?)` : ""}. Run: ${cmd}` };
+  const why = ad && typeof ad.noAsk === "function" ? ad.noAsk(ev) : "this CLI's adapter cannot ask";
+  if (why) return { deny: `the human approves each verdict post in a permission dialog, and none can appear here (${why}). The human runs it in their own terminal, where it posts as their own gh login: ${cmd}` };
+  const who = humanLogin(dir);
+  if (who.error) return { deny: `proteus-verdict.js --post would not post as the human: ${who.error}. Nothing was posted.` };
+  const title = gh(["issue", "view", p.issue, "--json", "title", "-q", ".title"], dir, 6000, agentGhDir()) || "(title unavailable)";
+  const SHOW = 12, shown = lines.slice(0, SHOW).map((l) => `  ${l.slice(0, 200)}`);
+  if (lines.length > SHOW) shown.push(`  … ${lines.length - SHOW} more lines in ${fwd(p.file)}`);
+  return { ask: `Proteus: post this verdict on #${p.issue} "${title.slice(0, 120)}" as ${who.login}? Approve only if it is what you said.\n${shown.join("\n")}\n(sha256 ${sha.slice(0, 12)}; --post refuses the file if it changes)` };
 }
 
 // a command line as simple commands, each a list of words: quotes removed, split at ; & | ( ) ` and newlines,
@@ -1322,6 +1516,9 @@ function guardedWrite(abs, ev) {
     // the plugin's own folder: its hooks, skills and agents
     const inPlug = plug ? relPath(realOr(plug), p) ?? relPath(plug, p) : null;
     if (inPlug !== null) return inPlug ? `$CLAUDE_PLUGIN_ROOT/${inPlug}` : "$CLAUDE_PLUGIN_ROOT";
+    // the human's gh config (their GitHub login), while the agents have one of their own
+    const gh = inHumanGh(p);
+    if (gh) return gh;
   }
   return "";
 }
@@ -1381,7 +1578,7 @@ function treeRel(t, dir, ev) {
   return "";
 }
 // the guarded path (relative to abs, forward slashes) that abs holds as a parent, else "": a guarded dir of any
-// checkout of this repo or of the guest dir, a whole checkout (its .git), or the CLIs' dirs in the home
+// checkout of this repo or of the guest dir, a whole checkout (its .git), the CLIs' dirs in the home, or the human's gh config
 const ANCHORS = [".git", ".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks"];
 function guardedParent(abs, ev) {
   const roots = new Set(), commons = new Set([gitCommonDir(path.resolve(projectRoot(ev)))]);
@@ -1395,7 +1592,8 @@ function guardedParent(abs, ev) {
   const guest = guestDir(projectRoot(ev));
   if (guest) roots.add(guest);
   const plug = pluginAnchor(gitCommonDir(path.resolve(projectRoot(ev))));
-  const anchors = [...[".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d)), ...cliHomes(), ...(plug ? [plug] : [])];
+  const hg = humanGhGuard();
+  const anchors = [...[".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d)), ...cliHomes(), ...(plug ? [plug] : []), ...(hg ? [hg.human] : [])];
   for (const r of roots) {
     anchors.push(...ANCHORS.map((a) => path.join(r, a)));
     try { anchors.push(...fs.readdirSync(path.join(r, ".config")).filter((n) => /^\.?lefthook/i.test(n)).map((n) => path.join(r, ".config", n))); } catch {}
@@ -2269,6 +2467,7 @@ module.exports = {
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   RELEASE, newerThan, release, verifyRelease, changelog,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
+  ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
   workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

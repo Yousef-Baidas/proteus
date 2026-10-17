@@ -8,7 +8,15 @@
 // gh config ("agentGh", install.js --agent-login), else that same login: identity=shared, where an agent's ACCEPT counts too
 // and the warning on stderr says so.
 // Exits 0 with a verdict printed, 1 without one (gh unreachable included), 2 on bad usage.
+//   node .claude/hooks/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>
+// posts the human's verdict: the file's bytes, if their sha256 is still <sha256> and the first line opens with ACCEPT,
+// CHANGES or ANSWER, on a proteus-review or proteus-question issue, under the human's own gh login (GH_CONFIG_DIR
+// dropped, or "humanGh" in proteus.json), and only when that login is the human. In a session the PreToolUse hook asks
+// the human first and denies agents (proteus-lib humanPost); in the human's own terminal it just runs.
+// Exits 0 posted, 1 refused or failed (nothing posted), 2 on bad usage.
 "use strict";
+const fs = require("fs");
+const crypto = require("crypto");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
@@ -28,10 +36,46 @@ function pick(comments, human, agent) {
   return null;
 }
 
+const USAGE = "usage: proteus-verdict.js <issue> [--wait] | <issue> --post --body-file <file> --sha <sha256>";
+
+// --post: { issue, file, sha } from argv, or null on bad usage
+function postUsage(args) {
+  const o = { issue: "", file: "", sha: "" };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i], m = /^(--body-file|--sha)=(.*)$/.exec(a);
+    if (/^\d+$/.test(a) && !o.issue) o.issue = a;
+    else if (a === "--post") continue;
+    else if (m) o[m[1] === "--sha" ? "sha" : "file"] = m[2];
+    else if ((a === "--body-file" || a === "--sha") && i + 1 < args.length) o[a === "--sha" ? "sha" : "file"] = args[++i];
+    else return null;
+  }
+  return o.issue && o.file && o.file !== "-" && /^[0-9a-f]{64}$/i.test(o.sha) ? o : null;
+}
+
+function post(args, root) {
+  const o = postUsage(args);
+  if (!o) { console.error(USAGE); return 2; }
+  const no = (why) => { console.error(`proteus-verdict --post: ${why}; nothing posted.`); return 1; };
+  let body;
+  try { body = fs.readFileSync(path.resolve(o.file)); } catch { return no(`cannot read ${o.file}`); }
+  const sha = crypto.createHash("sha256").update(body).digest("hex");
+  if (sha !== o.sha.toLowerCase()) return no(`${o.file} has sha256 ${sha}, not ${o.sha}: it changed after it was approved`);
+  if (!lib.VERDICT_LINE.test(body.toString("utf8").split(/\r?\n/, 1)[0].trim())) return no("the first line must open with ACCEPT, CHANGES or ANSWER");
+  const who = lib.humanLogin(root);
+  if (who.error) return no(who.error);
+  const labels = lib.gh(["issue", "view", o.issue, "--json", "labels", "-q", ".labels[].name"], root, 6000, lib.agentGhDir()).split(/\r?\n/);
+  if (!labels.some((l) => /^(proteus|hive)-(review|question)$/.test(l.trim()))) return no(`#${o.issue} is no proteus-review or proteus-question issue (or gh could not read it)`);
+  const r = lib.ghHuman(["issue", "comment", o.issue, "--body-file", "-"], root, { input: body });
+  if (!r.ok) return no(`gh issue comment failed: ${r.err.split(/\r?\n/, 1)[0] || "no output"}`);
+  console.log(`posted as ${who.login}: ${r.out.split(/\r?\n/).pop()}`);
+  return 0;
+}
+
 function main() {
   const args = process.argv.slice(2);
+  if (args.includes("--post")) return post(args, path.resolve(lib.projectRoot()));
   const issue = args.find((a) => /^\d+$/.test(a));
-  if (!issue) { console.error("usage: proteus-verdict.js <issue> [--wait]"); return 2; }
+  if (!issue) { console.error(USAGE); return 2; }
   const root = path.resolve(lib.projectRoot());
   const own = lib.agentGhDir();
   const agent = lib.gh(["api", "user", "--jq", ".login"], root, 6000, own);

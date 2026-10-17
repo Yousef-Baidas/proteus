@@ -10,6 +10,7 @@
 //   kind         session-start | prompt | pre-tool | post-tool | tool-failed | stop | subagent-stop | idle
 //   session, cwd, root (the project dir), source (session-start: startup|resume|clear|compact|fork)
 //   agent, agentType, teammate   set inside a subagent or teammate; "" on the main thread
+//   permissionMode   the session's permission mode (default, acceptEdits, auto, plan, dontAsk, bypassPermissions)
 //   model        the session's model when the event carries it
 //   tool         edit | read | shell | monitor | spawn | "" (anything else); toolName is the CLI's own
 //   path, command, background, spawnModel, spawnType, toolUseId   from the tool call (spawnType: the agent spawned)
@@ -22,6 +23,8 @@
 //
 // Adapter contract (see proteus-harness-claude.js for the reference):
 //   answers      deny(why, {json}) · context(ev, text, kind) · keepGoing(ev, reason)
+//                ask(why) (PreToolUse: the human decides in a permission dialog) · noAsk(ev) (why no such
+//                dialog can reach the human here, "" when it can; the caller denies instead of asking)
 //                postBlock(ev, reason) (after the tool ran: the reason reaches the model as feedback to act on)
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
 //                briefText(ev) (a subagent's brief, the lead's spawn prompt; "" when the CLI cannot show it)

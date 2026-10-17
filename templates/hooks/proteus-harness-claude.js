@@ -44,6 +44,7 @@ function event(raw) {
     agent: r.agent_id || "",
     agentType: r.agent_type || "",
     teammate: r.teammate_name || "",
+    permissionMode: typeof r.permission_mode === "string" ? r.permission_mode : "",
     model: typeof m === "string" ? m : m && typeof m === "object" ? m.id || m.display_name || "" : "",
     tool: TOOLS[r.tool_name] || "",
     toolName: r.tool_name || "",
@@ -81,6 +82,38 @@ function deny(why, { json = false } = {}) {
   }
   try { fs.writeSync(2, `proteus: ${why}\n`); } catch {} // sync: process.exit drops async pipe writes
   process.exit(2);
+}
+
+// let the human decide the tool call: a PreToolUse "ask" opens the permission dialog with why in it (exit 0)
+function ask(why) {
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: why } }));
+}
+
+// why a PreToolUse "ask" would not reach the human as a dialog in this session, "" when it does
+// (https://code.claude.com/docs/en/permission-modes and /docs/en/hooks, as of 2.1.302; probed with claude -p):
+// default, acceptEdits: a dialog. auto: a dialog from 2.1.211 (before, the classifier could approve it unseen).
+// plan, dontAsk, bypassPermissions, and no mode named: no dialog to rely on. -p and the SDK
+// (CLAUDE_CODE_ENTRYPOINT sdk-*): no dialog; the ask is denied, or a program answers it, not the human.
+const ASK_FROM = [2, 1, 211];
+function claudeVersion() {
+  const pick = (s) => (/(\d+)\.(\d+)\.(\d+)/.exec(String(s || "")) || []).slice(1, 4).map(Number);
+  const exec = pick(path.basename(process.env.CLAUDE_CODE_EXECPATH || ""));
+  if (exec.length === 3) return exec;
+  try { return pick(require("child_process").execFileSync("claude", ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); } catch { return []; }
+}
+function noAsk(ev) {
+  if (/^sdk/i.test(process.env.CLAUDE_CODE_ENTRYPOINT || "")) return "a headless session (claude -p or the Agent SDK) shows no permission dialog";
+  const mode = ev.permissionMode;
+  if (mode === "default" || mode === "acceptEdits") return "";
+  if (mode === "auto") {
+    const v = claudeVersion();
+    const at = v.length === 3 && v.map((n, i) => n - ASK_FROM[i]).find((d) => d !== 0);
+    return v.length === 3 && !(at < 0) ? "" : `auto mode shows a hook's ask as a dialog only from Claude Code ${ASK_FROM.join(".")}${v.length === 3 ? `; this is ${v.join(".")}` : ", and the version is unknown"}`;
+  }
+  if (mode === "plan") return "plan mode runs no commands";
+  if (mode === "dontAsk") return "dontAsk mode denies every permission prompt";
+  if (mode === "bypassPermissions") return "bypassPermissions mode shows no permission prompts";
+  return mode ? `permission mode ${mode} is not one Proteus knows to show the dialog` : "the hook input names no permission mode";
 }
 
 // add text to the model's context for this event (kind: the hook's own event when the JSON
@@ -390,7 +423,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv,
 };
