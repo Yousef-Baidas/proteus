@@ -2,7 +2,7 @@
 // SessionStart hook: start every session in a Proteus repo as the lead,
 // as if the human had typed /proteus. Prints the skill body plus a local state line
 // so the lead knows what bootstrap can skip without spending a tool call.
-// Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile),
+// Also: syncs agents and hooks from the Proteus checkout named in proteus.json (lib.configFile; not under the plugin),
 // regenerates the project's patched agents (proteus-agent-patch.js; none under the plugin),
 // checks the checkout for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
@@ -44,8 +44,9 @@ lib.run(async (ev, ad) => {
   // (a compact mid-run) gets a notice, not a block, and compares against the state after
   const writes = () => {
     if (pluginRoot()) safe(() => releaseCheck(root, notes));
-    if (home) {
-      if (!pluginRoot()) pending = safe(() => update(home, cfg, notes), "");
+    // a 1.x checkout proteus.json still names syncs nothing under the plugin: its copies would run beside the plugin's
+    if (home && !pluginRoot()) {
+      pending = safe(() => update(home, cfg, notes), "");
       safe(() => sync(ad, home, root, notes));
       if (!lib.agentPrefix()) safe(() => agentPatches(ad, home, root, notes));
     }
