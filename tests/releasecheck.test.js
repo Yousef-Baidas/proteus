@@ -88,11 +88,18 @@ else {
   const w = warning(r.out);
   ok("unsigned tag: one loud line with the sha, the reason, the newest verified tag and the pin command",
     w.length === 1 && w[0].includes(B.slice(0, 12)) && /\(git verify-tag v1\.1\.0: no signature found\)/.test(w[0]) &&
-    w[0].includes(`Newest verified release: v1.0.0; to pin to it, claude plugin marketplace add ${BARE}#v1.0.0 then claude plugin update proteus@proteus`) && !quiet(r.out).length, r.out.slice(0, 1500));
+    w[0].includes(`Newest verified release: v1.0.0; to pin to it, run claude plugin marketplace add ${BARE}#v1.0.0 && claude plugin install proteus@proteus && claude plugin update proteus@proteus`) && !quiet(r.out).length, r.out.slice(0, 1500));
 
+  // the user settings name the marketplace (claude plugin marketplace add writes it): re-adding at a tag fails
+  // until that entry goes, so the pin command removes it first
+  const userSettings = path.join(HOME, ".claude", "settings.json");
+  fs.writeFileSync(userSettings, JSON.stringify({ extraKnownMarketplaces: { proteus: { source: { source: "git", url: BARE } } } }));
   install(C);
   r = start(ON);
   ok("tag signed by the wrong key: one loud line naming the verify-tag failure", warning(r.out).length === 1 && /\(git verify-tag v1\.2\.0: /.test(warning(r.out)[0]) && /Newest verified release: v1\.0\.0/.test(r.out), r.out.slice(0, 1500));
+  ok("pin command: removes the user settings' marketplace entry before re-adding it at the tag",
+    warning(r.out)[0].includes(`run claude plugin marketplace remove proteus --scope user && claude plugin marketplace add ${BARE}#v1.0.0 && claude plugin install proteus@proteus && claude plugin update proteus@proteus`), r.out.slice(0, 1500));
+  fs.rmSync(userSettings);
 
   install(D);
   r = start(ON);

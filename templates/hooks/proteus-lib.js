@@ -1884,8 +1884,29 @@ function refreshInbox(root, common, timeout = 10000) {
   return inbox;
 }
 
+// the proteus marketplace's repo from known_marketplaces.json: url to fetch tags from, add as the
+// claude plugin marketplace add source; the maintainer's GitHub repo when it names none
+function marketSource() {
+  const m = readJSON(path.join(claudeDir(), "plugins", "known_marketplaces.json"), {}) || {};
+  const s = (m.proteus && m.proteus.source) || {};
+  const strip = (v) => (typeof v === "string" ? v.replace(/#.*$/, "") : "");
+  if (s.source === "github" && /^[\w.-]+\/[\w.-]+$/.test(strip(s.repo))) return { url: `https://github.com/${strip(s.repo)}.git`, add: strip(s.repo) };
+  const u = strip(s.url) || strip(s.path);
+  if (u) return { url: u, add: u };
+  return { url: "https://github.com/Yousef-Baidas/proteus.git", add: "Yousef-Baidas/proteus" };
+}
+// the commands that pin the plugin to tag, as checked against the real CLI (#136): re-adding a marketplace at another
+// ref fails while the user settings' extraKnownMarketplaces names it, so that entry goes first (a project's entry
+// keeps the plugin installed through it); install brings it back where the remove uninstalled it, update moves it
+function pinCommand(tag) {
+  const u = readJSON(path.join(claudeDir(), "settings.json"), {}) || {};
+  const declared = !!(u.extraKnownMarketplaces && u.extraKnownMarketplaces.proteus);
+  return [...(declared ? ["claude plugin marketplace remove proteus --scope user"] : []), `claude plugin marketplace add ${marketSource().add}#${tag}`,
+    "claude plugin install proteus@proteus", "claude plugin update proteus@proteus"].join(" && ");
+}
+
 module.exports = {
-  skillCommand, agentPrefix,
+  skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,

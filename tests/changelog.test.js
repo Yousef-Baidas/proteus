@@ -48,6 +48,11 @@ ok("release: new section after an empty Unreleased, before 1.0.0, with every bul
 ok("release: folded fragments deleted, README.md stays", frags(r).join() === "README.md", frags(r));
 ok("release: a second run has nothing to fold and refuses", run(r, "--release", "1.2.0").status === 1);
 
+// a major release's "### Upgrading to X.Y.Z" steps come first
+r = root("", { "a.md": A, "u.md": "### Fixed\n\n- u-fix\n\n### Upgrading to 2.0.0\n\n- step\n" });
+p = run(r);
+ok("upgrading: accepted and printed before the other sections", p.status === 0 && p.stdout === "### Upgrading to 2.0.0\n\n- step\n\n### Added\n\n- a1\n  continued\n\n### Fixed\n\n- u-fix\n", JSON.stringify(p.stdout) + p.stderr);
+
 // refusals leave everything as it was
 r = root("", { "a.md": A, "bad.md": "just prose\n" });
 p = run(r, "--release", "1.1.0");
