@@ -24,7 +24,7 @@ const ALLOW = [
   { file: "install.js", why: "wasHive", from: /\bwasHive = / },
   { file: "install.js", why: "doctor legacy checks", from: /^ {2}\/\/ hivemind, the old name: its leftovers before the install checks/, to: /^ {2}\}\);$/ },
   { file: "templates/hooks/proteus-lib.js", why: "legacy names block (#6)", from: /^\/\/ legacy-hive:start$/, to: /^\/\/ legacy-hive:end$/ },
-  { file: "README.md", why: "Coming from hivemind (#6 rewrites it)", from: /^### Coming from hivemind$/, before: /^#{1,3} / },
+  { file: "docs/migrating.md", why: "Coming from hivemind (#6 rewrites it)", from: /^## Coming from hivemind$/, to: /^Kept as they were: / },
 ];
 
 // { hits: ["file:line: text"], missing: ["file: why"], ranges: ["file:a-b why"] } for files (paths relative to root)
@@ -77,9 +77,9 @@ put("install.js", [
   "}",
   "",
 ].join("\n"));
-put("README.md", "# Proteus\n\n### Coming from hivemind\n\nKept: `hive/<run>`, `hive-evidence/<run>`, `.git/hive/`.\n\n### Check the install\n\nThe hivemind skill and `.claude/hive-owned` stay.\n");
+put("docs/migrating.md", "# Migrating\n\n## Coming from hivemind\n\nMoved: `.git/hive/`.\n\nKept as they were: `hive/<run>`, `hive-evidence/<run>`.\n\n## Check the install\n\nThe hivemind skill and `.claude/hive-owned` stay.\n");
 put("skills/proteus/references/tracker.md", "# Tracker\n\nLabels `proteus`, `proteus-log`.\n");
-const SELF = ["install.js", "README.md", "skills/proteus/references/tracker.md"];
+const SELF = ["install.js", "docs/migrating.md", "skills/proteus/references/tracker.md"];
 const clean = scan(T, SELF);
 ok("the self-check tree resolves every allowlist anchor", clean.missing.length === 0, clean.missing.join("; "));
 ok("hive names inside the legacy regions pass", clean.hits.length === 0, clean.hits.join("; "));
