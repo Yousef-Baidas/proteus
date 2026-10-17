@@ -306,14 +306,20 @@ function agentGhDir() {
   return path.resolve(d.trim().replace(/^~(?=$|[\\/])/, () => os.homedir()));
 }
 
-// ---- the verifier App (#81): "verifierApp": { appId, installationId, keyPath } in proteus.json, recorded by
-// install.js --verifier-app. proteus-signoff.js posts proteus/verdict and proteus/security under it, and the
-// ruleset pins those two to its app id, so a status posted with the agents' token no longer counts. null when unset.
+// ---- the verifier App (#81): "verifierApp": { appId, installations: { <owner>: <id> }, keyPath } in proteus.json,
+// recorded by install.js --verifier-app. An installation belongs to one account or org, so each owner of a Proteus
+// repo has its own; a lone installationId (before per-owner ids) still serves an owner the map does not name.
+// proteus-signoff.js posts proteus/verdict and proteus/security under it, and the ruleset pins those two to its app
+// id, so a status posted with the agents' token no longer counts. null when unset.
 function verifierApp() {
   const a = proteusConfig().verifierApp;
   if (!a || typeof a !== "object" || !/^\d+$/.test(String(a.appId || "")) || typeof a.keyPath !== "string" || !a.keyPath.trim()) return null;
-  return { appId: Number(a.appId), installationId: /^\d+$/.test(String(a.installationId || "")) ? Number(a.installationId) : 0, keyPath: path.resolve(a.keyPath.trim().replace(/^~(?=$|[\\/])/, () => os.homedir())) };
+  const installations = {};
+  for (const [o, id] of Object.entries(a.installations && typeof a.installations === "object" ? a.installations : {})) if (/^\d+$/.test(String(id))) installations[o.toLowerCase()] = Number(id);
+  return { appId: Number(a.appId), installations, installationId: /^\d+$/.test(String(a.installationId || "")) ? Number(a.installationId) : 0, keyPath: path.resolve(a.keyPath.trim().replace(/^~(?=$|[\\/])/, () => os.homedir())) };
 }
+// the App's installation for repo ("owner/name"): the owner's own, else the lone pre-map id; 0 when none
+const appInstallation = (app, repo) => (app && ((app.installations || {})[String(repo).split("/")[0].toLowerCase()] || app.installationId)) || 0;
 const apiBase = () => (process.env.PROTEUS_GH_API || "https://api.github.com").replace(/\/+$/, "");
 // the App's own JWT (RS256, node:crypto): iat a minute back for clock drift, 9 minutes of life (GitHub allows 10)
 function appJwt(appId, pem, now = Math.floor(Date.now() / 1000)) {
@@ -343,12 +349,19 @@ async function appApi(method, route, bearer, body) {
 // Kept in memory by the caller and handed to gh as GH_TOKEN; never written or printed. Throws a one-line reason.
 async function appToken(repo, app = verifierApp()) {
   if (!app) throw new Error("no verifierApp in proteus.json");
-  if (!app.installationId) throw new Error("verifierApp has no installationId (install.js --verifier-app records it)");
+  const inst = appInstallation(app, repo), who = String(repo).split("/")[0];
+  if (!inst) throw new Error(`the App has no installation recorded for ${who}: install it there, then run install.js --verifier-app in a repo of ${who}`);
   let pem;
   try { pem = fs.readFileSync(app.keyPath, "utf8"); } catch (e) { throw new Error(`cannot read the App key ${app.keyPath} (${e.code || e.message})`); }
   let jwt;
   try { jwt = appJwt(app.appId, pem); } catch (e) { throw new Error(`the App key ${app.keyPath} cannot sign (${String(e.message).split("\n")[0]})`); }
-  const r = await appApi("POST", `/app/installations/${app.installationId}/access_tokens`, jwt, { repositories: [String(repo).split("/").pop()], permissions: { statuses: "write" } });
+  const lone = !(app.installations || {})[who.toLowerCase()];
+  let r;
+  try { r = await appApi("POST", `/app/installations/${inst}/access_tokens`, jwt, { repositories: [String(repo).split("/").pop()], permissions: { statuses: "write" } }); } catch (e) {
+    // the lone pre-map id may be another owner's installation, which does not reach this repo
+    if (lone && !e.network) e.message += `; if the App is not installed for ${who}, install it there, then run install.js --verifier-app in a repo of ${who}`;
+    throw e;
+  }
   if (!r || typeof r.token !== "string" || !r.token) throw new Error("GitHub answered without a token");
   return r.token;
 }
@@ -1833,7 +1846,7 @@ module.exports = {
   run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, verifierApp, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   drivePath, expandPath, shellCwd, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,

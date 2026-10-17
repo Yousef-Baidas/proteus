@@ -233,7 +233,7 @@ function tests(API) {
   r = inst(["--verifier-app", "42", "~/keys/verifier-app.pem"]);
   let cfg = JSON.parse(fs.readFileSync(PJ, "utf8"));
   ok("install --verifier-app: finds the installation, mints a token, records the App and keeps other keys",
-    r.code === 0 && JSON.stringify(cfg.verifierApp) === JSON.stringify({ appId: 42, installationId: 77, keyPath: KEY }) && cfg.home === ROOT
+    r.code === 0 && JSON.stringify(cfg.verifierApp) === JSON.stringify({ appId: 42, installations: { o: 77 }, keyPath: KEY }) && cfg.home === ROOT
       && apiLog().map((x) => `${x.method} ${x.url}`).join() === "GET /repos/o/r/installation,POST /app/installations/77/access_tokens" && !`${r.out}${r.err}`.includes(TOKEN), r.out + r.err);
   if (POSIX) {
     fs.chmodSync(KEY, 0o644);

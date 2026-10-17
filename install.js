@@ -35,8 +35,10 @@
 //                                     no bypass, admins included) to every proteus/* branch; with a verifier App,
 //                                     proteus/verdict and proteus/security count only when that App posts them
 //   node install.js --verifier-app <appId> <keyPath>   in the repo: record the GitHub App the verifiers sign off as
-//                                     (only "Commit statuses: write", installed on this repo, its private key kept 0600
-//                                     outside any repo) in ~/.claude/proteus.json, after a test token mints; then --protect
+//                                     (only "Commit statuses: write", installed on this repo, its private key from
+//                                     Credentials > Key pairs kept 0600 outside any repo; the App ID is on its General
+//                                     tab) in ~/.claude/proteus.json, after a test token mints; then --protect. Once
+//                                     per repo owner: run again in a repo of another account or org to add its own
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -1177,15 +1179,17 @@ function protect() {
   log(`ruleset  -> "${RULESET}" ${found ? "updated" : "added"} on ${repo}: proteus/* merges only by PR with gates green and the verifiers' statuses (proteus/verdict, proteus/security), never force-pushed, no bypass`);
   const app = hl().verifierApp();
   if (app) log(`ruleset  -> proteus/verdict and proteus/security count only from the verifier App ${app.appId}`);
+  if (app && !hl().appInstallation(app, repo)) { warn(`the verifier App ${app.appId} has no installation recorded for ${repo.split("/")[0]}, so no signoff here can post: install it there, then node "${path.join(HERE, "install.js")}" --verifier-app ${app.appId} ${app.keyPath}`); ok = false; }
   else warn("no verifier App (--verifier-app): any login with write can post proteus/verdict, the agents' too (enforcement.md §1)");
   return ok;
 }
 
 // The verifier App (#81): an App with only "Commit statuses: write", installed on the repo, its key a .pem the human
 // keeps outside any repo. Checks the key, finds the installation on this repo with the App's JWT, mints a test
-// token (used for nothing, never printed) and records { appId, installationId, keyPath } in proteus.json.
+// token (used for nothing, never printed) and records { appId, installations: { <owner>: <id> }, keyPath } in
+// proteus.json. Run in a repo of another owner (an org beside your account), it adds that owner's installation.
 async function verifierApp(idArg, keyArg) {
-  if (!/^\d+$/.test(String(idArg || "")) || !keyArg) { warn("usage: --verifier-app <appId> <keyPath> (the App ID from the App's settings page, the .pem you downloaded)"); return false; }
+  if (!/^\d+$/.test(String(idArg || "")) || !keyArg) { warn("usage: --verifier-app <appId> <keyPath> (the App ID from the App's General tab, the .pem from its Credentials > Key pairs)"); return false; }
   const appId = Number(idArg), keyPath = path.resolve(String(keyArg).replace(/^~(?=$|[\\/])/, () => HOME));
   const st = fs.statSync(keyPath, { throwIfNoEntry: false });
   if (!st || !st.isFile()) { warn(`${keyPath} is not a file: the App's private key (.pem) goes there`); return false; }
@@ -1200,14 +1204,23 @@ async function verifierApp(idArg, keyArg) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { warn(`gh repo view fails here: ${view.err || "no GitHub remote"}; run this inside the repo`); return false; }
   let inst;
   try { inst = await lib.appApi("GET", `/repos/${repo}/installation`, jwt); } catch (e) {
-    warn(e.status === 404 ? `App ${appId} is not installed on ${repo}: install it from the App's page (Install App), then run this again` : `App ${appId}: ${e.message}`);
+    warn(e.status === 404 ? `App ${appId} is not installed on ${repo}: install it from the App's Install App tab (Only select repositories), then run this again` : `App ${appId}: ${e.message}`);
     return false;
   }
   if (!inst || !/^\d+$/.test(String(inst.id))) { warn(`GitHub named no installation of App ${appId} on ${repo}`); return false; }
-  const app = { appId, installationId: Number(inst.id), keyPath };
-  try { await lib.appToken(repo, app); } catch (e) { warn(`App ${appId} is installed on ${repo} but no token mints (${e.message}); give it "Commit statuses: write"`); return false; }
-  writeJson(CONFIG, { ...readConfig(), verifierApp: app });
-  log(`verifier -> App ${appId} (installation ${app.installationId} on ${repo}) signs the verifiers' statuses; key ${keyPath}`);
+  const owner = repo.split("/")[0].toLowerCase(), id = Number(inst.id);
+  try { await lib.appToken(repo, { appId, installations: { [owner]: id }, keyPath }); } catch (e) { warn(`App ${appId} is installed on ${repo} but no token mints (${e.message}); give it "Commit statuses: write"`); return false; }
+  // the same App keeps the installations of the other owners; a lone pre-map id goes into the map under its account
+  const prev = lib.verifierApp();
+  const installations = prev && prev.appId === appId ? { ...prev.installations } : {};
+  let lone = prev && prev.appId === appId ? prev.installationId : 0;
+  if (lone && lone !== id) {
+    try { const a = await lib.appApi("GET", `/app/installations/${lone}`, jwt); if (a && a.account && a.account.login) { installations[String(a.account.login).toLowerCase()] ??= lone; lone = 0; } } catch {}
+  } else lone = 0;
+  installations[owner] = id;
+  writeJson(CONFIG, { ...readConfig(), verifierApp: { appId, installations, ...(lone && { installationId: lone }), keyPath } });
+  const others = Object.keys(installations).filter((o) => o !== owner);
+  log(`verifier -> App ${appId} (installation ${id} for ${owner}${others.length ? `; also ${others.join(", ")}` : ""}) signs the verifiers' statuses; key ${keyPath}`);
   log(`next: node "${path.join(HERE, "install.js")}" --protect, so the ruleset counts only the App's statuses`);
   return true;
 }
