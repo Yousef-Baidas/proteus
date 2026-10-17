@@ -64,6 +64,9 @@ fs.writeFileSync(path.join(H, "proteus-echo.js"), `"use strict";\nlet s = "";\np
 const REPO = path.join(W, "repo");
 fs.mkdirSync(REPO);
 g(REPO, "init", "-q");
+// gated in (tests/plugingate.test.js covers the gate)
+fs.mkdirSync(path.join(REPO, ".claude"));
+fs.writeFileSync(path.join(REPO, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "proteus@proteus": true } }));
 const entryRun = (args, input = "", env = {}) => lib.run(path.join(H, "proteus-plugin.js"), input, { cwd: REPO, args, env: { CLAUDE_PLUGIN_ROOT: PLUG, ...env } });
 let r = entryRun(["proteus-echo.js"], "IN");
 let o = {};
