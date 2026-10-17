@@ -68,9 +68,10 @@ ok("build: ...nor one it removes", !r.blocked && !fs.existsSync(WT3), r.why);
 // looked up on the PATH the call runs with (lib.ENV's, stripped), not the test's own
 const PY = ["python3", "python"].find((p) => spawnSync(p, ["-c", "print(1)"], { encoding: "utf8", env: lib.ENV }).status === 0);
 const agentFile = path.join(WT1, ".claude", "agents", "x.md");
-r = PY ? call(`${PY} -c "open('.claude/agents/x.md','w').write('x')"`, [PY, "-c", "import os; os.makedirs('.claude/agents', exist_ok=True); open('.claude/agents/x.md','w').write('x')"])
-  : call("node -e \"...\"", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/x.md','x')"));
-ok("interpreter: python -c writing .claude/agents/x.md passes the shell parser", r.pre.code === 0, r.pre.err);
+// the command line names no path (a script on disk), so the shell guard has nothing to judge (#48's residual)
+r = PY ? call(`${PY} tools/gen.py`, [PY, "-c", "import os; os.makedirs('.claude/agents', exist_ok=True); open('.claude/agents/x.md','w').write('x')"])
+  : call("node tools/gen.js", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/x.md','x')"));
+ok("interpreter: a script writing .claude/agents/x.md passes the shell parser", r.pre.code === 0, r.pre.err);
 ok("interpreter: ...and the write happened", fs.existsSync(agentFile), PY || "node");
 ok("interpreter: ...and is caught after the call, naming the path", r.blocked && r.why.includes(slash(agentFile)) && /Put each back/.test(r.why), r.why);
 let t = record();
@@ -109,8 +110,8 @@ fs.rmSync(path.join(WT2, "src", "own.js"));
 fs.rmSync(path.join(STATE, "beats", "b2.json"));
 
 // a variable and a hook copy in the worktree
-r = call("F=.claude/hooks/proteus-worker-guard.js; : > \"$F\"", node("require('fs').writeFileSync('.claude/hooks/proteus-worker-guard.js','')"));
-ok("variable: emptying the worker guard through $F is caught", r.pre.code === 0 && r.blocked && r.why.includes(".claude/hooks/proteus-worker-guard.js"), r.why);
+r = call("sh tools/reset.sh", node("require('fs').writeFileSync('.claude/hooks/proteus-worker-guard.js','')"));
+ok("variable: emptying the worker guard from a script is caught", r.pre.code === 0 && r.blocked && r.why.includes(".claude/hooks/proteus-worker-guard.js"), r.why);
 fs.copyFileSync(path.join(SRC, "proteus-worker-guard.js"), path.join(WT1, ".claude", "hooks", "proteus-worker-guard.js"));
 r = call("ls", null);
 ok("variable: the restored copy passes", !r.blocked, r.why);

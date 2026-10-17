@@ -35,7 +35,7 @@ g(REPO, "checkout", "-q", "main");
 const WT1 = path.join(REPO, ".worktrees", "r1-1"), WT2 = path.join(REPO, ".worktrees", "r1-2");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/1", WT1, "main");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/2", WT2, "main");
-for (const wt of [WT1, WT2]) lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [wt, "src/**", "docs/**"] });
+for (const wt of [WT1, WT2]) lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [wt, "src/**", "docs/**", "build/**", "node_modules/**", "dist/**"] });
 fs.mkdirSync(path.join(REPO, ".claude", "agents"), { recursive: true });
 fs.writeFileSync(path.join(REPO, ".claude", "agents", "evil.md"), "x\n");
 g(REPO, "stash", "push", "-q", "-u", "-m", "evil", "--", ".claude/agents/evil.md");
