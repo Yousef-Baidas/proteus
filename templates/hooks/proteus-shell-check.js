@@ -79,7 +79,7 @@ function targets(common) {
     }
   }
   const c = lib.realOr(common);
-  for (const d of ["hooks", "info", "config", "config.worktree", path.join("proteus", "tamper"), path.join("proteus", "unattributed")]) out.push([path.join(c, d), "common"]);
+  for (const d of ["hooks", "info", "config", "config.worktree", path.join("proteus", "tamper"), path.join("proteus", "unattributed"), path.join("proteus", "allow")]) out.push([path.join(c, d), "common"]);
   try { for (const n of fs.readdirSync(path.join(c, "worktrees"))) out.push([path.join(c, "worktrees", n, "config.worktree"), "common"]); } catch {}
   const home = os.homedir();
   const codex = process.env.CODEX_HOME || path.join(home, ".codex");

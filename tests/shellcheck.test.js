@@ -68,9 +68,10 @@ ok("build: ...nor one it removes", !r.blocked && !fs.existsSync(WT3), r.why);
 // looked up on the PATH the call runs with (lib.ENV's, stripped), not the test's own
 const PY = ["python3", "python"].find((p) => spawnSync(p, ["-c", "print(1)"], { encoding: "utf8", env: lib.ENV }).status === 0);
 const agentFile = path.join(WT1, ".claude", "agents", "x.md");
-r = PY ? call(`${PY} -c "open('.claude/agents/x.md','w').write('x')"`, [PY, "-c", "import os; os.makedirs('.claude/agents', exist_ok=True); open('.claude/agents/x.md','w').write('x')"])
-  : call("node -e \"...\"", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/x.md','x')"));
-ok("interpreter: python -c writing .claude/agents/x.md passes the shell parser", r.pre.code === 0, r.pre.err);
+// the command line names no path (a script on disk), so the shell guard has nothing to judge (#48's residual)
+r = PY ? call(`${PY} tools/gen.py`, [PY, "-c", "import os; os.makedirs('.claude/agents', exist_ok=True); open('.claude/agents/x.md','w').write('x')"])
+  : call("node tools/gen.js", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/x.md','x')"));
+ok("interpreter: a script writing .claude/agents/x.md passes the shell parser", r.pre.code === 0, r.pre.err);
 ok("interpreter: ...and the write happened", fs.existsSync(agentFile), PY || "node");
 ok("interpreter: ...and is caught after the call, naming the path", r.blocked && r.why.includes(slash(agentFile)) && /Put each back/.test(r.why), r.why);
 let t = record();
@@ -109,8 +110,8 @@ fs.rmSync(path.join(WT2, "src", "own.js"));
 fs.rmSync(path.join(STATE, "beats", "b2.json"));
 
 // a variable and a hook copy in the worktree
-r = call("F=.claude/hooks/proteus-worker-guard.js; : > \"$F\"", node("require('fs').writeFileSync('.claude/hooks/proteus-worker-guard.js','')"));
-ok("variable: emptying the worker guard through $F is caught", r.pre.code === 0 && r.blocked && r.why.includes(".claude/hooks/proteus-worker-guard.js"), r.why);
+r = call("sh tools/reset.sh", node("require('fs').writeFileSync('.claude/hooks/proteus-worker-guard.js','')"));
+ok("variable: emptying the worker guard from a script is caught", r.pre.code === 0 && r.blocked && r.why.includes(".claude/hooks/proteus-worker-guard.js"), r.why);
 fs.copyFileSync(path.join(SRC, "proteus-worker-guard.js"), path.join(WT1, ".claude", "hooks", "proteus-worker-guard.js"));
 r = call("ls", null);
 ok("variable: the restored copy passes", !r.blocked, r.why);
@@ -130,7 +131,8 @@ ok("git: reverting it passes and closes the record", !r.blocked && record().open
 r = call("node -e ... .git/hooks", node(`require('fs').writeFileSync(${JSON.stringify(path.join(REPO, ".git", "hooks", "pre-push"))}, 'exit 0')`));
 ok("git dir: a hook written into the shared .git/hooks is caught", r.blocked && r.why.includes(".git/hooks/pre-push"), r.why);
 fs.rmSync(path.join(REPO, ".git", "hooks", "pre-push"));
-r = call("git config core.hooksPath /dev/null", ["git", "config", "core.hooksPath", "/dev/null"]);
+// a script on disk sets it: the pre-check refuses a worker's own git config core.hooksPath (#48 F8)
+r = call("sh tools/setup.sh", ["git", "config", "core.hooksPath", "/dev/null"]);
 ok("git dir: core.hooksPath set in the shared config is caught", r.blocked && r.why.includes(".git/config"), r.why);
 g(WT1, "config", "--unset", "core.hooksPath");
 r = call("git push -u origin proteus-work/r1/1", ["git", "push", "-q", "-u", "origin", "proteus-work/r1/1"]);
@@ -161,7 +163,7 @@ ok("worker: put back, it passes; owned work too", !r.blocked && !call("node -e .
 
 // Codex: the same check through its adapter
 const cx = { PROTEUS_HARNESS: "codex", CODEX_HOME: path.join(lib.HOME, ".codex") };
-r = call("python3 -c ...", node("require('fs').mkdirSync('.codex/agents',{recursive:true});require('fs').writeFileSync('.codex/agents/x.toml','x')"), { env: cx, who: { agent_id: "c1", agent_type: "proteus-backend-worker" } });
+r = call("python3 tools/gen.py", node("require('fs').mkdirSync('.codex/agents',{recursive:true});require('fs').writeFileSync('.codex/agents/x.toml','x')"), { env: cx, who: { agent_id: "c1", agent_type: "proteus-backend-worker" } });
 ok("codex: an interpreter write to .codex/agents is caught after the call", r.pre.code === 0 && r.blocked && r.why.includes(".codex/agents/x.toml"), r.pre.err + r.why);
 
 // the guard's own records: deleting one stays on the new record until the lead clears it
