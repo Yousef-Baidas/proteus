@@ -164,7 +164,7 @@ function releaseCheck(root, notes) {
   }
   const bare = path.join(data, "releases.git"), file = path.join(data, "release-check.json");
   const st = lib.readJSON(file, {}) || {};
-  const src = marketSource();
+  const src = lib.marketSource();
   const signers = path.join(os.homedir(), ".config", "proteus", "allowed_signers");
   const trust = safe(() => fs.statSync(signers).mtimeMs, 0);
   let fetched = typeof st.fetched === "number" ? st.fetched : 0, failed = "";
@@ -184,7 +184,7 @@ function releaseCheck(root, notes) {
   lib.writeJSON(file, { fetched, sha, trust, result: res });
   if (res.tag) return;
   const pin = res.newest
-    ? `Newest verified release: ${res.newest}; to pin to it, claude plugin marketplace add ${src.add}#${res.newest} then claude plugin update proteus@proteus`
+    ? `Newest verified release: ${res.newest}; to pin to it, run ${lib.pinCommand(res.newest)}`
     : `No release verifies here; to trust the maintainer's key see "Releases" in ${path.join(pluginRoot(), "README.md")}`;
   notes.push(`proteus: WARNING: the installed plugin commit ${sha.slice(0, 12)} is not a verified Proteus release (${res.error}). ${pin}. Tell the human once; nothing is blocked.`);
 }
@@ -198,18 +198,6 @@ function installedSha(root) {
   const e = all.find((x) => same(x.installPath, pluginRoot())) || all.find((x) => same(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
   const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
   return /^[0-9a-f]{7,64}$/.test(sha) ? sha : "";
-}
-
-// the proteus marketplace's repo from known_marketplaces.json: url to fetch tags from, add as the
-// claude plugin marketplace add source; the maintainer's GitHub repo when it names none
-function marketSource() {
-  const m = lib.readJSON(path.join(lib.claudeDir(), "plugins", "known_marketplaces.json"), {}) || {};
-  const s = (m.proteus && m.proteus.source) || {};
-  const strip = (v) => (typeof v === "string" ? v.replace(/#.*$/, "") : "");
-  if (s.source === "github" && /^[\w.-]+\/[\w.-]+$/.test(strip(s.repo))) return { url: `https://github.com/${strip(s.repo)}.git`, add: strip(s.repo) };
-  const u = strip(s.url) || strip(s.path);
-  if (u) return { url: u, add: u };
-  return { url: "https://github.com/Yousef-Baidas/proteus.git", add: "Yousef-Baidas/proteus" };
 }
 
 // fetches url's tags (and their commits) into the bare clone; "" when it worked, else git's one-line reason

@@ -1820,7 +1820,7 @@ function pluginChecks(check, root, self) {
     if (!r.result || r.at !== r.sha) return ["WARN", `release check: no result yet for the installed commit ${r.sha.slice(0, 12)}`, "start a Claude Code session in this repo; its startup runs the check"];
     if (r.result.tag) return ["ok", `release check: ${r.sha.slice(0, 12)} is the verified release ${r.result.tag}`];
     return ["WARN", `release check: the installed commit ${r.sha.slice(0, 12)} is not a verified release (${r.result.error || "unverified"})`,
-      r.result.newest ? `pin to ${r.result.newest}, the newest verified release: the session's startup line has the command` : "trust the maintainer's key: README \"Releases\""];
+      r.result.newest ? `pin to ${r.result.newest}, the newest verified release: ${hl().pinCommand(r.result.newest)}` : "trust the maintainer's key: README \"Releases\""];
   });
 }
 // the installed commit of proteus@proteus (this project's install, else the user's) and the release check's cache

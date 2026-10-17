@@ -8,10 +8,12 @@ const fs = require("fs");
 const path = require("path");
 
 const ORDER = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"];
+// a major release's "### Upgrading to X.Y.Z" steps, rendered before the other sections
+const UPGRADE = /^Upgrading to \d+\.\d+\.\d+$/;
 
 const die = (m) => { process.stderr.write(`changelog: ${m}\n`); process.exit(1); };
 
-// "### Added" sections of bullets -> { Added: [bullet text, ...] }; throws on anything else
+// "### Added" (or "### Upgrading to X.Y.Z") sections of bullets -> { Added: [bullet text, ...] }; throws on anything else
 function parse(text, label) {
   const out = {};
   let sec = null, item = null;
@@ -19,7 +21,7 @@ function parse(text, label) {
     const bad = (why) => { throw new Error(`${label}:${i + 1}: ${why}`); };
     const h = /^###\s+(.*?)\s*$/.exec(l);
     if (h) {
-      if (!ORDER.includes(h[1])) bad(`unknown section "${h[1]}" (use ${ORDER.join(", ")})`);
+      if (!ORDER.includes(h[1]) && !UPGRADE.test(h[1])) bad(`unknown section "${h[1]}" (use ${ORDER.join(", ")}, or Upgrading to X.Y.Z)`);
       sec = h[1]; item = null; out[sec] = out[sec] || [];
     } else if (/^-\s/.test(l)) {
       if (!sec) bad("bullet before any ### section");
@@ -35,7 +37,8 @@ function parse(text, label) {
 
 function render(parts) {
   const out = [];
-  for (const s of ORDER) {
+  const ups = [...new Set(parts.flatMap((p) => Object.keys(p).filter((k) => UPGRADE.test(k))))].sort();
+  for (const s of [...ups, ...ORDER]) {
     const items = parts.flatMap((p) => p[s] || []);
     if (items.length) out.push(`### ${s}`, "", ...items, "");
   }

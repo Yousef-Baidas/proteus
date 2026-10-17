@@ -204,6 +204,17 @@ Every agent commits with terse, professional [Conventional Commits](https://www.
 
 ## Install
 
+On Claude Code, install Proteus as a plugin pinned to a release tag, then set up each repo from inside it:
+
+```bash
+claude plugin marketplace add Yousef-Baidas/proteus#v2.0.0
+claude plugin install proteus@proteus
+```
+
+Then, in a Claude Code session in your repo, run `/proteus:setup`. It enables the plugin for that repo in the committed `.claude/settings.json` (the plugin's hooks stay silent in every other repo), lists the `proteus` marketplace there so teammates are offered the plugin, copies `teams/`, and prints the GitHub steps left to you (`--protect`, `--verifier-app`). `/proteus:setup --dry-run` shows what it would change. Commit `.claude/settings.json` and `teams/`, start a new session, and the lead starts itself; `/proteus:proteus` invokes it by hand. The prerequisites below apply either way; on a 1.x install, read [Moving from 1.x](#moving-from-1x) first. The pin and how to move it to a newer release are in [Updating](#updating).
+
+Codex CLI has no plugin: it uses the installer path ([Install with the installer](#install-with-the-installer), then [Codex CLI](#codex-cli)), which still works for Claude Code too.
+
 ### Prerequisites (all platforms)
 
 1. [Claude Code](https://code.claude.com/docs/en/overview) installed and logged in.
@@ -224,9 +235,9 @@ Every agent commits with terse, professional [Conventional Commits](https://www.
    - code-review-graph — verifier blast radius; Serena — alternative to the LSP plugin
    - Gates: `npx fallow` (JS/TS, no install), `vulture-rs` (Python), `cargo machete` (Rust)
 
-### Install (every OS)
+### Install with the installer
 
-All logic is in `install.js` (Node 22.5+). `install.sh` and `install.ps1` are thin wrappers that only find `node` and pass the flags through, so every command below also works as `node install.js …`.
+For Codex CLI, or Claude Code without the plugin. All logic is in `install.js` (Node 22.5+). `install.sh` and `install.ps1` are thin wrappers that only find `node` and pass the flags through, so every command below also works as `node install.js …`.
 
 ```bash
 git clone https://github.com/Yousef-Baidas/proteus.git ~/proteus
@@ -299,6 +310,16 @@ Codex has no status line hook and no attribution setting; the commit-msg check s
 
 ### Updating
 
+The plugin updates through the plugin manager, from the tag the marketplace is pinned to. To move the pin to a newer release, here `v2.0.1`:
+
+```bash
+claude plugin marketplace remove proteus --scope user && claude plugin marketplace add Yousef-Baidas/proteus#v2.0.1 && claude plugin install proteus@proteus && claude plugin update proteus@proteus
+```
+
+Re-adding a marketplace at another tag fails while your user settings still name it at the old one, so the entry goes first. A repo whose `.claude/settings.json` lists the marketplace keeps the plugin installed through the remove, and `update` moves it. Elsewhere the remove uninstalls the plugin, and `install` brings it back at the new tag. With no `proteus` entry in your user settings, drop the first command. The session start's release check prints this same line, with your marketplace's source and the newest verified tag, when the installed commit is not a verified release.
+
+With the installer:
+
 ```bash
 node ~/proteus/install.js --update     # from inside a Proteus repo also refreshes that repo
 ```
@@ -326,7 +347,7 @@ Updates use your own git's trust, so nothing updates until you opt in to the mai
 
 Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
-Installed as a Claude Code plugin, Proteus does not update itself: the plugin manager does. Each session start instead checks that the installed commit is a release tag signed by the key in `~/.config/proteus/allowed_signers` (the file the blocks below write), using a bare clone of the marketplace's repo in the plugin's data dir that fetches tags at most once a day. A commit that is not (`main`, an unsigned or untrusted tag) gets one warning line naming the newest verified release and the `claude plugin marketplace add …#vX.Y.Z` command to pin to it; nothing is blocked.
+Installed as a Claude Code plugin, Proteus does not update itself: the plugin manager does. Each session start instead checks that the installed commit is a release tag signed by the key in `~/.config/proteus/allowed_signers` (the file the blocks below write), using a bare clone of the marketplace's repo in the plugin's data dir that fetches tags at most once a day. A commit that is not (`main`, an unsigned or untrusted tag) gets one warning line naming the newest verified release and the commands that pin to it ([Updating](#updating)); nothing is blocked. `--doctor` shows the last result.
 
 The maintainer's key: Proteus releases are signed with SSH key `SHA256:A3x02EpaNSOo27K8lsm8H3M2hhUpAeGGvoobs8NOsss` (ED25519), published as a signing key of the GitHub account [Yousef-Baidas](https://api.github.com/users/Yousef-Baidas/ssh_signing_keys). To trust it, check the fingerprint the block prints against the one above before you run its `git config` line. In bash:
 
@@ -350,6 +371,25 @@ ssh-keygen -lf "$HOME\.config\proteus\maintainer.pub"
 git -C "$HOME\proteus" config gpg.ssh.allowedSignersFile "$HOME/.config/proteus/allowed_signers"
 ```
 
+### Moving from 1.x
+
+A 1.x install put copies in each repo and in `~/.claude`; the plugin brings its own, so those copies have to go or they run twice. Install the plugin as above, then run `/proteus:setup` in each repo. It removes the repo's 1.x pieces that are unedited, meaning byte-identical to a file some release shipped:
+
+- the `.claude/hooks/` scripts, with their entries (and the 1.x status line) in `.claude/settings.json` and `.claude/settings.local.json`; other keys stay
+- the `.claude/agents/proteus-*.md` copies
+- their lines in `.git/info/exclude`
+
+An edited copy stays and is named, along with the reason. So does a copy git tracks (delete it in a commit) and a hook `lefthook.yml` or `proteus-gates.yml` runs (point the gate at `teams/templates/hooks/commit-msg.js` first). An edited hook still runs beside the plugin's until you delete it. `/proteus:setup --dry-run` lists all of it first and writes nothing.
+
+The user-level install (the `~/.claude/skills/proteus*` links, `~/.claude/agents/proteus-*.md`, `autoUpdate` in `~/.claude/proteus.json`) may still serve repos you have not moved, so setup only lists it and prints the command that removes it, with the plugin's path:
+
+```bash
+node <plugin dir>/install.js --remove-user-install --dry-run   # see what goes
+node <plugin dir>/install.js --remove-user-install
+```
+
+It removes the skill links and the unedited agents, and drops `autoUpdate`. It keeps edited agents and a real directory where a link was, and names them. It refuses while `proteus@proteus` is not installed. Your 1.x checkout stays on disk; delete it once nothing points at it. `--doctor` then checks the plugin setup instead: the gate, the marketplace entry, 1.x copies left beside the plugin (`--doctor --fix` removes the unedited ones), and the release check's last result.
+
 ### Coming from hivemind
 
 Proteus was called hivemind. Install Proteus as above, or run `install.js --update` in your hivemind checkout (it pulls Proteus and runs the new installer); either way the install takes over:
@@ -371,7 +411,7 @@ node ~/proteus/install.js --doctor         # from a repo root: global and projec
 node ~/proteus/install.js --doctor --fix   # repair links, duplicates, the optional context-mode plugin, hook registration, team skills
 ```
 
-Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. It checks Node 22.5+, the context-mode plugin (a `WARN` when missing or disabled, since it is optional; `--fix` installs it), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves (`--fix` fetches and links a missing one, as `link-skills.js --install` does), that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, on Claude Code whether `autoMode.environment` names Proteus (a `WARN` with the snippet below), and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
+Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. In a repo `/proteus:setup` set up, it checks the plugin setup instead of the 1.x links, agents and lead hooks ([Moving from 1.x](#moving-from-1x)). It checks Node 22.5+, the context-mode plugin (a `WARN` when missing or disabled, since it is optional; `--fix` installs it), the skill links and duplicates, agents, attribution, agent teams, `gh` auth, leftovers from hivemind (and repos still on it), the project hooks, `ROUTING.md`, that every listed team skill resolves (`--fix` fetches and links a missing one, as `link-skills.js --install` does), that the commit-msg gate in `lefthook.yml` and `proteus-gates.yml` runs a file git tracks, that `proteus-gates.yml` has no unfilled `EDIT-*` placeholder, whose login the agents post under, on Claude Code whether `autoMode.environment` names Proteus (a `WARN` with the snippet below), and in a project whether a ruleset binds `proteus/*` and the agents' account can push.
 
 ### Auto mode (Claude Code)
 
@@ -432,7 +472,7 @@ From then on a signoff fails loudly when no token mints (the key moved, the App 
 
 ## First run
 
-Open `claude` in a repo where you ran `install.js --project` and hand it the ticket or the idea; the session is already the lead. Anywhere else, type `/proteus`. Bootstrap handles `/setup-matt-pocock-skills`, `CONTEXT.md`, the conventions interview, the skills scout, and `AGENTS.md ## Learned`, then it walks you through grill → spec → tickets → contracts → dispatch → human review. New to it, or just updated? Type `tour` (or `/proteus tour`): a short interactive walkthrough, one stop at a time, questions welcome. The lead offers it on your first sessions and again after an update adds features; once you finish or type `tour off`, it costs no context until the next feature lands. Start with a small, real ticket with 2–3 independent pieces. Note tokens per merged ticket; that is your baseline for tuning the `standard|hard` routing.
+Open `claude` in a repo where you ran `/proteus:setup` (or `install.js --project`) and hand it the ticket or the idea; the session is already the lead. Anywhere else, type `/proteus:proteus` (`/proteus` on the installer path). Bootstrap handles `/setup-matt-pocock-skills`, `CONTEXT.md`, the conventions interview, the skills scout, and `AGENTS.md ## Learned`, then it walks you through grill → spec → tickets → contracts → dispatch → human review. New to it, or just updated? Type `tour` (or `/proteus tour`): a short interactive walkthrough, one stop at a time, questions welcome. The lead offers it on your first sessions and again after an update adds features; once you finish or type `tour off`, it costs no context until the next feature lands. Start with a small, real ticket with 2–3 independent pieces. Note tokens per merged ticket; that is your baseline for tuning the `standard|hard` routing.
 
 ## Layout
 
@@ -503,7 +543,9 @@ tests/hooks.test.js          node tests/hooks.test.js: hooks and installer again
 
 ## Uninstall
 
-Delete the links `~/.claude/skills/proteus` and `~/.claude/skills/proteus-review` (the checkout stays), `~/.claude/agents/proteus-*.md`, `~/.claude/proteus.json`, `teams/` in any repo, and the `proteus-` entries and Proteus `statusLine` in its `.claude/settings.local.json`. `.github/workflows/proteus-gates.yml`, `lefthook.yml`, and `.claude/hooks/` are yours to keep or drop; local run state is in `.git/proteus/`. Once `git worktree list` shows none left in `.worktrees/`, delete that folder and its `/.worktrees/` line in `.git/info/exclude`. Open `proteus` and `proteus-*` issues and labels stay on GitHub for you to close. Skills you confined are still in `~/.agents/skills/`; re-link them into `~/.claude/skills/` if you want them global again. Remove the `attribution` key from `~/.claude/settings.json` if you want the default trailer back.
+Plugin: `claude plugin uninstall proteus@proteus` and `claude plugin marketplace remove proteus`, then in each repo drop `proteus@proteus` from `enabledPlugins` and `proteus` from `extraKnownMarketplaces` in `.claude/settings.json`, plus the `statusLine` in `.claude/settings.local.json`. `teams/` and the rest below are as for the installer.
+
+Installer: Delete the links `~/.claude/skills/proteus` and `~/.claude/skills/proteus-review` (the checkout stays), `~/.claude/agents/proteus-*.md`, `~/.claude/proteus.json`, `teams/` in any repo, and the `proteus-` entries and Proteus `statusLine` in its `.claude/settings.local.json`. `.github/workflows/proteus-gates.yml`, `lefthook.yml`, and `.claude/hooks/` are yours to keep or drop; local run state is in `.git/proteus/`. Once `git worktree list` shows none left in `.worktrees/`, delete that folder and its `/.worktrees/` line in `.git/info/exclude`. Open `proteus` and `proteus-*` issues and labels stay on GitHub for you to close. Skills you confined are still in `~/.agents/skills/`; re-link them into `~/.claude/skills/` if you want them global again. Remove the `attribution` key from `~/.claude/settings.json` if you want the default trailer back.
 
 For Codex, also delete the links `~/.agents/skills/proteus` and `proteus-review`, `$CODEX_HOME/agents/proteus-*.toml`, and in each repo the `proteus-` entries in `.codex/hooks.json`, `.codex/hooks/`, `.codex/rules/proteus.rules`, and any `<repo>-proteus` entry an older run left in `.codex/config.toml`'s `writable_roots`. `codex mcp remove context-mode` drops context-mode.
 
