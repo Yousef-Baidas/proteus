@@ -19,7 +19,7 @@
 //                                     no CI, lefthook or root docs. Chosen without the flag when gh says you
 //                                     cannot push here and the repo has no teams/; --no-guest turns it off
 //   node install.js --update          fast-forward this checkout to the newest release tag whose
-//                                     signature git verifies (README "Releases"), reinstall, and
+//                                     signature git verifies (docs/updating.md "Releases"), reinstall, and
 //                                     refresh the current repo too if it is a Proteus project
 //   node install.js --auto-update     let the SessionStart hook do that update (off by default);
 //   node install.js --no-auto-update  both run the global install and persist the choice
@@ -278,7 +278,7 @@ function autoModeHint() {
   const env = s.autoMode && Array.isArray(s.autoMode.environment) ? s.autoMode.environment : [];
   if (env.some((e) => /proteus/i.test(String(e)))) return "";
   const snippet = JSON.stringify({ autoMode: { environment: ["$defaults", AUTO_MODE_ENTRY] } }, null, 2);
-  return `in Claude Code run /auto-mode-setup, or /permissions → Auto mode, and add this entry to ${path.join(CLAUDE, "settings.json")}, keeping "$defaults" and any entries you have (README, Auto mode):\n${snippet}`;
+  return `in Claude Code run /auto-mode-setup, or /permissions → Auto mode, and add this entry to ${path.join(CLAUDE, "settings.json")}, keeping "$defaults" and any entries you have (docs/install.md, Auto mode):\n${snippet}`;
 }
 
 // ~/.claude/proteus.json: { home, autoUpdate, ...keys the hooks own }
@@ -1237,7 +1237,7 @@ function update(argv) {
     const v = hl().verifyRelease(home, rel.tag);
     if (v.error) {
       die(`not updating ${home} to ${rel.tag}: ${v.error}\n` +
-        `trust the maintainer's key ("Releases" in ${path.join(home, "README.md")}) and re-run, or review the tag and run\n` +
+        `trust the maintainer's key ("Releases" in ${path.join(home, "docs", "updating.md")}) and re-run, or review the tag and run\n` +
         `  git -C "${home}" merge --ff-only ${rel.tag}\nthen re-run this command`);
     }
     if (git(["status", "--porcelain", "--untracked-files=no"], home).out) {
@@ -1624,7 +1624,7 @@ async function doctor(fix) {
   if (!cxh && !plug) check(() => {
     const kept = dirs.flatMap((d) => projectDupes(d, false).overrides);
     return kept.length ? ["WARN", `local agent overrides, which shipped updates skip: ${kept.map((p) => overrideNote(p)).join(", ")}`,
-      "deleting one drops those edits: put them in .claude/proteus-agents.json (README: Agent patches), then delete the copy"] : ["ok", "no local agent overrides"];
+      "deleting one drops those edits: put them in .claude/proteus-agents.json (docs/install.md: Agent patches), then delete the copy"] : ["ok", "no local agent overrides"];
   });
 
   if (!inRepo) {
@@ -1820,7 +1820,7 @@ function pluginChecks(check, root, self) {
     if (!r.result || r.at !== r.sha) return ["WARN", `release check: no result yet for the installed commit ${r.sha.slice(0, 12)}`, "start a Claude Code session in this repo; its startup runs the check"];
     if (r.result.tag) return ["ok", `release check: ${r.sha.slice(0, 12)} is the verified release ${r.result.tag}`];
     return ["WARN", `release check: the installed commit ${r.sha.slice(0, 12)} is not a verified release (${r.result.error || "unverified"})`,
-      r.result.newest ? `pin to ${r.result.newest}, the newest verified release: ${hl().pinCommand(r.result.newest)}` : "trust the maintainer's key: README \"Releases\""];
+      r.result.newest ? `pin to ${r.result.newest}, the newest verified release: ${hl().pinCommand(r.result.newest)}` : "trust the maintainer's key: docs/updating.md \"Releases\""];
   });
 }
 // the installed commit of proteus@proteus (this project's install, else the user's) and the release check's cache

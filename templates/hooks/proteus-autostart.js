@@ -125,7 +125,7 @@ function update(home, cfg, notes) {
       const v = lib.verifyRelease(home, rel.tag);
       const dirty = execFileSync("git", ["-C", home, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
       if (v.error) {
-        notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "README.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
+        notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "docs", "updating.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
       } else if (dirty.trim()) {
         notes.push(`proteus: local changes in ${home}; not updating to ${rel.tag}`);
       } else {
@@ -152,7 +152,7 @@ function update(home, cfg, notes) {
 // The plugin's release check (#136, D6): the installed commit (gitCommitSha of proteus@proteus in the config
 // dir's plugins/installed_plugins.json) must be the target of a vX.Y.Z tag that lib.verifyRelease accepts, against
 // a bare clone of the marketplace's repo in CLAUDE_PLUGIN_DATA/releases.git that fetches tags at most once a day,
-// trusting ~/.config/proteus/allowed_signers (README "Releases") or the user's own git config. The result is
+// trusting ~/.config/proteus/allowed_signers (docs/updating.md "Releases") or the user's own git config. The result is
 // cached in release-check.json until the commit, the trust file or the tags change. Verified: silent. Not: one
 // loud line with the newest verified tag and how to pin to it. A failed fetch: one quiet line, the last result.
 function releaseCheck(root, notes) {
@@ -185,7 +185,7 @@ function releaseCheck(root, notes) {
   if (res.tag) return;
   const pin = res.newest
     ? `Newest verified release: ${res.newest}; to pin to it, run ${lib.pinCommand(res.newest)}`
-    : `No release verifies here; to trust the maintainer's key see "Releases" in ${path.join(pluginRoot(), "README.md")}`;
+    : `No release verifies here; to trust the maintainer's key see "Releases" in ${path.join(pluginRoot(), "docs", "updating.md")}`;
   notes.push(`proteus: WARNING: the installed plugin commit ${sha.slice(0, 12)} is not a verified Proteus release (${res.error}). ${pin}. Tell the human once; nothing is blocked.`);
 }
 

@@ -63,7 +63,7 @@ ok("no newer release: no update field, no update note", !/proteus-update=/.test(
 release("feat: one", "a.txt", "a\n", () => g(MAINT, "tag", "-a", "v1.1.0", "-m", "v1.1.0"));
 r = start();
 ok("unsigned tag: no update, one note with the reason and the manual way", head() === v100 &&
-  /^proteus: not updating to v1\.1\.0: git verify-tag v1\.1\.0: no signature found\. To trust the maintainer's key see "Releases" in .*README\.md; or review the tag, then git -C ".*" merge --ff-only v1\.1\.0 and node ".*install\.js" --update$/m.test(r.out) &&
+  /^proteus: not updating to v1\.1\.0: git verify-tag v1\.1\.0: no signature found\. To trust the maintainer's key see "Releases" in .*docs[\\/]updating\.md; or review the tag, then git -C ".*" merge --ff-only v1\.1\.0 and node ".*install\.js" --update$/m.test(r.out) &&
   /proteus-update=v1\.1\.0 \(node .*install\.js --update\)/.test(stateLine(r.out)) && cfg().behind === 1, r.out.slice(0, 1500));
 setCfg({ autoUpdate: false });
 r = start();
@@ -122,12 +122,12 @@ else {
 }
 
 
-// README's PowerShell block that trusts the maintainer's key, run as written on Windows PowerShell 5.1, whose
+// docs/updating.md's PowerShell block that trusts the maintainer's key, run as written on Windows PowerShell 5.1, whose
 // ConvertFrom-Json passes the API's array on as one object (issue #92). gh is a .cmd printing a canned API reply.
 const ps = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 if (process.platform === "win32" && signer && fs.existsSync(ps)) {
   const { spawnSync } = require("child_process");
-  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8").replace(/\r\n/g, "\n");
+  const readme = fs.readFileSync(path.join(ROOT, "docs", "updating.md"), "utf8").replace(/\r\n/g, "\n");
   const block = readme.slice(readme.indexOf("The maintainer's key")).match(/```powershell\n([\s\S]*?)```/)[1];
   const pub = fs.readFileSync(path.join(W, "keys", "maintainer.pub"), "utf8").trim();
   const trust = (name, keys) => {
@@ -146,7 +146,7 @@ if (process.platform === "win32" && signer && fs.existsSync(ps)) {
     return { r, v, signers: path.join(home, ".config", "proteus", "allowed_signers") };
   };
   let t = trust("found", [{ id: 1, title: "laptop", key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBNotTheMaintainerKeyNotTheMaintainerKey0 x" }, { id: 2, title: "proteus tag signing", key: pub }]);
-  ok("README PowerShell trust block (5.1): picks the signing key out of the array, and verify-tag accepts the release",
+  ok("docs/updating.md PowerShell trust block (5.1): picks the signing key out of the array, and verify-tag accepts the release",
     t.r.status === 0 && fs.readFileSync(t.signers, "utf8").includes(pub.split(" ")[1]) && t.v.status === 0, `${t.r.stdout}${t.r.stderr}${t.v.stderr}`.slice(0, 1500));
   // the harness reproduces #92: without the unrolling, 5.1 finds no key in the same reply
   const old = path.join(W, "ps-found", "old.ps1");
@@ -154,7 +154,7 @@ if (process.platform === "win32" && signer && fs.existsSync(ps)) {
   const o = spawnSync(ps, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", old], { env: { ...process.env, PATH: [path.join(W, "ps-found", "bin"), process.env.PATH].join(path.delimiter) }, encoding: "utf8", windowsHide: true });
   ok("Windows PowerShell 5.1 without the unrolling finds no key (issue #92's cause)", o.stdout.trim() === "empty", o.stdout + o.stderr);
   t = trust("missing", [{ id: 1, title: "laptop", key: pub }]);
-  ok("README PowerShell trust block: no key with that title stops before writing allowed_signers",
+  ok("docs/updating.md PowerShell trust block: no key with that title stops before writing allowed_signers",
     t.r.status !== 0 && /signing key not found/.test(t.r.stdout + t.r.stderr) && !fs.existsSync(t.signers), `${t.r.stdout}${t.r.stderr}`.slice(0, 1500));
 }
 
