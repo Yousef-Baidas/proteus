@@ -2260,6 +2260,91 @@ function pinCommand(tag) {
     "claude plugin install proteus@proteus", "claude plugin update proteus@proteus"].join(" && ");
 }
 
+// The plugin's release check (#136, D6): the installed commit (gitCommitSha of proteus@proteus in the config
+// dir's plugins/installed_plugins.json) must be the target of a vX.Y.Z tag that verifyRelease accepts, against
+// a bare clone of the marketplace's repo in CLAUDE_PLUGIN_DATA/releases.git that fetches tags at most once a day,
+// trusting ~/.config/proteus/allowed_signers (docs/updating.md "Releases") or the user's own git config. The result is
+// cached in release-check.json until the commit, the trust file or the tags change. Verified: silent. Not: one
+// loud line with the newest verified tag and how to pin to it. A failed fetch: one quiet line, the last result.
+// plugin: the plugin root; data: its CLAUDE_PLUGIN_DATA. Run by the autostart and once by install.js --plugin-setup.
+function releaseCheck(root, notes, plugin, data) {
+  const sha = installedSha(root, plugin);
+  if (!sha || !data) {
+    notes.push(`proteus: release check skipped: no ${sha ? "CLAUDE_PLUGIN_DATA" : "gitCommitSha for proteus@proteus in installed_plugins.json"}`);
+    return;
+  }
+  const bare = path.join(data, "releases.git"), file = path.join(data, "release-check.json");
+  const st = readJSON(file, {}) || {};
+  const src = marketSource();
+  const signers = path.join(os.homedir(), ".config", "proteus", "allowed_signers");
+  let trust = 0;
+  try { trust = fs.statSync(signers).mtimeMs; } catch {}
+  let fetched = typeof st.fetched === "number" ? st.fetched : 0, failed = "";
+  if (Date.now() - fetched > 24 * 3600e3) {
+    fetched = Date.now();
+    failed = fetchTags(bare, src.url);
+  }
+  const fresh = st.sha === sha && st.trust === trust && st.fetched === fetched && st.result;
+  let res = fresh ? st.result : null;
+  if (failed) notes.push(`proteus: release check could not fetch tags from ${src.url} (${failed}); ${st.result && st.sha === sha ? "using the last result" : "checking the tags fetched before"}`);
+  if (!res && failed && st.result && st.sha === sha) res = st.result;
+  if (!res) {
+    if (!fs.existsSync(path.join(bare, "HEAD"))) return;
+    if (trust) git(["-C", bare, "config", "gpg.ssh.allowedSignersFile", signers], bare);
+    res = verifyInstalled(bare, sha);
+  }
+  writeJSON(file, { fetched, sha, trust, result: res });
+  if (res.tag) return;
+  const pin = res.newest
+    ? `Newest verified release: ${res.newest}; to pin to it, run ${pinCommand(res.newest)}`
+    : `No release verifies here; to trust the maintainer's key see "Releases" in ${path.join(plugin, "docs", "updating.md")}`;
+  notes.push(`proteus: WARNING: the installed plugin commit ${sha.slice(0, 12)} is not a verified Proteus release (${res.error}). ${pin}. Tell the human once; nothing is blocked.`);
+}
+
+// the gitCommitSha of the proteus@proteus install this hook runs from: the entry whose installPath is the
+// plugin root, else this project's, else the user-scope one; "" when none
+function installedSha(root, plugin) {
+  const j = readJSON(path.join(claudeDir(), "plugins", "installed_plugins.json"), {}) || {};
+  const all = (j.plugins && Array.isArray(j.plugins["proteus@proteus"]) ? j.plugins["proteus@proteus"] : []).filter((e) => e && typeof e === "object");
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && samePath(a, b);
+  const e = all.find((x) => same(x.installPath, plugin)) || all.find((x) => same(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
+  const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
+  return /^[0-9a-f]{7,64}$/.test(sha) ? sha : "";
+}
+
+// fetches url's tags (and their commits) into the bare clone; "" when it worked, else git's one-line reason
+function fetchTags(bare, url) {
+  try {
+    if (!fs.existsSync(path.join(bare, "HEAD"))) execFileSync("git", ["init", "--quiet", "--bare", bare], { timeout: 10000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    execFileSync("git", ["-C", bare, "fetch", "--quiet", "--force", "--prune", "--no-tags", url, "+refs/tags/*:refs/tags/*"],
+      { timeout: 20000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    return "";
+  } catch (e) {
+    return String(e.stderr || e.message || "").trim().split(/\r?\n/).pop().replace(/^fatal: /, "").slice(0, 200) || "git failed";
+  }
+}
+
+// { tag, newest, error }: tag the release pointing at sha that verifies ("" when none), newest the newest verified
+// release (at most 10 tried), error why sha is not a verified release
+function verifyInstalled(bare, sha) {
+  const refs = git(["-C", bare, "for-each-ref", "refs/tags", "--format=%(refname:short) %(objectname) %(*objectname)"], bare)
+    .split("\n").map((l) => l.trim().split(" ")).filter(([t]) => RELEASE.test(t || ""));
+  refs.sort((a, b) => (newerThan(a[0], b[0]) ? -1 : newerThan(b[0], a[0]) ? 1 : 0));
+  const at = refs.filter(([, o, c]) => (c || o || "").startsWith(sha) || (sha.length === 40 && (c || o) === sha));
+  let tag = "", error = at.length ? "" : "no release tag points at it";
+  for (const [t] of at) {
+    const v = verifyRelease(bare, t, false);
+    if (!v.error && v.commit.startsWith(sha)) { tag = t; break; }
+    error = error || v.error;
+  }
+  let newest = tag;
+  for (const [t] of refs.slice(0, 10)) {
+    if (newest) break;
+    if (!verifyRelease(bare, t, false).error) newest = t;
+  }
+  return { tag, newest, error: tag ? "" : error };
+}
+
 module.exports = {
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
@@ -2267,7 +2352,7 @@ module.exports = {
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  RELEASE, newerThan, release, verifyRelease, changelog,
+  RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

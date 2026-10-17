@@ -21,7 +21,6 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 const { execFileSync, spawn } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const { pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
@@ -43,7 +42,7 @@ lib.run(async (ev, ad) => {
   // what these write is the lead's: a lead window for proteus-shell-check.js, so an agent's shell call in flight
   // (a compact mid-run) gets a notice, not a block, and compares against the state after
   const writes = () => {
-    if (pluginRoot()) safe(() => releaseCheck(root, notes));
+    if (pluginRoot()) safe(() => lib.releaseCheck(root, notes, pluginRoot(), process.env.CLAUDE_PLUGIN_DATA));
     // a 1.x checkout proteus.json still names syncs nothing under the plugin: its copies would run beside the plugin's
     if (home && !pluginRoot()) {
       pending = safe(() => update(home, cfg, notes), "");
@@ -147,90 +146,6 @@ function update(home, cfg, notes) {
   if ((cfg.behind || 0) !== behind) patch.behind = behind;
   if (Object.keys(patch).length) patchConfig(cfg, patch);
   return behind ? rel.tag : "";
-}
-
-// The plugin's release check (#136, D6): the installed commit (gitCommitSha of proteus@proteus in the config
-// dir's plugins/installed_plugins.json) must be the target of a vX.Y.Z tag that lib.verifyRelease accepts, against
-// a bare clone of the marketplace's repo in CLAUDE_PLUGIN_DATA/releases.git that fetches tags at most once a day,
-// trusting ~/.config/proteus/allowed_signers (docs/updating.md "Releases") or the user's own git config. The result is
-// cached in release-check.json until the commit, the trust file or the tags change. Verified: silent. Not: one
-// loud line with the newest verified tag and how to pin to it. A failed fetch: one quiet line, the last result.
-function releaseCheck(root, notes) {
-  const sha = installedSha(root);
-  const data = process.env.CLAUDE_PLUGIN_DATA;
-  if (!sha || !data) {
-    notes.push(`proteus: release check skipped: no ${sha ? "CLAUDE_PLUGIN_DATA" : "gitCommitSha for proteus@proteus in installed_plugins.json"}`);
-    return;
-  }
-  const bare = path.join(data, "releases.git"), file = path.join(data, "release-check.json");
-  const st = lib.readJSON(file, {}) || {};
-  const src = lib.marketSource();
-  const signers = path.join(os.homedir(), ".config", "proteus", "allowed_signers");
-  const trust = safe(() => fs.statSync(signers).mtimeMs, 0);
-  let fetched = typeof st.fetched === "number" ? st.fetched : 0, failed = "";
-  if (Date.now() - fetched > DAY) {
-    fetched = Date.now();
-    failed = fetchTags(bare, src.url);
-  }
-  const fresh = st.sha === sha && st.trust === trust && st.fetched === fetched && st.result;
-  let res = fresh ? st.result : null;
-  if (failed) notes.push(`proteus: release check could not fetch tags from ${src.url} (${failed}); ${st.result && st.sha === sha ? "using the last result" : "checking the tags fetched before"}`);
-  if (!res && failed && st.result && st.sha === sha) res = st.result;
-  if (!res) {
-    if (!fs.existsSync(path.join(bare, "HEAD"))) return;
-    if (trust) lib.git(["-C", bare, "config", "gpg.ssh.allowedSignersFile", signers], bare);
-    res = verifyInstalled(bare, sha);
-  }
-  lib.writeJSON(file, { fetched, sha, trust, result: res });
-  if (res.tag) return;
-  const pin = res.newest
-    ? `Newest verified release: ${res.newest}; to pin to it, run ${lib.pinCommand(res.newest)}`
-    : `No release verifies here; to trust the maintainer's key see "Releases" in ${path.join(pluginRoot(), "docs", "updating.md")}`;
-  notes.push(`proteus: WARNING: the installed plugin commit ${sha.slice(0, 12)} is not a verified Proteus release (${res.error}). ${pin}. Tell the human once; nothing is blocked.`);
-}
-
-// the gitCommitSha of the proteus@proteus install this hook runs from: the entry whose installPath is the
-// plugin root, else this project's, else the user-scope one; "" when none
-function installedSha(root) {
-  const j = lib.readJSON(path.join(lib.claudeDir(), "plugins", "installed_plugins.json"), {}) || {};
-  const all = (j.plugins && Array.isArray(j.plugins["proteus@proteus"]) ? j.plugins["proteus@proteus"] : []).filter((e) => e && typeof e === "object");
-  const same = (a, b) => typeof a === "string" && typeof b === "string" && lib.samePath(a, b);
-  const e = all.find((x) => same(x.installPath, pluginRoot())) || all.find((x) => same(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
-  const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
-  return /^[0-9a-f]{7,64}$/.test(sha) ? sha : "";
-}
-
-// fetches url's tags (and their commits) into the bare clone; "" when it worked, else git's one-line reason
-function fetchTags(bare, url) {
-  try {
-    if (!fs.existsSync(path.join(bare, "HEAD"))) execFileSync("git", ["init", "--quiet", "--bare", bare], { timeout: 10000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    execFileSync("git", ["-C", bare, "fetch", "--quiet", "--force", "--prune", "--no-tags", url, "+refs/tags/*:refs/tags/*"],
-      { timeout: 20000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-    return "";
-  } catch (e) {
-    return String(e.stderr || e.message || "").trim().split(/\r?\n/).pop().replace(/^fatal: /, "").slice(0, 200) || "git failed";
-  }
-}
-
-// { tag, newest, error }: tag the release pointing at sha that verifies ("" when none), newest the newest verified
-// release (at most 10 tried), error why sha is not a verified release
-function verifyInstalled(bare, sha) {
-  const refs = lib.git(["-C", bare, "for-each-ref", "refs/tags", "--format=%(refname:short) %(objectname) %(*objectname)"], bare)
-    .split("\n").map((l) => l.trim().split(" ")).filter(([t]) => lib.RELEASE.test(t || ""));
-  refs.sort((a, b) => (lib.newerThan(a[0], b[0]) ? -1 : lib.newerThan(b[0], a[0]) ? 1 : 0));
-  const at = refs.filter(([, o, c]) => (c || o || "").startsWith(sha) || (sha.length === 40 && (c || o) === sha));
-  let tag = "", error = at.length ? "" : "no release tag points at it";
-  for (const [t] of at) {
-    const v = lib.verifyRelease(bare, t, false);
-    if (!v.error && v.commit.startsWith(sha)) { tag = t; break; }
-    error = error || v.error;
-  }
-  let newest = tag;
-  for (const [t] of refs.slice(0, 10)) {
-    if (newest) break;
-    if (!lib.verifyRelease(bare, t, false).error) newest = t;
-  }
-  return { tag, newest, error: tag ? "" : error };
 }
 
 function patchConfig(cfg, patch) {

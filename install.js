@@ -188,12 +188,12 @@ function copyFile(src, dest) {
   if (st && st.isFile() && fs.readFileSync(src).equals(fs.readFileSync(dest))) return;
   if (!C.copyFile(src, dest, ownedRoots())) die(`stopped: ${dest} not written. Move what is there away and re-run.`);
 }
-// skip: source paths left out, with everything under them
-function copyTree(src, dest, skip = []) {
+// skip: source paths left out, with everything under them; put(src, dest) copies a file
+function copyTree(src, dest, skip = [], put = copyFile) {
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, e.name), d = path.join(dest, e.name);
     if (skip.some((x) => samePath(s, x))) continue;
-    if (e.isDirectory()) copyTree(s, d, skip); else copyFile(s, d);
+    if (e.isDirectory()) copyTree(s, d, skip, put); else put(s, d);
   }
 }
 
@@ -485,6 +485,19 @@ function pastShipped(rel, text, dir = HERE) {
   return text === undefined ? !!h : !!h && h.has(hashText(text));
 }
 
+// scripts/known-blobs.json (scripts/known-blobs.js writes it from main's history): { blobs: { "<path here>": [git blob
+// id, ...] }, texts: { "<templates/teams path>": { id: text } } }, every past version of each shipped path. The plugin's
+// copy has no git history, so this file is the only record of them; {} when missing or unreadable.
+let knownData = null;
+const known = () => knownData || (knownData = readJson(path.join(HERE, "scripts", "known-blobs.json")) || {});
+const blobId = (text) => { const b = Buffer.from(text, "utf8"); return crypto.createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex"); };
+// with no text, whether rel ever had a past version; else whether text, as is or with LF endings, is one
+function knownBlob(rel, text) {
+  const ids = isObj(known().blobs) ? known().blobs[rel] : null;
+  if (!Array.isArray(ids)) return false;
+  return text === undefined || ids.includes(blobId(text)) || ids.includes(blobId(norm(text)));
+}
+
 function registerHooks(root) {
   // the script removes the adapter's skipped files an older install copied, through proteus-confine.js
   const script = path.join(HERE, "templates", "hooks", "install-lead-hooks.js");
@@ -526,57 +539,109 @@ function teamsIgnore(teams, act) {
 // shipped text it was copied from; committed with teams/ (in guest mode it lives in the guest dir).
 // A missing file is copied and recorded; one with no record gets the current shipped hash, silently.
 // When the shipped text moved past the record and the copy differs from the new text, the new text
-// goes beside the copy as <file>.upstream and the recorded one, found in this checkout's history, as
-// <file>.base, both git-excluded; one line says how to merge, and the record moves on. A record this
-// checkout never shipped (a teammate's newer release) is left alone, so an older checkout never
-// offers its text as an update.
+// goes beside the copy as <file>.upstream and the recorded one (teamHistory) as <file>.base (offerUpstream),
+// and the record moves on. A record never shipped (a teammate's newer release) is left alone, so an older
+// release never offers its text as an update. rec: teamRecord's, written by its done().
 const BASE_FILE = ".proteus-base.json";
-function teamUpstream(root, teams, rels) {
+function teamUpstream(teams, rels, rec) {
+  for (const rel of rels) {
+    const src = path.join(SHIPPED_TEAMS, ...rel.split("/")), dest = path.join(teams, ...rel.split("/"));
+    const text = fs.readFileSync(src, "utf8"), h = hashText(text), was = isObj(rec.base[rel]) ? rec.base[rel] : null;
+    const record = () => { rec.next[rel] = { sha256: h }; };
+    if (!lstat(dest)) { if (C.copyFile(src, dest, ownedRoots())) record(); continue; }
+    if (!was || typeof was.sha256 !== "string") { record(); continue; }
+    if (was.sha256 === h) continue;
+    // a record no shipped text matches is a newer release's, left alone; with no git history here past is only the
+    // known texts, so an unmatched record is offered without a .base instead
+    const past = teamHistory(rel);
+    if (!past.has(was.sha256) && past.git) continue;
+    record();
+    const cur = readText(dest);
+    if (cur !== null && hashText(cur) === h) continue; // the copy already has the new text
+    if (!rec.offer(dest, text, past.get(was.sha256) ?? null, rel)) rec.next[rel] = was; // offered again next run
+  }
+}
+
+// the record file and the offers one copyTeams run makes: { base, next, offer(dest, text, baseText, label), done() }.
+// offer writes text beside dest as <dest>.upstream and baseText (what dest was copied from; null: unknown) as
+// <dest>.base; a .upstream still pending from an earlier release keeps its .base, the text the copy came from. When
+// git tracks no dest and git merge-file merges the three cleanly, the merge goes into dest and both files go; else
+// one line says how to merge, and done() git-excludes them. false when a write was refused.
+function teamRecord(root, teams) {
   const file = path.join(teams, BASE_FILE), base = readJson(file) || {}, next = { ...base };
   const guest = !!GUEST && samePath(real(root), real(GUEST)), excl = [];
   const shown = (p) => (guest ? p : path.relative(root, p).split(path.sep).join("/"));
   // a link the repo commits at the record or at a .upstream or .base path stops the run before anything
   // is written through it (#22); a copy is only read, or made where nothing is, in a dir copyTeams owns
-  for (const p of [file, ...rels.flatMap((rel) => ["upstream", "base"].map((x) => `${path.join(teams, ...rel.split("/"))}.${x}`))]) {
-    const st = lstat(p);
-    if (st && st.isSymbolicLink()) die(`refused  ${p} (a link; nothing written through it). Replace it with a regular file and re-run.`);
-  }
-  for (const rel of rels) {
-    const src = path.join(SHIPPED_TEAMS, ...rel.split("/")), dest = path.join(teams, ...rel.split("/"));
-    const text = fs.readFileSync(src, "utf8"), h = hashText(text), rec = base[rel] && typeof base[rel] === "object" ? base[rel] : null;
-    const record = () => { next[rel] = { sha256: h }; };
-    if (!lstat(dest)) { if (C.copyFile(src, dest, ownedRoots())) record(); continue; }
-    if (!rec || typeof rec.sha256 !== "string") { record(); continue; }
-    if (rec.sha256 === h) continue;
-    const past = teamHistory(rel);
-    if (past && !past.has(rec.sha256)) continue;
-    record();
-    const cur = readText(dest);
-    if (cur !== null && hashText(cur) === h) continue; // the copy already has the new text
+  const noLink = (p) => { const st = lstat(p); if (st && st.isSymbolicLink()) die(`refused  ${p} (a link; nothing written through it). Replace it with a regular file and re-run.`); };
+  noLink(file);
+  const offer = (dest, text, baseText, label) => {
     const up = `${dest}.upstream`, old = `${dest}.base`;
-    // a merge still pending from an earlier release keeps its .base: the copy was made from that text
+    noLink(up); noLink(old);
     const pending = !!lstat(up);
-    if (!C.writeFile(up, norm(text), ownedRoots())) { next[rel] = rec; continue; } // offered again next run
+    if (!C.writeFile(up, norm(text), ownedRoots())) return false;
     let hasBase = pending && !!lstat(old);
     if (!pending) {
-      hasBase = !!past && past.get(rec.sha256) !== undefined;
-      if (hasBase) hasBase = C.writeFile(old, past.get(rec.sha256), ownedRoots()); else if (lstat(old)) safeRemove(old, ownedRoots());
+      hasBase = typeof baseText === "string" && C.writeFile(old, norm(baseText), ownedRoots());
+      if (!hasBase && lstat(old)) safeRemove(old, ownedRoots());
+    }
+    if (hasBase && !git(["ls-files", "--error-unmatch", "--", dest], root).ok) {
+      const m = spawnSync("git", ["merge-file", "-p", dest, old, up], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000 });
+      if (m.status === 0 && typeof m.stdout === "string" && C.writeFile(dest, m.stdout, ownedRoots())) {
+        safeRemove(up, ownedRoots());
+        safeRemove(old, ownedRoots());
+        log(`merged   -> ${shown(dest)}: this release changed the shipped ${label}; merged into the copy, no conflicts`);
+        return true;
+      }
     }
     excl.push(up, ...(hasBase ? [old] : []));
-    log(hasBase ? `upstream -> ${shown(up)}: this release changed the shipped ${rel}; merge it: git merge-file ${shown(dest)} ${shown(old)} ${shown(up)}, then delete the .upstream and .base files`
-      : `upstream -> ${shown(up)}: this release changed the shipped ${rel}; merge it into ${shown(dest)} by hand (git diff --no-index ${shown(dest)} ${shown(up)}), then delete it`);
-  }
-  if (!guest && excl.length) excludeLocal(root, excl.map((p) => path.relative(root, p).split(path.sep).join("/")), null);
-  if (JSON.stringify(next) !== JSON.stringify(base)) writeJson(file, Object.fromEntries(Object.keys(next).sort().map((k) => [k, next[k]])));
+    log(hasBase ? `upstream -> ${shown(up)}: this release changed the shipped ${label}; merge it: git merge-file ${shown(dest)} ${shown(old)} ${shown(up)}, then delete the .upstream and .base files`
+      : `upstream -> ${shown(up)}: this release changed the shipped ${label}; merge it into ${shown(dest)} by hand (git diff --no-index ${shown(dest)} ${shown(up)}), then delete it`);
+    return true;
+  };
+  const done = () => {
+    if (!guest && excl.length) excludeLocal(root, excl.map((p) => path.relative(root, p).split(path.sep).join("/")), null);
+    if (JSON.stringify(next) !== JSON.stringify(base)) writeJson(file, Object.fromEntries(Object.keys(next).sort().map((k) => [k, next[k]])));
+  };
+  return { base, next, offer, done };
 }
-// every version of templates/teams/<rel> in this checkout's history as hashText -> text (LF); null
-// when the checkout has no git history to read
+
+// copies a file setup refreshes in teams/ (templates/, the link scripts, required.txt; rel: its path here) over dest,
+// unless git tracks dest (teams/ committed, maybe by someone else) and it is neither the shipped text nor a past one
+// (knownBlob): that is the repo's own edit, so the shipped text is offered beside it (rec.offer), with the newest
+// version in the repo's history of dest that is a shipped one as .base. The record (keyed by dest's path in teams/)
+// holds the offered text, so a merged or declined offer is not made again until the shipped text changes.
+function teamRefresh(root, teams, rec) {
+  const tracked = new Set(git(["ls-files", "-z", "--", path.join(teams, "")], root).out.split("\0").filter(Boolean));
+  const repoRel = (p) => path.relative(root, p).split(path.sep).join("/");
+  return (src, dest, rel) => {
+    const key = path.relative(teams, dest).split(path.sep).join("/"), cur = readText(dest);
+    if (!tracked.has(repoRel(dest)) || cur === null) { copyFile(src, dest); delete rec.next[key]; return; }
+    const text = readText(src);
+    if (norm(cur) === norm(text) || knownBlob(rel, cur)) { copyFile(src, dest); delete rec.next[key]; return; }
+    const h = hashText(text), was = rec.base[key];
+    if (isObj(was) && was.sha256 === h) return;
+    // the repo's history of dest, newest first: the first shipped version is what the edits were made on
+    const ids = git(["log", "--format=", "--raw", "--no-abbrev", "--no-renames", "--", repoRel(dest)], root).out.split("\n").map((l) => l.split(/\s+/)[3]).filter((x) => x && !/^0+$/.test(x));
+    const past = isObj(known().blobs) && Array.isArray(known().blobs[rel]) ? known().blobs[rel] : [];
+    const now = blobId(norm(text)), id = ids.find((x) => x === now || past.includes(x));
+    // edited on top of the text shipped now: nothing to offer
+    if (id === now) { rec.next[key] = { sha256: h }; return; }
+    const baseText = id ? spawnSync("git", ["cat-file", "blob", id], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000 }).stdout : null;
+    if (rec.offer(dest, text, baseText || null, `teams/${key}`)) rec.next[key] = { sha256: h };
+  };
+}
+// every past version of templates/teams/<rel> as hashText -> text (LF): the ones scripts/known-blobs.json lists, which
+// the plugin's copy (no git history) has too, and those in this checkout's history when it has one
 function teamHistory(rel) {
-  const p = `templates/teams/${rel}`, r = git(["log", "--format=%H", "--no-renames", "--", p], HERE);
-  if (!r.ok) return null;
+  const p = `templates/teams/${rel}`, m = new Map();
+  const texts = isObj(known().texts) && isObj(known().texts[p]) ? Object.values(known().texts[p]) : [];
+  for (const t of texts) if (typeof t === "string" && !m.has(hashText(t))) m.set(hashText(t), norm(t));
+  const r = git(["log", "--format=%H", "--no-renames", "--", p], HERE);
+  m.git = r.ok;
+  if (!r.ok) return m;
   const want = r.out.split("\n").filter((l) => /^[0-9a-f]{40}$/.test(l)).map((c) => `${c}:${p}`);
   const out = want.length ? spawnSync("git", ["cat-file", "--batch"], { cwd: HERE, input: want.join("\n") + "\n", maxBuffer: 1 << 28 }).stdout : null;
-  const m = new Map();
   let at = 0;
   for (let i = 0; out && i < want.length; i++) {
     const nl = out.indexOf(10, at), head = out.toString("utf8", at, nl).split(" ");
@@ -588,13 +653,17 @@ function teamHistory(rel) {
   }
   return m;
 }
-// pending <file>.upstream files under teams/, "/"-separated relative to teams/
+// pending <file>.upstream files anywhere under teams/ (links not followed), "/"-separated relative to teams/
 function upstreamPending(teams) {
   const out = [];
-  const look = (rel) => { if (isFile(path.join(teams, ...rel.split("/")))) out.push(rel); };
-  look("ROUTING.md.upstream");
-  for (const p of isDir(teams) ? L.profiles(teams) : []) for (const f of ["PROFILE.md", "skills.txt"]) look(`${p}/${f}.upstream`);
-  return out;
+  const walk = (d, pre) => {
+    for (const e of isDir(d) ? fs.readdirSync(d, { withFileTypes: true }) : []) {
+      if (e.isDirectory()) walk(path.join(d, e.name), `${pre}${e.name}/`);
+      else if (e.isFile() && e.name.endsWith(".upstream")) out.push(`${pre}${e.name}`);
+    }
+  };
+  walk(teams, "");
+  return out.sort();
 }
 
 // root: where teams/ goes (the checkout, or its guest dir)
@@ -616,10 +685,13 @@ function copyTeams(root) {
   const ign = lstat(path.join(teams, ".gitignore"));
   if (ign && ign.isSymbolicLink()) die(`refused  ${path.join(teams, ".gitignore")} (a link; nothing written through it). Replace it with a regular file and re-run.`);
   teamsIgnore(teams, true);
-  if (!self) for (const f of LINK_SCRIPTS) copyFile(isFile(path.join(SHIPPED_TEAMS, f)) ? path.join(SHIPPED_TEAMS, f) : path.join(HERE, "templates", "hooks", f), path.join(teams, f));
+  // a refreshed file teams/ commits with the repo's own edits gets a .upstream, never overwritten (teamRefresh)
+  const rec = teamRecord(root, teams), refresh = teamRefresh(root, teams, rec);
+  const put = (src, dest) => refresh(src, dest, path.relative(HERE, src).split(path.sep).join("/"));
+  if (!self) for (const f of LINK_SCRIPTS) put(isFile(path.join(SHIPPED_TEAMS, f)) ? path.join(SHIPPED_TEAMS, f) : path.join(HERE, "templates", "hooks", f), path.join(teams, f));
   // excluded first: a run that stops partway never leaves the copy showing in git status
   if (self) excludeLocal(root, ["teams/templates/"], "teams/templates, a copy of this checkout's templates/");
-  copyTree(path.join(HERE, "templates"), path.join(teams, "templates"), [SHIPPED_TEAMS]);
+  copyTree(path.join(HERE, "templates"), path.join(teams, "templates"), [SHIPPED_TEAMS], put);
   // renamed to worktree-settings.local.json; drop the old copy only if nobody edited it
   const stale = path.join(teams, "templates", "hooks", "settings.local.json");
   const t = readText(stale);
@@ -630,12 +702,13 @@ function copyTeams(root) {
   // the routing table, PROFILE.md and skills.txt are the repo's once copied; a later shipped change
   // to one the repo has comes as <file>.upstream to merge (teamUpstream)
   const owned = ["ROUTING.md", ...L.profiles(SHIPPED_TEAMS).flatMap((p) => ["PROFILE.md", "skills.txt"].map((f) => `${p}/${f}`))];
-  teamUpstream(root, teams, owned.filter((rel) => isFile(path.join(SHIPPED_TEAMS, rel))));
+  teamUpstream(teams, owned.filter((rel) => isFile(path.join(SHIPPED_TEAMS, rel))), rec);
   for (const [p, dest] of dirs) {
     const src = path.join(SHIPPED_TEAMS, p);
     // required.txt is the pipeline's, not the scout's or the repo's: always refreshed
-    if (isFile(path.join(src, "required.txt"))) copyFile(path.join(src, "required.txt"), path.join(dest, "required.txt"));
+    if (isFile(path.join(src, "required.txt"))) put(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
+  rec.done();
   log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, proteus-confine.js, package.json, "}templates/)`);
 }
 
@@ -1015,13 +1088,16 @@ function install(opt) {
 const PLUGIN_ID = "proteus@proteus";
 const MARKET = { source: { source: "github", repo: "Yousef-Baidas/proteus" } };
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+// the plugin's per-repo gate, the rule proteus-plugin.js applies: { on, file } (settings.local.json wins)
+const gateFrom = (root) => require(path.join(HERE, "templates", "hooks", "proteus-plugin.js")).gateFrom(root);
 // 1.x, the installer path, left in a repo or the config dir that moves to the plugin (D8). A file counts as unedited
-// when a release shipped it (pastShipped, as the hivemind takeover decides), here or in the 1.x checkout proteus.json
-// names, whose history the plugin's copy lacks; only those go. An edited, tracked or gate-run copy stays and is named.
+// when it is the text shipped now (here or in the 1.x checkout proteus.json names) or byte-identical to a blob the
+// path ever had on main (knownBlob: the 1.x autostart synced from main between releases); only those go. A gate-run
+// or edited copy stays and is named; a tracked one too, with an edited one's last author and no advice to delete it.
 const oldHome = () => { const h = (readJson(CONFIG) || {}).home; return typeof h === "string" && isDir(h) && !samePath(real(h), real(HERE)) ? real(h) : null; };
 const homes = () => [HERE, oldHome()].filter(Boolean);
-const everShipped = (rel) => homes().some((d) => isFile(path.join(d, rel)) || pastShipped(rel, undefined, d));
-const unedited = (rel, text) => text !== null && homes().some((d) => { const t = readText(path.join(d, rel)); return (t !== null && hashText(t) === hashText(text)) || pastShipped(rel, text, d); });
+const everShipped = (rel) => homes().some((d) => isFile(path.join(d, rel))) || knownBlob(rel);
+const unedited = (rel, text) => text !== null && (homes().some((d) => { const t = readText(path.join(d, rel)); return t !== null && hashText(t) === hashText(text); }) || knownBlob(rel, text));
 const HOOK_CMD = /\.claude[\\/]hooks[\\/]([\w.-]+\.js)\b/;
 const HOOK_EXCLUDE = { ".claude/hooks/proteus-*.js": /^proteus-[\w.-]*\.js$/, ".claude/hooks/package.json": /^package\.json$/, ".claude/hooks/worktree-settings.local.json": /^worktree-settings\.local\.json$/ };
 
@@ -1034,12 +1110,18 @@ function oldProjectInstall(root, act, settings) {
   const rel = (p) => path.relative(root, p).split(path.sep).join("/");
   const drop = (p, why) => { if (act && !safeRemove(p, ownedRoots(), "file")) kept.push(`${rel(p)} (refused: a link, or outside what Proteus owns)`); else { found.push(`${rel(p)} (${why})`); gone.add(rel(p)); } };
   const tracked = new Set(git(["ls-files", "--", ".claude/hooks", ".claude/agents"], root).out.split("\n").filter(Boolean));
+  // a tracked copy: an unedited one goes in a commit; an edited one is someone's work, named with its last author
+  const keptTracked = (r, text, shipped) => {
+    if (unedited(shipped, text)) return `${r} (tracked by git; delete it in a commit)`;
+    const who = git(["log", "-1", "--format=%an", "--", r], root).out;
+    return `${r} (edited${who ? ` by ${who}` : ""}; left alone)`;
+  };
   const gates = ["lefthook.yml", path.join(".github", "workflows", "proteus-gates.yml")].map((f) => readText(path.join(root, f)) || "").join("\n");
   const hooks = path.join(root, ".claude", "hooks");
   const own = L.ownDir(root, [".claude", "hooks"]) ? listDir(hooks, /^[\w.-]+$/).filter((f) => f !== "install-lead-hooks.js" && everShipped(`templates/hooks/${f}`)) : [];
   for (const f of own.filter((x) => x !== "package.json")) {
     const p = path.join(hooks, f), r = `.claude/hooks/${f}`;
-    if (tracked.has(r)) kept.push(`${r} (tracked by git; delete it in a commit)`);
+    if (tracked.has(r)) kept.push(keptTracked(r, readText(p), `templates/hooks/${f}`));
     else if (gates.includes(r)) kept.push(`${r} (the gates run it; point them at ${COMMIT_MSG}, then run this again)`);
     else if (unedited(`templates/hooks/${f}`, readText(p))) drop(p, "1.x copy; the plugin runs its own");
     else kept.push(`${r} (edited; it still runs beside the plugin's hook until you delete it)`);
@@ -1047,7 +1129,7 @@ function oldProjectInstall(root, act, settings) {
   // the CommonJS marker goes with the last script it serves
   const pj = path.join(hooks, "package.json");
   if (own.includes("package.json") && !listDir(hooks, /\.js$/).some((f) => !gone.has(`.claude/hooks/${f}`))) {
-    if (tracked.has(".claude/hooks/package.json")) kept.push(".claude/hooks/package.json (tracked by git; delete it in a commit)");
+    if (tracked.has(".claude/hooks/package.json")) kept.push(keptTracked(".claude/hooks/package.json", readText(pj), "templates/hooks/package.json"));
     else if (unedited("templates/hooks/package.json", readText(pj))) drop(pj, "1.x copy");
     else kept.push(".claude/hooks/package.json (edited)");
   }
@@ -1077,7 +1159,7 @@ function oldProjectInstall(root, act, settings) {
   for (const f of L.ownDir(root, [".claude", "agents"]) ? listDir(agents, /^proteus-[\w-]+\.md$/) : []) {
     const p = path.join(agents, f), r = `.claude/agents/${f}`, t = readText(p), gen = ap().isGenerated(t);
     if (!gen && !everShipped(`agents/${f}`)) continue;
-    if (tracked.has(r)) kept.push(`${r} (tracked by git; delete it in a commit)`);
+    if (tracked.has(r)) kept.push(keptTracked(r, t, `agents/${f}`));
     // generated from proteus-agents.json, which the plugin does not apply: as the installer wrote it now, or orphaned
     else if (gen) {
       if (generated.error || (generated.write || []).some((w) => samePath(w.path, p))) kept.push(`${r} (generated from .claude/proteus-agents.json, since edited or out of date)`);
@@ -1097,6 +1179,20 @@ function oldProjectInstall(root, act, settings) {
     }
   }
   return { found, kept, changed };
+}
+
+// oldProjectInstall until a pass removes nothing, so one run leaves no leftover a removal freed (a package.json, an
+// exclude line, a settings entry); dry runs once. kept is the last pass's.
+function oldProjectAll(root, act, settings) {
+  const all = { found: [], kept: [], changed: new Set() };
+  for (let i = 0; i < 5; i++) {
+    const m = oldProjectInstall(root, act, settings);
+    all.found.push(...m.found);
+    for (const c of m.changed) all.changed.add(c);
+    all.kept = m.kept;
+    if (!act || !m.found.length) break;
+  }
+  return all;
 }
 
 // the 1.x user install the plugin replaces: skill links in the config dir's skills/, shipped agents in its agents/,
@@ -1140,7 +1236,7 @@ function migrateToPlugin(root) {
   const files = { "settings.json": path.join(root, ".claude", "settings.json"), "settings.local.json": path.join(root, ".claude", "settings.local.json") };
   const settings = {};
   for (const [k, f] of Object.entries(files)) { const st = lstat(f), v = readJson(f); if (v && !(st && st.isSymbolicLink())) settings[k] = v; }
-  const m = withProject(root, () => oldProjectInstall(root, true, settings));
+  const m = withProject(root, () => oldProjectAll(root, true, settings));
   for (const k of m.changed) writeJson(files[k], settings[k]);
   return m;
 }
@@ -1164,7 +1260,7 @@ function pluginSetup(opt) {
     if (k in s && !isObj(s[k])) die(`refused: "${k}" in ${shared} is not a JSON object; nothing changed. Fix it and re-run`);
   }
   // a 1.x install here first: its hook copies and their entries out, so plugin and copy never both run unnoticed
-  const m = withProject(root, () => oldProjectInstall(root, !dry, { "settings.json": s, "settings.local.json": l }));
+  const m = withProject(root, () => oldProjectAll(root, !dry, { "settings.json": s, "settings.local.json": l }));
   for (const p of m.found) log(`${dry ? "would remove" : "removed "} ${p}`);
   for (const p of m.kept) log(`kept     ${p}`);
   // the gate the plugin's hooks check, and the marketplace teammates are prompted to install from (a fork's kept)
@@ -1176,6 +1272,8 @@ function pluginSetup(opt) {
   }
   if ((todo.length || m.changed.has("settings.json")) && !dry) writeJson(shared, s);
   log(`settings -> .claude/settings.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled, proteus marketplace listed`}; commit it)`);
+  const own = isObj(l.enabledPlugins) ? l.enabledPlugins[PLUGIN_ID] : undefined;
+  if (own !== undefined && own !== true) warn(`warning: .claude/settings.local.json sets ${PLUGIN_ID} to ${JSON.stringify(own)}, which wins over settings.json; the plugin stays off here until you set it to true or remove it`);
   let ok = setAttribution(dry);
   // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
   if (!("statusLine" in l)) {
@@ -1198,6 +1296,7 @@ function pluginSetup(opt) {
       L.run({ root, install: false, confine: false, log, remove: guardedRemove });
     });
   }
+  if (!dry) setupReleaseCheck(root);
   const self = `node "${path.join(HERE, "install.js")}"`;
   // the user-level 1.x install is never touched here: it may still serve other repos
   const u = oldUserInstall(false);
@@ -1466,7 +1565,8 @@ async function doctor(fix) {
   const hd = cxh ? ".codex" : ".claude";
   // a plugin setup (D8): the repo's committed gate, or this run is the plugin's own copy; the plugin then carries the
   // skill, agents and hooks, and the 1.x pieces are leftovers
-  const gated = top.ok && ((readJson(path.join(top.out, ".claude", "settings.json")) || {}).enabledPlugins || {})[PLUGIN_ID] === true;
+  // a plugin repo: the gate is on, or the committed settings turn it on and a local false holds it off
+  const gated = top.ok && (gateFrom(top.out).on || ((readJson(path.join(top.out, ".claude", "settings.json")) || {}).enabledPlugins || {})[PLUGIN_ID] === true);
   const plug = !cxh && (gated || inside(path.join(CLAUDE, "plugins"), real(HERE) || HERE));
   const checks = [];
   // test() returns [status, what, fix command]
@@ -1682,8 +1782,10 @@ async function doctor(fix) {
       // a release changed a team file the repo owns; --project left the new text beside it
       check(() => {
         const up = upstreamPending(path.join(base, "teams"));
+        const t = (u) => `teams/${u.slice(0, -".upstream".length)}`, based = (u) => isFile(path.join(base, ...`${t(u)}.base`.split("/")));
+        const how = up.map((u) => (based(u) ? `git merge-file ${t(u)} ${t(u)}.base ${t(u)}.upstream` : `merge ${t(u)}.upstream into ${t(u)} by hand`));
         return up.length ? ["WARN", `shipped team file changes not merged: ${up.map((u) => `teams/${u}`).join(", ")}`,
-          "merge each into the file beside it (--project printed the git merge-file line), then delete the .upstream and .base files"]
+          `${how.join("; ")}; then delete the .upstream and .base files`]
           : ["ok", "no pending teams/*.upstream"];
       });
       if (guest) {
@@ -1804,15 +1906,19 @@ async function doctor(fix) {
 // a plugin setup in the repo at root: the gate and marketplace entries --plugin-setup writes, no 1.x copies left,
 // and the last release check (D6) the autostart cached in the plugin's data dir
 function pluginChecks(check, root, self) {
-  const s = readJson(path.join(root, ".claude", "settings.json")) || {};
-  check(() => (s.enabledPlugins || {})[PLUGIN_ID] === true ? ["ok", `plugin gate: .claude/settings.json enables ${PLUGIN_ID}`]
-    : ["FIX", `plugin gate: .claude/settings.json does not enable ${PLUGIN_ID}, so the plugin's hooks stay silent here`, `${self} --plugin-setup`]);
+  const s = readJson(path.join(root, ".claude", "settings.json")) || {}, gate = gateFrom(root);
+  check(() => gate.on ? ["ok", `plugin gate: .claude/${gate.file} enables ${PLUGIN_ID}`]
+    : gate.file === "settings.local.json" ? ["FIX", `plugin gate: .claude/settings.local.json sets ${PLUGIN_ID} to false, which wins over settings.json, so the plugin's hooks stay silent here`, `set enabledPlugins["${PLUGIN_ID}"] to true in .claude/settings.local.json, or remove it there`]
+      : ["FIX", `plugin gate: neither .claude/settings.local.json nor .claude/settings.json enables ${PLUGIN_ID}, so the plugin's hooks stay silent here`, `${self} --plugin-setup`]);
   check(() => isObj((s.extraKnownMarketplaces || {}).proteus) ? ["ok", "plugin marketplace: .claude/settings.json lists proteus for teammates"]
     : ["WARN", "plugin marketplace: .claude/settings.json lists no proteus marketplace, so teammates are not offered the plugin", `${self} --plugin-setup`]);
   check(() => {
     const m = withProject(root, () => oldProjectInstall(root, false, { "settings.json": readJson(path.join(root, ".claude", "settings.json")) || {}, "settings.local.json": readJson(path.join(root, ".claude", "settings.local.json")) || {} }));
     if (m.found.length) return ["FIX", `1.x copies beside the plugin: ${m.found.join(", ")}`, `${self} --plugin-setup`];
-    return m.kept.length ? ["WARN", `1.x copies left alone: ${m.kept.join("; ")}`, "move their edits out, then delete them"] : ["ok", "no 1.x copies beside the plugin"];
+    // a tracked copy someone edited is theirs: no advice to delete it
+    const mine = m.kept.filter((k) => !k.endsWith("; left alone)")).map((k) => k.replace(/ \(.*$/, ""));
+    return m.kept.length ? ["WARN", `1.x copies left alone: ${m.kept.join("; ")}`, mine.length ? `${mine.join(", ")}: move their edits out, then delete them` : "nothing to do: their edits are the repo's, kept on purpose"]
+      : ["ok", "no 1.x copies beside the plugin"];
   }, () => migrateToPlugin(root));
   check(() => {
     const r = releaseState(root);
@@ -1823,14 +1929,25 @@ function pluginChecks(check, root, self) {
       r.result.newest ? `pin to ${r.result.newest}, the newest verified release: ${hl().pinCommand(r.result.newest)}` : "trust the maintainer's key: docs/updating.md \"Releases\""];
   });
 }
+// CLAUDE_PLUGIN_DATA: the config dir's plugins/data/<id, other than [a-z0-9_-] as ->
+const pluginData = () => process.env.CLAUDE_PLUGIN_DATA || path.join(CLAUDE, "plugins", "data", PLUGIN_ID.replace(/[^a-z0-9_-]/gi, "-"));
+// the release check the autostart runs (lib.releaseCheck), once, when the plugin is installed: its result lands in the
+// cache --doctor reads. A failed fetch is a line, never an error; the session start tries again.
+function setupReleaseCheck(root) {
+  if (!releaseState(root).sha) { log(`release  -> skipped (${PLUGIN_ID} is not installed in ${CLAUDE})`); return; }
+  const notes = [];
+  try { hl().releaseCheck(root, notes, HERE, pluginData()); } catch (e) { notes.push(`release check failed: ${e.message}`); }
+  const r = releaseState(root);
+  if (r.result && r.at === r.sha && r.result.tag) log(`release  -> ${r.sha.slice(0, 12)} is the verified release ${r.result.tag}`);
+  for (const n of notes) log(`release  -> ${n.replace(/^proteus: /, "").replace(/ Tell the human once; nothing is blocked\.$/, "")}`);
+  if (!notes.length && !(r.result && r.at === r.sha)) log("release  -> no result yet (no tags fetched); a session start checks again");
+}
 // the installed commit of proteus@proteus (this project's install, else the user's) and the release check's cache
 function releaseState(root) {
   const all = (((readJson(path.join(CLAUDE, "plugins", "installed_plugins.json")) || {}).plugins || {})[PLUGIN_ID] || []).filter(isObj);
   const e = all.find((x) => typeof x.projectPath === "string" && samePath(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
   const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
-  // CLAUDE_PLUGIN_DATA: the config dir's plugins/data/<id, other than [a-z0-9_-] as ->
-  const data = process.env.CLAUDE_PLUGIN_DATA || path.join(CLAUDE, "plugins", "data", PLUGIN_ID.replace(/[^a-z0-9_-]/gi, "-"));
-  const c = readJson(path.join(data, "release-check.json")) || {};
+  const c = readJson(path.join(pluginData(), "release-check.json")) || {};
   return { sha, at: typeof c.sha === "string" ? c.sha : "", result: isObj(c.result) ? c.result : null };
 }
 
