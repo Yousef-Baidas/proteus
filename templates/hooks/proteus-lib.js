@@ -1852,7 +1852,8 @@ function linkDenial(words, dir, wt) {
     if (relPath(realOr(wt), realOr(linkAbs)) === null && relPath(wt, linkAbs) === null) continue; // a link outside: confined as a write
     let base = dir;
     if (sym && !rel) { try { base = fs.statSync(linkAbs).isDirectory() ? linkAbs : path.dirname(linkAbs); } catch { base = path.dirname(linkAbs); } }
-    const abs = /^(?:[\\/]|[a-zA-Z]:|[~$])/.test(t) ? t : path.resolve(base, t);
+    // a resolved Windows path in forward slashes: confineDenial reads a backslash as a shell escape
+    const abs = /^(?:[\\/]|[a-zA-Z]:|[~$])/.test(t) ? t : path.resolve(base, t).replace(/\\/g, "/");
     if (confineDenial(abs, dir, wt, prog)) return AGENT_MSG.link(`${prog}${sym ? " -s" : ""}`, link, t, "outside your owned paths and scratch dir");
   }
   return "";
