@@ -37,7 +37,7 @@ New to it? Type `tour` in the lead session for a short walkthrough.
 Install the plugin, pinned to a release:
 
 ```bash
-claude plugin marketplace add Yousef-Baidas/proteus#v2.0.0
+claude plugin marketplace add Yousef-Baidas/proteus#v2.1.0
 claude plugin install proteus@proteus
 ```
 
