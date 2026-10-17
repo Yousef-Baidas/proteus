@@ -288,6 +288,17 @@ const LEAD_HOOKS = [
   ["TeammateIdle", "proteus-stall.js"],
 ];
 
+// the plugin's hooks/hooks.json (scripts/plugin-hooks.js writes it): LEAD_HOOKS, each through proteus-plugin.js,
+// the per-repo gate, from the plugin root. No statusLine: a plugin cannot set one.
+function pluginHooks() {
+  const hooks = {};
+  for (const [ev, script, matcher, timeout] of LEAD_HOOKS) {
+    const cmd = `node "\${CLAUDE_PLUGIN_ROOT}/templates/hooks/proteus-plugin.js" ${script}`;
+    (hooks[ev] = hooks[ev] || []).push({ ...(matcher && { matcher }), hooks: [{ type: "command", command: cmd, ...(timeout && { timeout }) }] });
+  }
+  return { hooks };
+}
+
 // returns {file, changed} or {file, error} (invalid JSON is never overwritten)
 function registerLead(root) {
   const file = leadSettings(root);
@@ -381,5 +392,5 @@ function exportEnv(root, vars) {
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, exportEnv,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv,
 };

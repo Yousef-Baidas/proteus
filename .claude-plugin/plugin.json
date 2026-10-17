@@ -1,0 +1,25 @@
+{
+  "name": "proteus",
+  "description": "Multi-agent pipeline for Claude Code: a lead that plans, workers and verifiers that build and review, and hooks that keep each in its lane.",
+  "author": {
+    "name": "Yousef-Baidas"
+  },
+  "homepage": "https://github.com/Yousef-Baidas/proteus",
+  "repository": "https://github.com/Yousef-Baidas/proteus",
+  "license": "MIT",
+  "skills": "./skills/",
+  "agents": [
+    "./agents/proteus-backend-verifier.md",
+    "./agents/proteus-backend-worker.md",
+    "./agents/proteus-devops-worker.md",
+    "./agents/proteus-frontend-verifier.md",
+    "./agents/proteus-frontend-worker.md",
+    "./agents/proteus-guide.md",
+    "./agents/proteus-qa-verifier.md",
+    "./agents/proteus-scout.md",
+    "./agents/proteus-security-verifier.md",
+    "./agents/proteus-verifier.md",
+    "./agents/proteus-worker.md"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

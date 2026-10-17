@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { execFileSync, spawnSync } = require("child_process");
-const { claudeDir } = require(path.join(__dirname, "proteus-confine.js"));
+const { claudeDir, pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -1187,11 +1187,19 @@ function writeTargets(words) {
   return [];
 }
 
+// the plugin's folder (CLAUDE_PLUGIN_ROOT), guarded like .claude/hooks, for the repo whose git common dir is common;
+// "" when there is none, or when it is a checkout of that repo itself (a plugin run from its source checkout)
+function pluginAnchor(common) {
+  const p = pluginRoot(), r = p && gitRoot(p);
+  return !p || (r && common && realOr(gitCommonDir(r)) === realOr(common)) ? "" : p;
+}
+
 // rel (forward slashes) under which root abs falls, judged against AGENT_NEVER; "" when allowed
 function guardedWrite(abs, ev) {
   const wt = gitRoot(path.dirname(abs));
   if (wt && inScratch(gitCommonDir(wt), abs)) return ""; // proteus-scratch.js --path: the agents' sanctioned temp space under .git
   const roots = [wt, guestDir(projectRoot(ev))].filter(Boolean);
+  const plug = pluginAnchor(gitCommonDir(path.resolve(projectRoot(ev))));
   for (const p of [abs, realTarget(abs)].filter(Boolean)) {
     for (const r of [...roots, gitRoot(path.dirname(p))].filter(Boolean)) {
       const rel = relPath(realOr(r), p) ?? relPath(r, p);
@@ -1200,6 +1208,9 @@ function guardedWrite(abs, ev) {
     // the CLIs' own settings, hooks and skills in the user's home, outside any checkout
     const home = relPath(realOr(os.homedir()), p) ?? relPath(os.homedir(), p);
     if (home && /^\.(?:claude|codex|agents)(?:\/|$)/.test(fileKey(home))) return "~/" + home;
+    // the plugin's own folder: its hooks, skills and agents
+    const inPlug = plug ? relPath(realOr(plug), p) ?? relPath(plug, p) : null;
+    if (inPlug !== null) return inPlug ? `$CLAUDE_PLUGIN_ROOT/${inPlug}` : "$CLAUDE_PLUGIN_ROOT";
   }
   return "";
 }
@@ -1270,7 +1281,8 @@ function guardedParent(abs, ev) {
   }
   const guest = guestDir(projectRoot(ev));
   if (guest) roots.add(guest);
-  const anchors = [...[".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d)), claudeDir(), ...(process.env.CODEX_HOME ? [path.resolve(process.env.CODEX_HOME)] : [])];
+  const plug = pluginAnchor(gitCommonDir(path.resolve(projectRoot(ev))));
+  const anchors = [...[".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d)), claudeDir(), ...(process.env.CODEX_HOME ? [path.resolve(process.env.CODEX_HOME)] : []), ...(plug ? [plug] : [])];
   for (const r of roots) {
     anchors.push(...ANCHORS.map((a) => path.join(r, a)));
     try { anchors.push(...fs.readdirSync(path.join(r, ".config")).filter((n) => /^\.?lefthook/i.test(n)).map((n) => path.join(r, ".config", n))); } catch {}
@@ -1868,7 +1880,7 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
-  drivePath, expandPath, shellCwd, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
+  drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
