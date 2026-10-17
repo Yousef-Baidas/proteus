@@ -34,8 +34,12 @@ const { spawnSync } = require("child_process");
 // the guard: beside this file in a repo's teams/, else in its teams/templates/hooks/, else ../hooks/ in the checkout
 const C = require([__dirname, path.join(__dirname, "templates", "hooks"), path.join(__dirname, "..", "hooks")]
   .map((d) => path.join(d, "proteus-confine.js")).find((f) => fs.existsSync(f)) || path.join(__dirname, "proteus-confine.js"));
-const { WIN, lstat, real, isDir, isFile, samePath, ownDir, linkDir } = C;
+const { WIN, lstat, real, isDir, isFile, samePath, inside, ownDir, linkDir } = C;
 const HOME = os.homedir();
+// Claude Code's skills dir ($CLAUDE_CONFIG_DIR/skills, else ~/.claude/skills) as a confined root and its segments:
+// from HOME when it is under it, so a link anywhere on the way is refused as before
+const CLAUDE = C.claudeDir();
+const [SKILLS_BASE, SKILLS_SEGS] = inside(CLAUDE, HOME) ? [HOME, [...path.relative(HOME, CLAUDE).split(path.sep).filter(Boolean), "skills"]] : [CLAUDE, ["skills"]];
 // Proteus's own global links; never confined
 const OURS = new Set(["proteus", "proteus-review"]);
 // Claude Code loads a team's .claude/skills once a worker reads a file in the team folder. Codex
@@ -56,7 +60,7 @@ function removeLink(link, root, segs) {
 }
 
 function findSrc(name) {
-  for (const cand of [path.join(HOME, ".agents", "skills", name), path.join(HOME, ".claude", "skills", name)]) {
+  for (const cand of [path.join(HOME, ".agents", "skills", name), path.join(CLAUDE, "skills", name), path.join(HOME, ".claude", "skills", name)]) {
     if (isDir(cand)) return real(cand);
   }
   return null;
@@ -99,7 +103,6 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   const missing = [];
   const linked = [];
   let confined = 0; // global links actually removed
-  const homeSkills = [".claude", "skills"];
   for (const p of profiles(teams)) {
     const dir = path.join(teams, p);
     const lists = listFiles(dir);
@@ -128,8 +131,8 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
       if (blocked.length === dirs.length) continue;
       n++;
       linked.push({ name, source, src });
-      const g = path.join(HOME, ...homeSkills, name);
-      if (confine && !OURS.has(name) && lstat(g) && lstat(g).isSymbolicLink() && remove(g, HOME, homeSkills)) confined++;
+      const g = path.join(SKILLS_BASE, ...SKILLS_SEGS, name);
+      if (confine && !OURS.has(name) && lstat(g) && lstat(g).isSymbolicLink() && remove(g, SKILLS_BASE, SKILLS_SEGS)) confined++;
     }
     log(`teams/${p} -> ${n} skills linked`);
   }

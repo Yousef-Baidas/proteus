@@ -6,6 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { execFileSync, spawnSync } = require("child_process");
+const { claudeDir } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -31,6 +32,18 @@ function run(main) {
 
 // the project dir: the event's, else the one the harness reports outside a hook
 const projectRoot = (ev) => (ev && ev.root) || harness().projectRoot({});
+
+// the checkout a script serves, wherever it is installed (a plugin cache too): the git root of dir (a hook's
+// cwd or root), else of the harness's project dir, else of the process cwd; else, last, the repo these
+// scripts sit in as <root>/.claude/hooks. null outside any repo.
+function repoRoot(dir) {
+  for (const d of [dir, harness().projectRoot({}), process.cwd()]) {
+    const r = d && gitRoot(path.resolve(d));
+    if (r) return r;
+  }
+  const here = path.resolve(__dirname, "..", "..");
+  return fs.existsSync(path.join(here, ".git")) ? here : null;
+}
 
 // linked worktree: .git is a file pointing at the main checkout
 function isLinked(root) {
@@ -296,7 +309,7 @@ function writeJSON(file, obj) {
   try { fs.renameSync(tmp, file); } catch { fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n"); try { fs.unlinkSync(tmp); } catch {} }
 }
 
-const configFile = () => path.join(os.homedir(), ".claude", "proteus.json");
+const configFile = () => path.join(claudeDir(), "proteus.json");
 const proteusConfig = () => readJSON(configFile(), {}) || {};
 // the gh config dir the agents post from ("agentGh" in proteus.json, a leading ~ allowed): a GitHub login of
 // their own, set up by install.js --agent-login. "" while they post under the human's.
@@ -1257,7 +1270,7 @@ function guardedParent(abs, ev) {
   }
   const guest = guestDir(projectRoot(ev));
   if (guest) roots.add(guest);
-  const anchors = [".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d));
+  const anchors = [...[".claude", ".codex", ".agents"].map((d) => path.join(os.homedir(), d)), claudeDir(), ...(process.env.CODEX_HOME ? [path.resolve(process.env.CODEX_HOME)] : [])];
   for (const r of roots) {
     anchors.push(...ANCHORS.map((a) => path.join(r, a)));
     try { anchors.push(...fs.readdirSync(path.join(r, ".config")).filter((n) => /^\.?lefthook/i.test(n)).map((n) => path.join(r, ".config", n))); } catch {}
@@ -1850,7 +1863,7 @@ function refreshInbox(root, common, timeout = 10000) {
 
 module.exports = {
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
-  run, projectRoot, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
+  run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,

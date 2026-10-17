@@ -23,6 +23,8 @@ const inside = (child, parent) => { const r = path.relative(parent, child); retu
 // realpath of the deepest existing ancestor, the rest joined on: a path that does not exist yet resolves too
 const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r; const d = path.dirname(a); return d === a ? a : path.join(realish(d), path.basename(a)); };
 const userHome = () => { try { return realish(os.userInfo().homedir); } catch { return null; } };
+// Claude Code's config dir: $CLAUDE_CONFIG_DIR, else ~/.claude (here: install.js, link-skills.js and the hooks all load this file)
+const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
 
 // the first of base's segs that is a link, not a directory, or missing (made first when make); null when none
 function blocker(base, segs = [], make = false) {
@@ -116,4 +118,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };

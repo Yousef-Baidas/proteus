@@ -75,7 +75,8 @@ function targets(common) {
   try { for (const n of fs.readdirSync(path.join(c, "worktrees"))) out.push([path.join(c, "worktrees", n, "config.worktree"), "common"]); } catch {}
   const home = os.homedir();
   const codex = process.env.CODEX_HOME || path.join(home, ".codex");
-  for (const d of [".claude/settings.json", ".claude/hooks", ".claude/agents", ".claude/skills", ".agents"]) out.push([path.join(home, d), "home"]);
+  for (const d of ["settings.json", "hooks", "agents", "skills"]) out.push([path.join(lib.claudeDir(), d), "home"]);
+  out.push([path.join(home, ".agents"), "home"]);
   for (const d of ["config.toml", "hooks.json", "hooks", "agents", "rules"]) out.push([path.join(codex, d), "home"]);
   const app = lib.verifierApp();
   if (app) out.push([app.keyPath, "home"]); // the verifier App's key, wherever the human keeps it

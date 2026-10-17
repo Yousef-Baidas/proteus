@@ -12,8 +12,9 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { tailLines, oldWorktreeDirs, worktreesUnder, git } = require(path.join(__dirname, "proteus-lib.js"));
+const { tailLines, oldWorktreeDirs, worktreesUnder, git, gitRoot } = require(path.join(__dirname, "proteus-lib.js"));
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
+const { claudeDir } = require(path.join(__dirname, "proteus-confine.js"));
 
 const name = "codex";
 // no default ladder: single-model mode (the lead's model) until models.ladder names the rungs.
@@ -37,9 +38,13 @@ const KINDS = {
 const TOOLS = { apply_patch: "edit", Bash: "shell", view_image: "read" };
 const toolKind = (name) => TOOLS[name] || (String(name || "").endsWith("spawn_agent") ? "spawn" : "");
 
-// hooks get no project-dir variable; a hook installed in <root>/.codex/hooks knows its root
+// hooks get no project-dir variable; a hook installed in <root>/.codex/hooks knows its root (the only
+// layout Codex runs them from: its plugin hooks are off), anywhere else the cwd's git root does
 const installedRoot = () => (path.basename(path.dirname(__dirname)) === ".codex" ? path.dirname(path.dirname(__dirname)) : "");
-const projectRoot = (raw) => process.env.PROTEUS_PROJECT_DIR || installedRoot() || (raw && raw.cwd) || process.cwd();
+function projectRoot(raw) {
+  const cwd = (raw && raw.cwd) || process.cwd();
+  return process.env.PROTEUS_PROJECT_DIR || installedRoot() || gitRoot(cwd) || cwd;
+}
 
 // every file a patch touches: "*** Add File: p", "*** Update File: p", "*** Delete File: p", "*** Move to: p"
 const PATCH_FILE = /^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+?)\s*$/gm;
@@ -244,7 +249,7 @@ function tomlTables(text) {
   return out;
 }
 // where installed plugins keep their skills, then the dirs `npx skills add` links into (proteus-skillpath.js)
-const skillRoots = () => [path.join(home, "plugins", "cache"), path.join(os.homedir(), ".agents", "skills"), path.join(os.homedir(), ".claude", "skills")];
+const skillRoots = () => [path.join(home, "plugins", "cache"), path.join(os.homedir(), ".agents", "skills"), path.join(claudeDir(), "skills")];
 
 // The optional context-mode, either as an MCP server ([mcp_servers.context-mode]) or as a plugin:
 // [plugins."context-mode@<marketplace>"] (enabled unless enabled = false) with a version installed
@@ -461,7 +466,7 @@ const allowDir = (root, dir, write = true) => sandboxRoots(root, write, dir);
 
 // Subagents run in the lead's session under its hooks, which enforce owned paths; the copies
 // here are the backup for a codex session opened inside the worktree.
-const WORKER_HOOKS = ["proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
+const WORKER_HOOKS = ["proteus-lib.js", "proteus-confine.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-harness-codex.js", "proteus-owned-paths.js", "proteus-owned-check.js", "proteus-tier.js", "proteus-worker-guard.js", "proteus-stall.js", "proteus-lessons.js", "proteus-scratch.js", "proteus-shell-check.js", "proteus-gh.js", "proteus-gates-cache.js", "package.json"];
 const WORKER_EXCLUDE = ["/.codex/proteus-owned", "/.codex/hooks/proteus-*.js", "/.codex/hooks/package.json"];
 function prepareWorker(wt, src) {
   const dir = hooksDir(wt);

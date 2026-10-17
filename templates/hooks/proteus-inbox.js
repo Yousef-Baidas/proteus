@@ -21,10 +21,9 @@ gh failing keeps the old cache. Always exits 0.`);
   return;
 }
 try {
-  // run from anywhere: the repo is the one this script is installed in, else the cwd
-  const here = path.resolve(__dirname, "..", "..");
-  const root = lib.gitCommonDir(here) ? here : path.resolve(lib.projectRoot());
-  const common = lib.gitCommonDir(root);
+  // the session's repo (the cwd's), else the one this script is installed in
+  const root = lib.repoRoot();
+  const common = root && lib.gitCommonDir(root);
   if (!common) return;
   const inbox = (args.includes("--refresh") && lib.refreshInbox(root, common)) || lib.readInbox(common);
   if (args.includes("--count")) console.log(inbox ? `${inbox.questions.length} ${inbox.reviews.length}` : "0 0");

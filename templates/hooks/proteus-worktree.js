@@ -110,9 +110,10 @@ function installPreCommit() {
   let have = [];
   try { have = fs.readdirSync(orig).filter((f) => !f.endsWith(".sample") && f !== "pre-commit"); } catch {}
   for (const f of have) write(f, `exec ${sq(path.join(orig, f))} "$@"\n`);
-  // beside this script (Claude Code's hooks dir), else the lead's teams/templates/hooks (Codex skips the file);
-  // either way proteus-lib.js and the CommonJS package.json sit next to it
-  const msgCheck = [__dirname, path.join(lib.docRoot(path.resolve(__dirname, "..", "..")), "teams", "templates", "hooks")]
+  // beside this script (Claude Code's hooks dir), else the lead's teams/templates/hooks (Codex skips the file;
+  // the lead's checkout is the worktree's main one); either way proteus-lib.js and package.json sit next to it
+  const lead = lib.mainRoot(lib.gitCommonDir(wt)) || lib.repoRoot();
+  const msgCheck = [__dirname, ...(lead ? [path.join(lib.docRoot(lead), "teams", "templates", "hooks")] : [])]
     .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
   if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
   write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
