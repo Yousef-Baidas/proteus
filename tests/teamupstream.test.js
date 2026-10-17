@@ -38,6 +38,8 @@ const repo = (name) => {
   const d = path.join(W, name);
   g(W, "init", "-q", "-b", "main", d);
   fs.writeFileSync(path.join(d, "README.md"), "# app\n");
+  // a server dependency: a first install copies backend only on evidence (#156)
+  fs.writeFileSync(path.join(d, "package.json"), '{"dependencies":{"express":"4"}}\n');
   g(d, "add", "-A"); g(d, "commit", "-qm", "init");
   return d;
 };
@@ -183,6 +185,7 @@ ok("tracked: a re-run offers nothing again", !/upstream ->/.test(r.out) && read(
 
 // guest mode: teams/ and the record live in the guest dir; .upstream goes there, named by absolute path
 const GR = repo("guestapp"), GD = path.join(W, "guestdir");
+g(GR, "remote", "add", "origin", "https://example.invalid/guestapp.git"); // devops is copied where a remote is
 r = inst(GR, ["--project", "--guest", GD]);
 const GT = (...p) => path.join(GD, "teams", ...p);
 ok("guest: the record is in the guest dir, none in the repo", r.code === 0 && fs.existsSync(GT(".proteus-base.json")) && !fs.existsSync(path.join(GR, "teams")), both(r));

@@ -1209,7 +1209,9 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   g(W, "init", "-q", "-b", "main", XP);
   fs.mkdirSync(path.join(XP, ".agents", "skills", "proteus"), { recursive: true });
   fs.writeFileSync(path.join(XP, ".agents", "skills", "proteus", "SKILL.md"), "---\nname: proteus\n---\nold copy\n");
-  fs.writeFileSync(path.join(XP, "README.md"), "x\n"); g(XP, "add", "README.md"); g(XP, "commit", "-qm", "init");
+  // a server dependency: setup copies backend only on evidence (#156)
+  fs.writeFileSync(path.join(XP, "README.md"), "x\n"); fs.writeFileSync(path.join(XP, "package.json"), '{"dependencies":{"express":"4"}}\n');
+  g(XP, "add", "README.md", "package.json"); g(XP, "commit", "-qm", "init");
   // an installed team skill, and a teams/.gitignore copied before Codex's links existed
   fs.mkdirSync(link("sql-optimization"), { recursive: true }); fs.writeFileSync(path.join(link("sql-optimization"), "SKILL.md"), "---\nname: sql-optimization\n---\n");
   fs.mkdirSync(path.join(XP, "teams"), { recursive: true }); fs.writeFileSync(path.join(XP, "teams", ".gitignore"), "*/.claude/skills/\n");
