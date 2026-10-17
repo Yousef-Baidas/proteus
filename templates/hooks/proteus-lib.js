@@ -777,6 +777,16 @@ const signsOff = (command) => shellCommands(command).map(unwrap).find((w) => pro
 // proteus:<agent>. Only that namespace is stripped; another plugin's evil:proteus-verifier keeps its prefix and
 // matches no Proteus role, since any plugin can ship an agent under a Proteus name.
 const agentName = (type) => (typeof type === "string" ? type.replace(/^proteus:/, "") : "");
+// The names a hook prints: from a plugin root (this file under CLAUDE_PLUGIN_ROOT, both resolved) the agents are
+// proteus:<agent> and a skill is /proteus:<skill>; Codex runs a skill as $<skill> and keeps the installer's bare agents.
+function inPlugin() {
+  const r = process.env.CLAUDE_PLUGIN_ROOT;
+  const rel = r ? path.relative(realOr(r), realOr(__dirname)) : "..";
+  return !path.isAbsolute(rel) && rel.split(path.sep)[0] !== "..";
+}
+const onCodex = () => require(path.join(__dirname, "proteus-harness.js")).name === "codex";
+const skillCommand = (skill = "proteus") => (onCodex() ? `$${skill}` : inPlugin() ? `/proteus:${skill}` : `/${skill}`);
+const agentPrefix = () => (!onCodex() && inPlugin() ? "proteus:" : "");
 const VERIFIER = /^proteus-(?:[a-z0-9-]+-)?verifier$/;
 const isVerifier = (type) => VERIFIER.test(agentName(type));
 const SIGNOFF_MSG = {
@@ -1862,6 +1872,7 @@ function refreshInbox(root, common, timeout = 10000) {
 }
 
 module.exports = {
+  skillCommand, agentPrefix,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,

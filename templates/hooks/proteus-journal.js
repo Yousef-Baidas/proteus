@@ -48,7 +48,7 @@ function questionsNudge(root) {
   const stamp = path.join(lib.stateDir(common), "questions-nudged");
   try { if (Date.now() - fs.statSync(stamp).mtimeMs < 10 * 60 * 1000) return ""; } catch {}
   fs.writeFileSync(stamp, new Date().toISOString() + "\n");
-  return `open questions: ${inbox.questions.map((i) => "#" + i.n).join(", ")} (answer via /proteus-review or type questions)`;
+  return `open questions: ${inbox.questions.map((i) => "#" + i.n).join(", ")} (answer via ${lib.skillCommand("proteus-review")} or type questions)`;
 }
 
 function journal(file, rec) {
