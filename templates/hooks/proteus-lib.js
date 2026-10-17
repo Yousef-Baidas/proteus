@@ -683,8 +683,9 @@ function release(home) {
 }
 
 // { commit, error }: commit is what home may fast-forward to; error says in one line why it may not
-// (lightweight or unsigned tag, unknown signer, no fast-forward)
-function verifyRelease(home, tag) {
+// (lightweight or unsigned tag, unknown signer, no fast-forward). ff false skips the fast-forward check: the
+// plugin's release check (proteus-autostart.js) verifies tags in a bare clone, which has no checkout to move
+function verifyRelease(home, tag, ff = true) {
   const no = (error) => ({ commit: "", error });
   const obj = RELEASE.test(tag) ? git(["-C", home, "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], home) : "";
   if (!obj) return no(`${tag} is not a release tag here`);
@@ -692,7 +693,7 @@ function verifyRelease(home, tag) {
   // a signed tag published again under a newer name still names its own version inside
   const header = git(["-C", home, "cat-file", "tag", obj], home).split("\n\n")[0];
   if (!header.split("\n").includes(`tag ${tag}`)) return no(`${tag} points at a tag object made for another name`);
-  if (!releaseTags(home, "--contains", "HEAD").includes(tag)) return no(`${tag} does not contain this checkout's HEAD (local commits?), so it is no fast-forward`);
+  if (ff && !releaseTags(home, "--contains", "HEAD").includes(tag)) return no(`${tag} does not contain this checkout's HEAD (local commits?), so it is no fast-forward`);
   try {
     execFileSync("git", ["-C", home, "verify-tag", obj], { encoding: "utf8", timeout: 10000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
@@ -1879,7 +1880,7 @@ module.exports = {
   CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  release, verifyRelease, changelog,
+  RELEASE, newerThan, release, verifyRelease, changelog,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };

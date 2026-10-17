@@ -326,6 +326,8 @@ Updates use your own git's trust, so nothing updates until you opt in to the mai
 
 Check it by hand: `git -C ~/proteus fetch --tags && git -C ~/proteus verify-tag v1.2.0`.
 
+Installed as a Claude Code plugin, Proteus does not update itself: the plugin manager does. Each session start instead checks that the installed commit is a release tag signed by the key in `~/.config/proteus/allowed_signers` (the file the blocks below write), using a bare clone of the marketplace's repo in the plugin's data dir that fetches tags at most once a day. A commit that is not (`main`, an unsigned or untrusted tag) gets one warning line naming the newest verified release and the `claude plugin marketplace add …#vX.Y.Z` command to pin to it; nothing is blocked.
+
 The maintainer's key: Proteus releases are signed with SSH key `SHA256:A3x02EpaNSOo27K8lsm8H3M2hhUpAeGGvoobs8NOsss` (ED25519), published as a signing key of the GitHub account [Yousef-Baidas](https://api.github.com/users/Yousef-Baidas/ssh_signing_keys). To trust it, check the fingerprint the block prints against the one above before you run its `git config` line. In bash:
 
 ```bash
