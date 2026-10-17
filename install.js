@@ -45,7 +45,12 @@
 //                                     (the plugin runs its hooks only where that is set) with the proteus marketplace,
 //                                     so teammates are offered the plugin; attribution off, the statusLine in
 //                                     .claude/settings.local.json, teams/; no hooks or agents in the repo. Prints the
-//                                     GitHub steps, never runs them. --dry-run writes nothing and says what it would do
+//                                     GitHub steps, never runs them. --dry-run writes nothing and says what it would do.
+//                                     Moving from 1.x: removes the repo's unedited .claude/hooks and .claude/agents copies,
+//                                     their settings entries and exclude lines; edited ones stay and are named
+//   node install.js --remove-user-install [--dry-run]   once the plugin is installed: remove the 1.x user install
+//                                     (skill links in ~/.claude/skills, unedited proteus-*.md in ~/.claude/agents,
+//                                     autoUpdate in proteus.json); edited agents stay and are named
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -448,12 +453,14 @@ function agentPatches(root) {
 // A file identical to a version this checkout once shipped (rel: its path here, e.g.
 // agents/hive-guide.md) is an old installer's copy, not an edit; with no text, whether rel ever
 // shipped. Needs the checkout's git history, so a non-git copy of Proteus never matches.
-let pastHashes = null;
+// dir: another Proteus checkout whose history to read (a 1.x one, from the plugin's copy, which has none).
+const pastByDir = new Map();
 const hashText = (s) => crypto.createHash("sha256").update(norm(s).trimEnd()).digest("hex");
-function pastShipped(rel, text) {
+function pastShipped(rel, text, dir = HERE) {
+  let pastHashes = pastByDir.get(dir);
   if (!pastHashes) {
-    pastHashes = new Map();
-    const r = git(["log", "--format=%H", "--name-only", "--no-renames", "--", "agents", "templates/hooks"], HERE);
+    pastByDir.set(dir, (pastHashes = new Map()));
+    const r = git(["log", "--format=%H", "--name-only", "--no-renames", "--", "agents", "templates/hooks"], dir);
     const want = [];
     let c = null;
     for (const l of r.ok ? r.out.split("\n") : []) {
@@ -461,7 +468,7 @@ function pastShipped(rel, text) {
       else if (l && c) want.push(`${c}:${l}`);
     }
     // one git process for every blob: "<sha> blob <size>\n<bytes>\n", or "<name> missing\n"
-    const out = want.length ? spawnSync("git", ["cat-file", "--batch"], { cwd: HERE, input: want.join("\n") + "\n", maxBuffer: 1 << 30 }).stdout : null;
+    const out = want.length ? spawnSync("git", ["cat-file", "--batch"], { cwd: dir, input: want.join("\n") + "\n", maxBuffer: 1 << 30 }).stdout : null;
     let at = 0;
     for (const w of out ? want : []) {
       const nl = out.indexOf(10, at);
@@ -1008,6 +1015,136 @@ function install(opt) {
 const PLUGIN_ID = "proteus@proteus";
 const MARKET = { source: { source: "github", repo: "Yousef-Baidas/proteus" } };
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+// 1.x, the installer path, left in a repo or the config dir that moves to the plugin (D8). A file counts as unedited
+// when a release shipped it (pastShipped, as the hivemind takeover decides), here or in the 1.x checkout proteus.json
+// names, whose history the plugin's copy lacks; only those go. An edited, tracked or gate-run copy stays and is named.
+const oldHome = () => { const h = (readJson(CONFIG) || {}).home; return typeof h === "string" && isDir(h) && !samePath(real(h), real(HERE)) ? real(h) : null; };
+const homes = () => [HERE, oldHome()].filter(Boolean);
+const everShipped = (rel) => homes().some((d) => isFile(path.join(d, rel)) || pastShipped(rel, undefined, d));
+const unedited = (rel, text) => text !== null && homes().some((d) => { const t = readText(path.join(d, rel)); return (t !== null && hashText(t) === hashText(text)) || pastShipped(rel, text, d); });
+const HOOK_CMD = /\.claude[\\/]hooks[\\/]([\w.-]+\.js)\b/;
+const HOOK_EXCLUDE = { ".claude/hooks/proteus-*.js": /^proteus-[\w.-]*\.js$/, ".claude/hooks/package.json": /^package\.json$/, ".claude/hooks/worktree-settings.local.json": /^worktree-settings\.local\.json$/ };
+
+// a repo's 1.x install: hook copies in .claude/hooks and their entries (hooks, statusLine) in .claude/settings.json
+// and settings.local.json, agent copies in .claude/agents, the hook lines in .git/info/exclude. settings maps a file
+// name (settings.json, settings.local.json) to its parsed object, edited in place; returns { found, kept, changed }
+// with paths relative to root, changed the settings names edited. act removes the files and the exclude lines.
+function oldProjectInstall(root, act, settings) {
+  const found = [], kept = [], changed = new Set(), gone = new Set();
+  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const drop = (p, why) => { if (act && !safeRemove(p, ownedRoots(), "file")) kept.push(`${rel(p)} (refused: a link, or outside what Proteus owns)`); else { found.push(`${rel(p)} (${why})`); gone.add(rel(p)); } };
+  const tracked = new Set(git(["ls-files", "--", ".claude/hooks", ".claude/agents"], root).out.split("\n").filter(Boolean));
+  const gates = ["lefthook.yml", path.join(".github", "workflows", "proteus-gates.yml")].map((f) => readText(path.join(root, f)) || "").join("\n");
+  const hooks = path.join(root, ".claude", "hooks");
+  const own = L.ownDir(root, [".claude", "hooks"]) ? listDir(hooks, /^[\w.-]+$/).filter((f) => f !== "install-lead-hooks.js" && everShipped(`templates/hooks/${f}`)) : [];
+  for (const f of own.filter((x) => x !== "package.json")) {
+    const p = path.join(hooks, f), r = `.claude/hooks/${f}`;
+    if (tracked.has(r)) kept.push(`${r} (tracked by git; delete it in a commit)`);
+    else if (gates.includes(r)) kept.push(`${r} (the gates run it; point them at ${COMMIT_MSG}, then run this again)`);
+    else if (unedited(`templates/hooks/${f}`, readText(p))) drop(p, "1.x copy; the plugin runs its own");
+    else kept.push(`${r} (edited; it still runs beside the plugin's hook until you delete it)`);
+  }
+  // the CommonJS marker goes with the last script it serves
+  const pj = path.join(hooks, "package.json");
+  if (own.includes("package.json") && !listDir(hooks, /\.js$/).some((f) => !gone.has(`.claude/hooks/${f}`))) {
+    if (tracked.has(".claude/hooks/package.json")) kept.push(".claude/hooks/package.json (tracked by git; delete it in a commit)");
+    else if (unedited("templates/hooks/package.json", readText(pj))) drop(pj, "1.x copy");
+    else kept.push(".claude/hooks/package.json (edited)");
+  }
+  // an entry whose script is gone, or never was there, goes; an empty entry and then an empty event go too
+  const stale = (cmd) => { const m = HOOK_CMD.exec(String(cmd)); return !!m && everShipped(`templates/hooks/${m[1]}`) && (gone.has(`.claude/hooks/${m[1]}`) || !lstat(path.join(hooks, m[1]))); };
+  for (const [name, s] of Object.entries(settings)) {
+    let n = 0;
+    const hk = isObj(s.hooks) ? s.hooks : {};
+    for (const ev of Object.keys(hk)) {
+      if (!Array.isArray(hk[ev])) continue;
+      hk[ev] = hk[ev].filter((e) => {
+        if (!e || !Array.isArray(e.hooks)) return true;
+        const keep = e.hooks.filter((x) => !(x && stale(x.command)));
+        n += e.hooks.length - keep.length;
+        const emptied = keep.length < e.hooks.length && !keep.length;
+        e.hooks = keep;
+        return !emptied;
+      });
+      if (!hk[ev].length) delete hk[ev];
+    }
+    if (isObj(s.hooks) && !Object.keys(s.hooks).length) delete s.hooks;
+    if (isObj(s.statusLine) && stale(s.statusLine.command)) { delete s.statusLine; n++; }
+    if (n) { found.push(`.claude/${name}: ${n} 1.x entr${n === 1 ? "y" : "ies"}`); changed.add(name); }
+  }
+  const agents = path.join(root, ".claude", "agents");
+  const generated = L.ownDir(root, [".claude", "agents"]) ? withProject(root, () => ap().plan(root, HERE, adapter())) : { write: [] };
+  for (const f of L.ownDir(root, [".claude", "agents"]) ? listDir(agents, /^proteus-[\w-]+\.md$/) : []) {
+    const p = path.join(agents, f), r = `.claude/agents/${f}`, t = readText(p), gen = ap().isGenerated(t);
+    if (!gen && !everShipped(`agents/${f}`)) continue;
+    if (tracked.has(r)) kept.push(`${r} (tracked by git; delete it in a commit)`);
+    // generated from proteus-agents.json, which the plugin does not apply: as the installer wrote it now, or orphaned
+    else if (gen) {
+      if (generated.error || (generated.write || []).some((w) => samePath(w.path, p))) kept.push(`${r} (generated from .claude/proteus-agents.json, since edited or out of date)`);
+      else drop(p, "generated 1.x copy; the plugin runs its own");
+    } else if (unedited(`agents/${f}`, t)) drop(p, "1.x copy; the plugin runs its own");
+    else kept.push(`${r} (edited; Claude Code loads it beside the plugin's proteus:${f.slice(0, -3)})`);
+  }
+  // .git/info/exclude: a hook line goes once no worktree holds a file it matches
+  const common = commonDir(root), xf = common && path.join(common, "info", "exclude"), text = xf && readText(xf);
+  if (text) {
+    const trees = git(["worktree", "list", "--porcelain"], root).out.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
+    const left = (re) => [root, ...trees].some((d) => listDir(path.join(d, ".claude", "hooks"), re).some((f) => !(samePath(d, root) && gone.has(`.claude/hooks/${f}`))));
+    const lines = text.split(/\r?\n/), todo = lines.filter((l) => HOOK_EXCLUDE[l] && !left(HOOK_EXCLUDE[l]));
+    if (todo.length) {
+      found.push(`${rel(xf)}: ${todo.join(", ")}`);
+      if (act) fs.writeFileSync(xf, lines.filter((l) => !todo.includes(l)).join(/\r\n/.test(text) ? "\r\n" : "\n"));
+    }
+  }
+  return { found, kept, changed };
+}
+
+// the 1.x user install the plugin replaces: skill links in the config dir's skills/, shipped agents in its agents/,
+// autoUpdate in proteus.json (the plugin manager updates). Returns { found, kept }; act removes found.
+function oldUserInstall(act) {
+  const found = [], kept = [];
+  const drop = (p, why) => { if (act && !safeRemove(p, ownedRoots())) kept.push(`${p} (refused: outside what Proteus owns)`); else found.push(`${p} (${why})`); };
+  for (const s of SKILLS) {
+    const p = path.join(CLAUDE, "skills", s), st = lstat(p);
+    if (st && st.isSymbolicLink()) drop(p, "1.x skill link");
+    else if (st && isDir(p) && frontmatterName(p) === s) kept.push(`${p} (a copy, not a link; delete it yourself once its edits are safe)`);
+  }
+  const md = path.join(CLAUDE, "agents");
+  for (const f of listDir(md, /^proteus-[\w-]+\.md$/)) {
+    if (!everShipped(`agents/${f}`)) continue;
+    const p = path.join(md, f);
+    if (unedited(`agents/${f}`, readText(p))) drop(p, "1.x copy");
+    else kept.push(`${p} (edited; Claude Code loads it beside the plugin's proteus:${f.slice(0, -3)})`);
+  }
+  const c = readJson(CONFIG);
+  if (c && "autoUpdate" in c) {
+    found.push(`autoUpdate in ${CONFIG} (the plugin manager updates the plugin)`);
+    if (act) { delete c.autoUpdate; writeJson(CONFIG, c); }
+  }
+  return { found, kept };
+}
+
+const pluginInstalled = () => { const p = (readJson(path.join(CLAUDE, "plugins", "installed_plugins.json")) || {}).plugins; return isObj(p) && Array.isArray(p[PLUGIN_ID]) && p[PLUGIN_ID].length > 0; };
+function removeUserInstall(opt) {
+  const dry = !!opt.dryRun;
+  if (!dry && !pluginInstalled()) die(`refused: ${PLUGIN_ID} is not installed in ${CLAUDE}, so this would leave no Proteus; install the plugin first (README), or --dry-run to see what goes`);
+  const u = oldUserInstall(!dry);
+  for (const p of u.found) log(`${dry ? "would remove" : "removed "} ${p}`);
+  for (const p of u.kept) log(`kept     ${p}`);
+  log(u.found.length ? (dry ? "Dry run: nothing written." : "Done. The 1.x user install is gone; Codex installs (~/.agents, $CODEX_HOME) are left alone.") : "No 1.x user install found.");
+  return true;
+}
+
+// a repo's 1.x pieces out, for --doctor --fix: the settings files read, edited and written here
+function migrateToPlugin(root) {
+  const files = { "settings.json": path.join(root, ".claude", "settings.json"), "settings.local.json": path.join(root, ".claude", "settings.local.json") };
+  const settings = {};
+  for (const [k, f] of Object.entries(files)) { const st = lstat(f), v = readJson(f); if (v && !(st && st.isSymbolicLink())) settings[k] = v; }
+  const m = withProject(root, () => oldProjectInstall(root, true, settings));
+  for (const k of m.changed) writeJson(files[k], settings[k]);
+  return m;
+}
+
 function pluginSetup(opt) {
   const dry = !!opt.dryRun, would = (s) => (dry ? `would ${s}` : s);
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
@@ -1026,6 +1163,10 @@ function pluginSetup(opt) {
   for (const k of ["enabledPlugins", "extraKnownMarketplaces"]) {
     if (k in s && !isObj(s[k])) die(`refused: "${k}" in ${shared} is not a JSON object; nothing changed. Fix it and re-run`);
   }
+  // a 1.x install here first: its hook copies and their entries out, so plugin and copy never both run unnoticed
+  const m = withProject(root, () => oldProjectInstall(root, !dry, { "settings.json": s, "settings.local.json": l }));
+  for (const p of m.found) log(`${dry ? "would remove" : "removed "} ${p}`);
+  for (const p of m.kept) log(`kept     ${p}`);
   // the gate the plugin's hooks check, and the marketplace teammates are prompted to install from (a fork's kept)
   const todo = [];
   if ((s.enabledPlugins || {})[PLUGIN_ID] !== true) { s.enabledPlugins = { ...s.enabledPlugins, [PLUGIN_ID]: true }; todo.push(`enable ${PLUGIN_ID}`); }
@@ -1033,7 +1174,7 @@ function pluginSetup(opt) {
     s.extraKnownMarketplaces = { ...s.extraKnownMarketplaces, proteus: MARKET };
     todo.push(`add the proteus marketplace (github ${MARKET.source.repo})`);
   }
-  if (todo.length && !dry) writeJson(shared, s);
+  if ((todo.length || m.changed.has("settings.json")) && !dry) writeJson(shared, s);
   log(`settings -> .claude/settings.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled, proteus marketplace listed`}; commit it)`);
   let ok = setAttribution(dry);
   // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
@@ -1042,7 +1183,10 @@ function pluginSetup(opt) {
     l.statusLine = { type: "command", command: `node "${script}"` };
     if (!dry) writeJson(local, l);
     log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"})`);
-  } else log("status   -> .claude/settings.local.json (statusLine already set; left as it is)");
+  } else {
+    if (m.changed.has("settings.local.json") && !dry) writeJson(local, l);
+    log("status   -> .claude/settings.local.json (statusLine already set; left as it is)");
+  }
   const teams = path.join(root, "teams");
   if (dry) {
     log("exclude  -> would keep .claude/settings.local.json out of git (.git/info/exclude)");
@@ -1055,6 +1199,14 @@ function pluginSetup(opt) {
     });
   }
   const self = `node "${path.join(HERE, "install.js")}"`;
+  // the user-level 1.x install is never touched here: it may still serve other repos
+  const u = oldUserInstall(false);
+  if (u.found.length + u.kept.length) {
+    log("");
+    log(`A 1.x user install is still in ${CLAUDE} (setup leaves it; other repos may still use it):`);
+    for (const p of [...u.found, ...u.kept.map((k) => `${k}, kept by the command below`)]) log(`  ${p}`);
+    if (u.found.length) log(`Remove it once no repo needs it: ${self} --remove-user-install (--dry-run first shows what goes)`);
+  }
   log("");
   log("Next, by hand (setup never runs these):");
   log("  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin");
@@ -1312,6 +1464,10 @@ async function doctor(fix) {
   const isProject = inRepo && isDir(path.join(base, "teams"));
   const self = `node "${path.join(HERE, "install.js")}"${cxh ? " --harness codex" : ""}`;
   const hd = cxh ? ".codex" : ".claude";
+  // a plugin setup (D8): the repo's committed gate, or this run is the plugin's own copy; the plugin then carries the
+  // skill, agents and hooks, and the 1.x pieces are leftovers
+  const gated = top.ok && ((readJson(path.join(top.out, ".claude", "settings.json")) || {}).enabledPlugins || {})[PLUGIN_ID] === true;
+  const plug = !cxh && (gated || inside(path.join(CLAUDE, "plugins"), real(HERE) || HERE));
   const checks = [];
   // test() returns [status, what, fix command]
   const check = (test, fixFn, fixOnWarn) => checks.push({ test, fixFn, fixOnWarn });
@@ -1414,7 +1570,12 @@ async function doctor(fix) {
       return hint ? ["WARN", "auto mode: no autoMode.environment entry in ~/.claude/settings.json names Proteus, so the classifier may block worker spawns", hint]
         : ["ok", "auto mode: autoMode.environment describes Proteus"];
     });
-    check(() => {
+    if (plug) check(() => {
+      const u = oldUserInstall(false);
+      if (u.found.length) return ["WARN", `1.x user install beside the plugin: ${u.found.join(", ")}`, `${self} --remove-user-install, once no repo still runs 1.x`];
+      return u.kept.length ? ["WARN", `1.x copies left alone: ${u.kept.join("; ")}`, "move or delete them yourself"] : ["ok", "no 1.x user install beside the plugin"];
+    });
+    if (!plug) check(() => {
       const bad = SKILLS.filter((s) => {
         const link = path.join(CLAUDE, "skills", s);
         return !(lstat(link) && lstat(link).isSymbolicLink() && samePath(real(link), real(path.join(HERE, "skills", s))));
@@ -1422,7 +1583,7 @@ async function doctor(fix) {
       return bad.length ? ["FIX", `~/.claude/skills/{${bad.join(",")}} not linked to this checkout`, self]
         : ["ok", `global skills link to ${path.join(real(HERE), "skills")}`];
     }, () => linkSkills());
-    check(() => {
+    if (!plug) check(() => {
       const stale = shippedAgents().filter((f) => {
         const t = readText(path.join(CLAUDE, "agents", f));
         return t === null || norm(t) !== norm(fs.readFileSync(path.join(HERE, "agents", f), "utf8"));
@@ -1430,7 +1591,7 @@ async function doctor(fix) {
       return stale.length ? ["FIX", `~/.claude/agents: ${stale.length} shipped agents missing or stale`, self] : ["ok", "global agents current"];
     }, () => copyAgents());
   }
-  check(() => {
+  if (!plug) check(() => {
     const c = readJson(path.join(CLAUDE, "proteus.json"));
     return c && samePath(c.home, real(HERE)) ? ["ok", `proteus.json home, autoUpdate ${c.autoUpdate === true}`]
       : ["FIX", "~/.claude/proteus.json missing or points elsewhere", self];
@@ -1460,7 +1621,7 @@ async function doctor(fix) {
       ? `--fix cannot remove ${stuck.join(", ")}; cd into the repo that holds ${stuck.length === 1 ? "it" : "them"} and re-run, or delete ${stuck.length === 1 ? "it" : "them"} by hand`
       : `${self} --doctor --fix`];
   }, () => withProject(root, () => dirs.forEach((d) => projectDupes(d, true))));
-  if (!cxh) check(() => {
+  if (!cxh && !plug) check(() => {
     const kept = dirs.flatMap((d) => projectDupes(d, false).overrides);
     return kept.length ? ["WARN", `local agent overrides, which shipped updates skip: ${kept.map((p) => overrideNote(p)).join(", ")}`,
       "deleting one drops those edits: put them in .claude/proteus-agents.json (README: Agent patches), then delete the copy"] : ["ok", "no local agent overrides"];
@@ -1501,7 +1662,7 @@ async function doctor(fix) {
       const m = migrateProject(root, false);
       if (m.found.length) return ["FIX", `hivemind's pieces in this repo: ${m.found.join(", ")}`, `${self} --project`];
       return m.kept.length ? ["WARN", `hivemind's, left alone in this repo: ${m.kept.join("; ")}`, "move, edit or delete them yourself"] : ["ok", "no hivemind pieces in this repo"];
-    }, () => migrateRepo(root, {}, [HARNESS]));
+    }, plug ? null : () => migrateRepo(root, {}, [HARNESS]));
     // state a pre-rename install left behind: moved by --project and the session start, never silently kept
     check(() => {
       const d = legacyState(root);
@@ -1512,8 +1673,9 @@ async function doctor(fix) {
       if (todo.length || !(plan.kept.length + plan.held.length + plan.failed.length)) return ["FIX", `${from} still holds pre-rename state (${todo.join(", ") || "empty"})`, `${self} --project`];
       return ["WARN", `${from} left beside ${to}: ${stateLeft(plan, from, to).map((l) => l.replace(/^\w+\s+[^:]+: /, "")).join("; ")}`, "the reason beside each says what to do"];
     }, () => migrateState(root));
+    if (plug) pluginChecks(check, top.out, self);
     if (!isProject) {
-      check(() => ["WARN", "not a Proteus project (no teams/)", `${self} --project`]);
+      check(() => ["WARN", "not a Proteus project (no teams/)", `${self} ${plug ? "--plugin-setup" : "--project"}`]);
     } else {
       check(() => isFile(path.join(base, "teams", "ROUTING.md")) ? ["ok", "teams/ROUTING.md"]
         : ["WARN", "teams/ROUTING.md missing", `${self} --project`]);
@@ -1533,7 +1695,7 @@ async function doctor(fix) {
             : ["ok", `guest mode: Proteus files in ${guest}`];
         }, () => allowGuest(root, guest));
       }
-      check(() => {
+      if (!plug) check(() => {
         const s = readJson(path.join(root, ...(cxh ? [".codex", "hooks.json"] : [".claude", "settings.local.json"])));
         const hooks = JSON.stringify((s && s.hooks) || {});
         const miss = ["proteus-autostart.js", "proteus-lead-guard.js"].filter((f) => !hooks.includes(f) || !isFile(path.join(root, hd, "hooks", f)));
@@ -1544,7 +1706,7 @@ async function doctor(fix) {
       }, () => registerHooks(root));
       // .claude/proteus-agents.json lives at the repo's top level, as --project (run from there) reads it
       const patchRoot = top.out;
-      check(() => {
+      if (!plug) check(() => {
         const p = withProject(patchRoot, () => ap().plan(patchRoot, HERE, adapter()));
         if (p.error) return ["FIX", p.error, `fix that entry, then ${self} --project`];
         const rel = (x) => path.relative(patchRoot, x).split(path.sep).join("/");
@@ -1575,8 +1737,9 @@ async function doctor(fix) {
       check(() => {
         const r = spawnSync(process.execPath, [path.join(HERE, "templates", "hooks", "proteus-scratch.js"), "--size"], { cwd: root, encoding: "utf8", timeout: 60000 });
         const mb = parseFloat(r.stdout);
-        if (r.status !== 0 || !Number.isFinite(mb)) return ["WARN", "scratch size unknown", `node ${hd}/hooks/proteus-scratch.js --size`];
-        return mb > 1024 ? ["WARN", `scratch holds ${mb} MB`, `node ${hd}/hooks/proteus-scratch.js --sweep --all-done`] : ["ok", `scratch ${mb} MB`];
+        const script = plug ? `"${path.join(HERE, "templates", "hooks", "proteus-scratch.js")}"` : `${hd}/hooks/proteus-scratch.js`;
+        if (r.status !== 0 || !Number.isFinite(mb)) return ["WARN", "scratch size unknown", `node ${script} --size`];
+        return mb > 1024 ? ["WARN", `scratch holds ${mb} MB`, `node ${script} --sweep --all-done`] : ["ok", `scratch ${mb} MB`];
       });
       check(() => {
         const teams = path.join(base, "teams");
@@ -1638,13 +1801,46 @@ async function doctor(fix) {
   return failing === 0;
 }
 
+// a plugin setup in the repo at root: the gate and marketplace entries --plugin-setup writes, no 1.x copies left,
+// and the last release check (D6) the autostart cached in the plugin's data dir
+function pluginChecks(check, root, self) {
+  const s = readJson(path.join(root, ".claude", "settings.json")) || {};
+  check(() => (s.enabledPlugins || {})[PLUGIN_ID] === true ? ["ok", `plugin gate: .claude/settings.json enables ${PLUGIN_ID}`]
+    : ["FIX", `plugin gate: .claude/settings.json does not enable ${PLUGIN_ID}, so the plugin's hooks stay silent here`, `${self} --plugin-setup`]);
+  check(() => isObj((s.extraKnownMarketplaces || {}).proteus) ? ["ok", "plugin marketplace: .claude/settings.json lists proteus for teammates"]
+    : ["WARN", "plugin marketplace: .claude/settings.json lists no proteus marketplace, so teammates are not offered the plugin", `${self} --plugin-setup`]);
+  check(() => {
+    const m = withProject(root, () => oldProjectInstall(root, false, { "settings.json": readJson(path.join(root, ".claude", "settings.json")) || {}, "settings.local.json": readJson(path.join(root, ".claude", "settings.local.json")) || {} }));
+    if (m.found.length) return ["FIX", `1.x copies beside the plugin: ${m.found.join(", ")}`, `${self} --plugin-setup`];
+    return m.kept.length ? ["WARN", `1.x copies left alone: ${m.kept.join("; ")}`, "move their edits out, then delete them"] : ["ok", "no 1.x copies beside the plugin"];
+  }, () => migrateToPlugin(root));
+  check(() => {
+    const r = releaseState(root);
+    if (!r.sha) return ["WARN", `release check: ${PLUGIN_ID} is not installed in ${CLAUDE}`, "claude plugin install proteus@proteus (README)"];
+    if (!r.result || r.at !== r.sha) return ["WARN", `release check: no result yet for the installed commit ${r.sha.slice(0, 12)}`, "start a Claude Code session in this repo; its startup runs the check"];
+    if (r.result.tag) return ["ok", `release check: ${r.sha.slice(0, 12)} is the verified release ${r.result.tag}`];
+    return ["WARN", `release check: the installed commit ${r.sha.slice(0, 12)} is not a verified release (${r.result.error || "unverified"})`,
+      r.result.newest ? `pin to ${r.result.newest}, the newest verified release: the session's startup line has the command` : "trust the maintainer's key: README \"Releases\""];
+  });
+}
+// the installed commit of proteus@proteus (this project's install, else the user's) and the release check's cache
+function releaseState(root) {
+  const all = (((readJson(path.join(CLAUDE, "plugins", "installed_plugins.json")) || {}).plugins || {})[PLUGIN_ID] || []).filter(isObj);
+  const e = all.find((x) => typeof x.projectPath === "string" && samePath(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
+  const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
+  // CLAUDE_PLUGIN_DATA: the config dir's plugins/data/<id, other than [a-z0-9_-] as ->
+  const data = process.env.CLAUDE_PLUGIN_DATA || path.join(CLAUDE, "plugins", "data", PLUGIN_ID.replace(/[^a-z0-9_-]/gi, "-"));
+  const c = readJson(path.join(data, "release-check.json")) || {};
+  return { sha, at: typeof c.sha === "string" ? c.sha : "", result: isObj(c.result) ? c.result : null };
+}
+
 // main
 
 const FLAGS = {
   "--project": "project", "--install": "install", "--confine": "confine", "--update": "update",
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
   "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect", "--no-guest": "noGuest",
-  "--plugin-setup": "pluginSetup", "--dry-run": "dryRun",
+  "--plugin-setup": "pluginSetup", "--dry-run": "dryRun", "--remove-user-install": "removeUser",
 };
 let harnessArg = null;
 
@@ -1695,9 +1891,12 @@ function main() {
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);
   if (opt.tourDone && Object.keys(opt).length > 1) die("--tour-done takes no other flag", 2);
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
-  if (opt.dryRun && !opt.pluginSetup) die("--dry-run needs --plugin-setup", 2);
-  if (opt.pluginSetup && Object.keys(opt).some((k) => k !== "pluginSetup" && k !== "dryRun")) die("--plugin-setup takes only --dry-run", 2);
-  if (opt.pluginSetup && codex()) die("--plugin-setup sets up the Claude Code plugin; Codex uses --project", 2);
+  if (opt.dryRun && !opt.pluginSetup && !opt.removeUser) die("--dry-run needs --plugin-setup or --remove-user-install", 2);
+  for (const k of ["pluginSetup", "removeUser"]) {
+    const flag = k === "pluginSetup" ? "--plugin-setup" : "--remove-user-install";
+    if (opt[k] && Object.keys(opt).some((x) => x !== k && x !== "dryRun")) die(`${flag} takes only --dry-run`, 2);
+    if (opt[k] && codex()) die(`${flag} is for the Claude Code plugin; Codex uses ${k === "pluginSetup" ? "--project" : "the installer path"}`, 2);
+  }
   if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
 
   (async () => {
@@ -1708,6 +1907,7 @@ function main() {
     else if (opt.verifierApp) process.exitCode = (await verifierApp(...opt.verifierApp)) ? 0 : 1;
     else if (opt.update) update(argv);
     else if (opt.pluginSetup) process.exitCode = pluginSetup(opt) ? 0 : 1;
+    else if (opt.removeUser) process.exitCode = removeUserInstall(opt) ? 0 : 1;
     else process.exitCode = install(opt) ? 0 : 1;
   })().catch((e) => die(`error: ${e.message}`));
 }
