@@ -40,6 +40,12 @@
 //                                     Credentials > Key pairs kept 0600 outside any repo; the App ID is on its General
 //                                     tab) in ~/.claude/proteus.json, after a test token mints; then --protect. Once
 //                                     per repo owner: run again in a repo of another account or org to add its own
+//   node install.js --plugin-setup [--dry-run]   what /proteus:setup runs from the Claude Code plugin: --project's
+//                                     project steps only. Enables proteus@proteus in the committed .claude/settings.json
+//                                     (the plugin runs its hooks only where that is set) with the proteus marketplace,
+//                                     so teammates are offered the plugin; attribution off, the statusLine in
+//                                     .claude/settings.local.json, teams/; no hooks or agents in the repo. Prints the
+//                                     GitHub steps, never runs them. --dry-run writes nothing and says what it would do
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -240,7 +246,7 @@ function copyAgents() {
 
 // "attribution": "keep" in ~/.claude/proteus.json leaves the user's attribution setting as it is
 const keepAttribution = () => (readJson(CONFIG) || {}).attribution === "keep";
-function setAttribution() {
+function setAttribution(dry = false) {
   const file = path.join(CLAUDE, "settings.json");
   if (keepAttribution()) { log("settings -> attribution left as set (proteus.json attribution: keep)"); return true; }
   const s = readJson(file);
@@ -250,7 +256,10 @@ function setAttribution() {
     return false;
   }
   const want = { ...s.attribution, commit: "", pr: "", sessionUrl: false };
-  if (JSON.stringify(s.attribution) !== JSON.stringify(want)) { s.attribution = want; writeJson(file, s); }
+  if (JSON.stringify(s.attribution) !== JSON.stringify(want)) {
+    if (dry) { log(`settings -> would disable attribution in ${file}`); return true; }
+    s.attribution = want; writeJson(file, s);
+  }
   log("settings -> attribution disabled");
   return true;
 }
@@ -994,6 +1003,69 @@ function install(opt) {
   return ok;
 }
 
+// plugin setup (#136): /proteus:setup runs install.js --plugin-setup from the plugin root. --project's project steps
+// only: the plugin ships the hooks and agents, so none go into the repo, and the global install is the plugin's.
+const PLUGIN_ID = "proteus@proteus";
+const MARKET = { source: { source: "github", repo: "Yousef-Baidas/proteus" } };
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function pluginSetup(opt) {
+  const dry = !!opt.dryRun, would = (s) => (dry ? `would ${s}` : s);
+  const top = git(["rev-parse", "--show-toplevel"], process.cwd());
+  if (!top.ok || !top.out) die("--plugin-setup sets up a git repo; run it inside one (git init first)");
+  const root = path.resolve(top.out);
+  if (inside(realish(HOME), realish(root))) die("--plugin-setup sets up a repo; this one holds your home directory");
+  if (!samePath(real(root), real(process.cwd()))) log(`project  -> ${root} (the repo's root; run from ${process.cwd()})`);
+  // every file is checked before any is written: a refusal leaves the repo as it was
+  const shared = path.join(root, ".claude", "settings.json"), local = path.join(root, ".claude", "settings.local.json");
+  const s = readJson(shared), l = readJson(local);
+  for (const [f, v] of [[shared, s], [local, l]]) {
+    const st = lstat(f);
+    if (st && st.isSymbolicLink()) die(`refused: ${f} is a link; nothing written through it. Replace it with a regular file and re-run`);
+    if (!v) die(`refused: ${f} is not a JSON object; nothing changed. Fix it (or move it away) and re-run`);
+  }
+  for (const k of ["enabledPlugins", "extraKnownMarketplaces"]) {
+    if (k in s && !isObj(s[k])) die(`refused: "${k}" in ${shared} is not a JSON object; nothing changed. Fix it and re-run`);
+  }
+  // the gate the plugin's hooks check, and the marketplace teammates are prompted to install from (a fork's kept)
+  const todo = [];
+  if ((s.enabledPlugins || {})[PLUGIN_ID] !== true) { s.enabledPlugins = { ...s.enabledPlugins, [PLUGIN_ID]: true }; todo.push(`enable ${PLUGIN_ID}`); }
+  if (!isObj((s.extraKnownMarketplaces || {}).proteus)) {
+    s.extraKnownMarketplaces = { ...s.extraKnownMarketplaces, proteus: MARKET };
+    todo.push(`add the proteus marketplace (github ${MARKET.source.repo})`);
+  }
+  if (todo.length && !dry) writeJson(shared, s);
+  log(`settings -> .claude/settings.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled, proteus marketplace listed`}; commit it)`);
+  let ok = setAttribution(dry);
+  // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
+  if (!("statusLine" in l)) {
+    const script = path.join(root, "teams", "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
+    l.statusLine = { type: "command", command: `node "${script}"` };
+    if (!dry) writeJson(local, l);
+    log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"})`);
+  } else log("status   -> .claude/settings.local.json (statusLine already set; left as it is)");
+  const teams = path.join(root, "teams");
+  if (dry) {
+    log("exclude  -> would keep .claude/settings.local.json out of git (.git/info/exclude)");
+    log(`teams    -> ${teams} (would ${isDir(teams) ? "refresh" : "copy"} ROUTING.md, PROFILE.md, skills.txt, link-skills.*, templates/)`);
+  } else {
+    excludeLocal(root, [".claude/settings.local.json"], "settings.local.json");
+    withProject(root, () => {
+      copyTeams(root);
+      L.run({ root, install: false, confine: false, log, remove: guardedRemove });
+    });
+  }
+  const self = `node "${path.join(HERE, "install.js")}"`;
+  log("");
+  log("Next, by hand (setup never runs these):");
+  log("  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin");
+  if (!teamsEnvOn()) log(`  enable agent teams once, then restart the terminal: ${envCommand()}`);
+  log(`  on GitHub, as an admin of the repo: ${self} --protect`);
+  log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
+  log("");
+  log(dry ? "Dry run: nothing written." : ok ? "Done. Start a new session; /proteus:proteus bootstraps the rest." : "Done, with errors above.");
+  return ok;
+}
+
 // update
 
 // commit subjects a human would care about: features, fixes, anything marked breaking
@@ -1572,6 +1644,7 @@ const FLAGS = {
   "--project": "project", "--install": "install", "--confine": "confine", "--update": "update",
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
   "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect", "--no-guest": "noGuest",
+  "--plugin-setup": "pluginSetup", "--dry-run": "dryRun",
 };
 let harnessArg = null;
 
@@ -1622,6 +1695,9 @@ function main() {
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);
   if (opt.tourDone && Object.keys(opt).length > 1) die("--tour-done takes no other flag", 2);
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
+  if (opt.dryRun && !opt.pluginSetup) die("--dry-run needs --plugin-setup", 2);
+  if (opt.pluginSetup && Object.keys(opt).some((k) => k !== "pluginSetup" && k !== "dryRun")) die("--plugin-setup takes only --dry-run", 2);
+  if (opt.pluginSetup && codex()) die("--plugin-setup sets up the Claude Code plugin; Codex uses --project", 2);
   if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
 
   (async () => {
@@ -1631,6 +1707,7 @@ function main() {
     else if (opt.protect) process.exitCode = protect() ? 0 : 1;
     else if (opt.verifierApp) process.exitCode = (await verifierApp(...opt.verifierApp)) ? 0 : 1;
     else if (opt.update) update(argv);
+    else if (opt.pluginSetup) process.exitCode = pluginSetup(opt) ? 0 : 1;
     else process.exitCode = install(opt) ? 0 : 1;
   })().catch((e) => die(`error: ${e.message}`));
 }
