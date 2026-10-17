@@ -760,7 +760,12 @@ function editsLast(command, depth = 0) {
 // thread is refused by proteus-lead-guard.js (signsOff). A guard, not a boundary: the token is the agents' one.
 const SIGNOFF = /(^|[\\/])proteus-signoff\.js$/;
 const signsOff = (command) => shellCommands(command).map(unwrap).find((w) => progName(w[0]) === "node" && SIGNOFF.test(w[1] || "")) || null;
+// An agent type without the Proteus plugin's namespace: as a Claude Code plugin (#136) the agents are named
+// proteus:<agent>. Only that namespace is stripped; another plugin's evil:proteus-verifier keeps its prefix and
+// matches no Proteus role, since any plugin can ship an agent under a Proteus name.
+const agentName = (type) => (typeof type === "string" ? type.replace(/^proteus:/, "") : "");
 const VERIFIER = /^proteus-(?:[a-z0-9-]+-)?verifier$/;
+const isVerifier = (type) => VERIFIER.test(agentName(type));
 const SIGNOFF_MSG = {
   lead: "proteus: proteus-signoff.js records a verifier's verdict; the lead never posts one. Spawn the verifier for the PR (flow.md step 6).",
   role: (t) => `proteus: proteus-signoff.js records a verifier's verdict, and ${t} is not a verifier. Report DONE; the lead spawns the verifier.`,
@@ -772,8 +777,8 @@ function signoffDenial(ev, unnamed = null) {
   const w = signsOff(ev.command);
   if (!w) return null;
   if (!ev.agentType) return unnamed;
-  if (!VERIFIER.test(ev.agentType)) return SIGNOFF_MSG.role(ev.agentType);
-  return w.includes("--security") && ev.agentType !== "proteus-security-verifier" ? SIGNOFF_MSG.security(ev.agentType) : null;
+  if (!isVerifier(ev.agentType)) return SIGNOFF_MSG.role(ev.agentType);
+  return w.includes("--security") && agentName(ev.agentType) !== "proteus-security-verifier" ? SIGNOFF_MSG.security(ev.agentType) : null;
 }
 // The verifier App's private key (#81) is no agent's: Read and Edit of it are refused, and so is a shell command
 // naming it (its file name, so any path to it counts). An agent's shell never sets GH_TOKEN or GITHUB_TOKEN either
@@ -1811,10 +1816,12 @@ function handoffLines(ev, root) {
 // <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
 // "ended" (proteus-stall.js, a stop without a report) stamps `ended`, "done" (a stop with a report)
 // removes the file. Other agent types (scout, guide) are not tracked: they end without a report.
+// the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
 const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
+const isPipelineAgent = (type) => PIPELINE_AGENT.test(agentName(type));
 const beatsDir = (common) => path.join(stateDir(common), "beats");
 function beat(ev, state) {
-  if (!ev.agent || (ev.agentType && !PIPELINE_AGENT.test(ev.agentType))) return;
+  if (!ev.agent || (ev.agentType && !isPipelineAgent(ev.agentType))) return;
   try {
     const common = gitCommonDir(projectRoot(ev));
     if (!common) return;
@@ -1849,6 +1856,6 @@ module.exports = {
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   release, verifyRelease, changelog,
   drivePath, expandPath, shellCwd, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
-  workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

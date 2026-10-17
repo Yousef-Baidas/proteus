@@ -47,8 +47,6 @@ const { bindFile, bound, cwdWorktree, samePath: same } = lib;
 // worker's PR against (proteus-owned-check.js --ci).
 const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/, /^\.proteus\/owned\/[A-Za-z0-9][\w.-]*$/];
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp|tiff?|exr|hdr)$/i;
-// the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
-const PIPELINE = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
 
 if (process.env.PROTEUS === "0") process.exit(0);
 
@@ -84,7 +82,7 @@ lib.run((ev, ad) => {
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
     if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more. Finish the step, log the position on the run log, /handoff, and let a fresh lead dispatch; workers in flight keep running.`);
-    if (PIPELINE.test(ev.spawnType)) {
+    if (lib.isPipelineAgent(ev.spawnType)) {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
     }
@@ -188,7 +186,7 @@ function subagentPath(ev, target, briefOf) {
   }
   if (!common || common !== lib.gitCommonDir(path.resolve(lib.projectRoot(ev))) || !lib.runOpen(common)) return "";
   const rel = lib.relPath(wt, abs);
-  if (ev.agentType === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
+  if (lib.agentName(ev.agentType) === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
   const fromCwd = lib.gitRoot(cwd);
   const own = fromCwd && fromCwd !== wt && lib.isLinked(fromCwd) && lib.gitCommonDir(fromCwd) === common ? fromCwd : lib.briefWorktree(briefOf(), common) || bound(common, ev.agent);
   const hint = own && !same(own, wt) && fs.existsSync(own)
@@ -204,7 +202,7 @@ function guestPath(ev, abs) {
   if (rel === null) return null;
   const common = lib.gitCommonDir(root);
   if (!common || !lib.runOpen(common)) return "";
-  if (ev.agentType === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
+  if (lib.agentName(ev.agentType) === "proteus-scout" && /^teams\/[^/]+\/skills\.txt$/.test(rel)) return "";
   return `${rel} is in the guest dir ${slash(guest)}, which holds this repo's Proteus files; workers do not edit it while a run is open. Edit only inside your worktree, or comment NEEDS on the issue and stop.`;
 }
 
