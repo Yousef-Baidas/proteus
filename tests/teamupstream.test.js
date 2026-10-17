@@ -2,8 +2,10 @@
 // skills.txt are the repo's once copied, so --project never overwrites them. teams/.proteus-base.json
 // records the shipped text each came from; when a release changes one the repo has edited, --project
 // and --update put the new text beside it as <file>.upstream (and the old as <file>.base), git-excluded,
-// print the git merge-file line, and --doctor lists what is pending. Runs a copy of this checkout as the
-// Proteus home (a git repo with a local bare remote) and a fake HOME; never the network or ~/.claude.
+// print the git merge-file line (or, when git tracks no copy and the merge is clean, merge it in place), and
+// --doctor lists what is pending. A refreshed teams/ file git tracks and the repo edited is offered the same
+// way. Runs a copy of this checkout as the Proteus home (a git repo with a local bare remote) and a fake
+// HOME; never the network or ~/.claude.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -127,6 +129,57 @@ fs.renameSync(path.join(PH, ".git"), path.join(PH, ".git-off"));
 try { r = inst(PR, ["--project"], { GIT_CEILING_DIRECTORIES: W }); } finally { fs.renameSync(path.join(PH, ".git-off"), path.join(PH, ".git")); }
 ok("no base: .upstream written, no .base, the line says merge by hand", fs.existsSync(T("backend", "skills.txt.upstream")) && !fs.existsSync(T("backend", "skills.txt.base")) &&
   r.out.includes("upstream -> teams/backend/skills.txt.upstream: this release changed the shipped backend/skills.txt; merge it into teams/backend/skills.txt by hand"), both(r));
+
+// a release ships known-blobs.json regenerated (#154): what each refreshed teams/ file was before
+const regen = () => {
+  const k = lib.run(path.join(PH, "scripts", "known-blobs.js"), "", { cwd: PH });
+  if (k.code !== 0) throw new Error(both(k));
+  g(PH, "add", "-A"); g(PH, "commit", "-qm", "chore: known blobs");
+};
+
+// untracked teams/ (#154): a clean three-way merge goes into the copy, no .upstream or .base left
+const UR = repo("loose");
+r = inst(UR);
+const UT = (...p) => path.join(UR, "teams", ...p);
+const qaProf = lf(read(UT("qa", "PROFILE.md")));
+fs.writeFileSync(UT("qa", "PROFILE.md"), `LOOSE-EDIT line.\n${qaProf}`);
+shipEdit("qa/PROFILE.md", "SHIPPED-QA line.", "feat: qa profile");
+r = inst(UR);
+const qaNow = lf(read(UT("qa", "PROFILE.md")));
+ok("merged: an untracked copy takes a clean merge in place", r.code === 0 && qaNow.startsWith("LOOSE-EDIT line.") && qaNow.includes("SHIPPED-QA line.") &&
+  !fs.existsSync(UT("qa", "PROFILE.md.upstream")) && !fs.existsSync(UT("qa", "PROFILE.md.base")), both(r));
+ok("merged: one line says so", (r.out.match(/^merged {3}-> teams\/qa\/PROFILE\.md: /gm) || []).length === 1 && !/upstream ->.*qa\/PROFILE/.test(r.out), both(r));
+r = inst(UR);
+ok("merged: a re-run changes nothing", !/merged {3}->|upstream ->/.test(r.out) && lf(read(UT("qa", "PROFILE.md"))) === qaNow, both(r));
+// a conflicting change keeps the .upstream and .base and the merge line
+fs.writeFileSync(UT("qa", "PROFILE.md"), `${qaNow.trimEnd()}\nLOOSE-TAIL line.\n`);
+shipEdit("qa/PROFILE.md", "SHIPPED-QA-2 line.", "feat: qa profile 2");
+r = inst(UR);
+ok("merged: a conflict leaves .upstream and .base and the merge-file line", fs.existsSync(UT("qa", "PROFILE.md.upstream")) && fs.existsSync(UT("qa", "PROFILE.md.base")) &&
+  r.out.includes("merge it: git merge-file teams/qa/PROFILE.md teams/qa/PROFILE.md.base teams/qa/PROFILE.md.upstream"), both(r));
+r = inst(UR, ["--doctor"]);
+ok("doctor: the pending line is the exact merge-file command", r.out.includes("git merge-file teams/qa/PROFILE.md teams/qa/PROFILE.md.base teams/qa/PROFILE.md.upstream"), r.out);
+
+// tracked teams/ (#154): a refreshed file the repo edited and committed is never overwritten; the shipped one goes
+// beside it with the shipped version it was edited on as .base. An unedited one is refreshed.
+const TR = repo("committed");
+r = inst(TR);
+g(TR, "add", "-A"); g(TR, "commit", "-qm", "chore: proteus");
+const TT = (...p) => path.join(TR, "teams", ...p);
+fs.appendFileSync(TT("link-skills.sh"), "\n# ours\n");
+g(TR, "commit", "-qam", "chore: our link script");
+const ours = read(TT("link-skills.sh")), shBefore = lf(read(SHIP("link-skills.sh")));
+shipEdit("link-skills.sh", "# shipped v2", "feat: link script v2");
+shipEdit("link-skills.js", "// shipped v2", "feat: link script v2");
+regen();
+r = inst(TR);
+ok("tracked: the edited, committed copy is left as it is", r.code === 0 && read(TT("link-skills.sh")) === ours, both(r));
+ok("tracked: the shipped text is beside it, the version it was edited on as .base", lf(read(TT("link-skills.sh.upstream"))) === lf(read(SHIP("link-skills.sh"))) &&
+  lf(read(TT("link-skills.sh.base"))) === shBefore, `${read(TT("link-skills.sh.base"))}`);
+ok("tracked: the merge-file line names it", r.out.includes("upstream -> teams/link-skills.sh.upstream: this release changed the shipped teams/link-skills.sh; merge it: git merge-file teams/link-skills.sh teams/link-skills.sh.base teams/link-skills.sh.upstream"), both(r));
+ok("tracked: an unedited committed copy is refreshed", lf(read(TT("link-skills.js"))) === lf(read(SHIP("link-skills.js"))), read(TT("link-skills.js")));
+r = inst(TR);
+ok("tracked: a re-run offers nothing again", !/upstream ->/.test(r.out) && read(TT("link-skills.sh")) === ours, both(r));
 
 // guest mode: teams/ and the record live in the guest dir; .upstream goes there, named by absolute path
 const GR = repo("guestapp"), GD = path.join(W, "guestdir");

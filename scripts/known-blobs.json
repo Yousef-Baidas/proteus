@@ -1,0 +1,765 @@
+{
+  "blobs": {
+    "agents/hive-backend-verifier.md": [
+      "0290b256c473ed4611e65a67bab0a7c9f41228ab",
+      "1a85ebacb4a86ef4923ee7ccdf56f9d325d6c343",
+      "290b9d3dc34008074807dd294dc020a9d2a87c0e",
+      "65305223e38d6274e72e1bd4cf94a8ff42a4d38c",
+      "95d3beac7fc3dec66d80155769bd3c65100a012c"
+    ],
+    "agents/hive-backend-worker.md": [
+      "0207effd68fe0c66158a54855dd2d10274edf1c2",
+      "c3d51af7efcdbe77438ab52a40540f61896bb9e7",
+      "c42180701e504fafc963479cb6dcea8ba86ca552",
+      "edc8184a758d579a99d7cc91d9272538de4b72c7"
+    ],
+    "agents/hive-devops-worker.md": [
+      "34bc1e7c9840ef2f205f2f9943503059f2d486bd",
+      "41aaff8e361e6226d0b85155f97ca311441769b4",
+      "7b81d65c04b0a36c8e6022d67dc24fefa056ec87",
+      "dbc125ea97451caa28eac8d19d789ab3c0d7295a"
+    ],
+    "agents/hive-frontend-verifier.md": [
+      "053c3cee907904288e3c11a8d1e1716463a8b88d",
+      "22cbc45cfccd58f132c5f70f512bb2499644773c",
+      "396100a681a9d3c892952cd412dafa70d2f81894",
+      "42f80163685a1fbfc661e59943cadccffc2bd14b",
+      "9d27d7de13822d27bab40aa487dc757c96ea8c17"
+    ],
+    "agents/hive-frontend-worker.md": [
+      "3cd4072805c81480b94357174f0fd8189c3633f8",
+      "bf009fcf1b72d00e790a47101242fceca8ff0d5a",
+      "e1c19974f10bf8c7967f1177f3c541af32da003d",
+      "e4a77441e257dd29ad7051e2e2d86da7a0e68136"
+    ],
+    "agents/hive-guide.md": [
+      "0c0b11071eb5416a48a38969f3c992cefb99e622",
+      "25325d8d34efd5326edf6210db9c73c5a40e3810",
+      "645a65a76213087c4991012eb91252cbf76b05fc",
+      "aa930ba0d18f01f679dab9d32fd0af93052c17e3",
+      "e301eb34821f6323feb1fab68975ebb6cd141251"
+    ],
+    "agents/hive-qa-verifier.md": [
+      "078fed7949d04a128acb22a5e287dd77b971c2b4",
+      "5277ac9d1e3eb9f5c2c9c0bc6c7495fdfdb3fc35",
+      "78dde8e794d64c46a468db9054b2bb351b5aef34",
+      "93564474264d81feb7657f5b2b2c92dbbb67f69e",
+      "9d440b321ce5a65159ad6aaa8df77a01dfa7f300",
+      "9d9f9344e55aff4480c650d77cf3788a4e311808"
+    ],
+    "agents/hive-scout.md": [
+      "18ab58c4cce8604fd706c4098093af3c77d17058",
+      "db5994c3a2ec9f8b974279d6906db440112f8f08",
+      "ef6b905d79885cb73b168799bfac61e956db772b"
+    ],
+    "agents/hive-security-verifier.md": [
+      "041057c0ef7023c25bff5019c53cec5b16001750",
+      "656cc65e56a94769b3b1f3286bfc694161ab6c3a",
+      "adacb921e780bcdc0f4ddc6fd6f95535c92c903d",
+      "e14e03089b82d34c1e4099e84c74c59b874ee5fe"
+    ],
+    "agents/hive-verifier.md": [
+      "8a83c5cd3ce72a307736f7e776d010703a4bc1ad"
+    ],
+    "agents/hive-worker.md": [
+      "80b215d1e9a9f0eda81132cf597f9e7aea4d7da1"
+    ],
+    "agents/proteus-backend-verifier.md": [
+      "15b9fceabe258688dc82a2839672eeacd8029efd",
+      "2252a69d196d893b7f179ce128682f5722ecaa98",
+      "3c704beb83beb1eef4c892d65a4bbab00d583f39",
+      "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
+      "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
+      "d0777c39e7e61c830e31b36b371029851cc3b610",
+      "dfa387d013959ccaf38a9ea4204af6d4d566ebd8",
+      "e7b06b76b30950f8ffcfe003f2d93331a6d670ec"
+    ],
+    "agents/proteus-backend-worker.md": [
+      "06677e9d339590f220f6ed1d31b1ef4378d8edab",
+      "3c7db010d5a7bb0442fec3a0e1d5d5923f3721f7",
+      "475201567b975c9ea2f91702a8edeba5d32b03bc",
+      "7f0c55dad0cc9fe73632113d32dc8fb878592b19",
+      "b06e0422870d2f906077fd3173a6a1b5dd4348e8",
+      "cec173e74657cd37b0e6b0d20a60e30adaa8f3cc"
+    ],
+    "agents/proteus-devops-worker.md": [
+      "01260f65c4f9bbb61104bed4f49e98111042706c",
+      "7c622b06191d318d05cf4487dde864c54f77197a",
+      "8944dd36b51ab68a6ad02ef7aee55c225fa54cdf",
+      "b31c85bdd059ad15c0272ec216876de0180be50a",
+      "cca7e257c812fafb1b8dda67614bc8bfb19f1b78",
+      "f91d7a3fa24eb740f2c257f9330ff8afbc70a85e"
+    ],
+    "agents/proteus-frontend-verifier.md": [
+      "08f090611dd0652d5a2e1d376bd0a344f866f036",
+      "16853f12e3f175087845b0928ceb673020648cc4",
+      "413aa920b13454277b88b648d95eebdbdc9f7f31",
+      "717c7a89a8c0d69b6642bde95322e043420bde91",
+      "83006ca2df0160c773fbe7108665c383fdc5bd4c",
+      "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
+      "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
+      "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2"
+    ],
+    "agents/proteus-frontend-worker.md": [
+      "180dd8841ec70faf12c9a3cf2efe915390fb05b1",
+      "1812328748f30d729f7ae682ceceec90ea50f9d8",
+      "8de24922eab05c824a60477785241f9ae0a69c7e",
+      "a0f61b1613c11854bfb7d3173171187b43109721",
+      "b368b6710cc9f760a297c12a54536f264a4ff549",
+      "fe412f9c2e951e1a1fb3fc80250221e3fbaf620f"
+    ],
+    "agents/proteus-guide.md": [
+      "23e50af7a841236311165344663882b546f70c18",
+      "32a561d826490a30f14a9425c2d9688d9c82125c",
+      "537123bc82f78da1c50cee22503acd465e7c0e3c",
+      "820c553ca8da6970179609bf1db5785051273927",
+      "9085a9296b951dcbd1dfa507bb21ec4dc382a204",
+      "96012da4266056baa86f362755b7c0e7b8ef47ee",
+      "abaa55eead5a78f324c0c6729fa2dc58556178bb",
+      "aef6c41494d5e1721488831393299462254cd776"
+    ],
+    "agents/proteus-qa-verifier.md": [
+      "3b608ec2c734b140a740ab7d7e718f0d00087f80",
+      "66c8b94e8ab86c76ee1a7ad0a7d7e9c9026af7c7",
+      "8af418feb8a6290a87042b5d4a83d4c4ac2b29c8",
+      "8b92fa663002db8b3dec78bc597aee6629eb07aa",
+      "97aaed644754fcdce4a9a300498906b49d9f080f",
+      "a06f10c940116428fee80e213c49dd73e554dd7d",
+      "e9ab1b34c0d2b00f4273693fe0cf63ad8ca48217",
+      "fd4ceb0669d0c21ce1138936cb01a99846060ce2"
+    ],
+    "agents/proteus-scout.md": [
+      "0cfad86e09d7ece8c65993596a11aec69dfa96bb",
+      "1708ef98872a74f09dc9c0dfa820b89bfb54863e",
+      "587203c805468d48d9d9f85be216a37432f6b14b",
+      "d57160119f820e6ed2f06018cae8f727c8ebc421",
+      "d70061c1ec453ee757d0a7f2e1a03282cc707e1c"
+    ],
+    "agents/proteus-security-verifier.md": [
+      "0aac65b09bb27dc626ac5c06857730d2523e69ff",
+      "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
+      "60265c32d0419903cef11f46416ec0690058e6e6",
+      "6c5c813fbb659629df1d313b33dee14f7972f243",
+      "998eec07b55be6b8e65f510a1472738a584824ae",
+      "c09e510f67331a68839864016cbc4b6adad002bd",
+      "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
+    ],
+    "agents/proteus-verifier.md": [
+      "31e3600fe7a1721698b6944d849a4861ab9c2e58",
+      "6ef7877f844cb074c53f10c7cde5b1e72f65f6f6",
+      "8a129250f1e3e0c9b121bffc7e6116cd37345c78",
+      "944ae5caa2869c96c7e224ac3cdcdb8671c5ee0e",
+      "ab9aa75210df2653da0397cb885f2c74421fc5d9",
+      "b805215a0408d2bdc26cf2ba746b8d1489b4ceb8",
+      "b9ae6e35b344fb3b777ea1303ef63fe6e1eabe92",
+      "d718f34d496e67ccce3bd92907acaedac9063a6c"
+    ],
+    "agents/proteus-worker.md": [
+      "02e29f5f699a1deb8592e1995915da0504a3b8eb",
+      "5cfb9ee081cda56e1e189e013efb77b6babebb0e",
+      "8262186937f1219d773c8ffc478a48b754b5e01c",
+      "94eb0754ed34791d83cd11666aef52bbdc111844",
+      "fa7dca6500e97f9c2a59d5491d6a76c673c1005a"
+    ],
+    "templates/ci/hive-gates.yml": [
+      "9c27bc17d75f5cdbac8e0b7d03e50060b0e085b6",
+      "a8024462c690d9bbdd5a001a7f49be7258e27d30",
+      "b1bb3cbee1ba6eba879ebfbddbd355ea21ef0515",
+      "ef742a331da8a2136a3dacdd2b95288362efdca9"
+    ],
+    "templates/ci/proteus-gates.yml": [
+      "39d568149aa07b7107f05a429a07d0ab99229cfc",
+      "42f0a292867b7c51d64306bcd9c843819f7c6d6f",
+      "5f7ab3ae2d8228b061f13dccf987013b4727f898",
+      "a70073d74013d69d7861bd96ec4eb0a89082e3f3",
+      "a7f50168ac1b33f51a9437fdeb466943fd1efccd",
+      "c32a1c0415b3d9ebfad9b3b69deb2dd97bfcd13b",
+      "c6b7653f43e0fae9cf35665581a6be4d83534da1",
+      "d579c24f28725babccd08033e380a3b3c620c913",
+      "f8be30832163439955d1446acd049ae5a0d8ec61"
+    ],
+    "templates/hooks/commit-msg.js": [
+      "3cb6ffa66f33a7d3a0c7512a391803d8ce236b4d",
+      "563f9e130e4d9689f293579e2391b662f303eda8",
+      "5adaebb20d8114de53a6f1520d436217453efd05",
+      "7cf23c7699117c4500876051feb20621f4a01dce",
+      "a8aefb578cd2dc434546488d39a1d55164919f7c",
+      "feecacba379790a5176206d4768aff7b2a9a0c96"
+    ],
+    "templates/hooks/hive-autostart.js": [
+      "02f69b23695d0042e60012aa9f575f887fa016d9",
+      "224e0cc2fdffed92ae03b0a4f8d63f6905d1b55b",
+      "55825e7df5b4d8b9b4666cbf18329ab35bdb061f",
+      "649b6f4692ff8149599df11512e4a512813cd67c",
+      "7c8da2bf72735da4410e27527f73ee2d91a8e260",
+      "7df023a8fd59a61a272ead3302a8b3dc01989f9e",
+      "7fdaa6ee437a997aa00cd503312649fcfb9bde77",
+      "ac0dffc4b5cc53fa779c674828c8a84f82a51148"
+    ],
+    "templates/hooks/hive-harness-claude.js": [
+      "3b4028620418e1f43d4ffa94cea1395e73e4cdf2",
+      "5b9299869a4ac949266143941a23378e8f69f954",
+      "f182285bcc68231248f51135380fdc30b00f692a"
+    ],
+    "templates/hooks/hive-harness-codex.js": [
+      "40739a8a6dca96301da1cfad09ace02504c19104",
+      "8ae9404c2fd6ca1d6e2caaca9710b75c1d044081"
+    ],
+    "templates/hooks/hive-harness.js": [
+      "5b432ef1fa89da2ee6597ac1a94ecef670c96c6d",
+      "df37de46629b7fdea65b8bf8e8fc5292ef2b6331",
+      "f9ca8f5f2e463cf8e8d02afdbd3f1f6cd4b8284b"
+    ],
+    "templates/hooks/hive-inbox.js": [
+      "8b7976ac9e3b3ea4e6750e7dfb8cd86f936e7027",
+      "ab308b0a09d212ab1df966a4dc6d4e9be34a8b0e"
+    ],
+    "templates/hooks/hive-journal.js": [
+      "a77a672b8d7f21407ac9fabeb84ee7e76a76c26a",
+      "f547649e93c9f9157b2535e90855af513b29bd31"
+    ],
+    "templates/hooks/hive-lead-guard.js": [
+      "1f0e293bfb203d128f7f2f7c41cf9335be88da07",
+      "92cfe7f25169a16083cd87d7f99799073e6222a3",
+      "ea944ccda9ef0554b1cecb2b853893411bd2d468",
+      "f797643b047e1236f1f3cccefa25599b2794baa4",
+      "feb6e979e6295aaab1df195936823eabee9133fe"
+    ],
+    "templates/hooks/hive-lessons.js": [
+      "4ba164a22ce1dbbca41c473cca6b1e4e43b6edc2",
+      "7d9b8c2dc3aef3fe1e2fb3f49c7a7d92dcea0bb4",
+      "b590580c127153ec7f31e5faca957c3e38169c3e",
+      "f60d16483bafd456371a87befcbb947adcfedf0a"
+    ],
+    "templates/hooks/hive-lib.js": [
+      "49d424dccdf779b23058a67ff5df3793729f16da",
+      "aede7418ee7f2f0f593b5e8b3b498a46b5f833ad",
+      "f5cd4f91dda35c03ba31a061da72a0860d792764",
+      "f87583681cd53495d7d06ba07b87d8924596d63a"
+    ],
+    "templates/hooks/hive-owned-paths.js": [
+      "27b756a7ca780fdaf8a0576231a2cf73cb108ddf",
+      "56e5c844d9bf79c60bd72658ce35b7c186f11d3a",
+      "baf4de6c23439bb323710d862b89cc9cd2ead3d9",
+      "d9fa0b10099259d2d8922ad50034e62827630dd1"
+    ],
+    "templates/hooks/hive-scratch.js": [
+      "4b46a8681631bb4712a8c3e8539b346d735aae1b",
+      "7eb6628eaa5fc546168b6dbff3f138f542559321"
+    ],
+    "templates/hooks/hive-stall.js": [
+      "15a8a6854f6f1ac4ee430131ac205d7a5fdd7250",
+      "e86554fc629ff261b7d008e366e772a6e7049586"
+    ],
+    "templates/hooks/hive-status.js": [
+      "8869d3be24405a8d8585d6b438dc84cb45efcd71",
+      "eb1a95d52c13fe286ef6ced685d44ad193325fdf"
+    ],
+    "templates/hooks/hive-statusline.js": [
+      "70a087881e70ac003d912364fde1d74b634ba1ea",
+      "8499861215ae96bd850f17196f5d9d7cf8d0b547",
+      "d0c40286dee2ced8cf419076c20e2e949d670c43"
+    ],
+    "templates/hooks/hive-worker-guard.js": [
+      "7990cef0a5597d43e5e727df6ea9a4a3e4503886",
+      "b9c838c7f964d4651360e8e634c50c87a9da0de0"
+    ],
+    "templates/hooks/hive-worktree.js": [
+      "a825c792c832e75c675630a721c1692387ba4dfa",
+      "e4ce81cbad36460b907fdab9ec27f69aedbc12c0"
+    ],
+    "templates/hooks/install-lead-hooks.js": [
+      "551ce028f8de79736dc63394561adcbcd3c0613c",
+      "5cec36c9c0af0fbdb802de6eff81949fd1867a1a",
+      "9395adef2eabb195b781c824c9bbfba288f7954c",
+      "cb83793a5e906e02dc95b5fa0805b7489c4ac4fe",
+      "dc0c0129252320106f335d59ec21f2b08ba55719",
+      "f3d5e1f208ded2f774e0a2e2f7b567a2e54ba540",
+      "f484d3c7e28083788287ab5172234f2738c9bc86",
+      "fa70b94b7fd491b05c4c2a0401cb2dac27eef8a8"
+    ],
+    "templates/hooks/proteus-agent-patch.js": [
+      "029bf93ca7ac7a99fe49551403fc852d3f465e15"
+    ],
+    "templates/hooks/proteus-autostart.js": [
+      "01f1119743ff16a4e8c571a7434ecfe8d8c1be16",
+      "114996488dd8319062d30ef7eb59f5d4737b74d7",
+      "1dfc03881a53a16b23f93cfb8894c5629dd3d80c",
+      "283a117eec9d0241032e41947313890eb28f10c8",
+      "292c0de089dcc47cd1a414237d616daafc4cfade",
+      "320185d9ca4970659d43eac05375c9bca2c2256e",
+      "338e4d57ef29db86aabaa72b61c588042e33d98b",
+      "4b51672624780e3ca69359bbf1a5880ec3116075",
+      "566821842f68a502153d5f22a13b560937b947bc",
+      "684b1aed3271745a57bdf1b5296faa63fed5f7ca",
+      "710939e7ffaef3f9fcbba125eba8f1f481f5c44b",
+      "7be72550af738318e09b150deea6e19ce47e12d9",
+      "83ba50274486c6f7fbd6af9ac6bae9080c341ff4",
+      "8d29347e4b8808ef2844422cec5cb29424fc258a",
+      "90f276b2b0a88aec8e81a4afcea590159ff847a1",
+      "99434cd646c1b21cfe4963db66a532ac3674fd5c",
+      "b16995e05b57af09c2fdc9cb51c8913e3749e66a",
+      "b1843bbe6f9d48ac0607be87484ff52f6f428f50",
+      "ba5c859d838a9c20174a8ff4d88b54a2ef14e5e2",
+      "c1942e40b959814947390e4927552c6b58d8539b",
+      "c930d7e2014bd7aa669716c99c75afed5179070f",
+      "c9c79c972132cc37ee02928d67b51718d47a600e",
+      "d1dd023c849aa14c1c55bac0e03d9c6d8f7d9108",
+      "d66ca6898bc17254019d3f58adae8e0df3baa340",
+      "dae99afc80bf65ad5b8067b754e74b4362adc9b9",
+      "db490bd484438480072933d0fc61811113e7e2be",
+      "dcc6bda825ecb7d52aa81e44b4e5b304a516b821",
+      "dea8941e1c82dfc66851d428070c3e8fb596fe42",
+      "fa0e7f9744feda5b4e8a2bead783d90217b9ee20"
+    ],
+    "templates/hooks/proteus-baseline.js": [
+      "a5fb307a8adecae74ffddbec32a66a0ce125bb18",
+      "fded8f31fe51f9d80ab76f4043d6c7c0d7beb90a"
+    ],
+    "templates/hooks/proteus-close-report.js": [
+      "8e5803ddd9287d0c82b6e7d70836cc92fc61d15b",
+      "ff7ef568ac97e03f09dd9f90bf6a3cc80375af2c"
+    ],
+    "templates/hooks/proteus-confine.js": [
+      "62b8ba083e1f3db000633f432be23ef93570a170",
+      "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
+    ],
+    "templates/hooks/proteus-gates-cache.js": [
+      "9305ad7457d16e30c359da90c8be2b0332681ebb",
+      "9c8481535010e2146a3c6ce92b887a02b21c0188"
+    ],
+    "templates/hooks/proteus-harness-claude.js": [
+      "0704b7507e0a470b0965ffc897ff3ecf676853b7",
+      "1634c624ce3d04fc032868ba4d011ea69e043c5c",
+      "1684d334884f053ff546ba351a47d8e421327697",
+      "28b220cba82394c7bb9032a1cf7be17f06e06331",
+      "2a1911d4b6d42e128bf58562a1411f7edd15022b",
+      "4dcba05764ad5872a014b298a93be219d4283568",
+      "5279ac1dc220f2a3b7fac145e68f992c2397a562",
+      "65942734f9be311f9a1321969ea40a2c772680ce",
+      "6cb1af850e89b68b895aa894f7416cdc83dc38c2",
+      "8322a4bb54232bac28599e6d81763eac0dcc78d2",
+      "8d8cd9c02cb48faa48900c206f4d91aa8ea49bf2",
+      "8f77077ad1fbde0274dfe385dd8c03f8ebb18010",
+      "953cc9484e9722288715accf8139efe7198cad5c",
+      "98319ab1b8e535e85043f0267244c33c9dcb5b4f",
+      "9c7b9938524e3f611e6a2018bf497224d58cb44f",
+      "b2650fcb1d25e8ed116fcdb76466bb45de5ff4b0",
+      "c6d445e55c36f649cac3373fb03e45833c588406",
+      "d5a90f4512532fbcff04c99eec51c652f8cfcb42",
+      "d5d75407eb8e974a54ca56a8743287b0fff31b3c",
+      "e608b10e93e6f79dde3b2caad43c1e0131afe767",
+      "e8d65040add47bad334cf5024a2b4e1dc5b0c9d1",
+      "e935ad923634200beadb67d4f5ad3260861f2b49",
+      "faf53c657e5bd6a695bf35b8bb7e75ea5baa4829"
+    ],
+    "templates/hooks/proteus-harness-codex.js": [
+      "03c8298ffab58579b3588436b17187999951b724",
+      "0be7e321a3902f6a6070475e4ec7fc58b6625621",
+      "0cb1845cd2e3aa84e5cd88014ba1c1fab059d983",
+      "0e6d208d155f31bf21b87487783cddfb74f89668",
+      "1309bb8a67946a9683ebc9f7197f79b4c5babba6",
+      "156eddd2b82bf41cfac44343716e55f11afc82aa",
+      "2752ecbfc6ee47c264b800cbb6b0b281519fd7d1",
+      "275459d06577fe33a19991853935ff218fc10f92",
+      "292a1baf41a68ed0d304a85a1f1c6fcd12c4107f",
+      "2fc4de3372c5e162e8686b52a469fa32858447f5",
+      "3b21f0a69b83dee4cba420f18599ee38553a22af",
+      "416d4d117cfa17bd616584e3241f4224f887941c",
+      "57bb909eb8a587b853c1f80b38a6386de92f0499",
+      "5db388f6871f5f994e1b7fe52e8f688eff98f79e",
+      "64d1c70dd3fec6de54cea490b364d10b4aaf79fd",
+      "64ed8260b0218c9103968fb8e754c7fcf9f0f7ce",
+      "653303a989fe3408b2fc42ca1ddf3a983f3742c3",
+      "7992ffcfc93ae72ffe5dbf6310fd928b332506f6",
+      "7b0432a353d0b779eac06873ceed2f1c59f30a55",
+      "7ebb9bfd067d5b7cf265087b775a5155949b29a3",
+      "8b73d9278443677c2d87e6bf449ce2d023b1e2fc",
+      "8fe5ddc0c28a6cf33bbbb182d0d8d810aaf7c301",
+      "988c02371677e627b2eafda019f86ddc15ba6964",
+      "9b3e540f0ceb7c0fb4830ced69b3011040cf71ed",
+      "9e2596cdd5670f57135abe63770488b505c28aff",
+      "a29c733e879e6aa816748ed5a8d4a9b15adc80da",
+      "a7a3d798de4d79d1d85ca82554256868d622c62f",
+      "bf4d3e863a33da44d7e9edccb3936572acb463a3",
+      "d1fbf31832e0662e4a2a82882b79702673663943",
+      "e1a9e83d6e529598281c2d843bd311480c8b7491",
+      "e5c05a87769caf4d7048585151c2f271b2109da8",
+      "e8f8c778c271ae663ed147a54788f0e3a449431a",
+      "e9f9a329f9684032448686343eea3d09bf010259",
+      "ea59916d5d9354d6fcf69530868baa9dfbee0bb1",
+      "f13ae55cbf6b9116b883625578c2be48ac1a8622"
+    ],
+    "templates/hooks/proteus-harness.js": [
+      "0ac8acefdf1b4ef17932f3987a321149854bc169",
+      "1f1ea6486c05618698e256890c0968193a7de1c9",
+      "2f0d6d8bf01e438fb61c3c43b6e433ef1cba9315",
+      "51a1a642f15e1d3011323f2021c33f7c4d0fcdf9",
+      "6eb5001185037c8a1582c489b8df9fb46e93b973",
+      "73a0cb510ecd6aaea0311bd462f1411f685b58aa",
+      "7767bf11c532e43b77e8f82f177f169d08beb79e",
+      "78d1d588debfecc4314ad6e58a4ab9e3d71d7919",
+      "92250ce28b80f02a11fa9e0c9c3e1a6804db3170",
+      "c417e0db7e32132272e590c68227e789d70e9668",
+      "ce832a9b3e044f231ce483b5881ea3a032357687",
+      "d1267f5a0d3e34f0a4b1d647f7104a2e330ff9b4",
+      "db0066a937a439095e1b19d25932e3e1c423e2b6"
+    ],
+    "templates/hooks/proteus-inbox.js": [
+      "5a2dba547365cebfb6c0ac835bfc98503265201a",
+      "715615fc7794130a7a59694636ca9952825f7ca5",
+      "dbe5b73aae9a94b9d2c480a17aeb0fc0c28624a4"
+    ],
+    "templates/hooks/proteus-journal.js": [
+      "2dc6c6177581ed4956836aa35702cdd2268f2174",
+      "4a42000d6e549791f0af2dc158d11b56a3aff01b",
+      "51bc60cae7ab8f282762770fb0ec92cd2d1ce948",
+      "99a92f7be5dba9fbc80199b3289a86d66a2dfa2e"
+    ],
+    "templates/hooks/proteus-lead-guard.js": [
+      "07f485754b3bd39c579ace0926e4a066429c50e0",
+      "1c7e2b186cd0fff7dae9a0ec6a2c29803dfa88cc",
+      "24e8cee1a844d2816b51b36c3909f395faad68fe",
+      "252693a4e5ae4abc9a96619f2da65d25f064e7ba",
+      "273368b0f463ff9ecb876e0b2e1f10d2a6503a59",
+      "274fdf57fc334bf11bb454c5b816ec0a63add327",
+      "3e7fb662d9e69e2d13815f8e7e4dddc5b1f2a278",
+      "4a802d5fa8a24d5ea5ed78f8d08b049ef80ec665",
+      "4f367914eba944ea7fb2963d1f9a797541be9754",
+      "53a031644f6d23483a42b3ea6fff60df3b16e91c",
+      "5672632b66d8b0d8d1fb1d28a476850e6192aa20",
+      "59153a36feac501db6a4a6cc28e7ec3ea85ce5b4",
+      "619e3668c2831408aff23a76e1b229dcec8cd2b6",
+      "64d511aa0f7581a80d619a15aa335a9f28181741",
+      "8d3273453afb65983cba020cb7d60f1f630d5123",
+      "9397823d6b4246c1f85fa8b0868127938781296e",
+      "968fc50a44068611e1d741807be8fdfc5a036158",
+      "971461de212e21f53f8525fcc857f1ec41e5c9d7",
+      "9cace1288107b822f585a86db47c727f7a29bb7e",
+      "a3029f3a278760afe67dd3d7ce8815f5105c08ef",
+      "aa631de672aed9c66a3f3d82d7b258129c80ae5f",
+      "ab233e1c4ce5338d18b9c489aa75850441197052",
+      "acbd8a4d162338ab5b2d0118ab1649501e8ca78e",
+      "bd95e592669e8c2375e310f7a0786d45a00e74cf",
+      "c14d52134797859520fecb6bdee25e4c3c7aadb9",
+      "c1abaac5fc5e35f5b39c7cd94b75fa098222fcfd",
+      "d568e1ccb41b4c71316c8a343da07a24b5b2bc9b",
+      "e41b0e45932ae0fcddf4088f101a218cc77ee0fe",
+      "eeacc25ab53140905ef91a0a237525f81d1c69f3",
+      "f9a59003dedafe62f272c1a4504afd98b8f65487",
+      "fb8ce2a18f17636850c21f9a43f5ed9c116ae9d5"
+    ],
+    "templates/hooks/proteus-lessons.js": [
+      "6e5c4c308660d8cdb2929d208a22d88aac635614",
+      "74c5d3be2dd5181d433d5c5cbd35aa30757aae3c",
+      "8c127b493559b5a53c68693bf5eaa84b865fc71c",
+      "c1d5867a87b490bd6a5973e353913626cd7a6292"
+    ],
+    "templates/hooks/proteus-lib.js": [
+      "0465a135f1b7f89fcced70b7c97daa7ee56d9fda",
+      "05cbce28c77463e2e1b16d497b527b62e8874262",
+      "0f0d9007badacdfdd2afe8ec58b51b35e5839221",
+      "23b5e77f167fc4cc6076b638c1e24e34c66e04f8",
+      "26499a988f5e4949432a9f455746973121698c91",
+      "285d025638de31807005185efe33e93ea0640f97",
+      "2be489b65243f77f4da6df8438b1e20a58d3637d",
+      "30fbb98f511dcf65bb844eda422af9fd0021a4e8",
+      "3285e36918ed400d93e016fedf4ae274fb01412a",
+      "32a9c7d0a3f66cb7fa0d297c849d89ef8f9d961b",
+      "375113c1459bb8b6ccd821249e7cf588cb3371e6",
+      "39e48459c17047560c4b79da9dbadd10b9873ca5",
+      "4bca74787882b3c5240add026e369ac62ee09336",
+      "4d8270951e7d40890ea72958ee2114a5ad0f9ecb",
+      "4f033778ed296162be2cf2de08b0ba0559523805",
+      "50aa654acdae3f2bca6bc6083496226c23b89a3d",
+      "60b120a02c306db7c82c46f131ea1d2d5bedd1c5",
+      "642d8a455f1b3c7c98eca45ca5daa6c565051e32",
+      "643e4e35b6a55aba0308ed5ee038c3fef406d682",
+      "6934fed870e15f7834ede7e43e32e5c519fb53eb",
+      "6adaabf9223ca85e4eff1246bb47b6105dff43aa",
+      "6c5b1d75b9d13be5df220ec346791f71c99b0110",
+      "6eb500973e46daf65376c18d4e641032b6e2e96e",
+      "710f518f9ad8fbcf53228b4820f651867b486281",
+      "764d887fbf379603c56b40ad237fb96eefdee56a",
+      "8e9de778dbd8d06ee520385c2ac883cd892f4632",
+      "98a95a2fd65477c770093583103142aa02f281cb",
+      "a02f520d25e0708fdec6c4ac5111c989f685f37c",
+      "a1e561e1284f1ce13272f2c09ad5073178e921da",
+      "a4f7ae379d1e512517a2d858f0e7f8a2af0955f2",
+      "a595d5367e50b8a10763eba3d983121d7721fdf0",
+      "a7defd84a4640a15d3c62c656d2307ae4da851dc",
+      "a84fe7e71d30d877be422f1c2f66530170ae6644",
+      "b22de604f5d49141a94303d05e777933bc4482df",
+      "b49f7148cbf5d4d2c0de17dc66f1d896d0151685",
+      "bfb87b64d2f37b565b5ec23ad61a712c4fe13ab4",
+      "c00fe191d580e77e95f2f9fa6cb474c9acc7fad4",
+      "c1051f5b047d5b3acf8c9bd35c55fac1256504e1",
+      "c43efa0d28d022fcc95edd87dc0a0cb69382194c",
+      "c45bc98c4a90d1adbcff5aff67ce25f29cad9df6",
+      "c916205271730ad83fe866f07e70f24a33594300",
+      "ccfdc2413c633f1ad57be848f71a023851de0d6d",
+      "d09e0f24bebc16cb3a836374d3c4f0fc26df2b5d",
+      "d26a80f12684d4b1827f14ce00e947468221fc80",
+      "d6b7a7875f78d6a7aa587a6580275453abe520cb",
+      "d8e297add159968fc30c40f8744af108330577c6",
+      "da0dc38e445cdd4a14475c4056b788d281bd1566",
+      "df3a3c3b791f165375f61e7deaa78470daf23eda",
+      "e5f4e22ae781d9495c4fe066f4e41eb63deb0e09",
+      "e8d7b49e45a94e19532f1f289fe6df353335c771",
+      "ed057ccefeee9308b69928d3b6cfb27b8a65ec56",
+      "f184e60cc673f8fc29bdebb037ae6c9a6bdd3de1",
+      "f4b1ac1050c761af488a19168ba25d0bc98b5f86",
+      "fda079d95e42c7cb499a89aface7e72ee4ab3346",
+      "fdb60f0d64607237a8933ab101f9dd8feb55aee1",
+      "fe82ff905885ab20089c487abec470298fdce3ee"
+    ],
+    "templates/hooks/proteus-owned-check.js": [
+      "1c2de99305242c7776dd991c98e9c0fb8461350a",
+      "3abae20ae39938285ca2528548ca615e593fcd69"
+    ],
+    "templates/hooks/proteus-owned-paths.js": [
+      "57855377f51ee4dc86adcb2dd34dc788e87d469e"
+    ],
+    "templates/hooks/proteus-plugin.js": [
+      "1288afea33ed9084b24e59ee7cdbfc2c3564b2ee",
+      "229b380ad327f38b30ff77d25152847faf792102"
+    ],
+    "templates/hooks/proteus-scratch.js": [
+      "157e806dcc4f73e1405b7d901578644b5274f139",
+      "3611b989b27d2371e4647ff002d8a25767c3c5f3",
+      "576e258415bdcc779720ceb3ab161b88386069f9",
+      "6264a13e472f129b40f2f233eba8fd5581683b20"
+    ],
+    "templates/hooks/proteus-shell-check.js": [
+      "3deb1bd9d4d8a15153cbec938b0fd403692860ed",
+      "42a47093f91705d6c6ab34c37ade1707c900efec",
+      "77898ca003ed9e65a49c73cec137b57f05a69001",
+      "909757b47ebe560532eb50abdf32b08f0c111122",
+      "9e3e5b94cef1d96f53a83f97a775dc4db1fe3e54",
+      "af0b4340ead8190db66d63876edc235c9658208f",
+      "df156dee2636ff64eddea4d73ae81c6849787f02"
+    ],
+    "templates/hooks/proteus-signoff.js": [
+      "1d5a1920f954c2eeb75f2f7263cf5b4b6b37580c",
+      "2e609df56dc710c35196481be324c90a191d6617"
+    ],
+    "templates/hooks/proteus-skillpath.js": [
+      "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"
+    ],
+    "templates/hooks/proteus-stall.js": [
+      "5e9d65f0404f84ca96f8e1e78d35c073a7a06b9d",
+      "64da85df4751f60f111f8654a2d0b526f31c3d14",
+      "a94de905dc8680995d9fd71e0d355734c7768854"
+    ],
+    "templates/hooks/proteus-status.js": [
+      "30115c78f3cecb801454d5fbd8fd6e09ff143207",
+      "9f02a72212fe56e5061c1f1f4254d4bfeebfb47b",
+      "dddb8da6c956d191f12d3e925f7d49c757e0d43d",
+      "e7b78a7dfb2e8ce44135ff55bb69cec43c69a893"
+    ],
+    "templates/hooks/proteus-statusline.js": [
+      "6cfbe141111722ea66c1cca8d1c56c1f17a064c2",
+      "7d064927c41472a79883195909739d0b58649be5",
+      "b1a1118a552a52002d644638ceb954033dcb0169"
+    ],
+    "templates/hooks/proteus-tier.js": [
+      "6a461c893d24e0a8193011ca86298403661ebc9a",
+      "b13912db9982ed1bdda51de7adfec4cb27fbb011"
+    ],
+    "templates/hooks/proteus-verdict.js": [
+      "db69a02f3bb29c8941b637ab40b6fe73d04926f1"
+    ],
+    "templates/hooks/proteus-worker-guard.js": [
+      "156ee044909ec961667891451b08c8116d85127d",
+      "27857508c421f01cda0da39f93e02549d8064498",
+      "8aff3a849acdfda0951112cb49199c3a4581e779",
+      "a53aef7c09aa515498cdc808965a92c7abddab11",
+      "db97a282c676181c03eb49ef82e4d26d63745133"
+    ],
+    "templates/hooks/proteus-worktree.js": [
+      "0a052d7b36fd035ce16880416e7853947050a4f1",
+      "1b6d6eebb8caf858f47d84f617ac15bbf70c99e5",
+      "6137fdf998ab3ca1058f7c0ff3ca9d41b643b82e",
+      "9645b5d835332c74cf76ff128756950e37606f8c",
+      "b1971a9cec288d9891026f69a8631276d3c7274c",
+      "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
+      "b28ed0fc1caa033b02c01c3dbfce6eae6e0770eb",
+      "c422f2229e8f5da06ef3dac9cfa56425caa29b31"
+    ],
+    "templates/hooks/settings.local.json": [
+      "7161b4435ed0e31c560a8dc25f5a63c5513878f7"
+    ],
+    "templates/hooks/worktree-settings.local.json": [
+      "790260c217de68f84e4fccacf5058ab9357da2da",
+      "deb3f6646498d4ddf37eb799a580c83b8fdb692a",
+      "e22eb540e6d051757e6b47d3a2155e1396d0b3ce"
+    ],
+    "templates/laya/laya.service": [
+      "db86b1cba297201926268916d91fff0ec86d47fe"
+    ],
+    "templates/lefthook.yml": [
+      "3d3ee4a27fcb77efba90e897e877441b5cde14d0",
+      "3f7075dcedf8e8a1bf0f53ac2a3d47706bd8270d",
+      "669d7cbe1f95f9e6a4081f6687ee997d9e2f1d92",
+      "735b6dcb26444b74c3f20cc8b2f4ff92e423c6dc",
+      "b6723dce16fc26a8bdec7d58a276a913380f4b8f"
+    ],
+    "templates/teams/.gitignore": [
+      "44548143410d7fa5439a5abaa839ca63d243fe2b"
+    ],
+    "templates/teams/ROUTING.md": [
+      "24dede5e4f8d1139191f5823fde12f2f5e467649",
+      "58e451a504074b098e467103c9b1f49e9ec48ecb",
+      "edb2d5bcf15b92cb4e636c7cf44fee2353eb190b"
+    ],
+    "templates/teams/backend/PROFILE.md": [
+      "4f56d1358f6f0f823d3f5c53bfe6565dc46dcf12",
+      "baad11f11b98500cbadb857ef5f3da222c2ccfc3"
+    ],
+    "templates/teams/backend/skills.txt": [
+      "40fc4c835613608744a4a9f5a07cb62688442e7a",
+      "ccd0f844e684ce3ff6a509d530e1e898a54ccad4",
+      "cfe6480501965db1027553b0aef90c78cb01dfd6"
+    ],
+    "templates/teams/devops/PROFILE.md": [
+      "3de3018622c50d1655ec410be664c6e72c2ce5f0",
+      "653b8f1093d424575de1e71935cd735777e9fd5f",
+      "88023e99b2efb283d8be3192c7832a553604d7bc",
+      "a919a2219cbdb91e7304f8b083008516a78a50d2"
+    ],
+    "templates/teams/devops/skills.txt": [
+      "08b2edefcddcc74f8f907472c02d26c4902403bd",
+      "159b05bfe7f4839634fe72c3af810f87f90c63b9",
+      "46952e89838e3df7867522c3c5fc1490e7642727"
+    ],
+    "templates/teams/frontend/PROFILE.md": [
+      "6b8e74c7d5e2edc3e35d9d435c1d35d3e64e3607",
+      "96368e9b921349e46e496420b83574a5600752fb"
+    ],
+    "templates/teams/frontend/skills.txt": [
+      "63384c395026653f20092c7352933e075be422a7",
+      "c3e59ff0ac595a326976e65d109dacb7a8db13fc",
+      "ead9b1e57079071069a7503dc78335b5f4782e62"
+    ],
+    "templates/teams/link-skills.js": [
+      "3186a231c072ea53654d6d4f1cb9c7e744e10cf6",
+      "3711ad066c5078513d241ad43ef5cf46db65e0df",
+      "48db3a818d9162bbc329600dbafa34dc74cdffba",
+      "7cbdb5874997f764f2ef225759a8502fb7475046",
+      "850570ec90ae6d56cd6ca66d38ccd0f2ab08ba51",
+      "9ce6a574da4282620b40dcaea5ff64f5ee4ddaf5",
+      "b97d84b97a421cc101f9f265156bd13bb3dd8ad7",
+      "c221dd99a5a0c52daddcfec3e89ca5bf12b00035",
+      "e069a55deb1c4605c1c56a69b3c2e170ec463592",
+      "f02ef7e21138d62fb3bd0b9c383c74b4ab440cc1",
+      "f4aded89aacab749bee88802d8b3401c44fabe64"
+    ],
+    "templates/teams/link-skills.ps1": [
+      "4567235283efc3e8a88c43b7311ff68956f02a3d",
+      "92472b55fa25d3e88f6e504a391f3f15d95262c2",
+      "a01db960ceadd20caaaad2323d8fc4f77e44e508",
+      "d1fe6d3031c2d49a908b418073c1125bbf4cc874",
+      "d352d8a143544be6df966dc9c5a4272bb406e41c"
+    ],
+    "templates/teams/link-skills.sh": [
+      "2b6a7fb8e1fd3ff8c70fc7d691f7192df0baa031",
+      "44c764462df192f31b1ddcf420cd986e73475b7b",
+      "4e79d4f2be008c70cedb09440246550b798eb3e4",
+      "776e31694b3f67ed5a54e936980f9caebd385c2a",
+      "f925bd903e8d086ac6f308e9827b4b0abfc00d78"
+    ],
+    "templates/teams/qa/PROFILE.md": [
+      "0b3e36e14fcdf132a36a2c58a816638a89e4f62a",
+      "0e26879a4c4c8958f73b9befac6c68b9422f680f",
+      "22d4f788ebfe50d79f2106b62c9be7aabf3d3fa4",
+      "5b9fa6205036a63025d0c89c273446e3b44ed14b",
+      "61a0ce6f254f26f18212a0dcd2fdb93175cbef24",
+      "7ff0fb1f58082557001be94c831edcf1a85c4931",
+      "8115078ff296fcfcba7e42d28fd6822eb564405e",
+      "a74caf54d8c0a04c7694495b83972f2d45481523",
+      "cb31181d72c2e258017dff851bfcfacd89e6d36f",
+      "ce877b89612386633ae7856f0acfa95ac25141d9",
+      "d592a2023c59dee751e05a6077b541754859e6d0",
+      "e750ba188670b1757774a6f8fe6b3901c0fe7538"
+    ],
+    "templates/teams/qa/skills.txt": [
+      "3fea1dc71d3143f834faaa42088447afd50f5439",
+      "5d106a21945cc85066fdf0d9fcf04cbd5fb0edff",
+      "9a4944e171587558cc408b9e21f985cea6ab57b7"
+    ],
+    "templates/teams/security/PROFILE.md": [
+      "309d5b0d05c50a7d91c1a633a5ebea5f1bd857d1",
+      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c"
+    ],
+    "templates/teams/security/skills.txt": [
+      "26ac911e187999468e09cf0c251f5d3aa173cf17",
+      "c3edb50689701584c09d02ed50f70e9e7c2a7ea0",
+      "e764807f00ed5c22cd8b2a50bfcf94b5494109d2"
+    ]
+  },
+  "texts": {
+    "templates/teams/ROUTING.md": {
+      "24dede5e4f8d1139191f5823fde12f2f5e467649": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are never routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n",
+      "58e451a504074b098e467103c9b1f49e9ec48ecb": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are not routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, not by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n",
+      "edb2d5bcf15b92cb4e636c7cf44fee2353eb190b": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are never routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, never by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n"
+    },
+    "templates/teams/backend/PROFILE.md": {
+      "4f56d1358f6f0f823d3f5c53bfe6565dc46dcf12": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nOwns: API, data, auth, background jobs.\n\nRules:\n- Contract signatures are frozen. Need a change: `CONTRACT-WRONG` in the task, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n",
+      "baad11f11b98500cbadb857ef5f3da222c2ccfc3": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nOwns: API, data, auth, background jobs.\n\nRules:\n- Contract signatures are frozen. Need a change: comment `NEEDS contract <file:line>: <why>` on the issue, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n"
+    },
+    "templates/teams/backend/skills.txt": {
+      "40fc4c835613608744a4a9f5a07cb62688442e7a": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
+      "ccd0f844e684ce3ff6a509d530e1e898a54ccad4": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
+      "cfe6480501965db1027553b0aef90c78cb01dfd6": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nmodern-javascript-patterns\nsql-optimization\nsql-code-review\nbetter-auth-best-practices\nemail-and-password-best-practices\norganization-best-practices\nrust-best-practices\nrust-async-patterns\npython-performance-optimization\nm15-anti-pattern\n"
+    },
+    "templates/teams/devops/PROFILE.md": {
+      "3de3018622c50d1655ec410be664c6e72c2ce5f0": "# devops profile\n\nReading this file loads the skills in `teams/devops/.claude/skills/`. Read it once, first.\n\nOwns: CI, containers, deploy config, environment.\n\nRules:\n- Reproducible locally before CI. A step you cannot run with one command is not done.\n- Secrets come from the environment or a manager, never the repo. `.env.example` with placeholders is the only exception.\n- Pin versions: base images, actions, tool binaries.\n- Never touch deploy targets or credentials; comment `NEEDS <target>: <command>` on the issue and stop.\n\nGreen adds: container builds, pipeline config validates, fresh clone runs the smoke test with the documented command.\n",
+      "653b8f1093d424575de1e71935cd735777e9fd5f": "# devops profile\n\nReading this file loads the skills in `teams/devops/.claude/skills/`. Read it once, first.\n\nReal-world role: platform / release engineer.\nOwns: CI, containers, deploy config, environment.\nNever touches: application logic in frontend or backend paths.\n\nRules:\n- Reproducible locally before CI. A step you cannot run with one command is not done.\n- Secrets come from the environment or a manager, never the repo. `.env.example` with placeholders is the only exception.\n- Pin versions: base images, actions, tool binaries.\n- Never touch deploy targets or credentials; comment `NEEDS <target>: <command>` on the issue and stop.\n\n- Scaffold or stabilise ticket on a JS/TS repo: run `install-anti-slop` so its oxlint rules are part of the lint gate (`references/enforcement.md` §9). A rule that contradicts `CONVENTIONS.md` is switched off in the config with the convention quoted beside it, never worked around in code.\n\nGreen adds: container builds, pipeline config validates, fresh clone runs the smoke test with the documented command.\n",
+      "88023e99b2efb283d8be3192c7832a553604d7bc": "# devops profile\n\nReading this file loads the skills in `teams/devops/.claude/skills/`. Read it once, first.\n\nOwns: CI, containers, deploy config, environment.\n\nRules:\n- Reproducible locally before CI. A step you cannot run with one command is not done.\n- Secrets come from the environment or a manager, never the repo. `.env.example` with placeholders is the only exception.\n- Pin versions: base images, actions, tool binaries.\n- Never touch deploy targets or credentials; comment `NEEDS <target>: <command>` on the issue and stop.\n\n- Scaffold or stabilise ticket on a JS/TS repo: run `install-anti-slop` so its oxlint rules are part of the lint gate (`references/enforcement.md` §9). A rule that contradicts `CONVENTIONS.md` is switched off in the config with the convention quoted beside it, never worked around in code.\n\nGreen adds: container builds, pipeline config validates, fresh clone runs the smoke test with the documented command.\n",
+      "a919a2219cbdb91e7304f8b083008516a78a50d2": "# devops profile\n\nReading this file loads the skills in `teams/devops/.claude/skills/`. Read it once, first.\n\nOwns: CI, containers, deploy config, environment.\n\nRules:\n- Reproducible locally before CI. A step you cannot run with one command is not done.\n- Secrets come from the environment or a manager, never the repo. `.env.example` with placeholders is the only exception.\n- Pin versions: base images, actions, tool binaries.\n- Never touch deploy targets or credentials; write the command to the task and stop.\n\nGreen adds: container builds, pipeline config validates, fresh clone runs the smoke test with the documented command.\n"
+    },
+    "templates/teams/devops/skills.txt": {
+      "08b2edefcddcc74f8f907472c02d26c4902403bd": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\ngithub/awesome-copilot multi-stage-dockerfile\n",
+      "159b05bfe7f4839634fe72c3af810f87f90c63b9": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\ngithub/awesome-copilot multi-stage-dockerfile\n",
+      "46952e89838e3df7867522c3c5fc1490e7642727": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nmulti-stage-dockerfile\n"
+    },
+    "templates/teams/frontend/PROFILE.md": {
+      "6b8e74c7d5e2edc3e35d9d435c1d35d3e64e3607": "# frontend profile\n\nReading this file loads the skills in `teams/frontend/.claude/skills/`. Read it once, first.\n\nOwns: UI, styling, client state, accessibility.\n\nRules:\n- Match the existing design system before inventing one. Read the component the ticket points at, not the whole tree.\n- Every interactive element is keyboard reachable and labelled. Part of green.\n- No new dependency without a `NEEDS dependency` comment on the issue; the lead decides.\n- New surface only: invoke `frontend-design` or `impeccable`.\n\nGreen adds: component renders in a test, a11y lint clean on owned paths.\n\nVerifier adds: `impeccable` audit on new surfaces, focus order, contrast tokens, no inline style where a token exists, no duplicated component.\n",
+      "96368e9b921349e46e496420b83574a5600752fb": "# frontend profile\n\nReading this file loads the skills in `teams/frontend/.claude/skills/`. Read it once, first.\n\nOwns: UI, styling, client state, accessibility.\n\nRules:\n- Match the existing design system before inventing one. Read the component the ticket points at, not the whole tree.\n- Every interactive element is keyboard reachable and labelled. Part of green.\n- No new dependency without a `NEEDS` line in the task; the lead decides.\n- New surface only: invoke `frontend-design` or `impeccable`.\n\nGreen adds: component renders in a test, a11y lint clean on owned paths.\n\nVerifier adds: `impeccable` audit on new surfaces, focus order, contrast tokens, no inline style where a token exists, no duplicated component.\n"
+    },
+    "templates/teams/frontend/skills.txt": {
+      "63384c395026653f20092c7352933e075be422a7": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nweb-design-guidelines\nvercel-react-best-practices\nfrontend-design\nimpeccable\nui-ux-pro-max\nshadcn\ngsap-core\ngsap-react\nsvelte-code-writer\nastro\n",
+      "c3e59ff0ac595a326976e65d109dacb7a8db13fc": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nanthropics/skills frontend-design\nvercel-labs/agent-skills web-design-guidelines\nvercel-labs/agent-skills vercel-react-best-practices\npbakaus/impeccable impeccable\nnextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max\nshadcn/ui shadcn\ngreensock/gsap-skills gsap-core\ngreensock/gsap-skills gsap-react\nsveltejs/ai-tools svelte-code-writer\nastrolicious/agent-skills astro\n",
+      "ead9b1e57079071069a7503dc78335b5f4782e62": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nanthropics/skills frontend-design\nvercel-labs/agent-skills web-design-guidelines\nvercel-labs/agent-skills vercel-react-best-practices\npbakaus/impeccable impeccable\nnextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max\nshadcn/ui shadcn\ngreensock/gsap-skills gsap-core\ngreensock/gsap-skills gsap-react\nsveltejs/ai-tools svelte-code-writer\nastrolicious/agent-skills astro\n"
+    },
+    "templates/teams/qa/PROFILE.md": {
+      "0b3e36e14fcdf132a36a2c58a816638a89e4f62a": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on Opus.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..hive/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "0e26879a4c4c8958f73b9befac6c68b9422f680f": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nThe mechanical part runs in CI, not in your session: every merge pushes `proteus/<run>`, and `proteus-gates.yml` runs `gates` (full suite) and then `qa` (steps `e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files that merge changed) on it. Read the results, do not re-run them:\n\n1. The run for the branch head: `gh run list --workflow proteus-gates.yml --branch proteus/<run> --event push --json databaseId,headSha,status,conclusion --limit 50`, the entry whose `headSha` is `git rev-parse origin/proteus/<run>`. Not `completed` yet → `gh run watch <id> --exit-status` in the foreground (timeout 10 minutes, again until it ends).\n2. Its summary: `gh run view <id> --json conclusion,jobs -q '.jobs[] | {name, conclusion, failed: [.steps[] | select(.conclusion == \"failure\") | .name]}'`. Each failed step is a finding; read its cause with `gh run view <id> --log-failed` through context-mode, never raw into your context.\n3. What CI does not cover runs locally, every gate as `node .claude/hooks/proteus-gates-cache.js \"<gate>\"` on a clean checkout (a tree the lead already passed after the last merge is not run again): no run for the head (no workflow, Actions disabled, `protection: none` in `AGENTS.md ## Learned`), or a step the project's workflow lacks (no `e2e` step while an e2e suite exists; a `rebuild` that needs hardware CI lacks, such as a GPU render, of every non-code deliverable from the branch alone, matching the merged evidence). Compress output with rtk.\n\nThen map each test to a ticket id by reading the tests, not running them; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the steps above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. CI ran it per merge: list the push runs whose `headSha` is in `git rev-list --first-parent <merge-base>..origin/proteus/<run>` (the list command above), and each whose `mutation` step failed gives its survivors from `--log-failed`. Only when the workflow has no `mutation` step, run it locally on those files: Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "22d4f788ebfe50d79f2106b62c9be7aabf3d3fa4": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "5b9fa6205036a63025d0c89c273446e3b44ed14b": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nThe mechanical part runs in CI, not in your session: every merge pushes `proteus/<run>`, and `proteus-gates.yml` runs `gates` (full suite) and then `qa` (steps `e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files that merge changed) on it. Read the results, do not re-run them:\n\n1. The run for the branch head: `gh run list --workflow proteus-gates.yml --branch proteus/<run> --event push --json databaseId,headSha,status,conclusion --limit 50`, the entry whose `headSha` is `git rev-parse origin/proteus/<run>`. Not `completed` yet → `gh run watch <id> --exit-status` in the foreground (timeout 10 minutes, again until it ends).\n2. Its summary: `gh run view <id> --json conclusion,jobs -q '.jobs[] | {name, conclusion, failed: [.steps[] | select(.conclusion == \"failure\") | .name]}'`. Each failed step is a finding; read its cause with `gh run view <id> --log-failed` through context-mode, never raw into your context.\n3. What CI does not cover runs locally, every gate as `node .claude/hooks/proteus-gates-cache.js \"<gate>\"` on a clean checkout (a tree the lead already passed after the last merge is not run again): no run for the head (no workflow, Actions disabled, `protection: none` in `AGENTS.md ## Learned`), or a step the project's workflow lacks (no `e2e` step while an e2e suite exists; a `rebuild` that needs hardware CI lacks, such as a GPU render, of every non-code deliverable from the branch alone, matching the merged evidence). Compress output with rtk.\n\nThen map each test to a ticket id by reading the tests, not running them; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the steps above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. CI ran it per merge: list the push runs whose `headSha` is in `git rev-list --first-parent <merge-base>..origin/proteus/<run>` (the list command above), and each whose `mutation` step failed gives its survivors from `--log-failed`. Only when the workflow has no `mutation` step, run it locally on those files: Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "61a0ce6f254f26f18212a0dcd2fdb93175cbef24": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on Opus.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..hive/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment on the `hive-debt` issue (create it if absent), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the `hive-debt` issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "7ff0fb1f58082557001be94c831edcf1a85c4931": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nMilestone wave only (the lead says so): mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "8115078ff296fcfcba7e42d28fd6822eb564405e": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "a74caf54d8c0a04c7694495b83972f2d45481523": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "cb31181d72c2e258017dff851bfcfacd89e6d36f": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..hive/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "ce877b89612386633ae7856f0acfa95ac25141d9": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nThe mechanical part runs in CI, not in your session: every merge pushes `proteus/<run>`, and `proteus-gates.yml` runs `gates` (full suite) and then `qa` (steps `e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files that merge changed) on it. Read the results, do not re-run them:\n\n1. The run for the branch head: `gh run list --workflow proteus-gates.yml --branch proteus/<run> --event push --json databaseId,headSha,status,conclusion --limit 50`, the entry whose `headSha` is `git rev-parse origin/proteus/<run>`. Not `completed` yet → `gh run watch <id> --exit-status` in the foreground (timeout 10 minutes, again until it ends).\n2. Its summary: `gh run view <id> --json conclusion,jobs -q '.jobs[] | {name, conclusion, failed: [.steps[] | select(.conclusion == \"failure\") | .name]}'`. Each failed step is a finding; read its cause with `gh run view <id> --log-failed` through context-mode when its tools are listed for you, else into a scratch file you grep; never raw into your context.\n3. What CI does not cover runs locally, every gate as `node <hooks>/proteus-gates-cache.js \"<gate>\"` (`<hooks>` is `.claude/hooks`, or `.codex/hooks` on Codex) on a clean checkout (a tree the lead already passed after the last merge is not run again): no run for the head (no workflow, Actions disabled, `protection: none` in `AGENTS.md ## Learned`), or a step the project's workflow lacks (no `e2e` step while an e2e suite exists; a `rebuild` that needs hardware CI lacks, such as a GPU render, of every non-code deliverable from the branch alone, matching the merged evidence). Compress output with rtk.\n\nThen map each test to a ticket id by reading the tests, not running them; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the steps above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. CI ran it per merge: list the push runs whose `headSha` is in `git rev-list --first-parent <merge-base>..origin/proteus/<run>` (the list command above), and each whose `mutation` step failed gives its survivors from `--log-failed`. Only when the workflow has no `mutation` step, run it locally on those files: Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "d592a2023c59dee751e05a6077b541754859e6d0": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "e750ba188670b1757774a6f8fe6b3901c0fe7538": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo (every gate as `node .claude/hooks/proteus-gates-cache.js \"<gate>\"` on a clean checkout, so a tree the lead already passed after the last merge is not run again): full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n"
+    },
+    "templates/teams/qa/skills.txt": {
+      "3fea1dc71d3143f834faaa42088447afd50f5439": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\naffaan-m/ecc rust-testing\n",
+      "5d106a21945cc85066fdf0d9fcf04cbd5fb0edff": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\naffaan-m/ecc rust-testing\n",
+      "9a4944e171587558cc408b9e21f985cea6ab57b7": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nplaywright-best-practices\nplaywright-cli\njavascript-typescript-jest\npython-testing-patterns\nrust-testing\n"
+    },
+    "templates/teams/security/PROFILE.md": {
+      "309d5b0d05c50a7d91c1a633a5ebea5f1bd857d1": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nRuns alongside the profile verifier on tickets touching auth, input parsing, secrets, file or network I/O.\n\nCheck only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O; new dependencies with known advisories.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n",
+      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nRuns alongside the profile verifier on tickets touching auth, input parsing, secrets, file or network I/O.\n\nFirst, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. New dependency in the diff → OSV query per `references/enforcement.md` §8.\n\nThen read. Check only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n"
+    },
+    "templates/teams/security/skills.txt": {
+      "26ac911e187999468e09cf0c251f5d3aa173cf17": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Claude Code's built-in /security-review is always available; these add stack-specific checks.\n# hive-scout rewrites this file for your stack during bootstrap; human approves the list.\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills two-factor-authentication-best-practices\n",
+      "c3edb50689701584c09d02ed50f70e9e7c2a7ea0": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\n# /security-review is built into Claude Code and needs no entry here\nsql-code-review\ntwo-factor-authentication-best-practices\n",
+      "e764807f00ed5c22cd8b2a50bfcf94b5494109d2": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Claude Code's built-in /security-review is always available; these add stack-specific checks.\n# hive-scout rewrites this file for your stack during bootstrap; human approves the list.\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills two-factor-authentication-best-practices\n"
+    }
+  }
+}

@@ -20,7 +20,7 @@ Prefer not to think about it: `node ~/proteus/install.js --auto-update`. The ses
 
 ## Releases
 
-A release is a signed annotated tag `vX.Y.Z` on `main`, with its notes under `## [X.Y.Z]` in `CHANGELOG.md`. The maintainer runs `node scripts/changelog.js --release X.Y.Z` to fold the `changelog.d/` fragments under the new version, commits, and tags that commit:
+A release is a signed annotated tag `vX.Y.Z` on `main`, with its notes under `## [X.Y.Z]` in `CHANGELOG.md`. The maintainer runs `node scripts/changelog.js --release X.Y.Z` to fold the `changelog.d/` fragments under the new version, commits, and tags that commit. `scripts/known-blobs.json` lists every version a shipped file had on `main`, so setup from the plugin (which has no git history) can tell an old copy from an edit; a PR that changes `agents/` or `templates/` regenerates it with `node scripts/known-blobs.js`, and `tests/knownblobs.test.js` fails until it does:
 
 ```bash
 git tag -s v1.2.0 -m "v1.2.0"          # GPG: signs with user.signingkey from your keyring

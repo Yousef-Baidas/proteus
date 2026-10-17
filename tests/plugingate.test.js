@@ -1,5 +1,6 @@
-// The plugin's per-repo gate (#136, D2): proteus-plugin.js runs a hook only where the project's git root has
-// .claude/settings.json with enabledPlugins["proteus@proteus"] === true; anywhere else no output and no state.
+// The plugin's per-repo gate (#136, D2; #154): proteus-plugin.js runs a hook only where the project's git root sets
+// enabledPlugins["proteus@proteus"] === true in .claude/settings.local.json or settings.json, local winning when both
+// set it; anywhere else no output and no state. --doctor's gate row applies the same rule.
 // node tests/plugingate.test.js; exit 0 if every assertion passed, 1 otherwise.
 "use strict";
 const fs = require("fs");
@@ -73,10 +74,22 @@ silent("gated out: no settings.json", repo("bare"));
 silent("gated out: settings without the plugin", repo("noplug", { enabledPlugins: { "other@x": true } }));
 silent("gated out: plugin disabled", repo("off", { enabledPlugins: { "proteus@proteus": false } }));
 silent("gated out: enabled as a string, not true", repo("str", { enabledPlugins: { "proteus@proteus": "true" } }));
-const LOCAL = repo("local");
-fs.mkdirSync(path.join(LOCAL, ".claude"));
-fs.writeFileSync(path.join(LOCAL, ".claude", "settings.local.json"), JSON.stringify({ enabledPlugins: { "proteus@proteus": true } }));
-silent("gated out: enabled only in settings.local.json", LOCAL);
+// settings.local.json (claude plugin install --scope local writes there) counts too, and wins when both set the key
+const withLocal = (name, shared, local) => {
+  const d = repo(name, shared);
+  fs.mkdirSync(path.join(d, ".claude"), { recursive: true });
+  fs.writeFileSync(path.join(d, ".claude", "settings.local.json"), typeof local === "string" ? local : JSON.stringify(local));
+  return d;
+};
+const LOCAL = withLocal("local", undefined, { enabledPlugins: { "proteus@proteus": true } });
+ok("gated in: enabled only in settings.local.json (a local-scope install)", ran(hooks(LOCAL), LOCAL));
+const LOCAL_ON = withLocal("local-on", { enabledPlugins: { "proteus@proteus": false } }, { enabledPlugins: { "proteus@proteus": true } });
+ok("gated in: settings.local.json true wins over settings.json false", ran(hooks(LOCAL_ON), LOCAL_ON));
+const LOCAL_NOKEY = withLocal("local-nokey", { enabledPlugins: { "proteus@proteus": true } }, { enabledPlugins: { "other@x": true } });
+ok("gated in: a settings.local.json without the key leaves settings.json's true", ran(hooks(LOCAL_NOKEY), LOCAL_NOKEY));
+const LOCAL_BAD = withLocal("local-bad", { enabledPlugins: { "proteus@proteus": true } }, "{ nope");
+ok("gated in: a malformed settings.local.json leaves settings.json's true", ran(hooks(LOCAL_BAD), LOCAL_BAD));
+silent("gated out: settings.local.json false wins over settings.json true", withLocal("local-off", { enabledPlugins: { "proteus@proteus": true } }, { enabledPlugins: { "proteus@proteus": false } }));
 // a nested repo answers for itself, not the enabled repo around it
 silent("gated out: a repo nested in an enabled one", repo(path.join("on", "nested")));
 silent("malformed settings.json", repo("bad", "{ enabledPlugins: "));
