@@ -7,6 +7,79 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-17
+
+### Upgrading to 2.0.0
+
+- Proteus 2.0.0 is a Claude Code plugin. Install it pinned to the release tag, then set up each repo from a session
+  in it:
+  ```bash
+  claude plugin marketplace add Yousef-Baidas/proteus#v2.0.0
+  claude plugin install proteus@proteus
+  ```
+  then `/proteus:setup` (`--dry-run` first shows what it changes). The command is `/proteus:proteus`.
+- On a 1.x install, `/proteus:setup` removes the repo's unedited 1.x hook and agent copies, their settings entries and
+  exclude lines, and names any edited copy it keeps. The user-level install is listed, never touched: once no repo
+  still runs 1.x, remove it with the `install.js --remove-user-install` command setup prints. README "Moving from 1.x".
+- To move the pin to a newer release, re-add the marketplace at its tag. Remove the user settings' entry first, or
+  the re-add fails: `claude plugin marketplace remove proteus --scope user && claude plugin marketplace add
+  Yousef-Baidas/proteus#vX.Y.Z && claude plugin install proteus@proteus && claude plugin update proteus@proteus`.
+- Codex CLI keeps the installer path (`install.js --harness codex`), unchanged.
+
+### Added
+
+- The plugin's per-repo gate (#136): a plugin is enabled in every repo, so `proteus-plugin.js` runs a hook only
+  where the project's git root (of `CLAUDE_PROJECT_DIR`, else the cwd) has `.claude/settings.json` with
+  `enabledPlugins["proteus@proteus"]` set to `true`. Anywhere else, and on a missing or malformed settings file,
+  the hook exits 0 without reading its input, printing or writing state. `install.js` installs are not gated.
+- The repo is a Claude Code plugin and its own marketplace (#136): `.claude-plugin/plugin.json` (`proteus`) points at
+  `skills/`, every `agents/*.md` and `hooks/hooks.json`, and `.claude-plugin/marketplace.json` (`proteus`) lists it
+  from the repo root. `hooks/hooks.json` holds the same events, matchers and timeouts `install.js` registers,
+  generated from the Claude adapter's `LEAD_HOOKS` by `node scripts/plugin-hooks.js`; each hook runs through
+  `templates/hooks/proteus-plugin.js`.
+- Moving from 1.x (#136): `install.js --plugin-setup` removes a repo's 1.x install when its copies are unedited
+  (byte-identical to a file a release shipped, the rule the hivemind takeover uses): the `.claude/hooks` scripts and
+  their entries in `.claude/settings.json` and `settings.local.json`, the `.claude/agents/proteus-*.md` copies, and the
+  hook lines in `.git/info/exclude`. An edited, git-tracked or gate-run copy stays and is named. Other settings keys
+  stay; `--dry-run` writes nothing.
+- `install.js --remove-user-install [--dry-run]`: once the plugin is installed, removes the 1.x user install (the skill
+  links, the unedited `proteus-*.md` agents in the config dir, `autoUpdate` in `proteus.json`); edited agents stay and
+  are named. `--plugin-setup` never touches it; it lists what it found and prints this command.
+- `--doctor` reads a plugin setup: the gate and marketplace entries, 1.x copies left beside the plugin (`--fix`
+  removes the unedited ones), a user install still present, and the release check's last result for the installed
+  commit. The 1.x rows (skill links, global agents, lead hooks, agent patches) are skipped there.
+- The plugin's release check (#136): under the plugin, the session start no longer auto-updates a Proteus checkout
+  (the plugin manager owns updates). Instead it checks that the installed commit (`gitCommitSha` of
+  `proteus@proteus` in `installed_plugins.json`) is a `vX.Y.Z` tag signed by a key you trust, using the same
+  `git verify-tag` checks as `--update`, against a bare clone in `CLAUDE_PLUGIN_DATA/releases.git` that fetches
+  tags at most once a day and trusts `~/.config/proteus/allowed_signers`. A verified commit prints nothing; any
+  other gets one warning line with the newest verified tag and how to pin to it; a failed fetch gets one quiet
+  line and the last result. It never blocks.
+- `/proteus:setup` (#136): the plugin's setup skill runs `install.js --plugin-setup`, the project steps of `--project`
+  only. It enables `proteus@proteus` in the committed `.claude/settings.json` (the plugin's per-repo gate) and lists
+  the `proteus` marketplace there, so teammates who trust the repo are offered the plugin; other keys stay. It turns
+  attribution off as `--project` does, adds the statusLine to `.claude/settings.local.json` when none is set, and
+  copies `teams/`; no hooks or agents go into the repo. The GitHub steps (`--protect`, `--verifier-app`) are printed,
+  never run. Re-running changes nothing, a malformed settings file is refused before anything is written, and
+  `--dry-run` says what it would do and writes nothing.
+
+### Changed
+
+- README leads with the plugin install, pinned to a tag; the installer path stays documented for Codex, and a new
+  "Moving from 1.x" section covers the migration.
+- The hivemind stub skill moved from `skills/hivemind/` to `legacy/hivemind/`, so the plugin no longer ships it.
+- Under the Claude Code plugin the hooks name the command `/proteus:proteus` (and `/proteus:proteus-review`), and
+  the autostart adds `agent-prefix=proteus:` to `proteus-state`; on Codex they name `$proteus`. New
+  `lib.skillCommand()` and `lib.agentPrefix()` compute both (#136).
+- Under the plugin the autostart applies no agent patches: `.claude/proteus-agents.json` would write bare-named
+  copies beside the plugin's `proteus:` agents, so a note says it is not applied (#136).
+
+### Security
+
+- The guards protect the plugin's own folder (`CLAUDE_PLUGIN_ROOT`) like `.claude/hooks`: a subagent's write or
+  `rm -r` into it is refused, and `proteus-shell-check.js` reports a change to it. A plugin read from a checkout of
+  the session's own repo is left editable.
+
 ## [1.2.1] - 2026-10-17
 
 ### Changed
