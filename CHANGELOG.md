@@ -7,6 +7,37 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-17
+
+### Changed
+
+- The guards match agent names through one helper, `lib.agentName`, which also accepts the
+  `proteus:` namespace a Claude Code plugin gives its agents (#136): `proteus:proteus-verifier`
+  signs off, `proteus:proteus-worker` spawns are lock-checked and beat, `proteus:proteus-scout`
+  writes `teams/*/skills.txt`. Any other namespace (`evil:proteus-verifier`) counts as no
+  Proteus agent. Bare names behave as before.
+- The hooks no longer assume they sit in `<repo>/.claude/hooks`, as prep for shipping Proteus as a plugin
+  (#136). The inbox, the status line and `proteus-worktree.js` find the session's repo from the cwd or
+  `CLAUDE_PROJECT_DIR` (its git root), and only then from their own folder; the Codex adapter falls back to
+  the cwd's git root outside `<root>/.codex/hooks`. Harness detection reads Claude Code's
+  `CLAUDE_PROJECT_DIR` (and `CLAUDE_PLUGIN_ROOT` alone as Codex) when the hooks' folder names no CLI.
+  The Claude adapter also looks for the skill in `$CLAUDE_PLUGIN_ROOT/skills/proteus`.
+
+### Fixed
+
+- `CLAUDE_CONFIG_DIR` is honoured: `proteus.json`, the user's `settings.json`, skills, agents and the
+  context-mode check are read and written there, by the hooks and by `install.js`, instead of always
+  `~/.claude`. The guards protect it like `~/.claude`, and a custom `CODEX_HOME` too.
+- `proteus-shell-check.js` no longer keeps a finished subagent's shell calls in flight (#140). A subagent's
+  stop that `proteus-stall.js` lets through drops its flight markers and snapshots, and a call older than
+  the watchdog's idle window (40 minutes) no longer overlaps the lead's calls, so a killed or crashed
+  subagent cannot inflate every later notice.
+- The lead's notice lists each changed path once, with the agents whose calls overlapped, and stops at
+  about 4 KB with "and N more". It names `install.js`, `proteus-shell-check.js` or the session-start sync as
+  the likely cause when the lead's own run wrote guarded paths.
+- The session-start sync is a lead window, so an agent's shell call in flight across a compact gets a notice
+  instead of a block for the hook and settings copies the sync rewrote.
+
 ## [1.2.0] - 2026-10-17
 
 Upgrading from 1.1.0:
