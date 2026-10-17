@@ -97,7 +97,7 @@ let r = run(INST, "", { cwd, env: lib.homeEnv(h), args: ["--doctor"] });
 ok("doctor: no autoMode block → the hint, with $defaults, the Proteus entry and where to add it", HINT.test(r.out) && r.out.includes("\"$defaults\"") && /Proteus is my own multi-agent tooling/.test(r.out) &&
   /\/auto-mode-setup/.test(r.out) && /\/permissions → Auto mode/.test(r.out), r.out);
 const entry = (/"(Proteus is my own[^"]*)"/.exec(r.out) || [])[1];
-ok("README: documents the same entry the doctor prints", Boolean(entry) && read("README.md").includes(`"${entry}"`), entry);
+ok("docs/install.md: documents the same entry the doctor prints", Boolean(entry) && read("docs/install.md").includes(`"${entry}"`), entry);
 ok("doctor: the hint is a WARN, not a FIX", !/FIX\s+auto mode/.test(r.out), r.out);
 ok("doctor: settings.json is left as it was", settings(h) === before);
 
