@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Prepare a worker's worktree before dispatch (replaces the manual mkdir/cp/printf):
 //   node .claude/hooks/proteus-worktree.js <worktree> [--tier <tier> [--human]] <owned path or glob>...
+//   node .claude/hooks/proteus-worktree.js <worktree> --allow force-push   (the lead's one-off authorisation)
 // The harness adapter copies the worker hooks in and registers them (Claude Code: .claude/hooks/ and
 // .claude/settings.local.json from worktree-settings.local.json); this writes the owned-path list
 // (one entry per line), keeps those local files and the checkout's /.worktrees/ folder out of `git add` via
@@ -27,10 +28,31 @@ Prepares a worktree made with \`git worktree add\` for one worker, before dispat
   --tier <tier>     the tier proteus-tier.js classified; the pre-commit hook fails a change that outgrows
                     it and names the tier it needs
   --human           with --tier quick: the human's quick: prefix (covers Standard work, never Full)
+  <worktree> --allow force-push
+                    alone: lets the worker force-push once (the guard consumes the entry)
 Re-run on the same worktree with every path so far to extend a Direct batch; the first base is kept.
 Exit 1 on bad usage or when <worktree> is not a git worktree.`;
 if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); return; }
 const [wtArg, ...rest] = process.argv.slice(2);
+// --allow <what>: the lead's one-off authorisation for this worktree's worker, consumed by the first use the
+// guard lets through (lib.workerDenial); the owned-path list is left as it is
+if (rest[0] === "--allow") {
+  const what = String(rest[1] || "");
+  if (!wtArg || rest.length !== 2 || !lib.ALLOWS.includes(what)) {
+    console.error(`usage: node proteus-worktree.js <worktree> --allow ${lib.ALLOWS.join("|")}`);
+    process.exitCode = 1;
+    return;
+  }
+  const wt = path.resolve(wtArg);
+  if (!fs.existsSync(lib.ownedFile(wt))) {
+    console.error(`proteus-worktree: ${wt} is not a prepared worktree (no owned-path list)`);
+    process.exitCode = 1;
+    return;
+  }
+  lib.addAllow(wt, what);
+  console.log(`worktree ${wt}: allows one ${what} (${lib.allowLines(wt).filter((l) => l === what).length} pending)`);
+  return;
+}
 const entries = [];
 let tier = "", human = false, badTier = false;
 for (let i = 0; i < rest.length; i++) {
