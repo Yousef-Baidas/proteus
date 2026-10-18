@@ -194,6 +194,20 @@ for (const [what, key, val] of [
   r = call(`git config --unset ${key}`, gitc("--unset", key));
   ok(`config: ...unsetting it again passes and closes the record`, !r.blocked && record().open === false, r.why + JSON.stringify(record()));
 }
+// #172: a worker whose brief named a worktree the lead never prepared (no owned list, no binding) runs in it;
+// its push -u is its own branch's upstream, the same keys for another branch are not
+const WT5 = path.join(REPO, ".worktrees", "s5");
+g(REPO, "worktree", "add", "-q", "-b", "fix/s5", WT5, "main");
+const e1 = { who: { agent_id: "e1", agent_type: "proteus-worker" }, cwd: WT5 };
+r = call("git push -u origin fix/s5", ["git", "push", "-q", "-u", "origin", "fix/s5"], e1);
+ok("config: push -u from an unprepared worktree leaves no record", r.pre.code === 0 && !r.blocked && record("agent-e1") === null && g(WT5, "config", "branch.fix/s5.merge") === "refs/heads/fix/s5", r.pre.err + r.why);
+r = call("git branch --set-upstream-to=origin/main", ["git", "branch", "--set-upstream-to=origin/main"], e1);
+ok("config: ...nor does --set-upstream-to on that branch", !r.blocked && record("agent-e1") === null, r.why);
+// Layer 1 refuses an interpreter here (no prepared worktree), so the command line names none: a script on disk
+r = call("sh tools/track.sh", ["git", "config", "branch.proteus-work/r1/2.merge", "refs/heads/main"], e1);
+ok("config: ...while another branch's merge key is caught, naming it", r.blocked && record("agent-e1") && record("agent-e1").open && r.why.includes("branch.proteus-work/r1/2.merge"), r.why + r.pre.err);
+r = call("sh tools/untrack.sh", ["git", "config", "--unset", "branch.proteus-work/r1/2.merge"], e1);
+ok("config: ...unsetting it again passes and closes the record", !r.blocked && record("agent-e1").open === false, r.why);
 
 // the lead's own shell calls: what changes while one overlaps an agent's call is a notice to the lead, not a block
 let m = 0;

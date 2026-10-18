@@ -458,11 +458,15 @@ function rebaseRecords(common, w) {
 
 // ---- before the call
 
-// own: the agent's worktree (its cwd's prepared worktree, else its binding; a worker session's own checkout)
+// own: the agent's worktree (its cwd's prepared worktree, else its binding, else the linked worktree of this repo
+// its cwd is in, one a brief named without preparing it (#172); a worker session's own checkout)
 function ownOf(ev, common) {
   const cwd = lib.shellCwd(ev);
   if (!ev.agent) return lib.gitRoot(cwd) || lib.projectRoot(ev);
-  return lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent) || "";
+  const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent);
+  if (prepared) return prepared;
+  const at = lib.gitRoot(cwd), c = at && lib.isLinked(at) && lib.gitCommonDir(at);
+  return c && lib.realOr(c) === lib.realOr(common) ? at : "";
 }
 
 async function snapshot(ev) {
