@@ -68,9 +68,9 @@ function score(name) {
   const a = TF.assess(dir);
   const t = want.teams || { must: [], mustNot: [] };
   const bad = [
-    ...t.must.filter((p) => !(a.teams[p] && a.teams[p].fits && exists(dir, "teams", p))).map((p) => `${p} missing`),
-    ...t.mustNot.filter((p) => (a.teams[p] && a.teams[p].fits) || exists(dir, "teams", p) || !new RegExp(`^left out ${p}: `, "m").test(s.out)).map((p) => `${p} present or not named as left out`),
-    ...SHIPPED.filter((p) => !t.must.includes(p) && !t.mustNot.includes(p)).map((p) => `${p} undeclared`),
+    ...t.must.flatMap((p) => (a.teams[p] && a.teams[p].fits && exists(dir, "teams", p) ? [] : [`${p} missing`])),
+    ...t.mustNot.flatMap((p) => ((a.teams[p] && a.teams[p].fits) || exists(dir, "teams", p) || !new RegExp(`^left out ${p}: `, "m").test(s.out) ? [`${p} present or not named as left out`] : [])),
+    ...SHIPPED.flatMap((p) => (t.must.includes(p) || t.mustNot.includes(p) ? [] : [`${p} undeclared`])),
   ];
   cell("teams", !bad.length && !a.capped, `${bad.join(", ")}${a.capped ? `, capped: ${a.why}` : ""} :: ${JSON.stringify(a.teams)}`);
 
@@ -78,8 +78,8 @@ function score(name) {
   const d = run(["--doctor"]);
   const rows = d.out.split(/\r?\n/);
   const doc = want.doctor || { ok: [], absent: [] };
-  const dbad = [...doc.ok.filter((x) => !rows.some((l) => /^ok\s/.test(l) && l.includes(x))).map((x) => `no ok row "${x}"`),
-    ...doc.absent.filter((x) => rows.some((l) => l.includes(x))).map((x) => `a row says "${x}"`)];
+  const dbad = [...doc.ok.flatMap((x) => (rows.some((l) => /^ok\s/.test(l) && l.includes(x)) ? [] : [`no ok row "${x}"`])),
+    ...doc.absent.flatMap((x) => (rows.some((l) => l.includes(x)) ? [`a row says "${x}"`] : []))];
   cell("doctor", !dbad.length, `${dbad.join(", ")} :: ${d.out.slice(-1500)}`);
 
   // gates: null means Proteus proposes none, so setup must not have written a gates workflow either
@@ -133,7 +133,7 @@ function score(name) {
   return { name, cells, misses, want };
 }
 
-const names = fs.readdirSync(FIX).filter((f) => f.endsWith(".js")).map((f) => f.slice(0, -3)).sort();
+const names = fs.readdirSync(FIX).flatMap((f) => (f.endsWith(".js") ? [f.slice(0, -3)] : [])).sort();
 ok("the six fixtures the issue names are there, each with its expectations",
   ["binary", "do-not-modify", "docs-site", "legacy", "notebook", "one-line"].every((n) => names.includes(n) && exists(FIX, `${n}.json`)), names.join(", "));
 const results = names.map(score);
