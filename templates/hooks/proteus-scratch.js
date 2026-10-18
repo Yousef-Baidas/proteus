@@ -161,7 +161,7 @@ function removeStray(r, tmpReal, uid, prune) {
   const p = path.resolve(r.path);
   let st;
   try { st = fs.lstatSync(p); } catch { return {}; }
-  if (!tmpReal || !same(real(path.dirname(p)), tmpReal)) return { keep: "not directly in os.tmpdir()" };
+  if (!tmpReal || !lib.samePath(real(path.dirname(p)), tmpReal)) return { keep: "not directly in os.tmpdir()" };
   if (r.ino && st.ino !== r.ino) return {}; // replaced since: not the entry Proteus made
   if (uid !== null && st.uid !== uid) return {};
   try {
@@ -295,5 +295,4 @@ function git(args, cwd) {
 function ls(d) { try { return fs.readdirSync(d); } catch { return []; } }
 function real(p) { try { return fs.realpathSync(p); } catch { return null; } }
 function realDir(p) { try { const st = fs.lstatSync(p); return st.isDirectory() && !st.isSymbolicLink(); } catch { return false; } }
-function same(a, b) { return !!a && (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b); }
 function mb(n) { return (n / 1048576).toFixed(1); }

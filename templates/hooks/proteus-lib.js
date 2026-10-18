@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { execFileSync, spawnSync } = require("child_process");
-const { claudeDir, pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
+const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -1400,7 +1400,6 @@ const AGENT_MSG = {
   xargs: (prog) => `proteus: \`xargs ${prog}\` writes the paths xargs reads at run time, which the guard cannot judge. Name the paths literally, under your owned paths or scratch dir.`,
   refs: (what) => `proteus: agents never move a branch through the API (\`${what}\`): a ref update there can force it past the push checks. Push your branch by name with git.`,
 };
-const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 // One worker, one worktree: the lead guard's bindingDenial records a subagent's first edit per agent id in
 // <git-common-dir>/proteus/agents/; its cwd's prepared worktree counts first.
 const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
