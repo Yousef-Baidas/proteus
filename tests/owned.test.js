@@ -228,6 +228,8 @@ const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
 ok("template: six placeholders (five code gates, the Direct job's docs gate), each exits 1; job id is gates; owned-paths step runs on worker PRs",
   steps.length === 6 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
   /startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-owned-check\.js --ci/.test(tpl) && !/required review|one approving review/.test(tpl));
+ok("template: every EDIT hint names the ## Learned or PROFILE.md field its command comes from (#96)",
+  tpl.split("\n").filter((l) => /EDIT/.test(l) && !l.startsWith("# Each EDIT")).every((l) => /## Learned `[\w ]+:`|teams\/qa\/PROFILE\.md `\w+`/.test(l)));
 // #86: both owned steps run the base's checker from a detached worktree of the base, so a PR cannot change it
 const baseRuns = tpl.match(/git worktree add -q --detach "\$RUNNER_TEMP\/base" "origin\/\$BASE_REF"\n\s+node "\$RUNNER_TEMP"\/base\/teams\/templates\/hooks\/proteus-owned-check\.js --ci "origin\/\$BASE_REF"/g) || [];
 ok("template: the gates and direct owned steps run the base's checker, never the PR head's",

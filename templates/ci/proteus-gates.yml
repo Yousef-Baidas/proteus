@@ -37,18 +37,18 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}   # the PR head, not the synthetic merge commit; on a push, the pushed commit
           fetch-depth: 0
           persist-credentials: false
-      # EDIT: one setup action for the stack, pinned to a full commit SHA, e.g.
+      # EDIT: one setup action for the stack (AGENTS.md ## Learned `package manager:`), pinned to a full commit SHA, e.g.
       #   - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0   with: { node-version: 22, cache: npm }
       #   - uses: astral-sh/setup-uv@<commit SHA of the tag> # vX.Y.Z
       #   - uses: dtolnay/rust-toolchain@<commit SHA of the stable branch's head> # stable
-      - run: echo "EDIT-install not filled in" >&2; exit 1  # npm ci --ignore-scripts | uv sync | cargo fetch
+      - run: echo "EDIT-install not filled in" >&2; exit 1  # ## Learned `package manager:`, e.g. npm ci --ignore-scripts | uv sync | cargo fetch
       # a gate that was red before Proteus runs through the baseline ratchet (teams/baseline.json), which fails
       # only on findings the recorded baseline lacks, e.g.
       #   - run: node teams/templates/hooks/proteus-baseline.js test -- npx vitest run
-      - run: echo "EDIT-typecheck not filled in" >&2; exit 1
-      - run: echo "EDIT-lint not filled in" >&2; exit 1
-      - run: echo "EDIT-test not filled in" >&2; exit 1
-      - run: echo "EDIT-deadcode not filled in" >&2; exit 1  # npx fallow dead-code | vulture . --min-confidence 80 | cargo machete
+      - run: echo "EDIT-typecheck not filled in" >&2; exit 1  # ## Learned `gate:`, its typecheck
+      - run: echo "EDIT-lint not filled in" >&2; exit 1  # ## Learned `gate:`, its lint
+      - run: echo "EDIT-test not filled in" >&2; exit 1  # ## Learned `gate:`, its test run
+      - run: echo "EDIT-deadcode not filled in" >&2; exit 1  # ## Learned `gate:`, its dead-code check, e.g. npx fallow dead-code | vulture . --min-confidence 80 | cargo machete
       # a worker's PR (head proteus-work/<run>/<id>) may change only the ticket's owned paths, as the lead
       # recorded them in .proteus/owned/<id> on the run branch; the check reads the base's copy, never the
       # PR's or its body, and runs the base's checker, so the PR changes neither. PRs into main (Quick,
@@ -90,7 +90,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - run: echo "EDIT-docs not filled in" >&2; exit 1  # markdown lint, link check, spelling, e.g. npx markdownlint-cli2 && lychee . && npx cspell .
+      - run: echo "EDIT-docs not filled in" >&2; exit 1  # ## Learned `gate:`, its docs checks (markdown lint, link check, spelling), e.g. npx markdownlint-cli2 && lychee . && npx cspell .
       - name: owned paths
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
@@ -119,19 +119,19 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # EDIT: the same setup action and install as the gates job
+      # EDIT: the same setup action and install as the gates job (## Learned `package manager:`)
       # A step this project has no use for (no e2e suite, no non-code deliverable) is deleted, not
       # left green; a rebuild that needs hardware CI lacks (a GPU render) is deleted too and QA runs it locally.
       - name: e2e
-        run: echo "EDIT-e2e not filled in" >&2; exit 1  # npx playwright test | uv run pytest tests/e2e | cargo test --test e2e
+        run: echo "EDIT-e2e not filled in" >&2; exit 1  # teams/qa/PROFILE.md `e2e`, e.g. npx playwright test | uv run pytest tests/e2e | cargo test --test e2e
       - name: smoke
-        run: echo "EDIT-smoke not filled in" >&2; exit 1  # install from a fresh dir (npm pack + npm i <tgz> | pip install . | cargo install --path .), run the documented command
+        run: echo "EDIT-smoke not filled in" >&2; exit 1  # teams/qa/PROFILE.md `smoke`: install from a fresh dir (npm pack + npm i <tgz> | pip install . | cargo install --path .), run the documented command
       - name: rebuild
-        run: echo "EDIT-rebuild not filled in" >&2; exit 1  # rebuild every non-code deliverable from the branch alone and compare with the merged evidence
+        run: echo "EDIT-rebuild not filled in" >&2; exit 1  # teams/qa/PROFILE.md `rebuild`: rebuild every non-code deliverable from the branch alone and compare with the merged evidence
       # the files this push changed, mutated; exits non-zero on any surviving mutant (Stryker: thresholds.break
       # 100 in its config). The push that creates the run branch has no before commit and is skipped.
       - name: mutation
         if: github.event.before != '0000000000000000000000000000000000000000'
         env:
           BEFORE: ${{ github.event.before }}
-        run: echo "EDIT-mutation not filled in" >&2; exit 1  # f=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- src | paste -sd, -); [ -z "$f" ] || npx stryker run --mutate "$f" | mutmut run --paths-to-mutate "$f" | cargo mutants --in-diff <(git diff "$BEFORE" HEAD)
+        run: echo "EDIT-mutation not filled in" >&2; exit 1  # teams/qa/PROFILE.md `mutation`: f=$(git diff --name-only --diff-filter=AM "$BEFORE" HEAD -- src | paste -sd, -); [ -z "$f" ] || npx stryker run --mutate "$f" | mutmut run --paths-to-mutate "$f" | cargo mutants --in-diff <(git diff "$BEFORE" HEAD)
