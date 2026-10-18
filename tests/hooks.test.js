@@ -66,6 +66,8 @@ ok("install upgrades old guard matcher", j1.hooks.PreToolUse[0].matcher === "Edi
 ok("install keeps user hook + permissions", s1.includes("my-own-hook") && j1.permissions.allow[0] === "Bash(ls)");
 ok("install registers all events", ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "SubagentStop", "TeammateIdle"].every((e) => j1.hooks[e] && j1.hooks[e].length));
 ok("install one guard entry", j1.hooks.PreToolUse.filter((e) => JSON.stringify(e).includes("proteus-lead-guard")).length === 1);
+ok("install rewrites the old $CLAUDE_PROJECT_DIR command to an absolute one (#96)", j1.hooks.PreToolUse[0].hooks[0].command === `node "${H.replace(/\\/g, "/")}/proteus-lead-guard.js"`, JSON.stringify(j1.hooks.PreToolUse[0]));
+ok("install writes no $CLAUDE_PROJECT_DIR command (#96)", !s1.includes("$CLAUDE_PROJECT_DIR"));
 ok("install statusLine absolute", j1.statusLine && j1.statusLine.command === `node "${H.replace(/\\/g, "/")}/proteus-statusline.js"`, JSON.stringify(j1.statusLine));
 ok("install copies all but itself", fs.readdirSync(SRC).filter((f) => f !== "install-lead-hooks.js").every((f) => fs.existsSync(hook(f))) && !fs.existsSync(hook("install-lead-hooks.js")));
 r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO });
