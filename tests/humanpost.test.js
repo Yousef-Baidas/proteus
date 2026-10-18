@@ -117,6 +117,16 @@ for (const c of [`cd ${q(REPO)} && ${postCmd()}`, `${postCmd()}; echo done`, `${
   r = hook(c);
   ok(`deny: not alone or not as given: ${c.slice(0, 60)}`, r.code === 2 && !asked(r), r.out + r.err);
 }
+// #164: the gate judges what runs; a commit message or a grep naming the script and --post is no post
+for (const c of [`git commit -m "feat: ${postCmd().replace(/"/g, "")} asks the human"`, "grep -rn 'proteus-verdict.js --post' docs", "grep -n -- --post templates/hooks/proteus-verdict.js",
+  "cat > notes.md <<'EOF'\nnode proteus-verdict.js 30 --post --body-file v.md\nEOF"]) {
+  r = hook(c);
+  ok(`--post gate: text naming it passes: ${c.slice(0, 50)}`, r.code === 0 && !asked(r) && !/proteus-verdict/.test(r.err), r.out + r.err);
+}
+for (const c of [`eval '${postCmd()}'`, `echo ${q(VD)} | xargs -I{} node {} 30 --post --body-file ${q(BODY)}`, `$(which node) ${q(VD)} 30 --post`, `node -e "require('child_process').execSync('node proteus-verdict.js 30 --post')"`]) {
+  r = hook(c);
+  ok(`--post gate: what it cannot judge is refused: ${c.slice(0, 50)}`, r.code === 2 && !asked(r), r.out + r.err);
+}
 const COPY = path.join(W, "proteus-verdict.js");
 fs.copyFileSync(VD, COPY);
 r = hook(`node ${q(COPY)} 30 --post --body-file ${q(BODY)} --sha ${SHA}`);

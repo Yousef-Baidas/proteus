@@ -741,7 +741,7 @@ function workerDenial(ev) {
   if (secret) return secret;
   if (ev.tool === "monitor") return WAIT_MSG;
   if (ev.tool !== "shell") return null;
-  if (postsVerdict(ev.command)) return ev.agent || ev.teammate ? POST_MSG.agent : POST_MSG.worker;
+  if (postsVerdict(ev.command, shellCwd(ev))) return ev.agent || ev.teammate ? POST_MSG.agent : POST_MSG.worker;
   if (ev.background) return WAIT_MSG;
   if (editsLast(ev.command)) return EDIT_LAST_MSG;
   const cwd = shellCwd(ev);
@@ -871,22 +871,116 @@ const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch, whose PR 
 const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
-// comments API call whose body opens with one is refused. The body is read from --body/-b, a body= field, a
-// heredoc, or a --body-file/-F file under cwd. A guard, not a boundary: the verdict script's author check is.
+// comments API write whose body opens with one is refused. It judges what the command runs (#164): a gh or
+// proteus-gh.js call that posts, its body from --body/-b, --body-file/-F, a body= field, --input, or stdin (a
+// heredoc, a here-string, or echo/printf/cat piped in). Text carried elsewhere (a heredoc written to a file, a
+// commit message, a quoted argument) is no post. What it cannot judge is refused: eval, a $( ) or $VAR as the
+// program, xargs into gh, nesting past 3; sh -c '<literal>' is parsed and judged. A guard, not a boundary: the
+// verdict script's author check is.
 const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`. The human's own verdict goes out as `node <hooks>/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>` from their review session, which asks them first.";
+const EVALS = new Set(["eval", "iex", "invoke-expression"]);
+const isGh = (w) => { const p = progName(w); return p === "gh" || p === "proteus-gh.js"; };
+const humanWord = (b) => { const t = String(b).replace(/^\$(?=[A-Z])/, ""); return HUMAN_WORD.test(t) || HUMAN_WORD.test(t.replace(/\\n/g, "\n")); };
+// a command's words with the words an unquoted $( ) or ` ` split off after it; its stdin texts likewise
+const fullWords = (cmds, c) => [...c, ...cmds.filter((x) => x.resumes === c).flatMap((x) => fullWords(cmds, x))];
+const fullDocs = (cmds, c) => [...(c.stdin || []), ...cmds.filter((x) => x.resumes === c).flatMap((x) => fullDocs(cmds, x))];
+function readBody(f, cwd) {
+  try { return [fs.readFileSync(path.resolve(cwd || ".", expandPath(f, cwd || ".")), "utf8").slice(0, 4096)]; } catch { return []; }
+}
+// what a command prints, for echo, printf and cat (its files, its stdin); null for any other program
+function printed(c, cwd, depth = 0) {
+  const words = unwrap(c), prog = progName(words[0]);
+  if (prog === "echo") { let a = words.slice(1); while (/^-[neE]+$/.test(a[0] || "")) a = a.slice(1); return [a.join(" ")]; }
+  if (prog === "printf") return [words.slice(1).join(" "), words.slice(2).join(" ")];
+  if (prog === "cat" || prog === "type" || prog === "get-content") {
+    const files = words.slice(1).filter((w) => !w.startsWith("-"));
+    const piped = !files.length && c.piped && depth < 4 ? printed(c.piped, cwd, depth + 1) || [] : [];
+    return [...(c.stdin || []).map((d) => d.text), ...files.flatMap((f) => readBody(f, cwd)), ...piped];
+  }
+  return null;
+}
+// the text a $( ) or ` ` argument prints
+function substText(v, cwd) {
+  const inner = v.startsWith("`") ? v.replace(/^`|`$/g, "") : v.replace(/^\$\(/, "").replace(/\)\s*$/, "");
+  return shellCommands(inner).flatMap((c) => printed(c, cwd) || []);
+}
+// the bodies a gh call (args after the gh word) posts as a comment or review; null when it posts none
+function ghBodies(args, all, cmds, i, cwd) {
+  const stdin = () => [...fullDocs(cmds, all).map((d) => d.text), ...(all.piped ? printed(all.piped, cwd) || [] : [])];
+  const next = () => (cmds[i + 1] ? printed(cmds[i + 1], cwd) || [] : []);
+  const value = (v) => (v === undefined || v === "$" ? next() : /^(?:\$\(|`)/.test(v) ? substText(v, cwd) : [v]);
+  const file = (f) => (f === "-" ? stdin() : readBody(f, cwd));
+  const out = [];
+  const flagAt = (j, long, short) => {
+    const a = args[j], m = new RegExp(`^(${long}|${short})(?:=([\\s\\S]*))?$`).exec(a) || new RegExp(`^(${short})([\\s\\S]+)$`).exec(a);
+    return m ? { flag: m[1], v: m[2], takes: m[2] === undefined } : null;
+  };
+  if (((args[0] === "issue" || args[0] === "pr") && args[1] === "comment") || (args[0] === "pr" && args[1] === "review")) {
+    for (let j = 2; j < args.length; j++) {
+      const m = flagAt(j, "--body|--body-file", "-b|-F");
+      if (!m) continue;
+      const v = m.takes ? args[++j] : m.v;
+      if (m.flag === "--body" || m.flag === "-b") out.push(...value(v));
+      else if (v !== undefined) out.push(...file(v));
+    }
+    return out;
+  }
+  if (args[0] !== "api") return null;
+  let { method, endpoint, path_ } = ghApi(args);
+  if (method === "GET" && !args.some((a) => /^(?:-X|--method)/.test(a)) && args.some((a) => /^(?:-[fF].|--(?:raw-)?field=|--input=)/.test(a))) method = "POST";
+  if (method === "GET" || !(endpoint === "graphql" || /(?:^|\/)(?:comments|reviews)(?:\/|$)/.test(path_))) return null;
+  for (let j = 1; j < args.length; j++) {
+    const m = flagAt(j, "--raw-field|--field|--input", "-f|-F");
+    if (!m) continue;
+    const v = m.takes ? args[++j] : m.v;
+    if (v === undefined) continue;
+    if (m.flag === "--input") {
+      for (const t of file(v)) { try { const b = JSON.parse(t).body; out.push(typeof b === "string" ? b : t); } catch { out.push(t); } }
+      continue;
+    }
+    const eq = v.indexOf("="), key = eq < 0 ? v : v.slice(0, eq), val = eq < 0 ? "" : v.slice(eq + 1);
+    const typed = m.flag === "-F" || m.flag === "--field";
+    if (key === "body") out.push(...(typed && val.startsWith("@") ? file(val.slice(1)) : value(val)));
+    else if (key === "query") { const q = /\bbody\s*:\s*\\?"{1,3}\s*(ACCEPT|CHANGES|ANSWER)(?=[\s"\\]|$)/.exec(val); if (q) out.push(q[1]); }
+  }
+  return out;
+}
+// true when the command (or one it nests) posts the human's words, or cannot be judged
+function postsWords(cmd, cwd, depth) {
+  if (depth > 3) return true;
+  const cmds = shellCommands(cmd);
+  if (cmds.dynamic) return true;
+  for (let i = 0; i < cmds.length; i++) {
+    const all = cmds[i];
+    if (all.resumes) continue; // judged with the command it goes on
+    const words = unwrap(fullWords(cmds, all)), prog = progName(words[0]);
+    if (!words.length) continue;
+    if (words[0].startsWith("$") || EVALS.has(prog)) return true;
+    const pre = all.slice(0, all.length - unwrap(all).length);
+    if (pre.some((w) => progName(w) === "xargs") && words.some(isGh)) return true;
+    // inline code (node -e, python -c) cannot be parsed here: read as text, as before #164
+    if ((inlineCode(words) || []).some((t) => /\b(?:gh|proteus-gh\.js)\b/.test(t) && /ACCEPT|CHANGES|ANSWER/.test(t))) return true;
+    if (NESTED_SHELLS.has(prog)) {
+      const c = words.findIndex((w, k) => k > 0 && /^-[a-z]*c$/.test(w));
+      if (c > 0) { if (words[c + 1] !== undefined && postsWords(words[c + 1], cwd, depth + 1)) return true; }
+      else {
+        for (const d of fullDocs(cmds, all)) if (postsWords(d.text, cwd, depth + 1)) return true;
+        if (all.piped) { const p = printed(all.piped, cwd); if (p === null || p.some((t) => postsWords(t, cwd, depth + 1))) return true; }
+      }
+    }
+    for (let k = 0; k < words.length; k++) {
+      if (!isGh(words[k])) continue;
+      const bodies = ghBodies(words.slice(k + 1), all, cmds, i, cwd);
+      if (bodies && bodies.some(humanWord)) return true;
+    }
+  }
+  return false;
+}
 function verdictPost(command, cwd) {
   const cmd = String(command || "");
-  if (!/\b(?:gh|proteus-gh\.js)\s+((issue|pr)\s+(comment|review)|api)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F\b/.test(cmd)) return null;
-  const unq = (v) => v.replace(/^\$?(["'])([\s\S]*)\1$/, "$2").replace(/\\(["\\$`])/g, "$1").replace(/\\n/g, "\n");
-  const bodies = [];
-  for (const m of cmd.matchAll(/(?:--body|-b|(?:-f|-F|--field|--raw-field)\s+body)(?:\s+|=)("(?:[^"\\]|\\.)*"|\$?'[^']*'|\S+)/g)) bodies.push(unq(m[1]));
-  for (const m of cmd.matchAll(/<<-?\s*(["']?)(\w+)\1[^\n]*\n([\s\S]*?)(?:\n\s*\2\s*(?:\n|$)|$)/g)) bodies.push(m[3]);
-  for (const m of cmd.matchAll(/(?:--body-file|-F)(?:\s+|=)(["']?)([^\s"']+)\1/g)) {
-    if (m[2] === "-" || m[2].includes("=")) continue;
-    try { bodies.push(fs.readFileSync(path.resolve(cwd || ".", m[2]), "utf8").slice(0, 4096)); } catch {}
-  }
-  return bodies.some((b) => HUMAN_WORD.test(b.replace(/^\$\(\s*cat\s*<<[\s\S]*$/, ""))) ? VERDICT_MSG : null;
+  if (!/\b(?:gh|proteus-gh\.js)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F|--field|--input|@|\$\(|`/.test(cmd)) return null;
+  return postsWords(cmd, cwd, 0) ? VERDICT_MSG : null;
 }
 
 // ---- the human's verdict post (#157): `node <hooks>/proteus-verdict.js <issue> --post --body-file <f> --sha <sha256>`
@@ -1023,8 +1117,39 @@ const POST_MSG = {
   agent: "proteus-verdict.js --post posts the human's verdict under the human's own login; only the human's main session runs it, after the human approves. Report the verdict text to the lead or the human instead.",
   worker: "proteus-verdict.js --post never runs from a worker's worktree: workers never post verdicts. The human's review session posts it.",
 };
-// any mention of proteus-verdict.js with --post: the gate judges every spelling, and refuses all but one usage
-const postsVerdict = (command) => /proteus-verdict/.test(String(command || "")) && /--post\b/.test(String(command || ""));
+// node (or the script itself) running proteus-verdict.js with a --post argument, judged on what the command runs
+// (#164): a commit message or a grep naming both is no post. What it cannot judge counts as one, so the gate
+// refuses it: eval, a $( ) or $VAR as the program, xargs into the script, inline code naming it, nesting past 3.
+const RUNNERS = new Set(["node", "nodejs", "bun", "deno"]);
+const isVerdictScript = (w) => /proteus-verdict(?:\.js)?$/.test(progName(w));
+function runsPost(cmd, cwd, depth) {
+  if (depth > 3) return true;
+  const cmds = shellCommands(cmd);
+  if (cmds.dynamic) return true;
+  for (const all of cmds) {
+    if (all.resumes) continue; // judged with the command it goes on
+    const words = unwrap(fullWords(cmds, all)), prog = progName(words[0]);
+    if (!words.length) continue;
+    if (words[0].startsWith("$") || EVALS.has(prog)) return true;
+    const pre = all.slice(0, all.length - unwrap(all).length);
+    if (pre.some((w) => progName(w) === "xargs") && (RUNNERS.has(prog) || isVerdictScript(words[0]))) return true;
+    if ((inlineCode(words) || []).some((t) => /proteus-verdict/.test(t))) return true;
+    if (NESTED_SHELLS.has(prog)) {
+      const c = words.findIndex((w, k) => k > 0 && /^-[a-z]*c$/.test(w));
+      if (c > 0) { if (words[c + 1] !== undefined && runsPost(words[c + 1], cwd, depth + 1)) return true; }
+      else {
+        for (const d of fullDocs(cmds, all)) if (runsPost(d.text, cwd, depth + 1)) return true;
+        if (all.piped) { const p = printed(all.piped, cwd); if (p === null || p.some((t) => runsPost(t, cwd, depth + 1))) return true; }
+      }
+    }
+    for (let k = 0; k < words.length; k++) {
+      if (!isVerdictScript(words[k]) || !(k === 0 || words.slice(0, k).some((w) => RUNNERS.has(progName(w))))) continue;
+      if (words.slice(k + 1).some((a) => /^--post(?:=|$)/.test(a))) return true;
+    }
+  }
+  return false;
+}
+const postsVerdict = (command, cwd = ".") => { const cmd = String(command || ""); return /proteus-verdict/.test(cmd) && /--post\b/.test(cmd) && runsPost(cmd, cwd, 0); };
 const quoteArg = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
 const postCommand = (issue, file, sha) => `node ${quoteArg(fwd(POST_SCRIPT))} ${issue} --post --body-file ${quoteArg(fwd(file))} --sha ${sha}`;
 // { issue, file, sha } from the one accepted usage, `node <this hooks dir>/proteus-verdict.js <issue> --post
@@ -1058,7 +1183,7 @@ function postArgs(command, dir) {
 // lines it shows come from the same bytes, and --post refuses a file whose hash no longer matches.
 // ad: the harness adapter, whose noAsk(ev) says why a PreToolUse "ask" would show the human no dialog here.
 function humanPost(ev, ad) {
-  if (ev.tool !== "shell" || !postsVerdict(ev.command)) return null;
+  if (ev.tool !== "shell" || !postsVerdict(ev.command, shellCwd(ev))) return null;
   if (ev.agent || ev.teammate) return { deny: POST_MSG.agent };
   const dir = shellCwd(ev);
   for (const r of new Set([projectRoot(ev), gitRoot(dir)].filter(Boolean))) if (isLinked(r) && fs.existsSync(ownedFile(r))) return { deny: POST_MSG.worker };
@@ -1088,6 +1213,9 @@ function humanPost(ev, ad) {
 // and a >&N descriptor copy is dropped. A > inside $(( )), (( )) or [[ ]] compares, so it is no redirect, unless
 // its operand names a literal path: dash, a common sh, has neither and runs `((x > f))` as subshells. With a clock ({left: ms}), the time spent comes off clock.left, and
 // running past it throws tooComplex (a worker's judging deadline, #48).
+// For the guards that judge what a command runs (verdictPost, postsVerdict), each command also carries: .stdin, its
+// heredoc and here-string texts ({ text }); .piped, the command piping into it; .resumes, the command an unquoted
+// $( ) or ` ` split, whose words go on after it. The list's .dynamic is true when a $( ) or ` ` is a program.
 const tooComplex = () => Object.assign(new Error("too complex"), { tooComplex: true });
 function shellCommands(command, clock = null) {
   const s = String(command || "");
@@ -1098,7 +1226,10 @@ function shellCommands(command, clock = null) {
 function tokens(s, late) {
   const out = [];
   let words = [], word = null, heredocs = [], redirs = [], redir = "", arith = 0, cond = false;
+  let docs = [], hereStr = false, pipeIn = null, pipeNext = false, resume = null, bt = null;
+  const subs = [];
   const endWord = () => {
+    if (hereStr && word !== null) { docs.push({ text: word }); hereStr = false; }
     if (word === "[[" && !words.length && !redir) cond = true;
     else if (word === "]]" && !redir) cond = false;
     if (word !== null && redir === "cmp") {
@@ -1109,7 +1240,16 @@ function tokens(s, late) {
     else if (word !== null) { if (redir === "file" || !/^(?:\d+|-)$/.test(word)) redirs.push(word); redir = ""; }
     word = null;
   };
-  const endCmd = () => { endWord(); redir = ""; if (words.length || redirs.length) out.push(Object.assign(words, { redirects: redirs })); words = []; redirs = []; };
+  const endCmd = () => {
+    endWord(); redir = "";
+    if (words.length || redirs.length) {
+      out.push(Object.assign(words, { redirects: redirs, stdin: docs, piped: pipeNext ? pipeIn : null, resumes: resume }));
+      pipeNext = false; resume = null;
+    }
+    words = []; redirs = []; docs = [];
+  };
+  // a $( or ` opening where the program goes: the command runs whatever it prints
+  const atProgram = () => { if (resume) return false; const u = unwrap(word === null ? words : [...words, word]); return word === null ? !u.length : u.length === 1 && u[0] === word; };
   for (let i = 0; i < s.length; i++) {
     if (late && !(i & 1023) && late()) throw tooComplex();
     const c = s[i];
@@ -1131,23 +1271,29 @@ function tokens(s, late) {
       i = j;
     } else if (s.startsWith("<<<", i)) {
       endWord();
+      hereStr = true;
       i += 2;
     } else if (s.startsWith("<<", i)) {
       endWord();
       const m = /^<<-?[ \t]*(["']?)([\w.-]+)\1/.exec(s.slice(i));
-      if (m) heredocs.push(m[2]);
+      if (m) { const doc = { text: "" }; docs.push(doc); heredocs.push([m[2], doc]); }
       i += m ? m[0].length - 1 : 1;
     } else if (c === "\n") {
       endCmd();
-      for (const d of heredocs) {
+      resume = null;
+      for (const [d, doc] of heredocs) {
         let k = i + 1;
+        const lines = [];
         for (;;) {
           if (late && late()) throw tooComplex();
           const nl = s.indexOf("\n", k);
           const line = s.slice(k, nl < 0 ? s.length : nl);
           k = nl < 0 ? s.length : nl + 1;
-          if (nl < 0 || line.trim() === d) break;
+          if (line.trim() === d) break;
+          lines.push(line);
+          if (nl < 0) break;
         }
+        doc.text = lines.join("\n");
         i = k - 1;
       }
       heredocs = [];
@@ -1174,8 +1320,18 @@ function tokens(s, late) {
       if (redir === "dup") i++;
     } else if (";&|()`".includes(c)) {
       // `cmd` or $(cmd) as (part of) a redirect target: kept in it, so the target reads as built at runtime
+      const sub = !redir && (c === "`" ? bt === null : c === "(" && word !== null && word.endsWith("$"));
+      if (sub && atProgram()) out.dynamic = true;
       if (redir && (c === "`" || c === "(")) word = (word ?? "") + c;
+      const had = out.length;
       endCmd();
+      const last = out.length > had ? out[out.length - 1] : null;
+      resume = null;
+      if (c === "|") { pipeNext = s[i + 1] !== "|" && s[i - 1] !== "|"; pipeIn = last; }
+      else if (c === "(") subs.push(sub ? last : null);
+      else if (c === ")") resume = subs.pop() || null;
+      else if (c === "`" && bt === null) bt = { outer: last };
+      else if (c === "`") { resume = bt.outer; bt = null; }
     }
     else if (c === " " || c === "\t" || c === "\r") endWord();
     else if (c === "#" && word === null) {

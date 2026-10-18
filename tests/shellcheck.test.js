@@ -241,6 +241,24 @@ ok("lead: ...the lead re-prepares the worktree with a new list", !r.blocked && /
 r = call("ls", null);
 ok("lead: ...and the agent's next call is not blocked on the lead's change", !r.blocked && record().open === false, r.why + JSON.stringify(record()));
 
+// #164: Claude Code's .in_use markers in the plugin cache are not the agent's doing; the plugin's own files still are
+{
+  const CFG = path.join(W, "claude-config"), PLUG = path.join(CFG, "plugins", "cache", "proteus", "proteus", "abc123");
+  const HOOK = path.join(PLUG, "templates", "hooks", "proteus-lib.js");
+  fs.mkdirSync(path.dirname(HOOK), { recursive: true });
+  fs.writeFileSync(HOOK, "lib\n");
+  const env = { CLAUDE_CONFIG_DIR: CFG, CLAUDE_PLUGIN_ROOT: PLUG };
+  const js = (s) => JSON.stringify(s);
+  r = call("npm run lint", node(`const fs=require('fs');fs.mkdirSync(${js(path.join(PLUG, ".in_use"))},{recursive:true});fs.writeFileSync(${js(path.join(PLUG, ".in_use", "4242"))},'')`), { env });
+  ok("plugin cache: a new .in_use marker under the plugin's version dir is not reported", r.pre.code === 0 && !r.blocked, r.why);
+  r = call("npm test", node(`require('fs').rmSync(${js(path.join(PLUG, ".in_use", "4242"))})`), { env });
+  ok("plugin cache: ...nor one removed", !r.blocked, r.why);
+  r = call("npm test", node(`require('fs').writeFileSync(${js(HOOK)},'changed\\n')`), { env });
+  ok("plugin cache: a change to a plugin file in the same cache is still reported", r.blocked && r.why.includes(slash(fs.realpathSync(HOOK))), r.why);
+  r = call("git checkout", node(`require('fs').writeFileSync(${js(HOOK)},'lib\\n')`), { env });
+  ok("plugin cache: ...and passes once put back", !r.blocked && record().open === false, r.why);
+}
+
 // the lead's own calls are not checked
 r = call("node -e ...", node("require('fs').writeFileSync('.claude/agents/lead.md','x')"), { who: {}, cwd: REPO });
 ok("lead: the main thread's own shell calls are not checked here", !r.blocked, r.why);
