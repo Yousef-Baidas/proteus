@@ -73,6 +73,7 @@ function event(raw) {
     agent: r.agent_id || "",
     agentType: r.agent_type || "",
     teammate: "",
+    permissionMode: typeof r.permission_mode === "string" ? r.permission_mode : "",
     model: typeof r.model === "string" ? r.model : "",
     tool,
     toolName: r.tool_name || "",
@@ -103,6 +104,9 @@ function outputText(res) {
 }
 
 const { deny, context, keepGoing, postBlock } = claude;
+// Codex's PreToolUse hooks answer allow or deny only: no permission dialog a hook can open
+const noAsk = () => "Codex has no permission dialog a hook can open";
+const ask = (why) => deny(why);
 
 // ---- rollouts: JSONL, {timestamp, type, payload}; each subagent has its own file
 
@@ -529,7 +533,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, spawnEffort, projectRoot, event, deny, context, keepGoing, postBlock,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
   patchPaths, RULES, samePath, writableRoots, sandboxRoots, allowDir, exportEnv,

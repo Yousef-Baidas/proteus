@@ -129,7 +129,7 @@ Agents verify tickets; you verify milestones. At `/to-tickets` the lead groups t
 
 You review through whichever channel fits:
 
-- **Review session** — second terminal, `PROTEUS=0 claude`, `/proteus-review`. A fresh session with the issue, the diff, and the evidence. Ask anything, have it run steps, then say accept or name the problems; it posts the verdict. Zero lead tokens.
+- **Review session** — second terminal, `PROTEUS=0 claude`, `/proteus-review`. A fresh session with the issue, the diff, and the evidence. Ask anything, have it run steps, then say accept or name the problems; it posts the verdict under your own GitHub login once you approve the text in a permission dialog, or, where no dialog can appear, gives you the command to run yourself. Zero lead tokens.
 - **Phone** — `/remote-control` on that review session, or the GitHub app: read the issue, comment `ACCEPT`.
 - **Issue only** — read the brief on GitHub, comment `ACCEPT` or `CHANGES` plus one line per problem. No AI involved.
 - **Evidence only** — flip through the linked screenshots, then comment.
@@ -231,7 +231,7 @@ templates/
     proteus-stall.js  proteus-worker-guard.js  no waiting on background jobs, one report per agent
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
-    proteus-verdict.js      reads a verdict or answer only from the human's login
+    proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
     proteus-worktree.js     prepares a worker worktree and its hooks
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files

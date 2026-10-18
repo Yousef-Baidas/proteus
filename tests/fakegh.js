@@ -31,6 +31,24 @@ if (CD) {
   if (!fs.existsSync(hosts)) { process.stderr.write("gh: not logged in\n"); process.exit(1); }
   if (/^api user --jq \.login$/.test(a)) { process.stdout.write(fs.readFileSync(hosts, "utf8") + "\n"); process.exit(0); }
 }
+// FAKE_GH_ISSUES (a JSON file {<n>: {title, labels: [name], comments: [{author: {login}, body}]}}) answers an issue's title,
+// labels and comments; `issue comment <n> --body-file -` appends stdin as a comment by the current login and prints its URL
+if (process.env.FAKE_GH_ISSUES) {
+  const fs = require("fs"), path = require("path"), file = process.env.FAKE_GH_ISSUES;
+  const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const say = (t) => { process.stdout.write(t + "\n"); process.exit(0); };
+  let m;
+  if ((m = /^issue view (\d+) --json title -q \.title$/.exec(a)) && s[m[1]]) say(s[m[1]].title || "");
+  if ((m = /^issue view (\d+) --json labels -q \.labels\[\]\.name$/.exec(a)) && s[m[1]]) say((s[m[1]].labels || []).join("\n"));
+  if ((m = /^issue view (\d+) --json comments$/.exec(a)) && s[m[1]]) out({ comments: s[m[1]].comments || [] });
+  if ((m = /^issue comment (\d+) --body-file -$/.exec(a)) && s[m[1]]) {
+    const login = CD ? fs.readFileSync(path.join(CD, "hosts.yml"), "utf8").trim() : process.env.FAKE_GH_LOGIN || "human";
+    const c = s[m[1]].comments = s[m[1]].comments || [];
+    c.push({ author: { login }, body: fs.readFileSync(0, "utf8") });
+    fs.writeFileSync(file, JSON.stringify(s));
+    say(`https://github.com/o/r/issues/${m[1]}#issuecomment-${c.length}`);
+  }
+}
 if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_STATE)) {
   const fs = require("fs"), file = process.env.FAKE_GH_STATE;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));

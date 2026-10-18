@@ -6,6 +6,7 @@
 // turn ends waiting on a notification never wakes, --edit-last can overwrite another agent's comment, and those words are the human's.
 // Also proteus-signoff.js whatever the harness names the agent (this session is a worker's), and what
 // lib.secretDenial refuses: Read, Edit or a shell command naming the verifier App's key, a shell setting GH_TOKEN.
+// And the human's verdict post (proteus-verdict.js --post) and any reach for the human's gh login (lib.humanGhDenial).
 // A shell call it lets through gets the fingerprint proteus-shell-check.js compares after the call.
 // Only active when the owned-path list exists (a dispatched worker's worktree).
 // Exit 2 = block; the message on stderr reaches the worker as the tool's error.

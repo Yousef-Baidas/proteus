@@ -30,7 +30,7 @@ Any of these produce the verdict comment; the lead does not care which.
 
 | Channel | How |
 |---|---|
-| review session | second terminal, `PROTEUS=0 claude --model sonnet`, `/proteus-review` (Codex: `PROTEUS=0 codex`, `$proteus-review`; `PROTEUS=0` keeps the lead autostart and guard out of it). Fresh session with the issue, the diff, and the evidence; chats, runs steps on request, posts the verdict when told. Zero lead tokens. |
+| review session | second terminal, `PROTEUS=0 claude --model sonnet`, `/proteus-review` (Codex: `PROTEUS=0 codex`, `$proteus-review`; `PROTEUS=0` keeps the lead autostart and guard out of it). Fresh session with the issue, the diff, and the evidence; chats, runs steps on request, posts the verdict when told, under the human's login once they approve it (`proteus-verdict.js --post`). Zero lead tokens. |
 | phone | `/remote-control` on the review session, or the GitHub app: read the issue, comment `ACCEPT`. |
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |

@@ -11,7 +11,12 @@
 //    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
 //    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
-//    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost).
+//    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost). The human's verdict goes out as
+//    `proteus-verdict.js <issue> --post --body-file <f> --sha <h>` under their own gh login: on the main thread
+//    the hook asks the human in a permission dialog, or denies with the command for their own terminal where no
+//    dialog can appear (lib.humanPost); subagents, teammates and workers are denied. While the agents have a
+//    login of their own (agentGh), nobody reaches the human's: their gh config dir, GH_CONFIG_DIR / GH_HOST
+//    changes, gh --hostname, gh auth login/logout/switch/token/refresh (lib.humanGhDenial).
 // 5. No `gh pr merge --admin`, no push to main or to an existing run branch (creating proteus/<run> passes), no
 //    deleting either, no lifting or rewriting branch protection or a ruleset, no commit status or check run
 //    posted by hand (lib.branchDenial), and no proteus-signoff.js: the verdict status is a verifier's.
@@ -32,7 +37,8 @@
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
 //   included, except what lib.leadEditDenial always refuses (.claude, .codex, gates, CI, links, outside the repo).
-// Linked worktrees and PROTEUS=0 sessions pass untouched.
+// Linked worktrees skip rules 1-3 and 7. PROTEUS=0 sessions (the human's review session) get rule 4's verdict checks
+// and nothing else.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
 const fs = require("fs");
@@ -48,10 +54,20 @@ const { bindFile, bound, cwdWorktree, samePath: same } = lib;
 const LEAD_MAY_WRITE = [/^CONTEXT\.md$/, /^CONVENTIONS\.md$/, /^AGENTS\.md$/, /^docs\/adr\/[^/]+\.md$/, /^docs\/lessons\/[^/]+\.md$/, /^\.proteus\/owned\/[A-Za-z0-9][\w.-]*$/];
 const IMAGE = /\.(png|jpe?g|webp|gif|bmp|tiff?|exr|hdr)$/i;
 
-if (process.env.PROTEUS === "0") process.exit(0);
+// rule 4's verdict checks: the --post gate (ask or deny), the human's gh login, the human's words. True when decided.
+function humanSide(ev, ad) {
+  const post = lib.humanPost(ev, ad);
+  if (post) { if (post.deny) ad.deny(post.deny); ad.ask(post.ask); return true; }
+  if (ev.agent) return false; // workerDenial covers subagents
+  const why = lib.humanGhDenial(ev) || (ev.tool === "shell" && lib.verdictPost(ev.command, ev.cwd));
+  if (why) ad.deny(why);
+  return false;
+}
 
-lib.run((ev, ad) => {
+if (process.env.PROTEUS === "0") lib.run((ev, ad) => { humanSide(ev, ad); });
+else lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
+  if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
     const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
