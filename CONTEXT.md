@@ -19,3 +19,4 @@ Proteus is a multi-agent build pipeline that installs into a coding-agent CLI (t
 - **self-host**: Proteus running its own pipeline on this repo, where the project and the Proteus checkout are the same directory.
 - **move**: taking one repo from a 1.x install to the plugin: its unedited 1.x copies removed, the plugin enabled at the install's scope; never a commit, a push or a remote change. `install.js --update`, `/proteus:setup` and the plugin's SessionStart run it.
 - **discovery**: the repos a move looks at, only from the `repos` list in `proteus.json`, `.claude.json` projects, Codex `config.toml` projects and explicit `--scan` dirs; no folder is assumed.
+- **adaptability eval**: `tests/adapt.test.js`, fixture repos built at test time (`tests/fixtures/adapt/`) and scored on what Proteus's deterministic code decides for each (teams, doctor rows, tier, security signoff, ceremony); an expectation no code decides is a listed gap.

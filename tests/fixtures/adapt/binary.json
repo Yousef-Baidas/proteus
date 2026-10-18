@@ -1,0 +1,18 @@
+{
+  "about": "binary art (.blend, .psd, .png) beside one Python export script; no remote, no CI",
+  "teams": { "must": ["qa", "security"], "mustNot": ["frontend", "backend", "devops"] },
+  "doctor": { "ok": ["teams/ROUTING.md"], "absent": ["fits nothing here"] },
+  "gates": null,
+  "tier": [
+    { "changes": [["assets/hero.blend", 0]], "tier": "standard", "security": false },
+    { "changes": [["tools/export.py", 3]], "tier": "standard", "security": false }
+  ],
+  "ceremony": null,
+  "gaps": {
+    "gates": "Proteus derives no gate command: setup copies teams/templates/ci/proteus-gates.yml with its EDIT placeholders, and the scaffold ticket fills them from the AGENTS.md ## Learned gate line, which the bootstrap (a model) writes",
+    "routing": "which team a work order goes to: the lead reads teams/ROUTING.md rows; no function maps a path to a team",
+    "roster": "an art or 3D team for the assets: the shipped teams are software teams, and the scout (a model) designs any other roster",
+    "binary": "a binary change counts 0 lines (git numstat '-'), so no lines= limit ever lifts its tier; nothing tells a binary asset from code"
+  },
+  "model": { "roster": ["3d-art", "qa"] }
+}

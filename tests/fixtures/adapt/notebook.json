@@ -1,0 +1,17 @@
+{
+  "about": "Jupyter notebooks, a CSV and a requirements.txt",
+  "teams": { "must": ["devops", "qa", "security"], "mustNot": ["frontend", "backend"] },
+  "doctor": { "ok": ["teams/ROUTING.md", "shipped teams fit this repo"], "absent": ["fits nothing here"] },
+  "gates": null,
+  "tier": [
+    { "changes": [["notebooks/explore.ipynb", 4]], "tier": "standard", "security": false },
+    { "changes": [["requirements.txt", 1]], "tier": "standard", "security": true }
+  ],
+  "ceremony": null,
+  "gaps": {
+    "gates": "Proteus derives no gate command: setup copies teams/templates/ci/proteus-gates.yml with its EDIT placeholders, and the scaffold ticket fills them from the AGENTS.md ## Learned gate line, which the bootstrap (a model) writes",
+    "routing": "which team a work order goes to: the lead reads teams/ROUTING.md rows; no function maps a path to a team",
+    "roster": "a data-analysis team: the scout (a model) designs it; team-fit only scores the shipped software teams"
+  },
+  "model": { "gates": ["jupyter nbconvert --execute"], "roster": ["data", "qa"] }
+}
