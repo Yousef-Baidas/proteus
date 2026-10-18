@@ -102,6 +102,20 @@ r = ci("no owned line here");
 ok("ci: no Owned: line fails rather than passing everything", r.status === 1 && /no "Owned:/.test(r.stderr), r.stderr);
 ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 
+// #96: pre-commit and CI own what is below a folder a mid-path wildcard matches, as the edit hooks do
+r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/", "packages/*/src"]);
+r = commit("packages/x/src/y.js");
+ok("pre-commit: a mid-path wildcard glob owns a file below the folder it matches", r.status === 0, r.stderr);
+r = commit("packages/x/srcx/y.js");
+ok("pre-commit: a mid-path wildcard glob does not own a sibling that shares its prefix",
+  r.status !== 0 && /packages\/x\/srcx\/y\.js/.test(r.stderr), r.stderr);
+g(WT, "reset", "-q");
+fs.rmSync(path.join(WT, "packages", "x", "srcx"), { recursive: true });
+r = ci("Owned: src/* packages/*/src");
+ok("ci: a trailing * and a mid-path * own the files below the folders they match", r.status === 0, r.stderr);
+r = ci("Owned: src/* packages/*/srcx");
+ok("ci: a glob that matches no folder above a changed path fails it", r.status === 1 && /packages\/x\/src\/y\.js/.test(r.stderr) && !/src\/new\.txt/.test(r.stderr), r.stderr);
+
 // #74: the owned-path list itself never commits, whatever its globs cover; nor passes CI whatever the Owned: line says
 const LIST = path.join(WT, ".claude", "proteus-owned"), was = fs.readFileSync(LIST, "utf8");
 fs.writeFileSync(LIST, "**\n");
@@ -214,6 +228,8 @@ const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
 ok("template: six placeholders (five code gates, the Direct job's docs gate), each exits 1; job id is gates; owned-paths step runs on worker PRs",
   steps.length === 6 && steps.every((l) => /exit 1/.test(l)) && /^  gates:$/m.test(tpl) &&
   /startsWith\(github\.head_ref, 'proteus-work\/'\)[\s\S]*proteus-owned-check\.js --ci/.test(tpl) && !/required review|one approving review/.test(tpl));
+ok("template: every EDIT hint names the ## Learned or PROFILE.md field its command comes from (#96)",
+  tpl.split("\n").filter((l) => /EDIT/.test(l) && !l.startsWith("# Each EDIT")).every((l) => /## Learned `[\w ]+:`|teams\/qa\/PROFILE\.md `\w+`/.test(l)));
 // #86: both owned steps run the base's checker from a detached worktree of the base, so a PR cannot change it
 const baseRuns = tpl.match(/git worktree add -q --detach "\$RUNNER_TEMP\/base" "origin\/\$BASE_REF"\n\s+node "\$RUNNER_TEMP"\/base\/teams\/templates\/hooks\/proteus-owned-check\.js --ci "origin\/\$BASE_REF"/g) || [];
 ok("template: the gates and direct owned steps run the base's checker, never the PR head's",

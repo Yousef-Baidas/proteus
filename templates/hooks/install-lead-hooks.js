@@ -4,8 +4,9 @@
 // older install left them) into the harness's hooks dir (.claude/hooks/), so the lead can run
 // proteus-worktree.js and proteus-status.js from there, and registers the lead's hooks
 // (Claude Code: .claude/settings.local.json, machine-local and untracked, so worktrees never inherit it).
-// Idempotent: an entry whose command already names the script is left alone, other hooks are
-// never touched, an old narrower proteus-lead-guard matcher is widened. Invalid JSON → exit 1.
+// Idempotent: an entry whose command already names the script is kept, its command rewritten to the
+// absolute path if an older install wrote it another way; other hooks are never touched, an old
+// narrower proteus-lead-guard matcher is widened. Invalid JSON → exit 1.
 // The hooks dir is the real cwd plus fixed segments (.claude/hooks, or .codex/hooks for Codex), each
 // lstat'd a real directory: a link on the way (a repo may commit one) refuses everything, exit 1 (#13).
 // Every delete goes through proteus-confine.js: a regular file under that dir with no link on the way.

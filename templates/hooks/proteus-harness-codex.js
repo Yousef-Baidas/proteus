@@ -14,7 +14,7 @@ const path = require("path");
 const os = require("os");
 const { tailLines, oldWorktreeDirs, worktreesUnder, git, gitRoot } = require(path.join(__dirname, "proteus-lib.js"));
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
-const { claudeDir } = require(path.join(__dirname, "proteus-confine.js"));
+const { claudeDir, samePath } = require(path.join(__dirname, "proteus-confine.js"));
 
 const name = "codex";
 // no default ladder: single-model mode (the lead's model) until models.ladder names the rungs.
@@ -333,14 +333,6 @@ function registerLead(root) {
     changed = true;
   }
   return { file, changed };
-}
-
-// Whether two paths name one folder: on Windows either separator and any case, on macOS any case (both resolve
-// /Users/Me and /users/me to one folder by default).
-function samePath(a, b, platform = process.platform) {
-  const p = platform === "win32" ? path.win32 : path;
-  const key = (x) => (platform === "win32" || platform === "darwin" ? p.resolve(x).toLowerCase() : p.resolve(x));
-  return key(a) === key(b);
 }
 
 // writable_roots under [sandbox_workspace_write] in a config.toml's text (null: no file yet). A textual edit, not a

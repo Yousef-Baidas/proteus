@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { execFileSync, spawnSync } = require("child_process");
-const { claudeDir, pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
+const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -313,17 +313,15 @@ const docRoot = (root) => guestDir(root) || root;
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
-// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory, a plain path without
-// wildcards covers itself and anything below it
+// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory. A glob owns a path
+// when it matches the path or any folder above it, wherever its wildcards sit: src/auth and src/* own
+// src/auth/x.js, packages/*/src owns packages/a/src/b.js. Case folds on Windows.
 function ownedMatch(glob, rel) {
   const g = glob.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "/**");
-  // a plain path with no wildcard names a file or a directory; a file has nothing under it, so it also covers what lies below
-  if (!g.includes("*")) {
-    const [a, b] = process.platform === "win32" ? [g.toLowerCase(), rel.toLowerCase()] : [g, rel];
-    if (b === a || b.startsWith(a + "/")) return true;
-  }
-  const re = "^" + g.split("**").map((p) => p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join(".*") + "$";
-  return new RegExp(re, process.platform === "win32" ? "i" : "").test(rel);
+  const re = new RegExp("^" + g.split("**").map((p) => p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join(".*") + "$", process.platform === "win32" ? "i" : "");
+  const segs = String(rel).split("/");
+  for (let i = segs.length; i > 0; i--) if (re.test(segs.slice(0, i).join("/"))) return true;
+  return false;
 }
 
 // a worktree the lead dispatched a worker into: it lists the ticket's owned paths
@@ -1402,7 +1400,6 @@ const AGENT_MSG = {
   xargs: (prog) => `proteus: \`xargs ${prog}\` writes the paths xargs reads at run time, which the guard cannot judge. Name the paths literally, under your owned paths or scratch dir.`,
   refs: (what) => `proteus: agents never move a branch through the API (\`${what}\`): a ref update there can force it past the push checks. Push your branch by name with git.`,
 };
-const samePath = (a, b) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
 // One worker, one worktree: the lead guard's bindingDenial records a subagent's first edit per agent id in
 // <git-common-dir>/proteus/agents/; its cwd's prepared worktree counts first.
 const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));

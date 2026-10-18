@@ -333,6 +333,12 @@ function pluginHooks() {
   return { hooks };
 }
 
+// a hook's command: the script's absolute path, forward slashes, double-quoted. cmd.exe, PowerShell and bash all
+// run that as is; $CLAUDE_PROJECT_DIR is bash's alone, so a Windows session without Git Bash could not (#96).
+const hookCommand = (root, f) => `node "${path.resolve(hooksDir(root), f).split(path.sep).join("/")}"`;
+// a command Proteus wrote for script, in any form it ever used
+const OWN_CMD = (script) => new RegExp(`^node "[^"]*/\\.claude/hooks/${script.replace(/\./g, "\\.")}"$`);
+
 // returns {file, changed} or {file, error} (invalid JSON is never overwritten)
 function registerLead(root) {
   const file = leadSettings(root);
@@ -345,13 +351,15 @@ function registerLead(root) {
   }
   const before = JSON.stringify(s);
   s.hooks = s.hooks && typeof s.hooks === "object" ? s.hooks : {};
-  const cmd = (f) => `node "$CLAUDE_PROJECT_DIR/.claude/hooks/${f}"`;
+  const cmd = (f) => hookCommand(root, f);
   const names = (entry) => JSON.stringify((entry && entry.hooks) || []);
   for (const [ev, script, matcher, timeout] of LEAD_HOOKS) {
     const list = (s.hooks[ev] = Array.isArray(s.hooks[ev]) ? s.hooks[ev] : []);
     const have = list.filter((e) => names(e).includes(script));
     if (have.length) {
       for (const e of have) if (script === "proteus-lead-guard.js" && OLD_GUARD_MATCHERS.includes(e.matcher)) e.matcher = matcher;
+      // an older install's $CLAUDE_PROJECT_DIR form, or a path from before the checkout moved
+      for (const e of have) for (const h of Array.isArray(e && e.hooks) ? e.hooks : []) if (h && OWN_CMD(script).test(String(h.command))) h.command = cmd(script);
       continue;
     }
     const entry = { hooks: [{ type: "command", command: cmd(script), ...(timeout && { timeout }) }] };
@@ -399,7 +407,10 @@ function prepareWorker(wt, src) {
   const dir = hooksDir(wt);
   fs.mkdirSync(dir, { recursive: true });
   for (const f of WORKER_HOOKS) fs.copyFileSync(path.join(src, f), path.join(dir, f));
-  fs.copyFileSync(path.join(src, "worktree-settings.local.json"), path.join(wt, ".claude", "settings.local.json"));
+  // the template names its hooks under $CLAUDE_PROJECT_DIR; the copy names this worktree's, absolute (hookCommand)
+  const t = JSON.parse(fs.readFileSync(path.join(src, "worktree-settings.local.json"), "utf8"));
+  for (const list of Object.values(t.hooks)) for (const e of list) for (const h of e.hooks) h.command = hookCommand(wt, /([\w.-]+\.js)"$/.exec(h.command)[1]);
+  fs.writeFileSync(path.join(wt, ".claude", "settings.local.json"), JSON.stringify(t, null, 2) + "\n");
   return WORKER_EXCLUDE;
 }
 // the file a worker's worktree lists its owned paths in

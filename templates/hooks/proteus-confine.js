@@ -18,7 +18,15 @@ function lstat(p) { try { return fs.lstatSync(p); } catch { return null; } }
 function real(p) { try { return fs.realpathSync(p); } catch { return null; } }
 function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
 function isFile(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
-function samePath(a, b) { return !!a && !!b && (WIN ? a.toLowerCase() === b.toLowerCase() : a === b); }
+// whether two paths name one file: resolved, so a trailing or doubled separator does not count; on Windows either
+// separator and any case, on macOS any case (both resolve /Users/Me and /users/me alike by default). The one
+// samePath: install.js, link-skills.js and the hooks all take it from here; platform is for tests.
+function samePath(a, b, platform = process.platform) {
+  if (!a || !b) return false;
+  const p = platform === "win32" ? path.win32 : path.posix, fold = platform === "win32" || platform === "darwin";
+  const key = (x) => (fold ? p.resolve(String(x)).toLowerCase() : p.resolve(String(x)));
+  return key(a) === key(b);
+}
 const inside = (child, parent) => { const r = path.relative(parent, child); return r === "" || (!r.startsWith("..") && !path.isAbsolute(r)); };
 // realpath of the deepest existing ancestor, the rest joined on: a path that does not exist yet resolves too
 const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r; const d = path.dirname(a); return d === a ? a : path.join(realish(d), path.basename(a)); };
