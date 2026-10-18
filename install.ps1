@@ -13,12 +13,15 @@
 #   ... -AutoUpdate                let sessions do that update (-NoAutoUpdate: stop)
 #   ... -Doctor [-Fix]             check the setup; -Fix applies the safe local fixes
 #   ... -Harness codex             any of the above for Codex CLI instead of Claude Code
+#   ... -Migrate [-DryRun] [-Scan <dir>,<dir>]   move every repo still on 1.x to the Claude Code plugin
+#   ... -PluginSetup [-OnlyHere] [-DryRun]   what /proteus:setup runs: this repo, then every other 1.x repo
 #   ... -MigrateAll [-Scan <dir>]  also move every repo still on hivemind (the old name) to Proteus
 #
 # Or skip PowerShell entirely: node C:\path\to\proteus\install.js --project
 param([switch]$Project, [switch]$Install, [switch]$Confine, [switch]$Update,
       [switch]$Doctor, [switch]$Fix, [switch]$AutoUpdate, [switch]$NoAutoUpdate, [string]$Harness,
-      [switch]$MigrateAll, [string]$Scan, [switch]$Guest, [switch]$NoGuest)
+      [switch]$MigrateAll, [string[]]$Scan, [switch]$Guest, [switch]$NoGuest,
+      [switch]$Migrate, [switch]$PluginSetup, [switch]$OnlyHere, [switch]$DryRun)
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "node not found; install Node 22.5+, open a new terminal, and re-run:"
@@ -36,7 +39,11 @@ if ($AutoUpdate)   { $flags += "--auto-update" }
 if ($NoAutoUpdate) { $flags += "--no-auto-update" }
 if ($Harness)      { $flags += "--harness", $Harness }
 if ($MigrateAll)   { $flags += "--migrate-all" }
-if ($Scan)         { $flags += "--scan", $Scan }
+foreach ($d in $Scan) { $flags += "--scan", $d }
+if ($Migrate)      { $flags += "--migrate" }
+if ($PluginSetup)  { $flags += "--plugin-setup" }
+if ($OnlyHere)     { $flags += "--only-here" }
+if ($DryRun)       { $flags += "--dry-run" }
 if ($Guest)        { $flags += "--guest" }
 if ($NoGuest)      { $flags += "--no-guest" }
 & node (Join-Path $PSScriptRoot "install.js") @flags

@@ -46,6 +46,7 @@ lib.run(async (ev, ad) => {
     // a 1.x checkout proteus.json still names syncs nothing under the plugin: its copies would run beside the plugin's
     if (home && !pluginRoot()) {
       pending = safe(() => update(home, cfg, notes), "");
+      if (ad.name === "claude" && !pending) safe(() => pluginMove(home, cfg, notes));
       safe(() => sync(ad, home, root, notes));
       if (!lib.agentPrefix()) safe(() => agentPatches(ad, home, root, notes));
     }
@@ -146,6 +147,31 @@ function update(home, cfg, notes) {
   if ((cfg.behind || 0) !== behind) patch.behind = behind;
   if (Object.keys(patch).length) patchConfig(cfg, patch);
   return behind ? rel.tag : "";
+}
+
+// autoUpdate's move to the plugin (#155): on a release that ships it, with the claude CLI on PATH and no proteus@proteus
+// installed yet, install.js --update runs in the background at most once a day. It pins the plugin to the verified
+// release and moves every repo the sources name; offline or with gh logged out it changes nothing. Its output goes
+// to proteus-update.log beside proteus.json.
+function pluginMove(home, cfg, notes) {
+  if (cfg.autoUpdate !== true || !fs.existsSync(path.join(home, ".claude-plugin", "plugin.json"))) return;
+  const tried = typeof cfg.pluginTried === "number" ? cfg.pluginTried : 0;
+  if (Date.now() - tried < DAY) return;
+  const dir = path.dirname(lib.configFile());
+  const installed = safe(() => JSON.parse(fs.readFileSync(path.join(dir, "plugins", "installed_plugins.json"), "utf8")).plugins["proteus@proteus"], null);
+  if (Array.isArray(installed) && installed.length) return;
+  const exts = process.platform === "win32" ? [".cmd", ".exe", ".bat", ""] : [""];
+  const cli = (process.env.PATH || "").split(path.delimiter).some((d) => d && exts.some((x) => safe(() => fs.statSync(path.join(d, `claude${x}`)).isFile(), false)));
+  if (!cli) return;
+  const log = path.join(dir, "proteus-update.log");
+  const fd = fs.openSync(log, "w");
+  try {
+    const c = spawn(process.execPath, [path.join(home, "install.js"), "--update"], { cwd: require("os").tmpdir(), detached: true, stdio: ["ignore", fd, fd], windowsHide: true });
+    c.on("error", () => {});
+    c.unref();
+  } finally { fs.closeSync(fd); }
+  patchConfig(cfg, { pluginTried: Date.now() });
+  notes.push(`proteus: moving to the Claude Code plugin in the background (install.js --update); its output is in ${log}`);
 }
 
 function patchConfig(cfg, patch) {
