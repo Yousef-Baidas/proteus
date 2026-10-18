@@ -75,6 +75,8 @@ const L = require(path.join(__dirname, "templates", "teams", "link-skills.js"));
 // every delete, and every copy into a dir Proteus owns, goes through C (#13, #104)
 const C = require(path.join(__dirname, "templates", "hooks", "proteus-confine.js"));
 const { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, linkDir } = C;
+// which shipped teams a repo has evidence for (#156)
+const TF = require(path.join(__dirname, "templates", "hooks", "proteus-teamfit.js"));
 
 const HERE = __dirname;
 // the shipped roster; teams/ in any repo, this checkout included, is that repo's own
@@ -666,9 +668,43 @@ function upstreamPending(teams) {
   return out.sort();
 }
 
-// root: where teams/ goes (the checkout, or its guest dir)
-function copyTeams(root) {
+// which shipped team dirs copyTeams writes (#156): a refresh only those teams/ already has, never a new
+// one; a first install (no ROUTING.md and no team under teams/ yet) the ones the repo has evidence for.
+// { keep, left: [[team, reason]], why } where why says the scan passed its cap and every team was kept
+function teamPlan(teams, repo) {
+  const shipped = L.profiles(SHIPPED_TEAMS);
+  let roster = !!lstat(path.join(teams, "ROUTING.md"));
+  try { roster = roster || fs.readdirSync(teams).some((p) => isFile(path.join(teams, p, "PROFILE.md"))); } catch {}
+  if (roster) {
+    const has = (p) => !!lstat(path.join(teams, p));
+    return { keep: shipped.filter(has), left: shipped.filter((p) => !has(p)).map((p) => [p, "not in this repo's roster, and a refresh never adds a team"]), why: "" };
+  }
+  // a team dir already there (a link included, which own() then refuses) is kept, never left out
+  const a = TF.assess(repo), fit = (p) => !a.teams[p] || a.teams[p].fits || !!lstat(path.join(teams, p));
+  return { keep: shipped.filter(fit), left: shipped.filter((p) => !fit(p)).map((p) => [p, a.teams[p].reason]), why: a.capped ? `every shipped team kept: ${a.why}` : "" };
+}
+// ROUTING.md text without the table rows that route to a team in out
+function routingWithout(text, out) {
+  return text.split(/(?<=\n)/).filter((l) => { const m = /^\|.*\|\s*([\w-]+)\s*\|$/.exec(l.trimEnd()); return !(m && out.includes(m[1])); }).join("");
+}
+function logPlan(plan, would = "") {
+  if (plan.why) log(`teams    : ${plan.why}`);
+  for (const [p, why] of plan.left) log(`${would}left out ${p}: ${why}`);
+}
+
+// whether a ROUTING.md table row routed to team names a path glob git tracks a file under in repo
+function routedFiles(routing, team, repo) {
+  const globs = routing.split(/\r?\n/).filter((l) => new RegExp(`^\\|.*\\|\\s*${team}\\s*\\|$`).test(l.trimEnd()))
+    .flatMap((l) => [...l.matchAll(/`([^`\s]+)`/g)].map((m) => m[1].replace(/^\.?\//, ""))).filter((x) => !x.startsWith("-"));
+  if (!globs.length) return false;
+  const r = spawnSync("git", ["ls-files", "--", ...globs.map((x) => `:(glob)${x}`)], { cwd: repo, encoding: "utf8", timeout: TF.CAP_MS, windowsHide: true, maxBuffer: 1 << 28 });
+  return r.status === 0 && !!r.stdout.trim();
+}
+
+// root: where teams/ goes (the checkout, or its guest dir); repo: the checkout whose files decide the teams
+function copyTeams(root, repo = root) {
   const teams = path.join(root, "teams");
+  const plan = teamPlan(teams, repo);
   // self-host: the checkout's own templates/ and link scripts are the source, never copied into git
   const self = samePath(real(root), real(HERE));
   // a repo may commit teams/, or a dir or file in it, as a link: every dir written to is made, or found, a real
@@ -681,7 +717,7 @@ function copyTeams(root) {
   own();
   ownTree(path.join(HERE, "templates"), ["templates"]);
   // and every profile dir, before teamUpstream copies a PROFILE.md or skills.txt into one
-  const dirs = L.profiles(SHIPPED_TEAMS).map((p) => [p, own(p)]);
+  const dirs = plan.keep.map((p) => [p, own(p)]);
   const ign = lstat(path.join(teams, ".gitignore"));
   if (ign && ign.isSymbolicLink()) die(`refused  ${path.join(teams, ".gitignore")} (a link; nothing written through it). Replace it with a regular file and re-run.`);
   teamsIgnore(teams, true);
@@ -701,7 +737,10 @@ function copyTeams(root) {
   }
   // the routing table, PROFILE.md and skills.txt are the repo's once copied; a later shipped change
   // to one the repo has comes as <file>.upstream to merge (teamUpstream)
-  const owned = ["ROUTING.md", ...L.profiles(SHIPPED_TEAMS).flatMap((p) => ["PROFILE.md", "skills.txt"].map((f) => `${p}/${f}`))];
+  const owned = ["ROUTING.md", ...plan.keep.flatMap((p) => ["PROFILE.md", "skills.txt"].map((f) => `${p}/${f}`))];
+  // written here without the rows of the teams left out; teamUpstream then records the shipped text it came from
+  const routing = path.join(teams, "ROUTING.md");
+  if (plan.left.length && !lstat(routing)) C.writeFile(routing, routingWithout(fs.readFileSync(path.join(SHIPPED_TEAMS, "ROUTING.md"), "utf8"), plan.left.map(([p]) => p)), ownedRoots());
   teamUpstream(teams, owned.filter((rel) => isFile(path.join(SHIPPED_TEAMS, rel))), rec);
   for (const [p, dest] of dirs) {
     const src = path.join(SHIPPED_TEAMS, p);
@@ -709,7 +748,8 @@ function copyTeams(root) {
     if (isFile(path.join(src, "required.txt"))) put(path.join(src, "required.txt"), path.join(dest, "required.txt"));
   }
   rec.done();
-  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, proteus-confine.js, package.json, "}templates/)`);
+  log(`teams    -> ${teams} (ROUTING.md, PROFILE.md, skills.txt, ${self ? "" : "link-skills.*, proteus-confine.js, package.json, "}templates/; teams ${plan.keep.join(", ") || "none"})`);
+  logPlan(plan);
 }
 
 function projectInstall(root, opt) {
@@ -722,7 +762,7 @@ function projectInstall(root, opt) {
   }
   const patched = agentPatches(root);
   withProject(root, () => {
-    copyTeams(base);
+    copyTeams(base, root);
     L.run({ root: base, install: !!opt.install, confine: !!opt.confine, log, remove: guardedRemove });
   });
   // lead autostart + guard: machine-local, never tracked, so worker worktrees do not inherit them
@@ -1288,7 +1328,9 @@ function pluginSetup(opt) {
   const teams = path.join(root, "teams");
   if (dry) {
     log("exclude  -> would keep .claude/settings.local.json out of git (.git/info/exclude)");
-    log(`teams    -> ${teams} (would ${isDir(teams) ? "refresh" : "copy"} ROUTING.md, PROFILE.md, skills.txt, link-skills.*, templates/)`);
+    const plan = teamPlan(teams, root);
+    log(`teams    -> ${teams} (would ${isDir(teams) ? "refresh" : "copy"} ROUTING.md, PROFILE.md, skills.txt, link-skills.*, templates/; teams ${plan.keep.join(", ") || "none"})`);
+    logPlan(plan, "would leave out: ");
   } else {
     excludeLocal(root, [".claude/settings.local.json"], "settings.local.json");
     withProject(root, () => {
@@ -1787,6 +1829,21 @@ async function doctor(fix) {
         return up.length ? ["WARN", `shipped team file changes not merged: ${up.map((u) => `teams/${u}`).join(", ")}`,
           `${how.join("; ")}; then delete the .upstream and .base files`]
           : ["ok", "no pending teams/*.upstream"];
+      });
+      // a shipped team the repo has no evidence for and no ROUTING.md row matching a tracked file (#156); removing
+      // it is the human's call: the line gives the command
+      check(() => {
+        const teams = path.join(base, "teams"), mine = L.profiles(teams).filter((p) => ["frontend", "backend", "devops"].includes(p));
+        if (!mine.length) return ["ok", "no shipped software team to check against the repo"];
+        const a = TF.assess(top.out);
+        if (a.capped) return ["ok", `team fit not checked: ${a.why}`];
+        const routing = readText(path.join(teams, "ROUTING.md")) || "";
+        const idle = mine.filter((p) => !a.teams[p].fits && !routedFiles(routing, p, top.out));
+        if (!idle.length) return ["ok", `shipped teams fit this repo (${mine.join(", ")})`];
+        const rel = (p) => (guest ? path.join(teams, p) : `teams/${p}`);
+        const rm = (p) => `${guest ? "" : `git rm -r -q --ignore-unmatch -- ${rel(p)}; `}${WIN ? `cmd /c rmdir /s /q "${rel(p).split("/").join("\\")}"` : `rm -rf "${rel(p)}"`}`;
+        return ["WARN", idle.map((p) => `team ${p} fits nothing here (${a.teams[p].reason}, no ROUTING row matches a tracked file)`).join("; "),
+          `if the repo has no use for it, remove it: ${idle.map(rm).join("; ")}; then delete its rows from teams/ROUTING.md${guest ? "" : " and commit"}`];
       });
       if (guest) {
         const ad = () => (cxh ? cx() : require(path.join(HERE, "templates", "hooks", "proteus-harness-claude.js")));
