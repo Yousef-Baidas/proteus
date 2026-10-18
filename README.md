@@ -107,7 +107,7 @@ Details: [docs/install.md](docs/install.md).
 - [Installing](docs/install.md): prerequisites, installer, guest mode, agent patches, Windows, Codex, auto mode, uninstall.
 - [GitHub](docs/github.md): agent login, verifier App, CI and the other enforcement.
 - [Updating](docs/updating.md): pins, the release check, signed tags, auto-update.
-- [Migrating](docs/migrating.md): from 1.x and from hivemind.
+- [Migrating](docs/migrating.md): from 1.x.
 - [Costs](docs/costs.md): context tokens and how they were measured.
 - [Harnesses](docs/harnesses.md): other coding CLIs.
 

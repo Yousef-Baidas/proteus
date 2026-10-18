@@ -1,4 +1,4 @@
-// Name contract (#5): nothing Proteus ships still names the pipeline `hive`, outside the legacy hivemind code.
+// Name contract (#5): nothing Proteus ships still names the pipeline `hive`, outside an allowlisted region.
 // Scans every git-tracked file under skills/, agents/, templates/, docs/, plus README.md and install.js, for hive
 // branch, label, CI and state names; a hit fails unless it sits in an ALLOW region, found by symbol or marker, never
 // by line number. A self-check runs the same scan on a synthetic tree under os.tmpdir() first.
@@ -17,14 +17,8 @@ const PATTERNS = [/(^|[^\w.-])hive(\/|(-evidence|-gates|-log|-review|-debt|-ques
 // legacy allowlist: file, the line that opens the region, and either `to` (last line, inclusive)
 // or `before` (first line after it); with neither, the region is the opening line alone
 const ALLOW = [
-  { file: "install.js", why: "OLD_* constants", from: /^\/\/ hivemind, the old name: what its installs left behind/, before: /^const CODEX_HOME = / },
   { file: "install.js", why: "OLD_WORKER_SETTINGS", from: /^const OLD_WORKER_SETTINGS = / },
   { file: "install.js", why: "pastShipped", from: /^\/\/ A file identical to a version this checkout once shipped/, to: /^}$/ },
-  { file: "install.js", why: "takeover through oldRepos", from: /^\/\/ takeover: Proteus was called hivemind\./, before: /^function install\(/ },
-  { file: "install.js", why: "wasHive", from: /\bwasHive = / },
-  { file: "install.js", why: "doctor legacy checks", from: /^ {2}\/\/ hivemind, the old name: its leftovers before the install checks/, to: /^ {2}\}\);$/ },
-  { file: "templates/hooks/proteus-lib.js", why: "legacy names block (#6)", from: /^\/\/ legacy-hive:start$/, to: /^\/\/ legacy-hive:end$/ },
-  { file: "docs/migrating.md", why: "Coming from hivemind (#6 rewrites it)", from: /^## Coming from hivemind$/, to: /^Kept as they were: / },
 ];
 
 // { hits: ["file:line: text"], missing: ["file: why"], ranges: ["file:a-b why"] } for files (paths relative to root)
@@ -56,30 +50,16 @@ const T = path.join(workdir("names"), "tree");
 const put = (f, body) => { fs.mkdirSync(path.dirname(path.join(T, f)), { recursive: true }); fs.writeFileSync(path.join(T, f), body); };
 put("install.js", [
   "const HOME = 1;",
-  "// hivemind, the old name: what its installs left behind",
-  "const OLD_BRANCH = \"hive/\";",
-  "const CODEX_HOME = 2;",
   "const OLD_WORKER_SETTINGS = \"hive-evidence/\";",
   "// A file identical to a version this checkout once shipped",
   "function pastShipped() {",
   "  return \".git/hive\";",
   "}",
-  "// takeover: Proteus was called hivemind.",
-  "function migrateRepo() { return \"hive-gates.yml\"; }",
-  "function oldRepos() { return \"hive\"; }",
   "function install() {}",
-  "const cwd = 1, wasHive = \".git/hive\";",
-  "function doctor() {",
-  "  // hivemind, the old name: its leftovers before the install checks",
-  "  check(() => \"hive-log\");",
-  "  check(() => \"hive-branches\");",
-  "  });",
-  "}",
   "",
 ].join("\n"));
-put("docs/migrating.md", "# Migrating\n\n## Coming from hivemind\n\nMoved: `.git/hive/`.\n\nKept as they were: `hive/<run>`, `hive-evidence/<run>`.\n\n## Check the install\n\nThe hivemind skill and `.claude/hive-owned` stay.\n");
 put("skills/proteus/references/tracker.md", "# Tracker\n\nLabels `proteus`, `proteus-log`.\n");
-const SELF = ["install.js", "docs/migrating.md", "skills/proteus/references/tracker.md"];
+const SELF = ["install.js", "skills/proteus/references/tracker.md"];
 const clean = scan(T, SELF);
 ok("the self-check tree resolves every allowlist anchor", clean.missing.length === 0, clean.missing.join("; "));
 ok("hive names inside the legacy regions pass", clean.hits.length === 0, clean.hits.join("; "));
@@ -91,10 +71,10 @@ fs.appendFileSync(path.join(T, "install.js"), "const BRANCH = \"hive/\";\n");
 const dirty = scan(T, SELF);
 ok("a stray `git push origin hive/x` in a reference file fails", dirty.hits.some((h) => h.startsWith("skills/proteus/references/tracker.md:4:")), dirty.hits.join("; "));
 ok("a `\"hive\"` label and `.git/hive` in a reference file fail", dirty.hits.some((h) => h.startsWith("skills/proteus/references/tracker.md:5:")), dirty.hits.join("; "));
-ok("a hive name in install.js outside the legacy regions fails", dirty.hits.some((h) => h.startsWith("install.js:21:")), dirty.hits.join("; "));
+ok("a hive name in install.js outside the legacy regions fails", dirty.hits.some((h) => h.startsWith("install.js:8:")), dirty.hits.join("; "));
 ok("only the three stray lines fail", dirty.hits.length === 3, dirty.hits.join("; "));
 fs.writeFileSync(path.join(T, "install.js"), "const OLD_WORKER_SETTINGS = 1;\n");
-ok("an allowlist anchor gone from its file fails", scan(T, ["install.js"]).missing.length === 5);
+ok("an allowlist anchor gone from its file fails", scan(T, ["install.js"]).missing.length === 1);
 
 // the real tree: every tracked file in scope
 let files = [];

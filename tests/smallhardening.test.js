@@ -1,5 +1,5 @@
 // Small hardening items from #104 and #96: Codex writable_roots case folding and the [[sandbox_workspace_write]]
-// refusal, migration refusing non-regular files, the journal recall not following links,
+// refusal, the journal recall not following links,
 // link-skills saying "confined" only when it removed something, owned-path globs naming a plain directory, and
 // tests/run.js totals for a file that crashes or is chatty. Temp dirs only; no network.
 "use strict";
@@ -44,24 +44,6 @@ function onPlatform(name, fn) {
   }
 }
 
-// ---- migration: a FIFO is not moved, a log past the cap is not merged
-{
-  const repo = path.join(W, "mig");
-  fs.mkdirSync(repo, { recursive: true });
-  g(W, "init", "-q", "-b", "main", repo);
-  const common = path.join(repo, ".git"), old = L.legacyStateDir(common), cur = L.stateDir(common);
-  fs.mkdirSync(old, { recursive: true });
-  fs.mkdirSync(cur, { recursive: true });
-  fs.writeFileSync(path.join(old, "note.txt"), "plain\n");
-  const fifo = process.platform !== "win32" && spawnSync("mkfifo", [path.join(old, "pipe")]).status === 0;
-  fs.writeFileSync(path.join(old, "journal.jsonl"), '{"prompt":"old"}\n');
-  fs.writeFileSync(path.join(cur, "journal.jsonl"), '{"prompt":"new"}\n');
-  const res = L.migrateState(common, false);
-  ok("migrate: a regular file still moves", res.moved.includes("note.txt") && fs.existsSync(path.join(cur, "note.txt")), JSON.stringify(res));
-  if (fifo) ok("migrate: a FIFO is refused and stays where it was", res.failed.some((f) => f.startsWith("pipe (")) && fs.lstatSync(path.join(old, "pipe")).isFIFO() && !fs.existsSync(path.join(cur, "pipe")), JSON.stringify(res));
-  ok("migrate: a log within the cap still merges, older lines first", res.merged.includes("journal.jsonl") && fs.readFileSync(path.join(cur, "journal.jsonl"), "utf8") === '{"prompt":"old"}\n{"prompt":"new"}\n', JSON.stringify(res));
-}
-
 // ---- compaction recall reads the journal as a regular file only
 if (process.platform !== "win32") {
   const repo = path.join(W, "said");
@@ -71,11 +53,9 @@ if (process.platform !== "win32") {
   const outside = path.join(W, "outside.jsonl");
   fs.writeFileSync(outside, JSON.stringify({ prompt: "from the linked file" }) + "\n");
   fs.mkdirSync(path.join(repo, ".git", "proteus"), { recursive: true });
-  fs.mkdirSync(path.join(repo, ".git", "hive"), { recursive: true });
-  fs.writeFileSync(path.join(repo, ".git", "proteus", "journal.jsonl"), JSON.stringify({ prompt: "from the real file" }) + "\n");
-  fs.symlinkSync(outside, path.join(repo, ".git", "hive", "journal.jsonl"));
+  fs.symlinkSync(outside, path.join(repo, ".git", "proteus", "journal.jsonl"));
   const r = lib.run(path.join(SRC, "proteus-autostart.js"), { hook_event_name: "SessionStart", source: "compact", session_id: "s1", cwd: repo }, { cwd: repo, env: { FAKE_GH: "fail" } });
-  ok("recall: a journal that is a link is not read", r.out.includes("from the real file") && !r.out.includes("from the linked file"), r.out.slice(0, 400) + r.err);
+  ok("recall: a journal that is a link is not read", r.out.includes("BODY") && !r.out.includes("from the linked file"), r.out.slice(0, 400) + r.err);
 }
 
 // ---- link-skills: "confined" only when a global link was removed

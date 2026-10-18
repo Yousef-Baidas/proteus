@@ -88,12 +88,4 @@ const dirLink = (target, link) => fs.symlinkSync(target, link, "junction");
   ok("install.js copies proteus-confine.js beside teams/link-skills.js", /LINK_SCRIPTS = \[[^\]]*"proteus-confine\.js"/.test(inst));
 }
 
-// ---- migration report (#131): a FIFO, socket or device is never moved, so no retry is promised for it
-{
-  const { stateLeft } = require(path.join(ROOT, "install.js"));
-  const lines = stateLeft({ kept: [], held: [], failed: ["pipe (a FIFO, never moved; delete or move it by hand)", "inbox (EBUSY)"] }, ".git/hive", ".git/proteus");
-  ok("stateLeft: a never-moved entry gets no retry hint; a busy one keeps it",
-    lines.some((l) => l.includes("pipe (a FIFO") && !l.includes("retries")) && lines.some((l) => l.includes("inbox (EBUSY)") && l.includes("the next --project retries")), JSON.stringify(lines));
-}
-
 lib.summary();

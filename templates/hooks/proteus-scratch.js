@@ -204,14 +204,13 @@ function removeWorktree(p, prune) {
 }
 
 // a key is done once its branch (proteus/<run>, proteus-work/<run>/<id>) is gone: `gh pr merge --delete-branch` drops a ticket's,
-// close drops the run's. Unkeyed strays are done when no proteus/* branch is left. A run opened
-// before the rename counts on its legacy branch (lib.runRefs reads both prefixes).
+// close drops the run's. Unkeyed strays are done when no proteus/* branch is left.
 function doneFn(common) {
   const branches = runBranches(common);
   return (key) => (key ? !branches.has(key) : branches.size === 0);
 }
 
-// run and worker branch names without their prefix, either scheme: loose refs and packed-refs, no git call
+// run and worker branch names without their prefix: loose refs and packed-refs, no git call
 function runBranches(common) {
   return new Set(lib.runRefs(common).map(lib.runName));
 }

@@ -110,20 +110,10 @@ function worktreesUnder(root, dir) {
   return out;
 }
 
-// legacy-hive:start
-// hivemind, the old name (#6): a run opened before the rename keeps these names until it closes, and its
-// state dir moves into stateDir. Every legacy name the hooks know is here; the rest import it.
-const LEGACY = { branch: "hive/", evidence: "hive-evidence/", label: "hive", log: "hive-log", review: "hive-review", debt: "hive-debt", question: "hive-question", worktrees: "-hive", state: "hive", owned: "hive-owned" };
-const legacyStateDir = (common) => path.join(common, LEGACY.state);
-// the worker worktree folder a legacy run used, beside the checkout
-const legacyWorktreeDir = (root) => besideDir(root, LEGACY.worktrees);
-// worktrees git still has registered under legacyWorktreeDir(root)
-const legacyWorktrees = (root) => worktreesUnder(root, legacyWorktreeDir(root));
-// the folders beside the checkout that older runs kept worker worktrees in: ../<repo>-proteus, ../<repo>-hive
-const oldWorktreeDirs = (root) => [besideDir(root, OLD_WORKTREES), legacyWorktreeDir(root)];
+// the folder beside the checkout that older runs kept worker worktrees in: ../<repo>-proteus
+const oldWorktreeDirs = (root) => [besideDir(root, OLD_WORKTREES)];
 
 const realOr = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-const within = (dir, p) => { const r = path.relative(dir, p); return r === "" || (r !== ".." && !r.startsWith(".." + path.sep) && !path.isAbsolute(r)); };
 
 // every worktree git has registered, as real paths: <common>/worktrees/*/gitdir, no git call
 function registeredWorktrees(common) {
@@ -136,15 +126,10 @@ function registeredWorktrees(common) {
   return out;
 }
 
-// something is at the target now: the entry stays where it is (kept), never replaces it
-const TAKEN = new Set(["EEXIST", "ENOTEMPTY", "ENOTDIR", "EISDIR"]);
-// a filesystem with no hard links: copy instead, still refusing an existing target
-const NO_LINK = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV", "EMLINK"]);
-
-// a FIFO, socket or device: never opened or moved, named in the report
+// a FIFO, socket or device: never opened, named in the error
 function notRegular(st) {
   const kind = st.isFIFO() ? "a FIFO" : st.isSocket() ? "a socket" : st.isCharacterDevice() || st.isBlockDevice() ? "a device" : "not a regular file";
-  return Object.assign(new Error(`${kind}, never moved; delete or move it by hand`), { code: "ENOTREG" });
+  return Object.assign(new Error(`${kind}, never read`), { code: "ENOTREG" });
 }
 // open f for reading only if it is a regular file: a link is not followed (O_NOFOLLOW; Windows has none, so
 // callers lstat first) and a FIFO swapped in does not block the open (O_NONBLOCK) and is refused by fstat
@@ -155,109 +140,8 @@ function openRegular(f) {
   fs.closeSync(fd);
   throw notRegular(st);
 }
-// the last max bytes of a regular file as complete lines; cut: anything before them went unread
-function readTail(f, max) {
-  const { fd, st } = openRegular(f);
-  try {
-    const len = Math.min(st.size, max), buf = Buffer.alloc(len);
-    let n = 0;
-    for (let k; n < len && (k = fs.readSync(fd, buf, n, len - n, st.size - len + n)); ) n += k;
-    const lines = buf.toString("utf8", 0, n).split("\n");
-    const cut = st.size > len;
-    if (cut) lines.shift();
-    return { lines: lines.filter(Boolean), cut, st };
-  } finally { fs.closeSync(fd); }
-}
 
-// one entry into a spot found empty. A file goes by link then unlink and a symlink is recreated (never
-// followed), so a file that appeared there meanwhile fails with EEXIST instead of being replaced; a
-// directory is renamed, which a non-empty target refuses. If the source cannot be unlinked, the copy goes.
-function moveEntry(s, d, st) {
-  if (st.isDirectory()) { fs.renameSync(s, d); return; }
-  if (st.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(s), d);
-  else if (!st.isFile()) throw notRegular(st); // a FIFO, socket or device stays put
-  else {
-    try { fs.linkSync(s, d); } catch (e) {
-      if (!NO_LINK.has(e.code)) throw e;
-      fs.copyFileSync(s, d, fs.constants.COPYFILE_EXCL);
-    }
-  }
-  try { fs.unlinkSync(s); } catch (e) { try { fs.unlinkSync(d); } catch {} throw e; }
-}
-
-const MERGE_LOG_MAX = 8 * 1024 * 1024;
-// an append-only log on both sides: the legacy lines first, then the current file's lines not among them,
-// written to a temp file beside the current one and renamed over it; the legacy file goes only after that.
-// The result is capped at max bytes: past it the oldest lines go and a marker line says so (each side is
-// read for at most max bytes from its end). A line appended to the current file meanwhile aborts the pass
-// (a rerun merges again, each line once).
-function mergeLog(s, d, max = MERGE_LOG_MAX) {
-  const old = readTail(s, max), cur = readTail(d, max);
-  const seen = new Set(old.lines);
-  let all = [...old.lines, ...cur.lines.filter((l) => !seen.has(l))];
-  const mark = JSON.stringify({ merge_truncated: new Date().toISOString(), note: `older lines dropped: a merged log keeps its newest ${max} bytes` });
-  let size = all.reduce((n, l) => n + Buffer.byteLength(l) + 1, 0), drop = 0;
-  if (old.cut || cur.cut || size > max) {
-    while (drop < all.length && size > max - Buffer.byteLength(mark) - 1) size -= Buffer.byteLength(all[drop++]) + 1;
-    all = [mark, ...all.slice(drop)];
-  }
-  const tmp = `${d}.${process.pid}.${Date.now()}.merge.tmp`;
-  fs.writeFileSync(tmp, all.length ? all.join("\n") + "\n" : "", { flag: "wx" });
-  try {
-    const now = fs.lstatSync(d);
-    if (!now.isFile() || now.size !== cur.st.size || now.mtimeMs !== cur.st.mtimeMs) throw Object.assign(new Error("appended during the merge"), { code: "EAGAIN" });
-    fs.renameSync(tmp, d);
-  } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
-  fs.unlinkSync(s); // a regular file (lstat) in a tree whose every dir was lstat-checked under the legacy dir
-}
-
-// move legacyStateDir's contents into stateDir; the legacy dir goes once empty. Paths are relative to it:
-// moved: now in stateDir; merged: a *.jsonl log on both sides, appended into stateDir's (older lines first);
-// kept: another file already in stateDir, never overwritten; held: a worktree git has registered, left where
-// git has it; failed: "<path> (<code>)", unreadable or not movable now (a rerun retries). dry: only report.
-function migrateState(common, dry) {
-  const res = { moved: [], merged: [], kept: [], held: [], failed: [] };
-  const from = common && legacyStateDir(common);
-  let top = null;
-  try { top = from && fs.lstatSync(from); } catch {}
-  if (!top || !top.isDirectory()) return res;
-  const wts = registeredWorktrees(common);
-  const fail = (r, e) => res.failed.push(`${r} (${e && e.code === "ENOTREG" ? e.message : (e && e.code) || "error"})`);
-  const walk = (src, dst, rel) => {
-    let names = [];
-    try { names = fs.readdirSync(src).sort(); } catch (e) { if (rel) fail(rel, e); return; }
-    for (const n of names) {
-      const s = path.join(src, n), d = path.join(dst, n), r = rel ? `${rel}/${n}` : n;
-      let ss, ds = null;
-      try { ss = fs.lstatSync(s); } catch (e) { fail(r, e); continue; } // gone or unreachable since the listing
-      try { ds = fs.lstatSync(d); } catch {}
-      const real = ss.isDirectory() && wts.length ? realOr(s) : "";
-      if (real && wts.includes(real)) { res.held.push(r); continue; }
-      if (real && wts.some((w) => within(real, w))) {
-        // a worktree is inside: move the rest around it
-        if (ds && !ds.isDirectory()) { res.kept.push(r); continue; }
-        if (!dry && !ds) try { fs.mkdirSync(d, { recursive: true }); } catch (e) { fail(r, e); continue; }
-        walk(s, d, r);
-        if (!dry) try { fs.rmdirSync(s); } catch {}
-      } else if (!ds) {
-        if (dry) { res.moved.push(r); continue; }
-        try { fs.mkdirSync(dst, { recursive: true }); moveEntry(s, d, ss); res.moved.push(r); } catch (e) { if (TAKEN.has(e.code)) res.kept.push(r); else fail(r, e); }
-      } else if (ds.isDirectory() && ss.isDirectory()) {
-        walk(s, d, r);
-        if (!dry) try { fs.rmdirSync(s); } catch {}
-      } else if (ds.isFile() && ss.isFile() && n.endsWith(".jsonl")) {
-        if (dry) { res.merged.push(r); continue; }
-        try { mergeLog(s, d); res.merged.push(r); } catch (e) { fail(r, e); }
-      } else res.kept.push(r);
-    }
-  };
-  walk(from, stateDir(common), "");
-  if (!dry) try { fs.rmdirSync(from); } catch {}
-  return res;
-}
-// legacy-hive:end
-
-const SCHEMES = [CURRENT, LEGACY];
+const SCHEMES = [CURRENT];
 const isWork = (branch) => String(branch).startsWith(CURRENT.work);
 // the naming scheme a run or worker branch is on, null for any other branch
 const schemeOf = (branch) => (isWork(branch) ? CURRENT : SCHEMES.find((s) => String(branch).startsWith(s.branch)) || null);
@@ -269,7 +153,7 @@ function runName(branch) {
   return s ? b.slice(s.branch.length) : b;
 }
 
-// every run and worker branch under both schemes, and proteus-work/<run>/<id>: loose refs and packed-refs, no git call
+// every run and worker branch, and proteus-work/<run>/<id>: loose refs and packed-refs, no git call
 function runRefs(common) {
   const out = new Set();
   if (!common) return [];
@@ -443,20 +327,14 @@ function ownedMatch(glob, rel) {
 }
 
 // a worktree the lead dispatched a worker into: it lists the ticket's owned paths
-// a worktree dispatched before the rename carries the legacy list; read it until that run merges
-const ownedFile = (wt) => {
-  const f = harness().ownedFile(wt);
-  const old = path.join(path.dirname(f), LEGACY.owned);
-  return !fs.existsSync(f) && fs.existsSync(old) ? old : f;
-};
+const ownedFile = (wt) => harness().ownedFile(wt);
 
 // one key per file NTFS resolves alike: each segment loses a :stream suffix and trailing dots and spaces, and
 // case goes (macOS and Windows ignore it). Applied on every OS, so Linux also refuses the look-alike names.
 const fileKey = (rel) => rel.split("/").map((s) => s.replace(/:.*$/, "").replace(/[. ]+$/, "")).join("/").toLowerCase();
-// rel (worktree-relative, forward slashes) names the owned-path list itself: the harness's, or the legacy one beside it
+// rel (worktree-relative, forward slashes) names the owned-path list itself
 function isOwnedList(wt, rel) {
-  const f = harness().ownedFile(wt);
-  return [f, path.join(path.dirname(f), LEGACY.owned)].some((p) => fileKey(path.relative(wt, p).split(path.sep).join("/")) === fileKey(rel));
+  return fileKey(path.relative(wt, harness().ownedFile(wt)).split(path.sep).join("/")) === fileKey(rel);
 }
 
 // rel names a ticket's owned-path record, .proteus/owned/<id> on the run branch (or the folder): the lead writes
@@ -2707,7 +2585,7 @@ module.exports = {
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
-  CURRENT, LEGACY, SCHEMES, schemeOf, runName, runRefs, runBranches, legacyStateDir, legacyWorktreeDir, legacyWorktrees, migrateState, mergeLog,
+  CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,

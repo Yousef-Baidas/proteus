@@ -4,7 +4,6 @@
 // open PRs into proteus/<run> and how many carry a verdict, and an ETA:
 // median ticket time (closedAt − createdAt over the run's closed tickets) × open tickets
 // in the milestone ÷ parallelism (open PRs + worker branches without a PR, min 1).
-// A run opened before the rename is read under its legacy names (lib.LEGACY) until it closes.
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
@@ -15,7 +14,6 @@ if (process.argv[2] === "--help" || process.argv[2] === "-h") {
 }
 const root = path.resolve(lib.projectRoot());
 
-// both branch prefixes: a run opened before the rename keeps its legacy branch, labels and PR base
 const common = lib.gitCommonDir(root);
 const branches = lib.runRefs(common);
 const runBranches = lib.runBranches(common);
