@@ -15,12 +15,11 @@
 #   ... -Harness codex             any of the above for Codex CLI instead of Claude Code
 #   ... -Migrate [-DryRun] [-Scan <dir>,<dir>]   move every repo still on 1.x to the Claude Code plugin
 #   ... -PluginSetup [-OnlyHere] [-DryRun]   what /proteus:setup runs: this repo, then every other 1.x repo
-#   ... -MigrateAll [-Scan <dir>]  also move every repo still on hivemind (the old name) to Proteus
 #
 # Or skip PowerShell entirely: node C:\path\to\proteus\install.js --project
 param([switch]$Project, [switch]$Install, [switch]$Confine, [switch]$Update,
       [switch]$Doctor, [switch]$Fix, [switch]$AutoUpdate, [switch]$NoAutoUpdate, [string]$Harness,
-      [switch]$MigrateAll, [string[]]$Scan, [switch]$Guest, [switch]$NoGuest,
+      [string[]]$Scan, [switch]$Guest, [switch]$NoGuest,
       [switch]$Migrate, [switch]$PluginSetup, [switch]$OnlyHere, [switch]$DryRun)
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -38,7 +37,6 @@ if ($Fix)          { $flags += "--fix" }
 if ($AutoUpdate)   { $flags += "--auto-update" }
 if ($NoAutoUpdate) { $flags += "--no-auto-update" }
 if ($Harness)      { $flags += "--harness", $Harness }
-if ($MigrateAll)   { $flags += "--migrate-all" }
 foreach ($d in $Scan) { $flags += "--scan", $d }
 if ($Migrate)      { $flags += "--migrate" }
 if ($PluginSetup)  { $flags += "--plugin-setup" }

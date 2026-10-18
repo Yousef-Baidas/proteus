@@ -428,8 +428,7 @@ function writableRoots(text, { add = [], remove = [] } = {}, platform = process.
 }
 
 // Worker worktrees live in <repo>/.worktrees/, inside the project, which workspace-write already lets a worker
-// write. Older runs kept them beside the project, in ../<repo>-proteus/ (lib.oldWorktreeDirs, which also names
-// the folder used before the rename), listed in writable_roots of the project's .codex/config.toml. This keeps
+// write. Older runs kept them beside the project, in ../<repo>-proteus/ (lib.oldWorktreeDirs), listed in writable_roots of the project's .codex/config.toml. This keeps
 // such a folder listed while git still has a worktree registered in it (an in-flight run: kept [{dir, worktrees}], and added back if a
 // hand edit lost it: missing [dir]), and drops it once none is (stale [dir]); it never adds a folder no run uses.
 // Returns {file, kept, missing, stale, created, changed} or {file, error}; write=false only checks.

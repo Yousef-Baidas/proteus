@@ -8,9 +8,7 @@
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
-// (proteus-scratch.js --sweep --stale) detached, so it never slows the start. Moves the state a
-// pre-rename install left in the legacy state dir into <git-common-dir>/proteus (lib.migrateState),
-// and lists open runs on either branch prefix: a legacy run keeps its names until it closes.
+// (proteus-scratch.js --sweep --stale) detached, so it never slows the start.
 // Under the plugin (CLAUDE_PLUGIN_ROOT) the plugin manager owns updates, so the checkout update is off; instead
 // releaseCheck says, in one line, when the installed commit is not a release tag the user's trusted key signed.
 // On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
@@ -51,7 +49,6 @@ lib.run(async (ev, ad) => {
       if (!lib.agentPrefix()) safe(() => agentPatches(ad, home, root, notes));
     }
     if (lib.agentPrefix()) safe(() => pluginPatches(root, notes));
-    safe(() => migrateState(root, home, notes));
     safe(() => codexRoots(ad, root, home, notes));
   };
   let check = null;
@@ -297,18 +294,6 @@ function scratchSweep(root) {
   c.unref();
 }
 
-// state an install from before the rename left in the legacy dir moves into stateDir (never
-// overwriting; the *.jsonl logs merge), so the journal survives an auto-update that never re-ran the
-// installer; what stays is named
-function migrateState(root, home, notes) {
-  const common = lib.gitCommonDir(root);
-  const r = lib.migrateState(common);
-  const left = [...r.kept, ...r.held, ...r.failed];
-  if (!left.length) return;
-  const cmd = home ? `node "${path.join(home, "install.js")}" --doctor` : "install.js --doctor";
-  notes.push(`proteus: ${lib.legacyStateDir(common)} still holds ${left.join(", ")}; ${cmd} says why`);
-}
-
 // Codex: worker worktrees live in .worktrees/, inside the project, so writable_roots needs no entry for them. A
 // folder beside the project that an older run still has worktrees in stays listed (added back if lost) until they
 // merge, then goes. The adapter's own writer does that when config.toml exists; any other case only names the
@@ -350,11 +335,9 @@ function agentIdentity(ad, root, home, notes) {
   return "identity=separate";
 }
 
-// the open run's log issue; a run opened before the rename is labelled with the legacy log label
+// the open run's log issue
 function runLogTail(root, runs) {
-  const find = (label) => JSON.parse(lib.gh(["issue", "list", "--label", label, "--state", "open", "--json", "number,title", "--limit", "5"], root) || "null");
-  let list = find(lib.CURRENT.log);
-  if (Array.isArray(list) && !list.length && runs.some((b) => lib.schemeOf(b) === lib.LEGACY)) list = find(lib.LEGACY.log);
+  const list = JSON.parse(lib.gh(["issue", "list", "--label", lib.CURRENT.log, "--state", "open", "--json", "number,title", "--limit", "5"], root) || "null");
   if (!Array.isArray(list)) return "";
   if (!list.length) return `run-log: no open issue labelled ${lib.CURRENT.log}.`;
   const pick = list.find((i) => runs.some((r) => String(i.title).includes(lib.runName(r)))) || list[0];
@@ -387,9 +370,8 @@ const regularFile = (f) => { try { return fs.lstatSync(path.dirname(f)).isDirect
 function humanSaid(root) {
   const common = lib.gitCommonDir(root);
   if (!common) return "";
-  // a legacy journal the migration could not merge yet is still read, its lines first, each line once
-  const files = [lib.legacyStateDir(common), lib.stateDir(common)].flatMap((d) => { const f = path.join(d, "journal.jsonl"); return regularFile(f) ? [f] : []; });
-  const lines = [...new Set(files.flatMap((f) => lib.tailLines(f, 512 * 1024, true)))].slice(-10);
+  const f = path.join(lib.stateDir(common), "journal.jsonl");
+  const lines = regularFile(f) ? [...new Set(lib.tailLines(f, 512 * 1024, true))].slice(-10) : [];
   const said = lines.flatMap((l) => {
     // redacted again on the way out: a journal written before redaction existed may hold secrets
     const p = safe(() => { const raw = JSON.parse(l).prompt; return typeof raw === "string" ? lib.redact(raw) : ""; }, "");

@@ -263,7 +263,7 @@ try {
     ok("install.js --doctor --fix from F/work/plain runs to its report", /^(\d+ to fix|all good)/m.test(r.stdout || ""), `${r.status} ${r.stderr}${r.stdout}`);
     intact(f, "install.js --doctor --fix run from F/work/plain");
 
-    // case 2, takeover and refresh: install, --update and --project in a repo under F touch only the fake HOME and the repo
+    // case 2, install and refresh: install, --update and --project in a repo under F touch only the fake HOME and the repo
     const t = fakeRealHome("takeover");
     const repo = path.join(t.F, "work", "repo");
     fs.mkdirSync(repo);
@@ -272,12 +272,6 @@ try {
     if (g.status === 0) g = git(["add", "README.md"], repo);
     if (g.status === 0) g = git(["commit", "--quiet", "--no-verify", "-m", "init"], repo);
     ok("a repo under F/work is set up", g.status === 0, g.stderr);
-    // hivemind's leftovers in the fake HOME, so the takeover really has something to remove: a config, and a skill link into F/work
-    const oldSrc = path.join(t.F, "work", "hivemind-src"), oldLink = path.join(t.home, ".claude", "skills", "hivemind"), oldCfg = path.join(t.home, ".claude", "hivemind.json");
-    fs.mkdirSync(path.dirname(oldLink), { recursive: true });
-    dirLink(oldSrc, oldLink);
-    fs.writeFileSync(path.join(oldSrc, "keep.txt"), "hivemind checkout\n");
-    fs.writeFileSync(oldCfg, JSON.stringify({ harnesses: ["claude"] }));
     const skip = [...[".claude", ".agents", ".codex"].map((d) => path.join(t.home, d)), repo];
     const before = snapshot(t.F, skip);
     for (const args of [[], ["--update"], ["--project"], ["--update"]]) {
@@ -287,8 +281,6 @@ try {
     const moved = drift(before, snapshot(t.F, skip));
     ok("nothing in F outside the fake HOME's .claude, .agents, .codex and the repo is removed or changed", !moved.length, moved.join(", "));
     intact(t, "install.js, --update and --project in a repo under F");
-    ok("case 2: the takeover ran (the hivemind config and skill link in the fake HOME are gone)", !lstat(oldCfg) && !lstat(oldLink));
-    ok("case 2: the removed hivemind link's target in F/work survives", !!read(path.join(oldSrc, "keep.txt")));
 
     // case 5, traversal with --confine: skill names that climb out of HOME/.claude/skills are skipped, never removed
     const T5 = tmp("confine"), H5 = homeAt(path.join(T5, "home")), R5 = path.join(T5, "repo");

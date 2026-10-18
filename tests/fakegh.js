@@ -104,8 +104,8 @@ const iso = (h) => new Date(Date.UTC(2026, 8, 1) + h * 3600e3).toISOString();
 // FAKE_GH_RUN (a JSON file {issues, prs, logs}) answers the close report's three list calls
 if (process.env.FAKE_GH_RUN) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_RUN, "utf8"));
-  if (/^issue list --label (proteus|hive)-log /.test(a)) out(s.logs || []);
-  if (/^issue list --label (proteus|hive) --state all /.test(a)) out(s.issues || []);
+  if (a.startsWith("issue list --label proteus-log ")) out(s.logs || []);
+  if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
 if (/^api user --jq \.login$/.test(a)) { process.stdout.write((process.env.FAKE_GH_LOGIN || "human") + "\n"); process.exit(0); }
