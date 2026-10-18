@@ -31,9 +31,9 @@ ok("no lead-edits line: .editorconfig is refused as before", refused(".editorcon
 ok("lead edit refusal: names the ticket route and the lead's own files", refused("src/a.js", /ticket or a numbered BACK-TO-WORKER[\s\S]*CONTEXT\.md, CONVENTIONS\.md[\s\S]*AGENTS\.md, docs\/adr\/[\s\S]*docs\/lessons\/[\s\S]*`lead-edits:` line/));
 
 agents("lead-edits: .vscode/* .editorconfig .gitattributes .gitignore .github/**");
-ok("lead-edits: the listed files pass", !fails(pass, [".editorconfig", ".gitattributes", ".gitignore", ".vscode/settings.json", ".github/CODEOWNERS"]).length);
+ok("lead-edits: the listed files pass, and what is below a folder a glob matches (#96)", !fails(pass, [".editorconfig", ".gitattributes", ".gitignore", ".vscode/settings.json", ".vscode/sub/x.json", ".github/CODEOWNERS"]).length);
 ok("lead-edits: the lead's own docs still pass", !fails(pass, ["AGENTS.md", "CONTEXT.md", "docs/adr/0001-x.md"]).length);
-ok("lead-edits: anything the globs do not match is still refused", !fails((f) => refused(f, /the lead does not edit/), ["src/a.js", ".vscode/sub/x.json", "editorconfig", "a.txt"]).length);
+ok("lead-edits: anything the globs do not match is still refused", !fails((f) => refused(f, /the lead does not edit/), ["src/a.js", ".vscodex/x.json", "editorconfig", "a.txt"]).length);
 ok("lead-edits: .github/** never reaches the workflows or actions",
   !fails((f) => refused(f, /holds Proteus's hooks, gates or CLI settings/), [".github/workflows/proteus-gates.yml", ".github/actions/x/action.yml"]).length);
 
