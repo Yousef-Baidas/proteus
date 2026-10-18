@@ -562,6 +562,37 @@ r = run(AS, { source: "startup", cwd: REPO });
 ok("autostart: a hand-merged release is synced, no update pending", fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v2\n" && !/proteus-update=|not updating/.test(r.out), r.out.slice(0, 1500));
 const cfg = JSON.parse(fs.readFileSync(path.join(HOME, ".claude", "proteus.json"), "utf8"));
 ok("autostart: lastFetch updated", cfg.lastFetch > Date.now() - 60e3 && cfg.autoUpdate === true);
+// autoUpdate on a release that ships the plugin (#155): install.js --update in the background, once a day, only with
+// the claude CLI on PATH and no proteus@proteus installed. A stub checkout records the call.
+{
+  const PH = path.join(W, "pluginhome"), ABIN = path.join(W, "abin"), MARK = path.join(W, "update-args.txt");
+  fs.mkdirSync(path.join(PH, ".claude-plugin"), { recursive: true }); fs.mkdirSync(ABIN);
+  fs.writeFileSync(path.join(PH, ".claude-plugin", "plugin.json"), "{}");
+  fs.writeFileSync(path.join(PH, "install.js"), `require("fs").writeFileSync(${JSON.stringify(MARK)}, process.argv.slice(2).join(" "));\n`);
+  lib.fakeCli(ABIN, "claude", "process.exit(0);\n");
+  const PENV = { env: { PATH: [ABIN, BIN, path.dirname(process.execPath), ...lib.SYS_PATH].join(path.delimiter) } };
+  const setP = (o) => fs.writeFileSync(path.join(HOME, ".claude", "proteus.json"), JSON.stringify({ home: PH, autoUpdate: true, lastFetch: Date.now(), ...o }));
+  const waitMark = () => { for (let i = 0; i < 100 && !fs.existsSync(MARK); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); return fs.existsSync(MARK) ? fs.readFileSync(MARK, "utf8") : ""; };
+  setP({});
+  r = run(AS, { source: "startup", cwd: REPO });
+  ok("autostart: no claude CLI on PATH, no background move", !/moving to the Claude Code plugin/.test(r.out) && !fs.existsSync(MARK), r.out.slice(0, 600));
+  r = run(AS, { source: "startup", cwd: REPO }, PENV);
+  const pc = JSON.parse(fs.readFileSync(path.join(HOME, ".claude", "proteus.json"), "utf8"));
+  ok("autostart: autoUpdate runs install.js --update in the background, one line", waitMark() === "--update" && /^proteus: moving to the Claude Code plugin in the background \(install\.js --update\); its output is in .*proteus-update\.log$/m.test(r.out) && typeof pc.pluginTried === "number", r.out.slice(0, 600));
+  fs.rmSync(MARK, { force: true });
+  r = run(AS, { source: "startup", cwd: REPO }, PENV);
+  ok("autostart: the background move runs at most once a day", !/moving to the Claude Code plugin/.test(r.out) && waitMark() === "", r.out.slice(0, 600));
+  setP({ autoUpdate: false });
+  r = run(AS, { source: "startup", cwd: REPO }, PENV);
+  ok("autostart: autoUpdate off, no background move", !/moving to the Claude Code plugin/.test(r.out), r.out.slice(0, 600));
+  fs.mkdirSync(path.join(HOME, ".claude", "plugins"), { recursive: true });
+  fs.writeFileSync(path.join(HOME, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "proteus@proteus": [{ scope: "user" }] } }));
+  setP({});
+  r = run(AS, { source: "startup", cwd: REPO }, PENV);
+  ok("autostart: plugin already installed, no background move", !/moving to the Claude Code plugin/.test(r.out), r.out.slice(0, 600));
+  fs.rmSync(path.join(HOME, ".claude", "plugins", "installed_plugins.json"));
+  fs.writeFileSync(path.join(HOME, ".claude", "proteus.json"), JSON.stringify(cfg));
+}
 
 // ---- scratch: a temp dir as TMPDIR, never the real /tmp
 const TMPD = path.join(W, "tmp"); fs.mkdirSync(TMPD);
@@ -934,11 +965,11 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("takeover fixture: old pieces in place", fs.existsSync(path.join(TH, ".claude", "hivemind.json")) && fs.lstatSync(path.join(TH, ".claude", "skills", "hivemind")).isSymbolicLink() &&
     fs.lstatSync(path.join(TH, ".agents", "skills", "hivemind")).isSymbolicLink() && fs.existsSync(path.join(TA, "hive-worker.toml")) &&
     fs.existsSync(path.join(P1, ".codex", "rules", "hivemind.rules")) && /hive-statusline\.js/.test(sj.statusLine.command));
-  const oldDoc = run(INST, "", { args: ["--doctor"], cwd: P2, env: tenv() });
+  const oldDoc = run(INST, "", { args: ["--doctor", "--scan", PJ], cwd: P2, env: tenv() });
   ok("takeover: doctor names global and repo leftovers", /^FIX  hivemind leftovers: .*hivemind\.json/m.test(oldDoc.out) && /^FIX  hivemind's pieces in this repo: .*\.claude\/hooks\/hive-autostart\.js/m.test(oldDoc.out) &&
-    new RegExp(`^WARN still on hivemind under ${PJ.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}: .*app`, "m").test(oldDoc.out), oldDoc.out);
+    /^WARN still on hivemind: .*app/m.test(oldDoc.out), oldDoc.out);
 
-  r = run(INST, "", { args: ["--project"], cwd: P1, env: tenv() });
+  r = run(INST, "", { args: ["--project", "--scan", PJ], cwd: P1, env: tenv() });
   const has = (...p) => fs.existsSync(path.join(...p));
   const hj = (f) => fs.readFileSync(f, "utf8");
   ok("takeover: install exit 0", r.code === 0, r.out + r.err);
@@ -961,19 +992,21 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   ok("takeover: exclude lines renamed", !/hive-\*|hive-owned|hivemind/.test(ex) && ex.includes(".claude/hooks/proteus-*.js") && ex.includes(".codex/rules/proteus.rules"), ex);
   ok("takeover: committed old hook copies removed from teams/templates", !fs.readdirSync(path.join(P1, "teams", "templates", "hooks")).some((f) => f.startsWith("hive-")) &&
     has(P1, "teams", "templates", "hooks", "proteus-lib.js"), r.out);
-  ok("takeover: scan lists the repo still on hivemind", r.out.includes(`cd "${P2}" && node "${INST}" --project`) && /--migrate-all/.test(r.out) && !r.out.includes(`cd "${P1}"`), r.out);
+  ok("takeover: scan lists the repo still on hivemind", r.out.includes(`cd "${P2}" && node "${INST}" --project`) && r.out.includes(`--migrate-all --scan "${PJ}"`) && !r.out.includes(`cd "${P1}"`), r.out);
+  r = run(INST, "", { args: ["--doctor", "--scan", PJ], cwd: P1, env: tenv() });
+  ok("takeover: doctor after, repo clean, other repo still named", /^WARN hivemind's, left alone: .*hive-guide\.md/m.test(r.out) && /^ok   no hivemind pieces in this repo$/m.test(r.out) && /^WARN still on hivemind: .*lib/m.test(r.out), r.out);
   r = run(INST, "", { args: ["--doctor"], cwd: P1, env: tenv() });
-  ok("takeover: doctor after, repo clean, other repo still named", /^WARN hivemind's, left alone: .*hive-guide\.md/m.test(r.out) && /^ok   no hivemind pieces in this repo$/m.test(r.out) && /^WARN still on hivemind under .*lib/m.test(r.out), r.out);
+  ok("takeover: no default scan dir: without --scan or a source, no repo is looked for", /^ok   no known repo still on hivemind$/m.test(r.out), r.out);
 
   // an in-flight worker worktree still runs hivemind's hooks: its exclude lines stay until it merges
   g(P2, "worktree", "add", "-q", "-b", "hive/t1", path.join(TH, "Projects", "group", "lib-hive", "t1"));
-  r = run(INST, "", { args: ["--migrate-all"], cwd: CWD, env: tenv() });
+  r = run(INST, "", { args: ["--migrate-all", "--scan", PJ], cwd: CWD, env: tenv() });
   const ex2 = hj(path.join(P2, ".git", "info", "exclude"));
   ok("takeover: --migrate-all moves the other repo", r.code === 0 && r.out.includes(`migrate  -> ${P2}`) && !has(P2, ".claude", "hooks", "hive-autostart.js") && has(P2, ".claude", "hooks", "proteus-autostart.js") &&
     !/hive-/.test(hj(path.join(P2, ".claude", "settings.local.json"))), r.out + r.err);
   ok("takeover: linked worktree keeps the old exclude lines beside the new", ex2.includes(".claude/hooks/hive-*.js") && ex2.includes(".claude/hooks/proteus-*.js"), ex2);
   r = run(INST, "", { args: ["--doctor", "--scan", PJ], cwd: P2, env: tenv() });
-  ok("takeover: nothing left to migrate", /^ok   no repo under .* still on hivemind$/m.test(r.out) && /^ok   no hivemind pieces in this repo$/m.test(r.out), r.out);
+  ok("takeover: nothing left to migrate", /^ok   no known repo still on hivemind$/m.test(r.out) && /^ok   no hivemind pieces in this repo$/m.test(r.out), r.out);
   ok("takeover: --doctor rejects --migrate-all", run(INST, "", { args: ["--doctor", "--migrate-all"], cwd: CWD, env: tenv() }).code === 2);
 }
 

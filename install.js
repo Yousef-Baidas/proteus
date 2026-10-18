@@ -20,7 +20,9 @@
 //                                     cannot push here and the repo has no teams/; --no-guest turns it off
 //   node install.js --update          fast-forward this checkout to the newest release tag whose
 //                                     signature git verifies (docs/updating.md "Releases"), reinstall, and
-//                                     refresh the current repo too if it is a Proteus project
+//                                     refresh the current repo too if it is a Proteus project. With the claude CLI
+//                                     and gh logged in, Claude Code moves to the plugin instead: installed at user
+//                                     scope pinned to that tag, then --migrate (autoUpdate does the same)
 //   node install.js --auto-update     let the SessionStart hook do that update (off by default);
 //   node install.js --no-auto-update  both run the global install and persist the choice
 //   node install.js --doctor [--fix]  check the setup; --fix applies the safe local fixes
@@ -40,14 +42,21 @@
 //                                     Credentials > Key pairs kept 0600 outside any repo; the App ID is on its General
 //                                     tab) in ~/.claude/proteus.json, after a test token mints; then --protect. Once
 //                                     per repo owner: run again in a repo of another account or org to add its own
-//   node install.js --plugin-setup [--dry-run]   what /proteus:setup runs from the Claude Code plugin: --project's
+//   node install.js --plugin-setup [--dry-run] [--only-here] [--scan <dir>]...   what /proteus:setup runs from the
+//                                     Claude Code plugin: --project's
 //                                     project steps only. Enables proteus@proteus in the committed .claude/settings.json
 //                                     (the plugin runs its hooks only where that is set) with the proteus marketplace,
 //                                     so teammates are offered the plugin; attribution off, the statusLine in
 //                                     .claude/settings.local.json, teams/; no hooks or agents in the repo. Prints the
 //                                     GitHub steps, never runs them. --dry-run writes nothing and says what it would do.
 //                                     Moving from 1.x: removes the repo's unedited .claude/hooks and .claude/agents copies,
-//                                     their settings entries and exclude lines; edited ones stay and are named
+//                                     their settings entries and exclude lines; edited ones stay and are named.
+//                                     Then every other repo still on 1.x is moved (--migrate); --only-here skips that
+//   node install.js --migrate [--dry-run] [--scan <dir>]...   move every repo still on 1.x to the plugin: repos from
+//                                     proteus.json's repos, .claude.json's projects, Codex's trusted projects and each
+//                                     --scan dir (3 levels; no default). Never commits or pushes; a shared repo gets only
+//                                     untracked changes. Prints what is left: merges, GitHub steps, repos it cannot reach
+//   node install.js --migrate-here    the plugin's SessionStart runs it once in a repo still on 1.x: this repo only
 //   node install.js --remove-user-install [--dry-run]   once the plugin is installed: remove the 1.x user install
 //                                     (skill links in ~/.claude/skills, unedited proteus-*.md in ~/.claude/agents,
 //                                     autoUpdate in proteus.json); edited agents stay and are named
@@ -57,8 +66,9 @@
 //                                     and .codex/rules/proteus.rules, a worktree folder an older run
 //                                     left beside the repo writable in .codex/config.toml; --update reinstalls every
 //                                     harness recorded in ~/.claude/proteus.json
-//   --scan <dir>                      where to look for repos still on hivemind (default ~/Projects)
-//   --migrate-all                     also move every repo found there from hivemind to Proteus
+//   --scan <dir>                      also look for repos under dir, 3 levels deep (repeatable; no default): for
+//                                     --migrate, --plugin-setup and the hivemind list
+//   --migrate-all                     also move every repo still on hivemind to Proteus (the same sources)
 //
 // Proteus was called hivemind. Any install takes over from it: the old skill links, generated
 // agents and hivemind.json go (edited agents stay and are named), --project removes the
@@ -119,7 +129,10 @@ let cxAd = null;
 const cx = () => cxAd || (cxAd = require(path.join(HERE, "templates", "hooks", "proteus-harness-codex.js")));
 const log = (s = "") => { if (!quiet) console.log(s); };
 const warn = (s) => console.error(s);
-const die = (s, code = 1) => { warn(s); process.exit(code); };
+// while a pass moves many repos (#155), a refusal in one is that repo's: die throws it, and the pass skips the repo
+let refusing = false;
+class Refusal extends Error {}
+const die = (s, code = 1) => { if (refusing) throw new Refusal(s); warn(s); process.exit(code); };
 
 // helpers
 
@@ -1047,23 +1060,12 @@ function migrateRepo(root, opt = {}, base = []) {
   });
 }
 
-// repos under SCAN (3 levels down) whose lead hooks are still hivemind's, or whose Proteus
-// install still keeps its state in hivemind's state dir
-let SCAN = path.join(HOME, "Projects");
-function scanOld(dir = SCAN) {
-  const out = [];
-  const walk = (d, depth) => {
-    if (HARNESSES.some((h) => isFile(path.join(d, `.${h}`, "hooks", "hive-autostart.js")))) out.push(d);
-    else if (isDir(hl().legacyStateDir(path.join(d, ".git"))) && HARNESSES.some((h) => isProteusProject(d, h))) out.push(d);
-    if (depth >= 3) return;
-    let ents = [];
-    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of ents) if (e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules") walk(path.join(d, e.name), depth + 1);
-  };
-  walk(dir, 0);
-  return out.filter((d) => !samePath(real(d), real(HERE)) && !samePath(real(d), real(HOME)));
+// the repos the discovery sources name (#155: no default dir) whose lead hooks are still hivemind's, or whose
+// Proteus install still keeps its state in hivemind's state dir
+function scanOld() {
+  return knownRepos().filter((d) => !samePath(real(d), real(HERE)) &&
+    (HARNESSES.some((h) => isFile(path.join(d, `.${h}`, "hooks", "hive-autostart.js"))) || (isDir(hl().legacyStateDir(path.join(d, ".git"))) && HARNESSES.some((h) => isProteusProject(d, h)))));
 }
-const scanFlag = () => (samePath(SCAN, path.join(HOME, "Projects")) ? "" : ` --scan "${SCAN}"`);
 
 // other repos still on hivemind: listed with the command that moves each, or with all moved
 function oldRepos(all) {
@@ -1071,9 +1073,9 @@ function oldRepos(all) {
   if (!repos.length) return true;
   log("");
   if (!all) {
-    log(`Still on hivemind under ${SCAN}; move each with:`);
+    log("Still on hivemind; move each with:");
     for (const d of repos) log(`  cd "${d}" && node "${path.join(HERE, "install.js")}" --project`);
-    log(`or all at once: node "${path.join(HERE, "install.js")}" --migrate-all${scanFlag()}`);
+    log(`or all at once: node "${path.join(HERE, "install.js")}" --migrate-all${scanFlags()}`);
     return true;
   }
   let ok = true;
@@ -1255,7 +1257,7 @@ function oldUserInstall(act) {
   const c = readJson(CONFIG);
   if (c && "autoUpdate" in c) {
     found.push(`autoUpdate in ${CONFIG} (the plugin manager updates the plugin)`);
-    if (act) { delete c.autoUpdate; writeJson(CONFIG, c); }
+    if (act) { delete c.autoUpdate; delete c.pluginTried; writeJson(CONFIG, c); }
   }
   return { found, kept };
 }
@@ -1281,82 +1283,485 @@ function migrateToPlugin(root) {
   return m;
 }
 
-function pluginSetup(opt) {
-  const dry = !!opt.dryRun, would = (s) => (dry ? `would ${s}` : s);
+// the plugin's per-repo setup (D8, #155): the 1.x copies out, the gate the plugin's hooks check, the marketplace, the
+// statusLine, the exclude lines, teams/, the skill links. o: { dry, shared, local, install }: shared changes only files
+// git does not track (someone else's repo); local keeps the gate in settings.local.json and settings.json as it is (a
+// local-scope install, or a shared repo); install fetches missing skills (link-skills.js --install). Every settings
+// file is checked before any is written: a refusal (die) leaves the repo as it was. Returns { found, kept, gate, teams,
+// left }: kept the 1.x copies left (each with why), gate the settings file holding the gate, teams why teams/ was left
+// alone ("" when set up), left what a shared repo keeps for its owner, with the last author.
+function setupRepo(root, o = {}) {
+  const dry = !!o.dry, would = (s) => (dry ? `would ${s}` : s), local = !!(o.local || o.shared);
+  const sharedFile = path.join(root, ".claude", "settings.json"), localFile = path.join(root, ".claude", "settings.local.json");
+  const s = readJson(sharedFile), l = readJson(localFile);
+  for (const [f, v] of [[sharedFile, s], [localFile, l]]) {
+    const st = lstat(f);
+    if (st && st.isSymbolicLink()) die(`refused: ${f} is a link; nothing written through it. Replace it with a regular file and re-run`);
+    if (!v) die(`refused: ${f} is not a JSON object; nothing changed. Fix it (or move it away) and re-run`);
+  }
+  for (const [k, f, v] of [["enabledPlugins", sharedFile, s], ["extraKnownMarketplaces", sharedFile, s], ["enabledPlugins", localFile, l]]) {
+    if (k in v && !isObj(v[k])) die(`refused: "${k}" in ${f} is not a JSON object; nothing changed. Fix it and re-run`);
+  }
+  const tracked = (rel) => git(["ls-files", "--error-unmatch", "--", rel], root).ok;
+  if (o.shared && tracked(".claude/settings.local.json")) die("refused: .claude/settings.local.json is tracked in a repo that is not yours; nothing changed. Its owner moves it");
+  // a shared repo's committed settings.json is its owner's: no gate, marketplace or removed 1.x entry goes into it
+  const mayShared = !(o.shared && tracked(".claude/settings.json"));
+  const left = [];
+  // a 1.x install here first: its hook copies and their entries out, so plugin and copy never both run unnoticed
+  const m = withProject(root, () => oldProjectAll(root, !dry, { "settings.json": s, "settings.local.json": l }));
+  for (const p of m.found) log(`${dry ? "would remove" : "removed "} ${p}`);
+  for (const p of m.kept) log(`kept     ${p}`);
+  if (m.changed.has("settings.json") && !mayShared) left.push(`.claude/settings.json: its 1.x hook entries (tracked; ${lastAuthor(root, ".claude/settings.json")})`);
+  const todo = [];
+  let gate = "settings.json", lDirty = m.changed.has("settings.local.json");
+  if (local) {
+    gate = "settings.local.json";
+    if ((l.enabledPlugins || {})[PLUGIN_ID] !== true) { l.enabledPlugins = { ...l.enabledPlugins, [PLUGIN_ID]: true }; todo.push(`enable ${PLUGIN_ID}`); lDirty = true; }
+    if (m.changed.has("settings.json") && mayShared && !dry) writeJson(sharedFile, s);
+    log(`settings -> .claude/settings.local.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled`}; .claude/settings.json gets no gate)`);
+  } else {
+    // the gate the plugin's hooks check, and the marketplace teammates are prompted to install from (a fork's kept)
+    if ((s.enabledPlugins || {})[PLUGIN_ID] !== true) { s.enabledPlugins = { ...s.enabledPlugins, [PLUGIN_ID]: true }; todo.push(`enable ${PLUGIN_ID}`); }
+    if (!isObj((s.extraKnownMarketplaces || {}).proteus)) {
+      s.extraKnownMarketplaces = { ...s.extraKnownMarketplaces, proteus: MARKET };
+      todo.push(`add the proteus marketplace (github ${MARKET.source.repo})`);
+    }
+    if ((todo.length || m.changed.has("settings.json")) && !dry) writeJson(sharedFile, s);
+    log(`settings -> .claude/settings.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled, proteus marketplace listed`}; commit it)`);
+    const own = isObj(l.enabledPlugins) ? l.enabledPlugins[PLUGIN_ID] : undefined;
+    if (own !== undefined && own !== true) warn(`warning: .claude/settings.local.json sets ${PLUGIN_ID} to ${JSON.stringify(own)}, which wins over settings.json; the plugin stays off here until you set it to true or remove it`);
+  }
+  const teams = path.join(root, "teams");
+  // a shared repo: teams/ is set up only where it is already there and git tracks none of it
+  const teamsWhy = !o.shared ? "" : !isDir(teams) ? "no teams/ here, and the repo is not yours to add one to"
+    : git(["ls-files", "--", "teams"], root).out ? `tracked; ${lastAuthor(root, "teams")}` : "";
+  if (teamsWhy) left.push(`teams/ (${teamsWhy})`);
+  // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
+  if (!("statusLine" in l) && !teamsWhy) {
+    const script = path.join(root, "teams", "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
+    l.statusLine = { type: "command", command: `node "${script}"` };
+    lDirty = true;
+    log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"})`);
+  } else if ("statusLine" in l) log("status   -> .claude/settings.local.json (statusLine already set; left as it is)");
+  if (lDirty && !dry) writeJson(localFile, l);
+  if (dry) {
+    log("exclude  -> would keep .claude/settings.local.json out of git (.git/info/exclude)");
+    if (teamsWhy) log(`teams    -> left alone: ${teamsWhy}`);
+    else {
+      const plan = teamPlan(teams, root);
+      log(`teams    -> ${teams} (would ${isDir(teams) ? "refresh" : "copy"} ROUTING.md, PROFILE.md, skills.txt, link-skills.*, templates/; teams ${plan.keep.join(", ") || "none"})`);
+      logPlan(plan, "would leave out: ");
+    }
+  } else {
+    excludeLocal(root, [".claude/settings.local.json"], "settings.local.json");
+    if (teamsWhy) log(`teams    -> left alone: ${teamsWhy}`);
+    else {
+      withProject(root, () => {
+        copyTeams(root);
+        L.run({ root, install: !!o.install, confine: false, log, remove: guardedRemove });
+      });
+    }
+  }
+  return { found: m.found, kept: m.kept, gate, teams: teamsWhy, left };
+}
+
+// "last changed by <name>" for a tracked path, from git log
+function lastAuthor(root, rel) {
+  const who = git(["log", "-1", "--format=%an", "--", rel], root).out;
+  return who ? `last changed by ${who}` : "not yet committed";
+}
+
+async function pluginSetup(opt) {
+  const dry = !!opt.dryRun;
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
   if (!top.ok || !top.out) die("--plugin-setup sets up a git repo; run it inside one (git init first)");
   const root = path.resolve(top.out);
   if (inside(realish(HOME), realish(root))) die("--plugin-setup sets up a repo; this one holds your home directory");
   if (!samePath(real(root), real(process.cwd()))) log(`project  -> ${root} (the repo's root; run from ${process.cwd()})`);
-  // every file is checked before any is written: a refusal leaves the repo as it was
-  const shared = path.join(root, ".claude", "settings.json"), local = path.join(root, ".claude", "settings.local.json");
-  const s = readJson(shared), l = readJson(local);
-  for (const [f, v] of [[shared, s], [local, l]]) {
-    const st = lstat(f);
-    if (st && st.isSymbolicLink()) die(`refused: ${f} is a link; nothing written through it. Replace it with a regular file and re-run`);
-    if (!v) die(`refused: ${f} is not a JSON object; nothing changed. Fix it (or move it away) and re-run`);
-  }
-  for (const k of ["enabledPlugins", "extraKnownMarketplaces"]) {
-    if (k in s && !isObj(s[k])) die(`refused: "${k}" in ${shared} is not a JSON object; nothing changed. Fix it and re-run`);
-  }
-  // a 1.x install here first: its hook copies and their entries out, so plugin and copy never both run unnoticed
-  const m = withProject(root, () => oldProjectAll(root, !dry, { "settings.json": s, "settings.local.json": l }));
-  for (const p of m.found) log(`${dry ? "would remove" : "removed "} ${p}`);
-  for (const p of m.kept) log(`kept     ${p}`);
-  // the gate the plugin's hooks check, and the marketplace teammates are prompted to install from (a fork's kept)
-  const todo = [];
-  if ((s.enabledPlugins || {})[PLUGIN_ID] !== true) { s.enabledPlugins = { ...s.enabledPlugins, [PLUGIN_ID]: true }; todo.push(`enable ${PLUGIN_ID}`); }
-  if (!isObj((s.extraKnownMarketplaces || {}).proteus)) {
-    s.extraKnownMarketplaces = { ...s.extraKnownMarketplaces, proteus: MARKET };
-    todo.push(`add the proteus marketplace (github ${MARKET.source.repo})`);
-  }
-  if ((todo.length || m.changed.has("settings.json")) && !dry) writeJson(shared, s);
-  log(`settings -> .claude/settings.json (${todo.length ? todo.map(would).join(", ") : `${PLUGIN_ID} enabled, proteus marketplace listed`}; commit it)`);
-  const own = isObj(l.enabledPlugins) ? l.enabledPlugins[PLUGIN_ID] : undefined;
-  if (own !== undefined && own !== true) warn(`warning: .claude/settings.local.json sets ${PLUGIN_ID} to ${JSON.stringify(own)}, which wins over settings.json; the plugin stays off here until you set it to true or remove it`);
+  // the other repos' move needs gh (who owns each): offline or logged out, nothing changes, this repo included
+  const pass = opt.onlyHere ? null : await passPlan(dry, root);
+  // a local-scope install here keeps the gate out of the committed settings.json
+  const e = entryFor(root);
+  const r = setupRepo(root, { dry, local: !!e && e.scope === "local" });
   let ok = setAttribution(dry);
-  // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
-  if (!("statusLine" in l)) {
-    const script = path.join(root, "teams", "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
-    l.statusLine = { type: "command", command: `node "${script}"` };
-    if (!dry) writeJson(local, l);
-    log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"})`);
-  } else {
-    if (m.changed.has("settings.local.json") && !dry) writeJson(local, l);
-    log("status   -> .claude/settings.local.json (statusLine already set; left as it is)");
-  }
-  const teams = path.join(root, "teams");
-  if (dry) {
-    log("exclude  -> would keep .claude/settings.local.json out of git (.git/info/exclude)");
-    const plan = teamPlan(teams, root);
-    log(`teams    -> ${teams} (would ${isDir(teams) ? "refresh" : "copy"} ROUTING.md, PROFILE.md, skills.txt, link-skills.*, templates/; teams ${plan.keep.join(", ") || "none"})`);
-    logPlan(plan, "would leave out: ");
-  } else {
-    excludeLocal(root, [".claude/settings.local.json"], "settings.local.json");
-    withProject(root, () => {
-      copyTeams(root);
-      L.run({ root, install: false, confine: false, log, remove: guardedRemove });
-    });
-  }
-  if (!dry) setupReleaseCheck(root);
+  if (!dry) { setupReleaseCheck(root); register(root); }
   const self = `node "${path.join(HERE, "install.js")}"`;
-  // the user-level 1.x install is never touched here: it may still serve other repos
-  const u = oldUserInstall(false);
-  if (u.found.length + u.kept.length) {
-    log("");
-    log(`A 1.x user install is still in ${CLAUDE} (setup leaves it; other repos may still use it):`);
-    for (const p of [...u.found, ...u.kept.map((k) => `${k}, kept by the command below`)]) log(`  ${p}`);
-    if (u.found.length) log(`Remove it once no repo needs it: ${self} --remove-user-install (--dry-run first shows what goes)`);
+  if (pass) ok = movePass(pass) && ok;
+  else {
+    // --only-here: the user-level 1.x install is never touched; it may still serve other repos
+    const u = oldUserInstall(false);
+    if (u.found.length + u.kept.length) {
+      log("");
+      log(`A 1.x user install is still in ${CLAUDE} (setup leaves it; other repos may still use it):`);
+      for (const p of [...u.found, ...u.kept.map((k) => `${k}, kept by the command below`)]) log(`  ${p}`);
+      if (u.found.length) log(`Remove it once no repo needs it: ${self} --remove-user-install (--dry-run first shows what goes)`);
+    }
   }
   log("");
   log("Next, by hand (setup never runs these):");
-  log("  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin");
+  log(r.gate === "settings.json" ? "  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin" : "  commit teams/ (the plugin is on for you alone here, through .claude/settings.local.json)");
   if (!teamsEnvOn()) log(`  enable agent teams once, then restart the terminal: ${envCommand()}`);
   log(`  on GitHub, as an admin of the repo: ${self} --protect`);
   log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
   log("");
   log(dry ? "Dry run: nothing written." : ok ? "Done. Start a new session; /proteus:proteus bootstraps the rest." : "Done, with errors above.");
   return ok;
+}
+
+// ---- every repo onto the plugin (#155)
+// Discovery reads only what the user's own tools recorded: the repos registry in proteus.json, the projects in
+// .claude.json, Codex's trusted projects, and each --scan dir the user names. No default dir is ever walked.
+
+const FOLD = WIN || process.platform === "darwin"; // file systems that ignore case by default
+const pathKey = (p) => { const r = realish(p); return FOLD ? r.toLowerCase() : r; };
+const STAT_MS = Number(process.env.PROTEUS_STAT_TIMEOUT_MS) > 0 ? Number(process.env.PROTEUS_STAT_TIMEOUT_MS) : 3000;
+let SCANS = [];
+let slowPending = false; // a stat still hangs on a slow path: main exits rather than wait for it
+const scanFlags = () => SCANS.map((d) => ` --scan "${d}"`).join("");
+// Claude Code's project list: .claude.json in CLAUDE_CONFIG_DIR when set, else in the home dir
+const claudeJson = () => (process.env.CLAUDE_CONFIG_DIR ? path.join(CLAUDE, ".claude.json") : path.join(HOME, ".claude.json"));
+
+// git work trees up to 3 levels under dir (dot dirs and node_modules skipped, so never a .worktrees/ checkout)
+function scanDir(dir) {
+  const out = [];
+  const walk = (d, depth) => {
+    if (lstat(path.join(d, ".git"))) { out.push(d); return; }
+    if (depth >= 3) return;
+    let ents = [];
+    try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) if (e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules") walk(path.join(d, e.name), depth + 1);
+  };
+  walk(path.resolve(dir), 0);
+  return out;
+}
+
+// [{ p, from }]: every absolute path a source names, in source order
+function candidates(scans = SCANS) {
+  const out = [];
+  const add = (p, from) => { if (typeof p === "string" && p.trim() && path.isAbsolute(p.trim())) out.push({ p: path.resolve(p.trim()), from }); };
+  const reg = (readJson(CONFIG) || {}).repos;
+  for (const p of Array.isArray(reg) ? reg : []) add(p, CONFIG);
+  const projects = (readJson(claudeJson()) || {}).projects;
+  if (isObj(projects)) for (const p of Object.keys(projects)) add(p, claudeJson());
+  const toml = readText(path.join(CODEX_HOME, "config.toml")) || "";
+  for (const m of toml.matchAll(/^[ \t]*\[projects\.(?:"((?:[^"\\\r\n]|\\.)*)"|'([^'\r\n]*)')\][ \t]*$/gm)) {
+    add(m[1] !== undefined ? m[1].replace(/\\(["\\])/g, "$1") : m[2], path.join(CODEX_HOME, "config.toml"));
+  }
+  for (const d of scans) for (const p of scanDir(d)) add(p, `--scan ${d}`);
+  return out;
+}
+
+// the main checkout of the work tree at p (a worktree resolves to the checkout it belongs to), or { why } when it is
+// none Proteus may touch: outside the user's home or the home itself, not git, bare, not writable
+function mainCheckout(p) {
+  const home = realish(HOME), r = realish(p);
+  if (!inside(r, home) || pathKey(r) === pathKey(home)) return { why: "outside your home directory" };
+  const x = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], r);
+  if (!x.ok || !x.out) return { why: "not a git work tree" };
+  const common = realish(path.resolve(r, x.out.split(/\r?\n/)[0]));
+  if (path.basename(common) !== ".git") return { why: "a bare repo or a separate git dir" };
+  const root = path.dirname(common);
+  if (!inside(root, home) || pathKey(root) === pathKey(home)) return { why: "its checkout is your home directory, or outside it" };
+  try { fs.accessSync(root, fs.constants.W_OK); } catch { return { why: "not writable" }; }
+  return { root };
+}
+
+// a repo still on its 1.x install: the lib copy (one stat), or proteus-* hook entries in settings.local.json
+const OLD_ENTRY = /\.claude[\\/]hooks[\\/]proteus-[\w.-]+\.js/;
+function oldMarkers(root) {
+  if (lstat(path.join(root, ".claude", "hooks", "proteus-lib.js"))) return true;
+  const t = readText(path.join(root, ".claude", "settings.local.json"));
+  return !!t && OLD_ENTRY.test(t);
+}
+
+// "dir", "missing" (gone or not a dir), or "slow": no answer within STAT_MS (a hung mount or network share)
+function statTimed(p) {
+  let t;
+  const slow = new Promise((res) => { t = setTimeout(() => res("slow"), STAT_MS); });
+  const st = fs.promises.stat(p).then((s) => (s.isDirectory() ? "dir" : "missing"), () => "missing");
+  return Promise.race([st, slow]).finally(() => clearTimeout(t));
+}
+
+// the repos still on 1.x that the sources name, each once (by real path, case folded where the file system ignores
+// it), and the slow paths apart
+async function discover(scans = SCANS, extra = []) {
+  const seen = new Map(), slow = [], skip = [realish(HERE), oldHome()].flatMap((d) => (d ? [pathKey(d)] : []));
+  for (const c of [...extra.map((p) => ({ p, from: "the current dir" })), ...candidates(scans)]) {
+    const st = await statTimed(c.p);
+    if (st === "slow") { slow.push(c.p); slowPending = true; continue; }
+    if (st !== "dir") continue; // a stale entry: the repo moved or was deleted
+    const m = mainCheckout(c.p);
+    if (!m.root) continue;
+    const k = pathKey(m.root);
+    if (seen.has(k) || skip.includes(k)) continue;
+    if (oldMarkers(m.root)) seen.set(k, { root: m.root, from: c.from });
+  }
+  return { repos: [...seen.values()], slow };
+}
+
+// every main checkout the sources name, for the hivemind list (no stat timeout)
+function knownRepos(scans = SCANS) {
+  const seen = new Map();
+  for (const c of candidates(scans)) {
+    if (!isDir(c.p)) continue;
+    const m = mainCheckout(c.p);
+    if (m.root && !seen.has(pathKey(m.root))) seen.set(pathKey(m.root), m.root);
+  }
+  return [...seen.values()];
+}
+
+// proteus.json's repos registry: every repo set up, so a later pass finds it whatever the CLIs forget
+function register(root) {
+  const c = readJson(CONFIG);
+  if (!c) return;
+  const list = Array.isArray(c.repos) ? c.repos.filter((p) => typeof p === "string") : [];
+  if (list.some((p) => pathKey(p) === pathKey(root))) return;
+  writeJson(CONFIG, { ...c, repos: [...list, root] });
+}
+
+// the plugin's installs (installed_plugins.json); entryFor picks this repo's (projectPath), then the user-scope one,
+// never another repo's
+const pluginEntries = () => {
+  const all = ((readJson(path.join(CLAUDE, "plugins", "installed_plugins.json")) || {}).plugins || {})[PLUGIN_ID];
+  return Array.isArray(all) ? all.filter(isObj) : [];
+};
+const entryFor = (root, all = pluginEntries()) =>
+  all.find((x) => typeof x.projectPath === "string" && pathKey(x.projectPath) === pathKey(root)) || all.find((x) => x.scope === "user") || null;
+
+// a Proteus run going on in the repo: "" when none, else why it is skipped
+function inFlight(root) {
+  const head = git(["symbolic-ref", "--quiet", "--short", "HEAD"], root).out;
+  if (/^(proteus|hive)\//.test(head)) return `a run is in flight (${head} is checked out)`;
+  const blocks = git(["worktree", "list", "--porcelain"], root).out.split(/\r?\n\r?\n/).slice(1);
+  for (const b of blocks) {
+    const br = (/^branch refs\/heads\/(.+)$/m.exec(b) || [])[1] || "", wt = (/^worktree (.+)$/m.exec(b) || [])[1] || "";
+    if (/^(proteus|proteus-work|hive|hive-work)\//.test(br) || (wt && inside(realish(wt), realish(path.join(root, ".worktrees"))))) return `a run is in flight (worker worktree ${wt})`;
+  }
+  const common = commonDir(root);
+  for (const d of common ? [hl().stateDir(common), hl().legacyStateDir(common)] : []) {
+    try { if (Date.now() - fs.statSync(path.join(d, "journal.jsonl")).mtimeMs < 3600e3) return "a run is in flight (its lead journal was written within the hour)"; } catch {}
+  }
+  return "";
+}
+
+// who may change the repo's tracked files: { owned, owner, why }. Owned: the origin is the gh user's on GitHub, or an
+// organization's, judged by authorship email; and nobody else last changed a tracked Proteus file. Whatever cannot
+// be checked (no origin, one not on GitHub, gh failing) counts as shared.
+function ownership(root, login) {
+  const ident = git(["var", "GIT_AUTHOR_IDENT"], root).out, me = ((/<([^>]*)>/.exec(ident) || [])[1] || "").toLowerCase();
+  const nore = new RegExp(`^(\\d+\\+)?${login.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@users\\.noreply\\.github\\.com$`);
+  const mine = (email) => { const e = String(email).toLowerCase(); return (!!me && e === me) || nore.test(e); };
+  const PROTEUS_FILE = /^(\.claude\/(hooks|agents)\/proteus-[^/]+|teams\/.+)$/;
+  const tracked = new Set(git(["ls-files", "--", ".claude/hooks", ".claude/agents", "teams"], root).out.split("\n").filter((f) => PROTEUS_FILE.test(f)));
+  const last = new Map();
+  let cur = null;
+  for (const line of tracked.size ? git(["log", "--format=%x01%ae%x02%an", "--name-only", "--no-renames", "--", ".claude/hooks", ".claude/agents", "teams"], root).out.split("\n") : []) {
+    if (line.startsWith("\x01")) { const [email, name] = line.slice(1).split("\x02"); cur = { email, name }; } else if (line.trim() && cur && !last.has(line.trim())) last.set(line.trim(), cur);
+  }
+  const others = [...new Set([...last].flatMap(([f, a]) => (tracked.has(f) && !mine(a.email) ? [a.name] : [])))];
+  const by = others.length ? `a tracked Proteus file was last changed by ${others.join(", ")}` : "";
+  const url = git(["remote", "get-url", "origin"], root);
+  if (!url.ok || !url.out) return { owned: false, owner: "", why: by || "it has no origin, so who owns it is not checked" };
+  const gh = /github\.com[:/]+([^/\s]+)\/[^/\s]+?(?:\.git)?\/?$/.exec(url.out);
+  if (!gh) return { owned: false, owner: "", why: "its origin is not on GitHub, so who owns it is not checked" };
+  const owner = gh[1];
+  if (owner.toLowerCase() === login.toLowerCase()) return { owned: !by, owner, why: by };
+  const type = ghAs("", ["api", `users/${owner}`, "--jq", ".type"], { cwd: root });
+  if (type.ok && type.out === "Organization") return { owned: !by && !!me, owner, why: by || (me ? "" : "no git user.email to judge authorship by") };
+  return { owned: false, owner, why: type.ok ? `owned by ${owner}` : `who owns it is not checked (gh api users/${owner} failed)` };
+}
+
+// the gh user, or "" when gh is missing, logged out or GitHub is out of reach
+const ghLogin = () => loginOf("");
+const NO_GH = "stopped before changing anything: gh is not logged in, or GitHub is out of reach (gh api user failed), so who owns each repo is not known. Run gh auth login (or reconnect), then run this again; --only-here sets up this repo alone";
+
+// what a pass needs before any repo is touched: { repos, slow, here, login, dry }. Offline or logged out with a repo to
+// move, it stops the run (die) before anything changes; a dry run needs no login.
+async function passPlan(dry, here = null, extra = []) {
+  const d = await discover(SCANS, extra);
+  const repos = d.repos.filter((x) => !here || pathKey(x.root) !== pathKey(here));
+  const login = repos.length ? ghLogin() : "";
+  if (!dry && repos.length && !login) die(`${NO_GH}\nstill on 1.x: ${repos.map((x) => x.root).join(", ")}`);
+  return { repos, slow: d.slow, here, login, dry };
+}
+
+// the doctor in a moved repo, reduced to the human's GitHub items: its --protect and --verifier-app rows
+function githubItems(root) {
+  const r = spawnSync(process.execPath, [path.join(HERE, "install.js"), "--doctor"], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 180000 });
+  return String(r.stdout || "").split(/\r?\n/).filter((l) => /^(FIX|WARN) /.test(l) && /--protect|--verifier-app/.test(l));
+}
+
+// one repo moved, for the pass and the lazy hook: { root, status: "moved"|"skipped", why, ... } for the summary
+function moveRepo(root, ctx) {
+  const why = inFlight(root);
+  if (why) return { root, status: "skipped", why };
+  const own = ownership(root, ctx.login);
+  let e = entryFor(root), added = "";
+  if (!e) {
+    // the plugin does not load here: add it at the scope the user chose (local in a shared repo), or name the repo
+    const want = own.owned ? ctx.scope : "local";
+    if (!ctx.claude) return { root, status: "skipped", why: "the plugin does not load here and there is no claude CLI to add it", reach: want };
+    const r = spawnSync("claude", ["plugin", "install", PLUGIN_ID, "--scope", want], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 180000, shell: WIN });
+    e = entryFor(root);
+    if (!e) return { root, status: "skipped", why: `claude plugin install ${PLUGIN_ID} --scope ${want} failed${r.stderr ? `: ${String(r.stderr).trim().split(/\r?\n/).pop()}` : ""}`, reach: want };
+    added = want;
+  }
+  let rep;
+  const wasQuiet = quiet;
+  refusing = true; quiet = true;
+  try {
+    rep = setupRepo(root, { shared: !own.owned, local: e.scope === "local", install: true });
+    setupReleaseCheck(root);
+    register(root);
+  } catch (err) {
+    if (!(err instanceof Refusal)) throw err;
+    return { root, status: "skipped", why: err.message.replace(/^refused: /, "") };
+  } finally { refusing = false; quiet = wasQuiet; }
+  // the tracked 1.x copies nobody edited: the human's commit, as one exact line (Proteus never commits in a repo)
+  const TRACKED = " (tracked by git; delete it in a commit)";
+  const pristine = rep.kept.filter((k) => k.endsWith(TRACKED)).map((k) => k.slice(0, -TRACKED.length));
+  const kept = rep.kept.filter((k) => !k.endsWith(TRACKED));
+  let rm = "";
+  if (pristine.length && own.owned) {
+    const q = (p) => `"${p}"`;
+    rm = `git -C ${q(root)} rm -q -- ${pristine.join(" ")} && git -C ${q(root)} commit -q -m "chore: drop 1.x Proteus copies; the plugin ships them" -- ${pristine.join(" ")}`;
+  } else for (const p of pristine) rep.left.push(`${p} (tracked; ${lastAuthor(root, p)})`);
+  const conflicts = rep.teams ? [] : upstreamPending(path.join(root, "teams")).map((f) => `teams/${f}`);
+  return { root, status: "moved", own, scope: e.scope, added, removed: rep.found.length, kept, left: rep.left, rm, conflicts };
+}
+
+// a dry run's view of one repo: skipped and why, or what the move would remove
+function dryMove(root, ctx) {
+  const why = inFlight(root);
+  if (why) return { root, status: "skipped", why };
+  const e = entryFor(root);
+  if (!e && !ctx.claude) return { root, status: "skipped", why: "the plugin does not load here and there is no claude CLI to add it", reach: ctx.scope };
+  const wasQuiet = quiet;
+  refusing = true; quiet = true;
+  try {
+    const r = setupRepo(root, { dry: true, local: (e ? e.scope : ctx.scope) === "local" });
+    return { root, status: "moved", added: e ? "" : ctx.scope, removed: r.found.length };
+  } catch (err) {
+    if (!(err instanceof Refusal)) throw err;
+    return { root, status: "skipped", why: err.message.replace(/^refused: /, "") };
+  } finally { refusing = false; quiet = wasQuiet; }
+}
+
+// the eager pass over passPlan's repos: each moved or skipped with why, then one summary. A fresh 2.x user: no output
+function movePass(pass) {
+  const { repos, slow, login, dry } = pass;
+  if (!repos.length && !slow.length && !oldUserInstall(false).found.length) return true;
+  const all = pluginEntries(), mine = pass.here ? entryFor(pass.here, all) : null;
+  // the scope the user chose: user when the plugin is there, else this repo's, else any repo's
+  const scope = all.some((x) => x.scope === "user") ? "user" : (mine && mine.scope) || (all.find((x) => x.scope === "project" || x.scope === "local") || {}).scope || "user";
+  const ctx = { login, scope, dry, claude: has("claude") !== null };
+  const done = [];
+  if (repos.length) {
+    log("");
+    log(`Other repos still on 1.x: ${repos.length}${dry ? " (dry run: nothing written)" : ""}`);
+  }
+  for (const { root } of repos) {
+    const r = dry ? dryMove(root, ctx) : moveRepo(root, ctx);
+    done.push(r);
+    if (r.status === "skipped") log(`skipped  ${root}: ${r.why}${r.why.startsWith("a run is in flight") ? "; it moves when the run ends (the plugin's SessionStart does it there)" : ""}`);
+    else log(`${dry ? "would move" : "moved   "} ${root}${r.removed ? ` (${r.removed} 1.x item${r.removed === 1 ? "" : "s"} ${dry ? "to remove" : "removed"})` : ""}${r.added ? `; plugin ${dry ? "would be " : ""}added at ${r.added} scope${r.own && !r.own.owned ? " (not your repo, so local)" : ""}` : ""}`);
+  }
+  for (const p of slow) log(`skipped  ${p}: no answer within ${STAT_MS} ms (a slow or network path)`);
+  return summary(done, ctx);
+}
+
+// after every repo: what is left for the human, the 1.x user install, and the human's GitHub items
+function summary(done, ctx) {
+  const self = `node "${path.join(HERE, "install.js")}"`;
+  const moved = done.filter((r) => r.status === "moved"), skipped = done.filter((r) => r.status === "skipped");
+  const out = [];
+  for (const r of moved) {
+    for (const k of r.kept || []) out.push(`  ${r.root}: kept ${k}`);
+    for (const k of r.left || []) out.push(`  ${r.root}: left for ${r.own && r.own.owner ? r.own.owner : "its owner"}: ${k}`);
+    for (const c of r.conflicts || []) out.push(`  ${r.root}: ${c} did not merge cleanly; merge it into ${c.replace(/\.upstream$/, "")} by hand, then delete it and its .base`);
+    if (r.rm) out.push(`  ${r.root}: the tracked 1.x copies are unedited; drop them in a commit: ${r.rm}`);
+    if (r.added === "project") out.push(`  ${r.root}: the plugin was added at project scope; commit .claude/settings.json there`);
+  }
+  if (out.length) out.unshift("Left for you:");
+  const added = moved.filter((r) => r.added);
+  if (added.length) out.push(`Plugin ${ctx.dry ? "would be " : ""}added to: ${added.map((r) => `${r.root} (${r.added} scope${r.own && !r.own.owned ? ", not your repo" : ""})`).join(", ")}`);
+  // repos the plugin does not load in: opening them runs no Proteus hook, so nothing moves them later either
+  const unreached = skipped.filter((r) => r.reach);
+  if (unreached.length) {
+    out.push("The plugin does not load in these repos; one command each:");
+    for (const r of unreached) out.push(`  cd "${r.root}" && claude plugin install ${PLUGIN_ID} --scope ${r.reach}`);
+    if (!ctx.claude) out.push(`  (no claude CLI here: in Claude Code, type /plugin marketplace add ${hl().marketSource().add} and /plugin install ${PLUGIN_ID})`);
+  }
+  // the user-level 1.x install goes once every repo is covered and none is left on 1.x
+  const u = oldUserInstall(false);
+  if (u.found.length) {
+    const still = skipped.map((r) => r.root);
+    const user = pluginEntries().some((x) => x.scope === "user");
+    if (ctx.dry) out.push(`The 1.x user install in ${CLAUDE} ${still.length || !user ? "would stay" : "would go"}`);
+    else if (!still.length && user) {
+      const gone = oldUserInstall(true);
+      out.push(`Removed the 1.x user install in ${CLAUDE} (${gone.found.length} item${gone.found.length === 1 ? "" : "s"})${gone.kept.length ? `; kept ${gone.kept.join("; ")}` : ""}`);
+    } else out.push(`The 1.x user install in ${CLAUDE} stays: ${still.length ? `still used by ${still.join(", ")}` : "the plugin is not installed at user scope, so a repo no source names may still use it"}. Once none does: ${self} --remove-user-install`);
+  }
+  // the human's GitHub items, from the doctor in each moved repo: theirs in owned repos, the owner's name elsewhere
+  if (!ctx.dry) {
+    const gh = [];
+    for (const r of moved) {
+      const rows = githubItems(r.root);
+      // a repo on GitHub under another owner: theirs; one with no GitHub origin has no GitHub steps
+      const owner = r.own ? r.own.owner : "";
+      if (r.own && !r.own.owned && !owner) continue;
+      if (owner && owner.toLowerCase() !== ctx.login.toLowerCase() && !r.own.owned) { gh.push(`  ${r.root}: owned by ${owner}; its GitHub steps (--protect) are theirs`); continue; }
+      if (rows.some((l) => /--protect/.test(l))) gh.push(`  cd "${r.root}" && ${self} --protect`);
+      if (rows.some((l) => /--verifier-app/.test(l)) || !hl().verifierApp()) gh.push(`  optional: cd "${r.root}" && ${self} --verifier-app <appId> <keyPath>, then --protect again`);
+    }
+    if (gh.length) out.push("Yours to do on GitHub:", ...gh);
+  }
+  out.push(...otherSides());
+  if (out.length) { log(""); for (const l of out) log(l); }
+  return true;
+}
+
+// the Claude Code configs this run does not read: other CLAUDE_CONFIG_DIR profiles, and WSL's other side
+function otherSides() {
+  const out = [], seen = new Set([pathKey(CLAUDE)]);
+  const name = (d, how) => { if (seen.has(pathKey(d))) return; seen.add(pathKey(d)); out.push(`Another Claude Code profile, ${d}, has its own repos; run this again ${how} to move them`); };
+  if (process.env.CLAUDE_CONFIG_DIR && isFile(path.join(HOME, ".claude.json"))) name(path.join(HOME, ".claude"), "with CLAUDE_CONFIG_DIR unset");
+  let ents = [];
+  try { ents = fs.readdirSync(HOME, { withFileTypes: true }); } catch {}
+  for (const e of ents) {
+    const d = path.join(HOME, e.name);
+    if (e.isDirectory() && /^\.claude[-_.]/.test(e.name) && isFile(path.join(d, ".claude.json"))) name(d, `with CLAUDE_CONFIG_DIR="${d}"`);
+  }
+  if (process.platform === "linux" && /microsoft/i.test(os.release())) out.push("WSL: only this side's Claude Code config was read; Windows has its own, so run /proteus:setup there too");
+  return out;
+}
+
+// --migrate: the pass alone, for --update once the plugin is installed; the current dir's repo counts too
+async function migrateCmd(opt) {
+  const top = git(["rev-parse", "--show-toplevel"], process.cwd());
+  return movePass(await passPlan(!!opt.dryRun, null, top.ok && top.out ? [path.resolve(top.out)] : []));
+}
+
+// --migrate-here: the lazy move the plugin's SessionStart runs once in a repo still on 1.x. One line, always; the repo
+// is recorded in the plugin's data dir so the hook runs it once
+const movedFile = () => path.join(pluginData(), "migrated.json");
+function migrateHere() {
+  const top = git(["rev-parse", "--show-toplevel"], process.cwd());
+  const m = top.ok && top.out ? mainCheckout(top.out) : {};
+  if (!m.root || pathKey(m.root) !== pathKey(top.out) || !oldMarkers(m.root)) return true;
+  const mark = () => { const rec = readJson(movedFile()) || {}; writeJson(movedFile(), { ...rec, [pathKey(m.root)]: new Date().toISOString() }); };
+  const login = ghLogin();
+  if (!login) { console.log("proteus: this repo still has its 1.x install. gh is not logged in (or GitHub is out of reach), so nothing changed; once it is, /proteus:setup moves it. Tell the human once."); return true; }
+  const e = entryFor(m.root);
+  const r = moveRepo(m.root, { login, scope: e ? e.scope : "user", dry: false, claude: has("claude") !== null });
+  // a run in flight ends: the next session tries again; anything else is not retried by the hook
+  if (!(r.why || "").startsWith("a run is in flight")) mark();
+  const todo = (r.kept || []).length + (r.left || []).length + (r.conflicts || []).length + (r.rm ? 1 : 0);
+  console.log(r.status === "moved"
+    ? `proteus: moved this repo from its 1.x install to the plugin (${r.removed} 1.x item${r.removed === 1 ? "" : "s"} removed${todo ? `; ${todo} left for the human, listed by /proteus:setup --only-here --dry-run` : ""}). Tell the human once; /proteus:setup moves their other repos.`
+    : `proteus: this repo still has its 1.x install and was not moved: ${r.why}. Tell the human once; /proteus:setup moves it.`);
+  return true;
 }
 
 // update
@@ -1406,9 +1811,29 @@ function update(argv) {
   const named = harnessArg || process.env.PROTEUS_HARNESS;
   migrateConfig(); // the harnesses hivemind recorded count too
   const had = (readJson(CONFIG) || {}).harnesses;
-  const list = named ? [HARNESS] : Array.isArray(had) ? had.filter((h) => HARNESSES.includes(h)) : [];
+  let list = named ? [HARNESS] : Array.isArray(had) ? had.filter((h) => HARNESSES.includes(h)) : [];
   if (!list.length) list.push("claude");
   let status = 0;
+  // Claude Code moves to the plugin (#155): pinned to the verified release this checkout is now on, then every repo
+  // the sources name moved; without the claude CLI (or when the pin fails) the 1.x install below stays
+  const tag = rel.tag || (rel.current && !hl().verifyRelease(home, rel.current, false).error ? rel.current : "");
+  // offline or gh logged out: who owns each repo is not known, so the pin waits with the move (nothing changes)
+  const login = tag && list.includes("claude") ? ghLogin() : "";
+  if (tag && list.includes("claude") && !login) log(`plugin   -> not installed yet: ${NO_GH.replace(/^stopped before changing anything: /, "").replace(/; --only-here.*$/, "")}`);
+  else if (tag && list.includes("claude")) {
+    const p = pinPlugin(home, tag);
+    if (p.ok) {
+      log(`plugin   -> ${PLUGIN_ID} pinned to ${tag} at user scope`);
+      list = list.filter((h) => h !== "claude");
+      const r = spawnSync(process.execPath, [path.join(HERE, "install.js"), "--migrate", ...SCANS.flatMap((d) => ["--scan", d])], { stdio: "inherit" });
+      status = r.status ?? 1;
+    } else {
+      log(`plugin   -> not installed (${p.why}); in Claude Code, type:`);
+      log(`  /plugin marketplace add ${p.src}#${tag}`);
+      log(`  /plugin install ${PLUGIN_ID}`);
+      log("  then run this again to move your repos");
+    }
+  }
   for (const h of list) {
     const args = named || h === "claude" ? [...rest] : [...rest, "--harness", h];
     const cwd = process.cwd(), wasHive = isDir(path.join(cwd, "teams")) && HARNESSES.some((x) => isFile(path.join(cwd, `.${x}`, "hooks", "hive-autostart.js")));
@@ -1418,6 +1843,27 @@ function update(argv) {
     status = status || (r.status ?? 1);
   }
   process.exit(status);
+}
+
+// the plugin installed at user scope through the claude CLI, pinned to tag (lib.pinCommand's steps, as argument lists):
+// { ok, why, src }. The marketplace is the one Claude Code knows, else this checkout's GitHub origin, else upstream's
+function pluginSource(home) {
+  if (isObj((readJson(path.join(CLAUDE, "plugins", "known_marketplaces.json")) || {}).proteus)) return hl().marketSource().add;
+  const o = /github\.com[:/]+([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(git(["remote", "get-url", "origin"], home).out);
+  return o ? o[1] : hl().marketSource().add;
+}
+function pinPlugin(home, tag) {
+  const src = pluginSource(home);
+  if (has("claude") === null) return { ok: false, why: "no claude CLI on PATH", src };
+  const declared = isObj((readJson(path.join(CLAUDE, "settings.json")) || {}).extraKnownMarketplaces) && isObj(readJson(path.join(CLAUDE, "settings.json")).extraKnownMarketplaces.proteus);
+  const steps = [...(declared ? [["plugin", "marketplace", "remove", "proteus", "--scope", "user"]] : []),
+    ["plugin", "marketplace", "add", `${src}#${tag}`], ["plugin", "install", PLUGIN_ID, "--scope", "user"], ["plugin", "update", PLUGIN_ID]];
+  for (const [i, a] of steps.entries()) {
+    const r = spawnSync("claude", a, { encoding: "utf8", windowsHide: true, timeout: 300000, shell: WIN });
+    // update after a fresh install has nothing to move: only the steps before it must succeed
+    if (r.status !== 0 && i < steps.length - 1) return { ok: false, why: `claude ${a.join(" ")} failed${r.stderr ? `: ${String(r.stderr).trim().split(/\r?\n/).pop()}` : ""}`, src };
+  }
+  return pluginEntries().some((x) => x.scope === "user") ? { ok: true, src } : { ok: false, why: `claude plugin install left no user-scope ${PLUGIN_ID} in ${CLAUDE}`, src };
 }
 
 // --tour-done: the tour ran or was skipped; the autostart offers it again only after a new feature lands
@@ -1663,7 +2109,7 @@ async function doctor(fix) {
   }, () => takeoverGlobal({}));
   check(() => {
     const repos = scanOld();
-    return repos.length ? ["WARN", `still on hivemind under ${SCAN}: ${repos.join(", ")}`, `${self} --migrate-all${scanFlag()}`] : ["ok", `no repo under ${SCAN} still on hivemind`];
+    return repos.length ? ["WARN", `still on hivemind: ${repos.join(", ")}`, `${self} --migrate-all${scanFlags()}`] : ["ok", "no known repo still on hivemind"];
   });
   if (cxh) {
     check(() => cx().contextModeOn() ? ["ok", "context-mode (MCP server or plugin)"]
@@ -1993,18 +2439,22 @@ const pluginData = () => process.env.CLAUDE_PLUGIN_DATA || path.join(CLAUDE, "pl
 function setupReleaseCheck(root) {
   if (!releaseState(root).sha) { log(`release  -> skipped (${PLUGIN_ID} is not installed in ${CLAUDE})`); return; }
   const notes = [];
-  try { hl().releaseCheck(root, notes, HERE, pluginData()); } catch (e) { notes.push(`release check failed: ${e.message}`); }
+  // the repo's own install (a project-scope pin), else the user's: lib.releaseCheck picks the entry by installPath
+  const e = entryFor(root), plugin = e && typeof e.installPath === "string" && e.installPath ? e.installPath : HERE;
+  try { hl().releaseCheck(root, notes, plugin, pluginData()); } catch (err) { notes.push(`release check failed: ${err.message}`); }
   const r = releaseState(root);
   if (r.result && r.at === r.sha && r.result.tag) log(`release  -> ${r.sha.slice(0, 12)} is the verified release ${r.result.tag}`);
   for (const n of notes) log(`release  -> ${n.replace(/^proteus: /, "").replace(/ Tell the human once; nothing is blocked\.$/, "")}`);
   if (!notes.length && !(r.result && r.at === r.sha)) log("release  -> no result yet (no tags fetched); a session start checks again");
 }
-// the installed commit of proteus@proteus (this project's install, else the user's) and the release check's cache
+// the installed commit of proteus@proteus (this project's install, else the user's; never another repo's) and the
+// release check's cached result for that commit
 function releaseState(root) {
-  const all = (((readJson(path.join(CLAUDE, "plugins", "installed_plugins.json")) || {}).plugins || {})[PLUGIN_ID] || []).filter(isObj);
-  const e = all.find((x) => typeof x.projectPath === "string" && samePath(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
+  const e = entryFor(root);
   const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
   const c = readJson(path.join(pluginData(), "release-check.json")) || {};
+  const by = isObj(c.bySha) && isObj(c.bySha[sha]) ? c.bySha[sha] : null;
+  if (by) return { sha, at: sha, result: isObj(by.result) ? by.result : null };
   return { sha, at: typeof c.sha === "string" ? c.sha : "", result: isObj(c.result) ? c.result : null };
 }
 
@@ -2015,6 +2465,7 @@ const FLAGS = {
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
   "--tour-done": "tourDone", "--migrate-all": "migrateAll", "--protect": "protect", "--no-guest": "noGuest",
   "--plugin-setup": "pluginSetup", "--dry-run": "dryRun", "--remove-user-install": "removeUser",
+  "--only-here": "onlyHere", "--migrate": "migrate", "--migrate-here": "migrateHere",
 };
 let harnessArg = null;
 
@@ -2031,7 +2482,7 @@ function main() {
     if (a === "--scan" || a.startsWith("--scan=")) {
       const d = a === "--scan" ? argv[++i] : a.slice("--scan=".length);
       if (!d) die("--scan needs a directory", 2);
-      SCAN = path.resolve(d);
+      SCANS.push(path.resolve(d));
       continue;
     }
     if (a === "--agent-login" || a.startsWith("--agent-login=")) {
@@ -2065,12 +2516,15 @@ function main() {
   if (opt.doctor && Object.keys(opt).some((k) => k !== "doctor" && k !== "fix")) die("--doctor takes only --fix and --scan", 2);
   if (opt.tourDone && Object.keys(opt).length > 1) die("--tour-done takes no other flag", 2);
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
-  if (opt.dryRun && !opt.pluginSetup && !opt.removeUser) die("--dry-run needs --plugin-setup or --remove-user-install", 2);
-  for (const k of ["pluginSetup", "removeUser"]) {
-    const flag = k === "pluginSetup" ? "--plugin-setup" : "--remove-user-install";
-    if (opt[k] && Object.keys(opt).some((x) => x !== k && x !== "dryRun")) die(`${flag} takes only --dry-run`, 2);
-    if (opt[k] && codex()) die(`${flag} is for the Claude Code plugin; Codex uses ${k === "pluginSetup" ? "--project" : "the installer path"}`, 2);
+  if (opt.dryRun && !opt.pluginSetup && !opt.removeUser && !opt.migrate) die("--dry-run needs --plugin-setup, --migrate or --remove-user-install", 2);
+  if (opt.onlyHere && !opt.pluginSetup) die("--only-here needs --plugin-setup", 2);
+  const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
+    migrate: ["--migrate", ["dryRun"], "--migrate-all"], migrateHere: ["--migrate-here", [], "--project"] };
+  for (const [k, [flag, ok, cx]] of Object.entries(takes)) {
+    if (opt[k] && Object.keys(opt).some((x) => x !== k && !ok.includes(x))) die(`${flag} takes only ${[...ok.map((x) => Object.keys(FLAGS).find((f) => FLAGS[f] === x)), "--scan"].join(" and ")}`, 2);
+    if (opt[k] && codex()) die(`${flag} is for the Claude Code plugin; Codex uses ${cx}`, 2);
   }
+  if (opt.migrateHere && SCANS.length) die("--migrate-here takes no other flag", 2);
   if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
 
   (async () => {
@@ -2080,9 +2534,12 @@ function main() {
     else if (opt.protect) process.exitCode = protect() ? 0 : 1;
     else if (opt.verifierApp) process.exitCode = (await verifierApp(...opt.verifierApp)) ? 0 : 1;
     else if (opt.update) update(argv);
-    else if (opt.pluginSetup) process.exitCode = pluginSetup(opt) ? 0 : 1;
+    else if (opt.pluginSetup) process.exitCode = (await pluginSetup(opt)) ? 0 : 1;
+    else if (opt.migrate) process.exitCode = (await migrateCmd(opt)) ? 0 : 1;
+    else if (opt.migrateHere) process.exitCode = migrateHere() ? 0 : 1;
     else if (opt.removeUser) process.exitCode = removeUserInstall(opt) ? 0 : 1;
     else process.exitCode = install(opt) ? 0 : 1;
+    if (slowPending) process.stdout.write("", () => process.exit(process.exitCode));
   })().catch((e) => die(`error: ${e.message}`));
 }
 

@@ -11,6 +11,7 @@
 #   ./install.sh --update            move this checkout to the newest verified signed release, reinstall, refresh the current repo
 #   ./install.sh --auto-update       let sessions pull this checkout (--no-auto-update: stop)
 #   ./install.sh --doctor [--fix]    check the setup; --fix applies the safe local fixes
+#   ./install.sh --migrate [--dry-run] [--scan <dir>]...   move every repo still on 1.x to the Claude Code plugin
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

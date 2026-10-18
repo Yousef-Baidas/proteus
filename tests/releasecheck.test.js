@@ -123,6 +123,12 @@ else {
   install(B);
   stale();
   r = start(ON);
+  // B was checked before: the cache keeps a result per commit (#155), so B's own stands
+  ok("offline, a sha checked before: its own cached result", quiet(r.out).length === 1 && quiet(r.out)[0].endsWith("using the last result") && warning(r.out).length === 1 && state().sha === B, r.out.slice(0, 1500));
+  const st = state();
+  delete st.bySha[B];
+  fs.writeFileSync(STATE, JSON.stringify({ ...st, sha: "0".repeat(40), fetched: Date.now() - 25 * 3600e3 }));
+  r = start(ON);
   ok("offline, a new sha: checks the tags fetched before", quiet(r.out).length === 1 && quiet(r.out)[0].endsWith("checking the tags fetched before") && warning(r.out).length === 1 && /Newest verified release: v1\.3\.0/.test(r.out), r.out.slice(0, 1500));
   market(BARE);
 

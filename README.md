@@ -52,11 +52,11 @@ Start a new session. It begins as the lead.
 
 ## Moving from 1.x
 
-1. Install the plugin as shown above.
-2. In each repo, run `/proteus:setup --dry-run` to see what it will remove.
-3. Run `/proteus:setup`. It removes the old copies you did not edit.
-4. Delete or move what it names as edited or tracked.
-5. Once every repo is moved, run the `--remove-user-install` command setup prints.
+Run `node <1.x checkout>/install.js --update` (or keep `autoUpdate` on).
+It installs the plugin pinned to the latest signed release and moves every repo it finds.
+`/proteus:setup` in any repo also moves them; `--dry-run` shows it first.
+A repo it missed moves the first time you open it.
+It never commits or pushes, and keeps every file you edited.
 
 Details: [docs/migrating.md](docs/migrating.md).
 

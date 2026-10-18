@@ -2482,16 +2482,20 @@ function releaseCheck(root, notes, plugin, data) {
     fetched = Date.now();
     failed = fetchTags(bare, src.url);
   }
-  const fresh = st.sha === sha && st.trust === trust && st.fetched === fetched && st.result;
-  let res = fresh ? st.result : null;
-  if (failed) notes.push(`proteus: release check could not fetch tags from ${src.url} (${failed}); ${st.result && st.sha === sha ? "using the last result" : "checking the tags fetched before"}`);
-  if (!res && failed && st.result && st.sha === sha) res = st.result;
+  // one result per installed commit (#155): repos on different pins (user and project scope) share the cache
+  const by = st.bySha && typeof st.bySha === "object" && !Array.isArray(st.bySha) ? st.bySha : {};
+  const prev = by[sha] && typeof by[sha] === "object" ? by[sha] : st.sha === sha ? st : {};
+  const fresh = prev.trust === trust && prev.fetched === fetched && prev.result;
+  let res = fresh ? prev.result : null;
+  if (failed) notes.push(`proteus: release check could not fetch tags from ${src.url} (${failed}); ${prev.result ? "using the last result" : "checking the tags fetched before"}`);
+  if (!res && failed && prev.result) res = prev.result;
   if (!res) {
     if (!fs.existsSync(path.join(bare, "HEAD"))) return;
     if (trust) git(["-C", bare, "config", "gpg.ssh.allowedSignersFile", signers], bare);
     res = verifyInstalled(bare, sha);
   }
-  writeJSON(file, { fetched, sha, trust, result: res });
+  const keep = Object.keys(by).filter((k) => k !== sha).slice(-15);
+  writeJSON(file, { fetched, sha, trust, result: res, bySha: { ...Object.fromEntries(keep.map((k) => [k, by[k]])), [sha]: { fetched, trust, result: res } } });
   if (res.tag) return;
   const pin = res.newest
     ? `Newest verified release: ${res.newest}; to pin to it, run ${pinCommand(res.newest)}`
