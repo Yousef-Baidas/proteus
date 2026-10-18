@@ -76,4 +76,26 @@ ok("existing version: refused", run(r, "--release", "1.0.0").status === 1 && fra
 p = run(r, "--release", "1.1.0");
 ok("default date is today", p.status === 0 && /^## \[1\.1\.0\] - \d{4}-\d{2}-\d{2}$/m.test(read(r, "CHANGELOG.md")), p.stderr);
 
+// --release regenerates scripts/known-blobs.json when the root has scripts/known-blobs.js (#164)
+{
+  r = root("", { "a.md": A });
+  const g = (...args) => spawnSync("git", args, { cwd: r, encoding: "utf8", windowsHide: true });
+  fs.mkdirSync(path.join(r, "scripts"));
+  fs.copyFileSync(path.resolve(__dirname, "..", "scripts", "known-blobs.js"), path.join(r, "scripts", "known-blobs.js"));
+  fs.mkdirSync(path.join(r, "templates"));
+  fs.writeFileSync(path.join(r, "templates", "x.md"), "x1\n");
+  for (const a of [["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "t"], ["config", "commit.gpgsign", "false"], ["config", "core.autocrlf", "false"], ["add", "-A"], ["commit", "-qm", "one"]]) g(...a);
+  const x1 = g("rev-parse", "HEAD:templates/x.md").stdout.trim();
+  fs.writeFileSync(path.join(r, "templates", "x.md"), "x2\n");
+  g("commit", "-qam", "two");
+  p = run(r, "--release", "1.1.0");
+  const kb = fs.existsSync(path.join(r, "scripts", "known-blobs.json")) ? JSON.parse(read(r, "scripts/known-blobs.json")) : null;
+  ok("release: regenerates scripts/known-blobs.json with the superseded version", p.status === 0 && kb && JSON.stringify(kb.blobs) === JSON.stringify({ "templates/x.md": [x1] }), p.stderr + JSON.stringify(kb));
+  r = root("", { "a.md": A });
+  fs.mkdirSync(path.join(r, "scripts"));
+  fs.writeFileSync(path.join(r, "scripts", "known-blobs.js"), "process.exit(1)\n");
+  p = run(r, "--release", "1.1.0");
+  ok("release: refused, nothing written, when known-blobs.js fails", p.status === 1 && frags(r).join() === "a.md" && read(r, "CHANGELOG.md") === HEAD + OLD, p.stderr);
+}
+
 lib.summary();

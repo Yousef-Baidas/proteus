@@ -2,6 +2,7 @@
 // Changelog fragments: every PR adds changelog.d/<slug>.md instead of editing CHANGELOG.md, so open PRs never conflict there.
 // Usage: node scripts/changelog.js                                   print the merged Unreleased notes
 //        node scripts/changelog.js --release X.Y.Z [--date YYYY-MM-DD]   fold them into CHANGELOG.md, delete the fragments
+// --release also regenerates scripts/known-blobs.json with scripts/known-blobs.js, when the root has it (#164).
 // --root <dir> reads <dir> instead of the repo root (tests). Plain Node, no dependencies.
 "use strict";
 const fs = require("fs");
@@ -82,6 +83,12 @@ function main(argv) {
   if (at < 0) die("CHANGELOG.md has no ## [Unreleased] heading");
   if (!body) die("nothing to release: no fragments and no Unreleased bullets");
   if (lines.some((l) => new RegExp(`^##\\s+\\[?v?${release.replace(/\./g, "\\.")}\\]?(\\s|$)`).test(l))) die(`CHANGELOG.md already has a ${release} section`);
+  // the shipped-blob list catches up with every version main superseded since the last release, before anything is written
+  const kb = path.join(root, "scripts", "known-blobs.js");
+  if (fs.existsSync(kb)) {
+    const r = require("child_process").spawnSync(process.execPath, [kb], { cwd: root, encoding: "utf8", windowsHide: true });
+    if (r.status !== 0) die(`scripts/known-blobs.js failed: ${String(r.stderr || r.error || "").trim()}`);
+  }
   const next = [...lines.slice(0, at + 1), "", `## [${release}] - ${date}`, "", ...body.split("\n"), ...lines.slice(end)];
   fs.writeFileSync(file, next.join("\n"));
   for (const n of names) fs.unlinkSync(path.join(dir, n));

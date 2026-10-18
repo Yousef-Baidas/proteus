@@ -144,9 +144,19 @@ function hashOf(abs, st, cache, dirty) {
   return h;
 }
 
+// Claude Code's own markers of the processes using an installed plugin (#164): .in_use/ directly under a version
+// dir of the plugin cache, <claude config>/plugins/cache/<marketplace>/<plugin>/<version>/.in_use/. They change
+// whenever a session starts or ends, so they say nothing about a call. Nothing else in the cache is skipped.
+let caches = null;
+function inUse(abs) {
+  if (path.basename(abs) !== ".in_use") return false;
+  if (!caches) { const c = path.join(lib.claudeDir(), "plugins", "cache"); caches = [...new Set([c, lib.realOr(c)])]; }
+  return caches.some((c) => { const rel = path.relative(c, abs); return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel) && rel.split(path.sep).length === 4; });
+}
+
 // abs -> "f:<mode>:<hash>" | "l:<target>" | "c:<config keys>"; directories are walked, not recorded
 function walk(abs, out, cache, dirty, top = true) {
-  if (out.size >= MAX_ENTRIES) return;
+  if (out.size >= MAX_ENTRIES || inUse(abs)) return;
   let st;
   try { st = fs.lstatSync(abs); } catch { return; }
   if (st.isSymbolicLink()) { let t = ""; try { t = fs.readlinkSync(abs); } catch {} out.set(abs, "l:" + t); return; }

@@ -2,7 +2,8 @@
 // Writes scripts/known-blobs.json: every git blob id an agents/ or templates/ path had in HEAD's history and no longer
 // has (the shipped roster's pre-move teams/ paths counted as templates/teams/), plus the text of each past ROUTING.md,
 // PROFILE.md and skills.txt. install.js reads it to tell a 1.x copy from an edit, and to write a .base beside a
-// .upstream: the plugin's copy has no git history. tests/knownblobs.test.js fails when the file is stale.
+// .upstream: the plugin's copy has no git history. tests/knownblobs.test.js (audit) fails when the file lacks a
+// version this branch superseded, and warns about the rest (#164); scripts/changelog.js --release runs this script.
 // Usage: node scripts/known-blobs.js (in a full clone). Exit 0 once written, 1 when git fails.
 "use strict";
 const fs = require("fs");
@@ -60,6 +61,32 @@ function compute(root = ROOT) {
 
 const render = (v) => JSON.stringify(v, null, 2) + "\n";
 
+// the list have against compute(root): { strict, own, other, extra }, each a list of [path, id]. own: versions it
+// lacks that a commit in merge-base(HEAD, base)..HEAD superseded, the branch's own to add; other: the rest it lacks,
+// superseded elsewhere (two PRs merged together), left to a later run on main; extra: what it lists that compute()
+// does not. strict (no base ref, or a shallow clone): every version it lacks counts as own.
+function audit(root = ROOT, have = JSON.parse(fs.readFileSync(FILE, "utf8")), base = "origin/main") {
+  const want = compute(root);
+  const ids = (o, p) => new Set(((o && o.blobs) || {})[p] || []);
+  const text = (o, p, id) => (((o && o.texts) || {})[p] || {})[id];
+  const missing = [], extra = [];
+  for (const [p, list] of Object.entries(want.blobs)) {
+    const h = ids(have, p);
+    for (const id of list) if (!h.has(id) || (text(want, p, id) !== undefined && text(have, p, id) !== text(want, p, id))) missing.push([p, id]);
+  }
+  for (const [p, list] of Object.entries((have && have.blobs) || {})) { const w = ids(want, p); for (const id of list) if (!w.has(id)) extra.push([p, id]); }
+  for (const [p, t] of Object.entries((have && have.texts) || {})) for (const id of Object.keys(t)) if (text(want, p, id) === undefined) extra.push([p, id]);
+  const out = (strict, own, other) => ({ strict, own, other, extra });
+  const run = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 1 << 30, windowsHide: true });
+  const shallow = run(["rev-parse", "--is-shallow-repository"]).stdout.trim() !== "false";
+  const mb = shallow ? null : run(["merge-base", "HEAD", base]);
+  if (!mb || mb.status !== 0) return out(true, missing, []);
+  // the versions this branch's own commits replaced or deleted: the old blob of each change in the range
+  const raw = git(["log", "--no-merges", "--format=", "--raw", "--no-abbrev", "--no-renames", `${mb.stdout.trim()}..HEAD`, "--", "agents", "templates"], root);
+  const mine = new Set(raw.split("\n").map((l) => /^:\d+ \d+ ([0-9a-f]+) [0-9a-f]+ \w+\t(.+)$/.exec(l)).filter(Boolean).map(([, id, p]) => `${p}\0${id}`));
+  return out(false, missing.filter(([p, id]) => mine.has(`${p}\0${id}`)), missing.filter(([p, id]) => !mine.has(`${p}\0${id}`)));
+}
+
 if (require.main === module) {
   try {
     fs.writeFileSync(FILE, render(compute()));
@@ -70,4 +97,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { compute, render, FILE };
+module.exports = { compute, render, audit, FILE };

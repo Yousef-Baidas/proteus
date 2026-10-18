@@ -150,6 +150,28 @@ ok("guard: a --body-file under cwd is read", said("gh issue comment 22 --body-fi
 ok("guard: other words, other commands and the keyword past line 1 pass", !said("gh issue comment 22 --body 'ACCEPTED criteria are listed below'") && !said('gh issue comment 22 --body "Answered in session: 2"') &&
   !said("gh issue comment 22 --body 'DONE\nACCEPT would be premature'") && !said("grep -n ACCEPT tracker.md") && !said("gh issue view 22 --json comments -q '.comments[].body | select(test(\"^ACCEPT\"))'") &&
   !said("gh issue create --title 'Q: x' --body 'ANSWER with 1 or 2'"));
+// #164: judged on what the command runs, not the text it carries
+{
+  const doc = "cat > skills/proteus-review/SKILL.md <<'EOF'\n# Review\nThe human posts `gh issue comment 12 --body \"ACCEPT\"` in their own session.\nEOF";
+  const text = [doc, `${doc}\ngit add -A`, "git commit -m 'docs: gh issue comment 1 --body ACCEPT is the human post'", "git commit -F - <<'EOF'\nfix: gh issue comment 1 --body ACCEPT\nEOF",
+    "grep -rn 'gh issue comment .* ACCEPT' skills", "gh pr view $(git branch --show-current) --json body", "echo $(a)$(b) && gh issue comment 1 --body ok",
+    "gh api repos/o/r/issues/1/comments --jq '.[] | select(.body | test(\"ACCEPT\"))'"];
+  const passed = text.filter((c) => said(c, sub));
+  ok("guard: a heredoc doc edit, a commit message, a grep and other text naming a verdict post pass", !passed.length, passed.join("\n---\n"));
+  const posts = ["echo ACCEPT | gh issue comment 22 --body-file -", "printf 'ACCEPT\\nall good' | gh issue comment 22 -F -", "cat verdict.md | gh issue comment 22 --body-file -",
+    "gh issue comment 22 --body-file - <<< 'ACCEPT'", "gh api repos/o/r/issues/22/comments -f body=ACCEPT", "gh api repos/o/r/issues/22/comments -F body=@verdict.md",
+    "gh api repos/o/r/issues/22/comments -F body=@- <<< ACCEPT", "gh api -X POST repos/o/r/pulls/4/reviews -f body='CHANGES x'", "gh api repos/o/r/issues/comments/9 -X PATCH -f body=ACCEPT",
+    "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"ACCEPT\"}){clientMutationId}}'", "gh issue comment 22 -bACCEPT", "gh issue comment 22 --body=ACCEPT",
+    "gh issue comment 22 --body $'ACCEPT\\nok'", "gh issue comment $(cat n) --body ACCEPT", "gh issue comment `cat n` --body ACCEPT", "gh issue comment 22 --body $(cat <<'EOF'\nACCEPT\nEOF\n)",
+    "sh -c 'gh issue comment 1 --body ACCEPT'", "bash -c \"sh -c 'gh issue comment 1 --body ACCEPT'\"", "bash <<'EOF'\ngh issue comment 1 --body ACCEPT\nEOF",
+    "echo 'gh issue comment 1 --body ACCEPT' | sh", "node -e \"require('child_process').execSync('gh issue comment 1 --body ACCEPT')\"", "find . -exec gh issue comment 1 --body ACCEPT ';'"];
+  const missed = posts.filter((c) => !said(c, sub));
+  ok("guard: every real post spelling is still refused: stdin, -F body=@, api fields, nested sh -c", !missed.length, missed.join("\n---\n"));
+  const blind = ["eval 'gh issue comment 1 --body ACCEPT'", "eval \"$X\"; gh issue comment 1 --body ACCEPTED", "echo 1 | xargs gh issue comment --body-file -",
+    "$(which gh) issue comment 1 --body ACCEPT", "`which gh` issue comment 1 --body ACCEPT", "X=gh; $X issue comment 1 --body ACCEPT", "sh -c \"$S\" # gh issue comment 1 -F f"];
+  const open = blind.filter((c) => !said(c, sub));
+  ok("guard: what it cannot judge stays refused: eval, xargs into gh, a $( ) or $VAR program, sh -c with a variable", !open.length, open.join("\n---\n"));
+}
 ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm test" }, sub)) === 0);
 r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
