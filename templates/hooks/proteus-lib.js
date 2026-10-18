@@ -313,17 +313,15 @@ const docRoot = (root) => guestDir(root) || root;
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
-// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory, a plain path without
-// wildcards covers itself and anything below it
+// owned-path glob: ** any depth, * within a segment, trailing / means the whole directory. A glob owns a path
+// when it matches the path or any folder above it, wherever its wildcards sit: src/auth and src/* own
+// src/auth/x.js, packages/*/src owns packages/a/src/b.js. Case folds on Windows.
 function ownedMatch(glob, rel) {
   const g = glob.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "/**");
-  // a plain path with no wildcard names a file or a directory; a file has nothing under it, so it also covers what lies below
-  if (!g.includes("*")) {
-    const [a, b] = process.platform === "win32" ? [g.toLowerCase(), rel.toLowerCase()] : [g, rel];
-    if (b === a || b.startsWith(a + "/")) return true;
-  }
-  const re = "^" + g.split("**").map((p) => p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join(".*") + "$";
-  return new RegExp(re, process.platform === "win32" ? "i" : "").test(rel);
+  const re = new RegExp("^" + g.split("**").map((p) => p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")).join(".*") + "$", process.platform === "win32" ? "i" : "");
+  const segs = String(rel).split("/");
+  for (let i = segs.length; i > 0; i--) if (re.test(segs.slice(0, i).join("/"))) return true;
+  return false;
 }
 
 // a worktree the lead dispatched a worker into: it lists the ticket's owned paths

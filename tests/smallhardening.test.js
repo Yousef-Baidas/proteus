@@ -83,8 +83,18 @@ if (process.platform !== "win32") {
   ok("ownedMatch: a plain directory path covers files below it, at any depth", L.ownedMatch("src/auth", "src/auth/login.js") && L.ownedMatch("src/auth", "src/auth/deep/x.js") && L.ownedMatch("./src/auth", "src/auth/x.js"));
   ok("ownedMatch: a plain path still covers exactly itself", L.ownedMatch("src/a.js", "src/a.js"));
   ok("ownedMatch: a plain path does not cover a sibling that shares its prefix", !L.ownedMatch("src/auth", "src/authz/x.js") && !L.ownedMatch("src/a.js", "src/a.json") && !L.ownedMatch("src/auth", "other/src/auth/x.js"));
-  ok("ownedMatch: wildcard globs are unchanged (* stays inside a segment)", !L.ownedMatch("src/*", "src/a/b.js") && L.ownedMatch("src/*", "src/b.js") && L.ownedMatch("src/", "src/a/b.js") && L.ownedMatch("**", "a/b"));
+  ok("ownedMatch: * stays inside a segment, ** spans any depth, a trailing / owns the whole folder", L.ownedMatch("src/*", "src/b.js") && !L.ownedMatch("src/*.js", "src/a/b.ts") && L.ownedMatch("src/", "src/a/b.js") && L.ownedMatch("**", "a/b") && L.ownedMatch("src/**/x.js", "src/a/b/x.js"));
   ok("ownedMatch: on win32 a plain path matches in any case", onPlatform("win32", () => L.ownedMatch("Src/Auth", "src/auth/x.js")) && onPlatform("linux", () => !L.ownedMatch("Src/Auth", "src/auth/x.js")));
+}
+
+// ---- owned-path globs: a glob owns what is below any folder it matches, wherever its wildcards sit (#96)
+{
+  ok("ownedMatch: a trailing * owns the files below the folders it matches", L.ownedMatch("src/*", "src/a/b.js") && L.ownedMatch("src/*", "src/a/b/c.js"));
+  ok("ownedMatch: a * in the middle owns what is below the folders it matches", L.ownedMatch("packages/*/src", "packages/x/src/y.js") && L.ownedMatch("packages/*/src", "packages/x/src") && L.ownedMatch("a/*/b/*", "a/x/b/y/z.js"));
+  ok("ownedMatch: a ** in the middle owns what is below the folders it matches", L.ownedMatch("src/**/test", "src/a/b/test/x.js") && L.ownedMatch("**/fixtures", "a/fixtures/b/c.json"));
+  ok("ownedMatch: a glob does not own a sibling that only shares its prefix", !L.ownedMatch("src/*", "srcx/a") && !L.ownedMatch("src/*", "src") && !L.ownedMatch("packages/*/src", "packages/x/srcx/y.js") && !L.ownedMatch("packages/*/src", "packages/x/lib/src.js"));
+  ok("ownedMatch: a glob does not own a path that matches only below its own depth", !L.ownedMatch("packages/*/src", "packages/x/y/src/z.js") && !L.ownedMatch("src/*", "other/src/a/b.js") && !L.ownedMatch("*.md", "docs/a.md"));
+  ok("ownedMatch: on win32 a wildcard glob owns below its folders in any case", onPlatform("win32", () => L.ownedMatch("Packages/*/SRC", "packages/x/src/y.js")) && onPlatform("linux", () => !L.ownedMatch("Packages/*/SRC", "packages/x/src/y.js")));
 }
 
 // ---- tests/run.js: a crashing file is counted in the total, a chatty one keeps its summary line
