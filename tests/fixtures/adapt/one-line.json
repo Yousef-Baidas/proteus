@@ -1,0 +1,18 @@
+{
+  "about": "a mature small Python library (tags, CI, tests, changelog); the work order is a one-line fix",
+  "teams": { "must": ["devops", "qa", "security"], "mustNot": ["frontend", "backend"] },
+  "doctor": { "ok": ["teams/ROUTING.md", "shipped teams fit this repo"], "absent": ["fits nothing here"] },
+  "gates": null,
+  "tier": [
+    { "changes": [["src/slugkit/core.py", 1]], "tier": "standard", "security": false },
+    { "changes": [["CHANGELOG.md", 2]], "tier": "direct", "security": false },
+    { "changes": [["src/slugkit/core.py", 1], ["CHANGELOG.md", 2]], "tier": "standard", "security": false }
+  ],
+  "ceremony": null,
+  "gaps": {
+    "gates": "Proteus derives no gate command: setup copies teams/templates/ci/proteus-gates.yml with its EDIT placeholders, and the scaffold ticket fills them from the AGENTS.md ## Learned gate line, which the bootstrap (a model) writes",
+    "routing": "which team a work order goes to: the lead reads teams/ROUTING.md rows; no function maps a path to a team",
+    "tier": "a one-line code fix runs at standard: the shipped src/** quick rule is commented out until CI's gates cover the code, and uncommenting it is the bootstrap's call"
+  },
+  "model": { "gates": ["pytest"], "tier": "quick" }
+}
