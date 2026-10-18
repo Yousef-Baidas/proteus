@@ -5,7 +5,7 @@
 On Claude Code, install Proteus as a plugin pinned to a release tag, then set up each repo from inside it:
 
 ```bash
-claude plugin marketplace add Yousef-Baidas/proteus#v2.2.0
+claude plugin marketplace add Yousef-Baidas/proteus#v2.3.0
 claude plugin install proteus@proteus
 ```
 

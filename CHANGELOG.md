@@ -7,6 +7,26 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-18
+
+### Removed
+
+- The hivemind migration (#134): the takeover of hivemind's global and repo pieces, `--migrate-all` and
+  `-MigrateAll`, the move of `.git/hive/` into `.git/proteus/`, the legacy `hive/<run>` names and `hive*` labels a
+  run opened under hivemind finished under, the `hivemind` stub skill, and the doctor's hivemind checks. An install
+  from before the rename upgrades through a 1.x release first, then to 2.x.
+
+### Fixed
+
+- The shell check no longer reports Claude Code's own `.in_use` markers in the plugin cache as changes an agent
+  made; a change to a plugin file in the same cache is still reported.
+- The verdict guard and the `--post` gate judge what a command runs, with the shell parser, instead of the text it
+  carries: a heredoc that edits a doc, a commit message or a grep that names a verdict post now passes, while every
+  real post (including a body on stdin, `gh api` body fields and a nested `sh -c`) and anything the parser cannot
+  judge (eval, `sh -c` with a non-literal script, xargs into gh, a substituted program) is still refused.
+- `tests/knownblobs.test.js` fails only for versions this branch superseded and warns about versions other merged
+  PRs superseded; `changelog.js --release` now regenerates `scripts/known-blobs.json`.
+
 ## [2.2.0] - 2026-10-18
 
 ### Added
