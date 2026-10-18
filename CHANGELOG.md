@@ -7,6 +7,37 @@ installed version and the new one.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-18
+
+### Added
+
+- One action moves a 1.x user to the plugin, in every repo (#155). `install.js --update` and 1.x `autoUpdate` install `proteus@proteus` at user scope through the `claude` CLI, pinned to the verified release, then run the new `install.js --migrate`. `/proteus:setup` sets up the current repo, then moves every other 1.x repo (`--only-here` stops after it). The plugin's SessionStart moves a 1.x repo the first time it is opened and prints one line.
+- Repos are found only from the `repos` list in `proteus.json`, the `.claude.json` projects (`CLAUDE_CONFIG_DIR` aware), Codex `config.toml` projects and repeatable `--scan <dir>` (three levels deep, no default). A path is kept only if it answers within a timeout, is a main checkout inside the home (never the home itself), is writable and still has 1.x copies; the same repo reached twice counts once.
+- A move never commits, pushes or touches a remote, and keeps every edited file. Shared repos (another GitHub owner, no GitHub origin, or a tracked Proteus file someone else changed) get only untracked files touched, with the authors named. A repo with a run in flight is skipped. Offline or with `gh` logged out nothing changes. One summary lists the GitHub steps left (`--protect`, `--verifier-app`, or the owner's name), and the 1.x user install is removed once every repo found is on the plugin.
+
+### Changed
+
+- The release check keeps one result per installed commit, so repos pinned at user and project scope to different releases each show their own.
+- `--scan` is repeatable and has no default folder; `--migrate-all` (hivemind) uses the same repo sources.
+- Setup picks the shipped software teams from evidence (#156): `install.js --project` and `--plugin-setup` copy `security` and `qa` always, `devops` in a repo with a git remote, CI, containers or infrastructure code, and `frontend` and `backend` only when the repo's manifests or tracked files show a UI or a server. A repo with no code yet gets `security`, `qa` and `devops`, and the scaffold ticket adds the teams the chosen stack needs. `ROUTING.md` is written without the rows of the teams left out, and setup prints one line per team it left out with the reason. The signals are one table in `references/teams.md`; the scan uses `git ls-files` and manifests only, and past its 5 s cap keeps every team and says so.
+- `install.js --doctor` warns about a shipped team that fits nothing in the repo (no evidence and no `ROUTING.md` row matching a tracked file) and prints the command that removes it.
+
+### Fixed
+
+- Setup from the plugin recognises a 1.x copy of any version ever shipped on `main`, tagged or not, from `scripts/known-blobs.json`; the plugin has no git history to ask (#154).
+- One `--plugin-setup` run removes every 1.x leftover, including the `package.json` and exclude lines a removal frees, so `--doctor` finds nothing after it (#154).
+- A `.base` is written beside every team file `.upstream`; when git tracks no copy and the three-way merge is clean, setup merges it in place and prints one line (#154).
+- A tracked 1.x copy someone edited is named with its last author and left alone; setup and `--doctor` no longer advise deleting it (#154).
+- A refreshed `teams/` file that git tracks and the repo edited is never overwritten: the shipped text goes beside it as `.upstream`, with a `.base` (#154).
+- The plugin's gate accepts `enabledPlugins["proteus@proteus"]` from `.claude/settings.local.json` as well as `.claude/settings.json`, the local file winning; `--doctor` applies the same rule (#154).
+- Setup runs the release check once when the plugin is installed; a failed fetch is one line, not an error (#154).
+- A refresh (`--project` or `--plugin-setup` on a repo that already has a roster) no longer copies back a shipped team the roster left out; it only refreshes the team dirs the repo has (#156).
+
+### Security
+
+- The human's verdicts go out under the human's own GitHub login: the review session runs `proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>`, and the lead guard asks the human in a permission dialog first, showing the issue, the login and the body. Where no dialog can appear (plan, dontAsk and bypassPermissions modes, auto mode before Claude Code 2.1.211, `claude -p`, Codex) it denies and prints the command for the human's own terminal. Subagents, teammates and workers are denied, and `--post` refuses a body file whose hash changed since approval (#157).
+- While the agents have a login of their own, the guards keep every agent off the human's: their gh config dir (resolved as gh does, `XDG_CONFIG_HOME` and `%AppData%` included), changes to `GH_CONFIG_DIR` or `GH_HOST`, `env -i`, `gh --hostname` and `gh auth login`, `logout`, `switch`, `token` and `refresh` (#157).
+
 ## [2.1.0] - 2026-10-17
 
 ### Added
