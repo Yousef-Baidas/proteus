@@ -3,9 +3,9 @@
 // the teams it gets and does not get (proteus-teamfit.js and what install.js --plugin-setup copies), the --doctor
 // rows, the gate commands setup proposes (null: Proteus derives none), the tier and security signoff of planned
 // changes (classifyTier, tierMatch on the copied teams/ROUTING.md) and the fixture's ceremony (the baseline ratchet
-// for a red suite, guest mode for a repo the human cannot push to). An expectation no code decides is null and
-// names its reason under "gaps". Prints a score table (a row per fixture, a column per expectation) and fails on
-// any miss. node tests/adapt.test.js (needs git). Fake HOME, gh and claude; never the network or the real ~/.claude.
+// for a red suite, guest mode for a repo the human cannot push to, where --plugin-setup and --project both leave the
+// checkout untouched). An expectation no code decides is null and names its reason under "gaps". Prints a score
+// table (a row per fixture, a column per expectation) and fails on any miss. node tests/adapt.test.js (needs git). Fake HOME, gh and claude; never the network or the real ~/.claude.
 // Opt-in model-backed run: PROTEUS_ADAPT_MODEL=1 lists each fixture's "model" expectations (scout roster, skill
 // picks, gate commands) that such a run would score. It is not built: it needs a model, so it never runs in CI.
 "use strict";
@@ -59,17 +59,23 @@ function score(name) {
   const logs = { gh: path.join(W, `${name}.gh.log`), claude: path.join(W, `${name}.claude.log`) };
   const run = (args, cwd = dir, extra = {}) => lib.run(INSTALL, "", { cwd, args, env: { FAKE_GH_LOG: logs.gh, FAKE_CLAUDE_LOG: logs.claude, ...env, ...extra } });
 
-  // setup: --plugin-setup exits 0, writes teams/ROUTING.md, runs no gh and no claude plugin command (a --version probe is fine)
+  // setup: --plugin-setup exits 0, writes teams/ROUTING.md, runs no gh but the guest-mode permission probe and no claude
+  // plugin command (a --version probe is fine). A guest fixture's teams/ is in its guest dir and its checkout untouched
+  const guestFx = !!want.ceremony && want.ceremony.kind === "guest";
+  const before = g(dir, "ls-files");
   const s = run(["--plugin-setup"]);
-  cell("setup", s.code === 0 && exists(dir, "teams", "ROUTING.md") && !exists(logs.gh) && !/^plugin\b/m.test(read(logs.claude)),
-    `exit ${s.code}, ROUTING.md ${exists(dir, "teams", "ROUTING.md")}, gh ${read(logs.gh).trim() || "-"}, claude ${read(logs.claude).trim() || "-"} :: ${both(s).slice(-600)}`);
+  const base = HL.docRoot(dir), after = g(dir, "status", "--porcelain");
+  const ghCalls = read(logs.gh).split(/\r?\n/).filter(Boolean);
+  const untouched = !guestFx || (!!HL.guestDir(dir) && !exists(dir, "teams") && !exists(dir, ".claude", "settings.json") && after === "" && g(dir, "ls-files") === before);
+  cell("setup", s.code === 0 && exists(base, "teams", "ROUTING.md") && untouched && ghCalls.every((l) => l === "repo view --json viewerPermission -q .viewerPermission") && !/^plugin\b/m.test(read(logs.claude)),
+    `exit ${s.code}, ROUTING.md ${exists(base, "teams", "ROUTING.md")}, guest ${guestFx ? `${base}, checkout status ${JSON.stringify(after)}` : "-"}, gh ${ghCalls.join(" | ") || "-"}, claude ${read(logs.claude).trim() || "-"} :: ${both(s).slice(-600)}`);
 
   // teams: the team-fit plan and the teams/ setup copied agree with must and mustNot, and each left out is named
   const a = TF.assess(dir);
   const t = want.teams || { must: [], mustNot: [] };
   const bad = [
-    ...t.must.flatMap((p) => (a.teams[p] && a.teams[p].fits && exists(dir, "teams", p) ? [] : [`${p} missing`])),
-    ...t.mustNot.flatMap((p) => ((a.teams[p] && a.teams[p].fits) || exists(dir, "teams", p) || !new RegExp(`^left out ${p}: `, "m").test(s.out) ? [`${p} present or not named as left out`] : [])),
+    ...t.must.flatMap((p) => (a.teams[p] && a.teams[p].fits && exists(base, "teams", p) ? [] : [`${p} missing`])),
+    ...t.mustNot.flatMap((p) => ((a.teams[p] && a.teams[p].fits) || exists(base, "teams", p) || !new RegExp(`^left out ${p}: `, "m").test(s.out) ? [`${p} present or not named as left out`] : [])),
     ...SHIPPED.flatMap((p) => (t.must.includes(p) || t.mustNot.includes(p) ? [] : [`${p} undeclared`])),
   ];
   cell("teams", !bad.length && !a.capped, `${bad.join(", ")}${a.capped ? `, capped: ${a.why}` : ""} :: ${JSON.stringify(a.teams)}`);
@@ -89,7 +95,7 @@ function score(name) {
   else cells.gates = "gap";
 
   // tier and security: each planned change against the tiers and security blocks of the ROUTING.md setup copied
-  const routing = read(dir, "teams", "ROUTING.md");
+  const routing = read(base, "teams", "ROUTING.md");
   const tiers = HL.parseTiers(routing), sec = HL.parseSecurity(routing) || [];
   const tbad = [], sbad = [];
   for (const c of want.tier || []) {

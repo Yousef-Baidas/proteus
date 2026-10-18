@@ -58,7 +58,8 @@ ok("fresh: teams/ with ROUTING.md, the worktree template, the commit-msg hook an
 ok("fresh: no hooks or agents in the repo", !exists(R, ".claude", "hooks") && !exists(R, ".claude", "agents") && !(json(R, ".claude", "settings.local.json") || {}).hooks);
 ok("fresh: settings.local.json is git-excluded", (read(R, ".git", "info", "exclude") || "").split("\n").includes(".claude/settings.local.json"));
 ok("fresh: prints --protect and --verifier-app as next steps", /--protect\b/.test(r.out) && /--verifier-app <appId> <keyPath>/.test(r.out), r.out.slice(-800));
-ok("fresh: never runs gh (the GitHub steps are the human's)", !exists(GH_LOG), read(GH_LOG));
+ok("fresh: runs no gh but the read-only guest-mode probe (the GitHub steps are the human's)",
+  (read(GH_LOG) || "").split(/\r?\n/).filter(Boolean).every((l) => l === "repo view --json viewerPermission -q .viewerPermission"), read(GH_LOG));
 ok("fresh: names the plugin's command", /\/proteus:proteus/.test(r.out), r.out.slice(-300));
 
 // ---- re-run: nothing changes

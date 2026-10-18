@@ -6,7 +6,7 @@
 // FAKE_GH_REPO names another repo to `repo view -q .nameWithOwner` there.
 // FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
 // FAKE_GH_RUN (a JSON file) holds a run's issues, PRs and run logs for the close report.
-// FAKE_GH_PERMISSION answers `repo view --json viewerPermission` (install.js --project's guest-mode check).
+// FAKE_GH_PERMISSION answers `repo view --json viewerPermission` (install.js --project's and --plugin-setup's guest-mode check).
 const a = process.argv.slice(2).join(" ");
 if (process.env.FAKE_GH_LOG) require("fs").appendFileSync(process.env.FAKE_GH_LOG, a + "\n");
 if (process.env.FAKE_GH === "fail") { process.stderr.write("gh: no remote\n"); process.exit(1); }

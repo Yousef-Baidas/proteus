@@ -17,7 +17,8 @@
 //   node install.js --project --guest [dir]   guest mode, for a repo you do not own: teams/ and the lead's
 //                                     docs go to dir (default ~/.proteus/guest/<repo>-<hash>), not the repo;
 //                                     no CI, lefthook or root docs. Chosen without the flag when gh says you
-//                                     cannot push here and the repo has no teams/; --no-guest turns it off
+//                                     cannot push here and the repo has no teams/; --no-guest turns it off.
+//                                     --plugin-setup takes --guest [dir] and --no-guest too and decides the same way
 //   node install.js --update          fast-forward this checkout to the newest release tag whose
 //                                     signature git verifies (docs/updating.md "Releases"), reinstall, and
 //                                     refresh the current repo too if it is a Proteus project. With the claude CLI
@@ -42,8 +43,8 @@
 //                                     Credentials > Key pairs kept 0600 outside any repo; the App ID is on its General
 //                                     tab) in ~/.claude/proteus.json, after a test token mints; then --protect. Once
 //                                     per repo owner: run again in a repo of another account or org to add its own
-//   node install.js --plugin-setup [--dry-run] [--only-here] [--scan <dir>]...   what /proteus:setup runs from the
-//                                     Claude Code plugin: --project's
+//   node install.js --plugin-setup [--dry-run] [--only-here] [--guest [dir] | --no-guest] [--scan <dir>]...   what
+//                                     /proteus:setup runs from the Claude Code plugin: --project's
 //                                     project steps only. Enables proteus@proteus in the committed .claude/settings.json
 //                                     (the plugin runs its hooks only where that is set) with the proteus marketplace,
 //                                     so teammates are offered the plugin; attribution off, the statusLine in
@@ -51,7 +52,10 @@
 //                                     GitHub steps, never runs them. --dry-run writes nothing and says what it would do.
 //                                     Moving from 1.x: removes the repo's unedited .claude/hooks and .claude/agents copies,
 //                                     their settings entries and exclude lines; edited ones stay and are named.
-//                                     Then every other repo still on 1.x is moved (--migrate); --only-here skips that
+//                                     Then every other repo still on 1.x is moved (--migrate); --only-here skips that.
+//                                     Guest mode (as --project): teams/ in the guest dir; the gate, statusLine and the
+//                                     guest dir (additionalDirectories) in .claude/settings.local.json; settings.json and
+//                                     the rest of the checkout untouched, nothing to commit
 //   node install.js --migrate [--dry-run] [--scan <dir>]...   move every repo still on 1.x to the plugin: repos from
 //                                     proteus.json's repos, .claude.json's projects, Codex's trusted projects and each
 //                                     --scan dir (3 levels; no default). Never commits or pushes; a shared repo gets only
@@ -791,12 +795,13 @@ function projectInstall(root, opt) {
 // guest mode: --guest [dir], or none given and gh says the human cannot push here (READ or TRIAGE) on a repo
 // with no teams/ of its own. Writes <git-common-dir>/proteus/guest.json {dir}; a marker already there is kept,
 // and --no-guest removes it (the guest dir's files stay). Returns the guest dir, or "" for a normal install.
+// opt.dry (--plugin-setup --dry-run) decides the same way and writes nothing. --project and --plugin-setup share it.
 function guestSetup(root, opt) {
   const common = commonDir(root);
   if (!common) return "";
-  const lib = hl(), file = lib.guestFile(common), have = lib.guestDir(root);
+  const dry = !!opt.dry, lib = hl(), file = lib.guestFile(common), have = lib.guestDir(root);
   if (opt.noGuest) {
-    if (lstat(file) && safeRemove(file, ownedRoots())) { log(`guest    -> off; ${have || "the guest dir"} keeps its files (copy what you want into the repo)`); }
+    if (lstat(file) && (dry || safeRemove(file, ownedRoots()))) { log(`guest    -> ${dry ? "would turn " : ""}off; ${have || "the guest dir"} keeps its files (copy what you want into the repo)`); }
     return "";
   }
   let dir;
@@ -811,9 +816,8 @@ function guestSetup(root, opt) {
     dir = lib.defaultGuestDir(common);
   }
   if (inside(dir, path.resolve(root))) die(`--guest ${dir} is inside the repo; guest mode keeps its files outside it`, 2);
-  fs.mkdirSync(dir, { recursive: true });
-  writeJson(file, { guest: true, dir });
-  log(`guest    -> ${dir} (teams/, CONTEXT.md, CONVENTIONS.md, AGENTS.md, docs/adr, docs/lessons); no CI, lefthook or root docs in the repo`);
+  if (!dry) { fs.mkdirSync(dir, { recursive: true }); writeJson(file, { guest: true, dir }); }
+  log(`guest    -> ${dry ? "would use " : ""}${dir} (teams/, CONTEXT.md, CONVENTIONS.md, AGENTS.md, docs/adr, docs/lessons); no CI, lefthook or root docs in the repo`);
   return dir;
 }
 
@@ -1039,14 +1043,16 @@ function migrateToPlugin(root) {
 }
 
 // the plugin's per-repo setup (D8, #155): the 1.x copies out, the gate the plugin's hooks check, the marketplace, the
-// statusLine, the exclude lines, teams/, the skill links. o: { dry, shared, local, install }: shared changes only files
-// git does not track (someone else's repo); local keeps the gate in settings.local.json and settings.json as it is (a
-// local-scope install, or a shared repo); install fetches missing skills (link-skills.js --install). Every settings
+// statusLine, the exclude lines, teams/, the skill links. o: { dry, shared, local, install, guest }: shared changes only
+// files git does not track (someone else's repo); local keeps the gate in settings.local.json and settings.json as it is
+// (a local-scope install, or a shared repo); install fetches missing skills (link-skills.js --install); guest, the guest
+// dir guestSetup chose: teams/ goes there, the gate stays local and a tracked settings.json is left alone. Every settings
 // file is checked before any is written: a refusal (die) leaves the repo as it was. Returns { found, kept, gate, teams,
 // left }: kept the 1.x copies left (each with why), gate the settings file holding the gate, teams why teams/ was left
 // alone ("" when set up), left what a shared repo keeps for its owner, with the last author.
 function setupRepo(root, o = {}) {
-  const dry = !!o.dry, would = (s) => (dry ? `would ${s}` : s), local = !!(o.local || o.shared);
+  const dry = !!o.dry, would = (s) => (dry ? `would ${s}` : s), local = !!(o.local || o.shared || o.guest);
+  const base = o.guest || root;
   const sharedFile = path.join(root, ".claude", "settings.json"), localFile = path.join(root, ".claude", "settings.local.json");
   const s = readJson(sharedFile), l = readJson(localFile);
   for (const [f, v] of [[sharedFile, s], [localFile, l]]) {
@@ -1059,8 +1065,8 @@ function setupRepo(root, o = {}) {
   }
   const tracked = (rel) => git(["ls-files", "--error-unmatch", "--", rel], root).ok;
   if (o.shared && tracked(".claude/settings.local.json")) die("refused: .claude/settings.local.json is tracked in a repo that is not yours; nothing changed. Its owner moves it");
-  // a shared repo's committed settings.json is its owner's: no gate, marketplace or removed 1.x entry goes into it
-  const mayShared = !(o.shared && tracked(".claude/settings.json"));
+  // a shared or guest repo's committed settings.json is its owner's: no gate, marketplace or removed 1.x entry goes into it
+  const mayShared = !((o.shared || o.guest) && tracked(".claude/settings.json"));
   const left = [];
   // a 1.x install here first: its hook copies and their entries out, so plugin and copy never both run unnoticed
   const m = withProject(root, () => oldProjectAll(root, !dry, { "settings.json": s, "settings.local.json": l }));
@@ -1086,14 +1092,14 @@ function setupRepo(root, o = {}) {
     const own = isObj(l.enabledPlugins) ? l.enabledPlugins[PLUGIN_ID] : undefined;
     if (own !== undefined && own !== true) warn(`warning: .claude/settings.local.json sets ${PLUGIN_ID} to ${JSON.stringify(own)}, which wins over settings.json; the plugin stays off here until you set it to true or remove it`);
   }
-  const teams = path.join(root, "teams");
+  const teams = path.join(base, "teams");
   // a shared repo: teams/ is set up only where it is already there and git tracks none of it
   const teamsWhy = !o.shared ? "" : !isDir(teams) ? "no teams/ here, and the repo is not yours to add one to"
     : git(["ls-files", "--", "teams"], root).out ? `tracked; ${lastAuthor(root, "teams")}` : "";
   if (teamsWhy) left.push(`teams/ (${teamsWhy})`);
   // the statusLine where --project puts it, from the repo's teams/ copy: the plugin root moves on every update
   if (!("statusLine" in l) && !teamsWhy) {
-    const script = path.join(root, "teams", "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
+    const script = path.join(teams, "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
     l.statusLine = { type: "command", command: `node "${script}"` };
     lDirty = true;
     log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"})`);
@@ -1112,8 +1118,8 @@ function setupRepo(root, o = {}) {
     if (teamsWhy) log(`teams    -> left alone: ${teamsWhy}`);
     else {
       withProject(root, () => {
-        copyTeams(root);
-        L.run({ root, install: !!o.install, confine: false, log, remove: guardedRemove });
+        copyTeams(base, root);
+        L.run({ root: base, install: !!o.install, confine: false, log, remove: guardedRemove });
       });
     }
   }
@@ -1137,8 +1143,12 @@ async function pluginSetup(opt) {
   const pass = opt.onlyHere ? null : await passPlan(dry, root);
   // a local-scope install here keeps the gate out of the committed settings.json
   const e = entryFor(root);
-  const r = setupRepo(root, { dry, local: !!e && e.scope === "local" });
+  // the same guest decision as --project: teams/ in the guest dir, the gate in settings.local.json, nothing to commit
+  const guest = guestSetup(root, { ...opt, dry });
+  const r = setupRepo(root, { dry, local: !!e && e.scope === "local", guest });
   let ok = setAttribution(dry);
+  if (guest && dry) log(`guest    -> .claude/settings.local.json (would add ${guest} to additionalDirectories)`);
+  else if (guest) ok = allowGuest(root, guest) && ok;
   if (!dry) { setupReleaseCheck(root); register(root); }
   const self = `node "${path.join(HERE, "install.js")}"`;
   if (pass) ok = movePass(pass) && ok;
@@ -1154,10 +1164,13 @@ async function pluginSetup(opt) {
   }
   log("");
   log("Next, by hand (setup never runs these):");
-  log(r.gate === "settings.json" ? "  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin" : "  commit teams/ (the plugin is on for you alone here, through .claude/settings.local.json)");
+  if (guest) log(`  nothing to commit: guest mode keeps teams/ in ${guest} and the plugin on for you alone (--no-guest: install into the repo)`);
+  else log(r.gate === "settings.json" ? "  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin" : "  commit teams/ (the plugin is on for you alone here, through .claude/settings.local.json)");
   if (!teamsEnvOn()) log(`  enable agent teams once, then restart the terminal: ${envCommand()}`);
-  log(`  on GitHub, as an admin of the repo: ${self} --protect`);
-  log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
+  if (!guest) {
+    log(`  on GitHub, as an admin of the repo: ${self} --protect`);
+    log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
+  }
   log("");
   log(dry ? "Dry run: nothing written." : ok ? "Done. Start a new session; /proteus:proteus bootstraps the rest." : "Done, with errors above.");
   return ok;
@@ -1976,7 +1989,7 @@ async function doctor(fix) {
       if (p === "admin") return ["WARN", `${bot} is an admin of ${repo} and can lift the ruleset`, "lower it to write in Settings > Collaborators"];
       return p === "write" || p === "maintain" ? ["ok", `${bot} has ${p} on ${repo}`] : ["FIX", `${bot} cannot push to ${repo} (${p || "unknown"})`, `${self} --protect (run by an admin of ${repo})`];
     });
-    if (plug) pluginChecks(check, top.out, self);
+    if (plug) pluginChecks(check, top.out, self, guest);
     if (!isProject) {
       check(() => ["WARN", "not a Proteus project (no teams/)", `${self} ${plug ? "--plugin-setup" : "--project"}`]);
     } else {
@@ -2011,7 +2024,7 @@ async function doctor(fix) {
         check(() => {
           const w = ad().allowDir(root, guest, false);
           if (w.error) return ["FIX", w.error, `let the session write in ${guest}`];
-          return w.missing ? ["FIX", `guest mode, but ${path.relative(root, w.file).split(path.sep).join("/")} does not open ${guest} to the session`, `${self} --project`]
+          return w.missing ? ["FIX", `guest mode, but ${path.relative(root, w.file).split(path.sep).join("/")} does not open ${guest} to the session`, `${self} ${plug ? "--plugin-setup" : "--project"}`]
             : ["ok", `guest mode: Proteus files in ${guest}`];
         }, () => allowGuest(root, guest));
       }
@@ -2123,12 +2136,14 @@ async function doctor(fix) {
 
 // a plugin setup in the repo at root: the gate and marketplace entries --plugin-setup writes, no 1.x copies left,
 // and the last release check (D6) the autostart cached in the plugin's data dir
-function pluginChecks(check, root, self) {
+// guest: the guest dir in guest mode, where the repo's settings.json is its owners' and lists no marketplace on purpose
+function pluginChecks(check, root, self, guest = "") {
   const s = readJson(path.join(root, ".claude", "settings.json")) || {}, gate = gateFrom(root);
   check(() => gate.on ? ["ok", `plugin gate: .claude/${gate.file} enables ${PLUGIN_ID}`]
     : gate.file === "settings.local.json" ? ["FIX", `plugin gate: .claude/settings.local.json sets ${PLUGIN_ID} to false, which wins over settings.json, so the plugin's hooks stay silent here`, `set enabledPlugins["${PLUGIN_ID}"] to true in .claude/settings.local.json, or remove it there`]
       : ["FIX", `plugin gate: neither .claude/settings.local.json nor .claude/settings.json enables ${PLUGIN_ID}, so the plugin's hooks stay silent here`, `${self} --plugin-setup`]);
   check(() => isObj((s.extraKnownMarketplaces || {}).proteus) ? ["ok", "plugin marketplace: .claude/settings.json lists proteus for teammates"]
+    : guest ? ["ok", "plugin marketplace: guest mode leaves .claude/settings.json to the repo's owners"]
     : ["WARN", "plugin marketplace: .claude/settings.json lists no proteus marketplace, so teammates are not offered the plugin", `${self} --plugin-setup`]);
   check(() => {
     const m = withProject(root, () => oldProjectInstall(root, false, { "settings.json": readJson(path.join(root, ".claude", "settings.json")) || {}, "settings.local.json": readJson(path.join(root, ".claude", "settings.local.json")) || {} }));
@@ -2224,7 +2239,7 @@ function main() {
   HARNESS = String(harnessArg || process.env.PROTEUS_HARNESS || "claude").toLowerCase();
   if (!HARNESSES.includes(HARNESS)) die(`unknown harness: ${HARNESS} (${HARNESSES.join(" or ")})`, 2);
   if ((opt.install || opt.confine) && !opt.project) die("--install/--confine need --project", 2);
-  if ((opt.guest || opt.noGuest) && !opt.project) die("--guest/--no-guest need --project", 2);
+  if ((opt.guest || opt.noGuest) && !opt.project && !opt.pluginSetup) die("--guest/--no-guest need --project or --plugin-setup", 2);
   if (opt.guest && opt.noGuest) die("--guest and --no-guest conflict", 2);
   if (opt.confine && codex()) die("--confine hides skills from Claude Code only; Codex reads ~/.agents/skills itself", 2);
   if (opt.fix && !opt.doctor) die("--fix needs --doctor", 2);
@@ -2233,10 +2248,10 @@ function main() {
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
   if (opt.dryRun && !opt.pluginSetup && !opt.removeUser && !opt.migrate) die("--dry-run needs --plugin-setup, --migrate or --remove-user-install", 2);
   if (opt.onlyHere && !opt.pluginSetup) die("--only-here needs --plugin-setup", 2);
-  const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
+  const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere", "guest", "noGuest"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
     migrate: ["--migrate", ["dryRun"], "--project"], migrateHere: ["--migrate-here", [], "--project"] };
   for (const [k, [flag, ok, cx]] of Object.entries(takes)) {
-    if (opt[k] && Object.keys(opt).some((x) => x !== k && !ok.includes(x))) die(`${flag} takes only ${[...ok.map((x) => Object.keys(FLAGS).find((f) => FLAGS[f] === x)), "--scan"].join(" and ")}`, 2);
+    if (opt[k] && Object.keys(opt).some((x) => x !== k && !ok.includes(x))) die(`${flag} takes only ${[...ok.map((x) => Object.keys(FLAGS).find((f) => FLAGS[f] === x) || `--${x}`), "--scan"].join(" and ")}`, 2);
     if (opt[k] && codex()) die(`${flag} is for the Claude Code plugin; Codex uses ${cx}`, 2);
   }
   if (opt.migrateHere && SCANS.length) die("--migrate-here takes no other flag", 2);
