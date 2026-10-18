@@ -11,8 +11,7 @@
   "gaps": {
     "gates": "Proteus derives no gate command: setup copies teams/templates/ci/proteus-gates.yml with its EDIT placeholders, and the scaffold ticket fills them from the AGENTS.md ## Learned gate line, which the bootstrap (a model) writes",
     "routing": "which team a work order goes to: the lead reads teams/ROUTING.md rows; no function maps a path to a team",
-    "marker": "no in-repo marker makes a repo read-only for agents; the nearest signal Proteus recognises is gh's READ or TRIAGE permission (guest mode), and guest mode keeps Proteus's files out of the repo, not the agents' changes",
-    "setup": "install.js --plugin-setup never asks gh for the permission or reads guest mode: on this READ repo it writes teams/ and .claude/settings.json into the checkout; only --project goes guest"
+    "marker": "no in-repo marker makes a repo read-only for agents; the nearest signal Proteus recognises is gh's READ or TRIAGE permission (guest mode), and guest mode keeps Proteus's files out of the repo, not the agents' changes"
   },
   "model": { "edits": "none: a fix goes upstream as an issue" }
 }

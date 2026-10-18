@@ -1,5 +1,5 @@
 // Guest mode tests: node tests/guest.test.js (needs git). In a repo the human does not own, install.js --project
-// keeps teams/ and the lead's docs in a guest dir outside the repo (marker <git-common-dir>/proteus/guest.json),
+// (and --plugin-setup, #173) keeps teams/ and the lead's docs in a guest dir outside the repo (marker <git-common-dir>/proteus/guest.json),
 // adds no CI, lefthook or root doc, and the lead guard, autostart, baseline ratchet and link-skills follow the
 // guest dir. Fake HOME, fake gh (FAKE_GH_PERMISSION) and claude; never the network or the real ~/.claude.
 "use strict";
@@ -134,5 +134,34 @@ g(CT, "add", ".codex/config.toml");
 g(CT, "commit", "-q", "-m", "codex config");
 r = install(CT, ["--harness", "codex", "--guest"], CODEX);
 ok("codex: a tracked config.toml is not edited in guest mode; the output says what to add", read(CT, ".codex", "config.toml") === "model = \"x\"\n" && /leaves the repo's tracked \.codex\/config\.toml alone/.test(both(r)), both(r).slice(-600));
+
+// ---- --plugin-setup (#173): the same guest decision as --project; nothing lands in the checkout
+const setup = (cwd, args, env = {}) => lib.run(INSTALL, "", { cwd, args: ["--plugin-setup", "--only-here", ...args], env });
+const PDRY = repo("plugin-dry");
+r = setup(PDRY, ["--dry-run"], { FAKE_GH_PERMISSION: "READ" });
+ok("plugin: --dry-run on a READ repo says guest and writes nothing", r.code === 0 && /would use /.test(r.out) && !marker(PDRY) && !exists(PDRY, ".claude") && !exists(PDRY, "teams") && g(PDRY, "status", "--porcelain") === "", both(r).slice(-1000));
+const PG = repo("plugin-upstream");
+const before = g(PG, "ls-files");
+r = setup(PG, [], { FAKE_GH_PERMISSION: "READ" });
+const PGD = (marker(PG) || {}).dir || "";
+const pl = json(PG, ".claude", "settings.local.json") || {};
+ok("plugin: --plugin-setup on a READ repo goes guest, teams/ in the guest dir", r.code === 0 && PGD && /gh reports READ access/.test(r.out) && exists(PGD, "teams", "ROUTING.md") && !exists(PG, "teams"), both(r).slice(-1500));
+ok("plugin: the checkout is untouched (no settings.json, status clean, same files)", !exists(PG, ".claude", "settings.json") && g(PG, "status", "--porcelain") === "" && g(PG, "ls-files") === before, g(PG, "status", "--porcelain", "-uall"));
+ok("plugin: settings.local.json holds the gate, the guest dir and a statusLine from the guest dir's teams/",
+  (pl.enabledPlugins || {})["proteus@proteus"] === true && ((pl.permissions || {}).additionalDirectories || []).includes(PGD)
+  && String((pl.statusLine || {}).command).includes(path.join(PGD, "teams").split(path.sep).join("/")), JSON.stringify(pl));
+ok("plugin: the next steps name nothing to commit", /nothing to commit: guest mode/.test(r.out) && !/commit \.claude\/settings\.json/.test(r.out), r.out.slice(-800));
+r = lib.run(INSTALL, "", { cwd: PG, args: ["--doctor"] });
+const bad = r.out.split(/\r?\n/).filter((l) => /^(FIX|WARN)\b/.test(l) && /not a Proteus project|plugin gate|plugin marketplace|teams\/ROUTING|guest mode/.test(l));
+ok("plugin: --doctor reports the guest setup as healthy", /^ok\s.*guest mode: Proteus files in/m.test(r.out) && /^ok\s.*plugin gate/m.test(r.out) && /^ok\s.*teams\/ROUTING\.md/m.test(r.out) && !bad.length, bad.join("\n") || r.out.slice(-1500));
+r = setup(PG, [], { FAKE_GH_PERMISSION: "READ" });
+ok("plugin: a rerun keeps the guest dir and lists it once", r.code === 0 && marker(PG).dir === PGD && json(PG, ".claude", "settings.local.json").permissions.additionalDirectories.filter((d) => d === PGD).length === 1 && g(PG, "status", "--porcelain") === "", both(r).slice(-800));
+const PN = repo("plugin-noguest");
+r = setup(PN, ["--no-guest"], { FAKE_GH_PERMISSION: "READ" });
+ok("plugin: --no-guest on a READ repo installs into the checkout", r.code === 0 && !marker(PN) && exists(PN, "teams", "ROUTING.md") && (json(PN, ".claude", "settings.json").enabledPlugins || {})["proteus@proteus"] === true, both(r).slice(-800));
+const PX = repo("plugin-explicit"), PXD = path.join(W, "plugin-elsewhere");
+r = setup(PX, ["--guest", PXD]);
+ok("plugin: --guest <dir> uses that dir, no gh check needed", r.code === 0 && marker(PX).dir === PXD && exists(PXD, "teams", "ROUTING.md") && !exists(PX, "teams") && g(PX, "status", "--porcelain") === "", both(r).slice(-800));
+ok("plugin: --guest and --no-guest conflict", setup(PX, ["--guest", "--no-guest"]).code === 2);
 
 lib.summary();
