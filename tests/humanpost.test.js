@@ -65,9 +65,13 @@ ok("ask: auto mode asks from 2.1.211", !!asked(hook(postCmd(), { mode: "auto", C
 r = hook(postCmd(), { mode: "auto", CLAUDE_CODE_EXECPATH: path.join(W, "versions", "2.1.200") });
 ok("deny: auto mode before 2.1.211 prints the command for the human's terminal", terminal(r) && /2\.1\.200/.test(r.err), r.err);
 r = hook(postCmd(), { mode: "auto" });
-ok("deny: auto mode with no version to check denies", terminal(r) && /version is unknown/.test(r.err), r.err);
+ok("deny: auto mode with no version to check denies", terminal(r) && /version is unknown/.test(r.err), r.out + r.err);
+r = hook(postCmd(), { mode: "auto", CLAUDE_CODE_EXECPATH: path.join(W, "versions", "latest") });
+ok("deny: an install path that names no version is no version", terminal(r), r.out + r.err);
+// a fake claude on win32 is a copy of node.exe, which answers --version itself (v22.x: no Claude Code version)
 lib.fakeCli(lib.BIN, "claude", 'process.stdout.write("2.1.300 (Claude Code)\\n");');
-ok("ask: auto mode reads the version from claude --version", !!asked(hook(postCmd(), { mode: "auto" })));
+r = hook(postCmd(), { mode: "auto" });
+ok("auto mode reads the version from claude --version, and nothing else", process.platform === "win32" ? terminal(r) : !!asked(r), r.out + r.err);
 lib.fakeCli(lib.BIN, "claude", "process.exit(1);");
 for (const mode of ["plan", "dontAsk", "bypassPermissions", "", "someNewMode"]) {
   r = hook(postCmd(), { mode });

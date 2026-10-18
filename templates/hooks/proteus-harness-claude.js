@@ -96,10 +96,11 @@ function ask(why) {
 // (CLAUDE_CODE_ENTRYPOINT sdk-*): no dialog; the ask is denied, or a program answers it, not the human.
 const ASK_FROM = [2, 1, 211];
 function claudeVersion() {
-  const pick = (s) => (/(\d+)\.(\d+)\.(\d+)/.exec(String(s || "")) || []).slice(1, 4).map(Number);
-  const exec = pick(path.basename(process.env.CLAUDE_CODE_EXECPATH || ""));
+  const pick = (s, re) => (re.exec(String(s || "")) || []).slice(1, 4).map(Number);
+  const exec = pick(path.basename(process.env.CLAUDE_CODE_EXECPATH || ""), /^(\d+)\.(\d+)\.(\d+)$/);
   if (exec.length === 3) return exec;
-  try { return pick(require("child_process").execFileSync("claude", ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] })); } catch { return []; }
+  // "2.1.302 (Claude Code)"; anything else on PATH named claude is no answer
+  try { return pick(require("child_process").execFileSync("claude", ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }), /^(\d+)\.(\d+)\.(\d+) \(Claude Code\)/m); } catch { return []; }
 }
 function noAsk(ev) {
   if (/^sdk/i.test(process.env.CLAUDE_CODE_ENTRYPOINT || "")) return "a headless session (claude -p or the Agent SDK) shows no permission dialog";
