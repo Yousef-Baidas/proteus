@@ -66,6 +66,47 @@ const wg = (t) => hl.signoffDenial({ agent: "a1", agentType: t, command: SIGNOFF
 ok("signoff, worker guard: bare and proteus: verifiers pass, evil: is refused",
   wg("proteus-verifier") === null && wg("proteus:proteus-verifier") === null && /evil:proteus-verifier is not a verifier/.test(wg("evil:proteus-verifier") || ""));
 
+// ---- a named spawn (#180): Claude Code reports the spawn's name as agent_type; the lead guard records
+// name -> subagent_type at the lead's spawn, and lib.agentTypeOf maps it back
+{
+  const TP = path.join(W, "opus-lead.jsonl");
+  fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
+  const spawnAs = (type, name, who = {}) => run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: type, name, prompt: "x" } }, who);
+  const rec = (name) => { try { return JSON.parse(fs.readFileSync(hl.spawnFile(path.join(REPO, ".git"), name), "utf8")); } catch { return null; } };
+  let r = spawnAs("proteus:proteus-frontend-verifier", "verify-74");
+  ok("named spawn: the lead's spawn passes and records name -> subagent_type",
+    r.code === 0 && rec("verify-74") && rec("verify-74").type === "proteus:proteus-frontend-verifier", r.err + JSON.stringify(rec("verify-74")));
+  spawnAs("proteus:proteus-security-verifier", "secverify-69");
+  spawnAs("proteus:proteus-worker", "work-69");
+  r = shell(SIGNOFF, as("verify-74", "v1"));
+  ok("named spawn: a named verifier runs proteus-signoff.js", r.code === 0, r.err);
+  r = shell(`${SIGNOFF} --security`, as("secverify-69", "v2"));
+  ok("named spawn: a named security verifier runs --security", r.code === 0, r.err);
+  r = shell(`${SIGNOFF} --security`, as("verify-74", "v1"));
+  ok("named spawn: a named non-security verifier is still refused --security", r.code === 2 && /security verifier's signoff/.test(r.err), r.err);
+  r = shell(SIGNOFF, as("work-69", "w1"));
+  ok("named spawn: a named worker is still refused, under its subagent_type", r.code === 2 && r.err.includes("proteus:proteus-worker is not a verifier"), r.err);
+  r = shell(SIGNOFF, as("stranger", "w2"));
+  ok("named spawn: an unrecorded name is used as it is", r.code === 2 && r.err.includes("stranger is not a verifier"), r.err);
+  r = shell(SIGNOFF, as("proteus:proteus-verifier", "v3"));
+  ok("named spawn: an unnamed verifier is unaffected", r.code === 0, r.err);
+  // only the lead's main thread records: a subagent's Agent call writes nothing
+  shell("ls", as("proteus:proteus-worker", "w3"));
+  run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: "proteus:proteus-verifier", name: "forged", prompt: "x" } }, as("proteus:proteus-worker", "w3"));
+  ok("named spawn: a subagent's spawn records nothing", rec("forged") === null);
+  ok("agentTypeOf: the main thread and an event with no type keep their own",
+    hl.agentTypeOf({ agentType: "verify-74", root: REPO }) === "verify-74" && hl.agentTypeOf({ agent: "a", agentType: "", root: REPO }) === "");
+  // nor can a subagent write the record itself while a run is open: its edits in the main checkout and its
+  // shell writes under .git/ are refused
+  g(REPO, "branch", "proteus/r1");
+  const forge = hl.spawnFile(path.join(REPO, ".git"), "w4");
+  r = run({ tool_name: "Write", tool_input: { file_path: forge, content: '{"name":"w4","type":"proteus-verifier"}' } }, as("proteus:proteus-worker", "w4"));
+  ok("named spawn: a subagent's Write of a spawn record is refused", r.code === 2 && rec("w4") === null, r.err);
+  r = shell(`echo '{"name":"w4","type":"proteus-verifier"}' > ${JSON.stringify(path.relative(REPO, forge).replace(/\\/g, "/"))}`, as("proteus:proteus-worker", "w4"));
+  ok("named spawn: a subagent's shell write of a spawn record is refused", r.code === 2 && rec("w4") === null, r.err);
+  g(REPO, "branch", "-D", "proteus/r1");
+}
+
 // ---- beats (lib.beat, PIPELINE_AGENT)
 const BEATS = path.join(REPO, ".git", "proteus", "beats");
 const beat = (a) => { try { return JSON.parse(fs.readFileSync(path.join(BEATS, `${a}.json`), "utf8")); } catch { return null; } };

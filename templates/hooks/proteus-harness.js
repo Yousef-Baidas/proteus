@@ -13,7 +13,8 @@
 //   permissionMode   the session's permission mode (default, acceptEdits, auto, plan, dontAsk, bypassPermissions)
 //   model        the session's model when the event carries it
 //   tool         edit | read | shell | monitor | spawn | "" (anything else); toolName is the CLI's own
-//   path, command, background, spawnModel, spawnType, toolUseId   from the tool call (spawnType: the agent spawned)
+//   path, command, background, spawnModel, spawnType, spawnName, toolUseId   from the tool call (spawnType: the agent
+//                spawned; spawnName: the name the spawn gives it, which Claude Code then reports as its agentType)
 //   workdir      the shell tool's own working dir (relative to cwd) when the CLI's shell takes one
 //   paths        every file the call touches (one patch can edit several); path is the first
 //   prompt, fromHuman   a submitted prompt, and whether the human typed it
