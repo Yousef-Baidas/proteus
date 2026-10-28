@@ -86,6 +86,7 @@ function event(raw) {
     background: false,
     spawnModel: typeof ti.model === "string" ? ti.model : "",
     spawnType: typeof ti.agent_type === "string" ? ti.agent_type : "",
+    spawnName: "", // not read from Codex's spawn tool: its agent_type is the role
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     fromHuman: true, // UserPromptSubmit fires for submitted user input only
     output: outputText(r.tool_response),
