@@ -2318,9 +2318,13 @@ const sandboxFile = (root) => {
 // bin, with sandbox-root.json naming the one repo it serves; "" or why not
 function sandboxCopy(bin, root, common) {
   const src = path.join(HERE, "templates", "hooks");
+  // every dir from the config dir down to bin is made a real directory, none a link
+  try { fs.mkdirSync(CLAUDE, { recursive: true }); } catch (e) { return `cannot make ${CLAUDE} (${e.message})`; }
+  const bins = C.ownDir(CLAUDE, ["proteus-sandbox", "bin"], true);
+  if (!bins) return `${path.dirname(bin)} is a link, or a link is on the way`;
+  if (lstat(bin) && !safeRemove(bin, [bins])) return `cannot replace ${bin}`;
   try {
-    fs.rmSync(bin, { recursive: true, force: true });
-    fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(bin, { mode: 0o700 });
     for (const f of fs.readdirSync(src)) {
       const st = lstat(path.join(src, f));
       if (st && st.isFile()) fs.copyFileSync(path.join(src, f), path.join(bin, f));
