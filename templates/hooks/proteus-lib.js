@@ -475,6 +475,17 @@ function classifyTier(block, changes) {
   }
   return { tier: TIERS[rank], why };
 }
+// a planned change, paths only (owned paths or globs, as the lead writes them): line limits are checked later
+const plannedTier = (block, paths) => classifyTier(block, paths.map((p) => ({ path: String(p).replace(/\\/g, "/").replace(/^\.\//, ""), lines: 0 })));
+// teams/ROUTING.md for the tier checks: with a ref, as committed there (a change cannot loosen its own
+// ceiling), else the working copy. Guest mode keeps teams/ outside git (docRoot), so it reads the guest dir's copy.
+const ROUTING_FILE = "teams/ROUTING.md";
+function routingText(root, ref) {
+  const at = ref ? git(["show", `${ref}:${ROUTING_FILE}`], root, 10000) : "";
+  if (at) return at;
+  const dir = ref ? guestDir(root) : docRoot(root);
+  try { return dir ? fs.readFileSync(path.join(dir, ROUTING_FILE), "utf8") : ""; } catch { return ""; }
+}
 
 // the tier proteus-worktree.js --tier records in a worktree's owned-path list, as a comment ownedDenial skips:
 // "# tier <tier> [human] <base sha>"
@@ -2607,7 +2618,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
