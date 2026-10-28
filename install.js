@@ -2263,7 +2263,6 @@ function sandboxProfile(root) {
     ...[path.join(HERE, "install.js")].flatMap((s) => [`node ${s} --project`, `node ${s} --project *`, `node ${q(s)} --project`, `node ${q(s)} --project *`]),
   ])];
   return {
-    $comment: `written by proteus install.js --sandbox for ${root}; run it again rather than editing (docs/install.md, Sandboxed bypass)`,
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
