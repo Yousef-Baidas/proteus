@@ -475,6 +475,17 @@ function classifyTier(block, changes) {
   }
   return { tier: TIERS[rank], why };
 }
+// a planned change, paths only (owned paths or globs, as the lead writes them): line limits are checked later
+const plannedTier = (block, paths) => classifyTier(block, paths.map((p) => ({ path: String(p).replace(/\\/g, "/").replace(/^\.\//, ""), lines: 0 })));
+// teams/ROUTING.md for the tier checks: with a ref, as committed there (a change cannot loosen its own
+// ceiling), else the working copy. Guest mode keeps teams/ outside git (docRoot), so it reads the guest dir's copy.
+const ROUTING_FILE = "teams/ROUTING.md";
+function routingText(root, ref) {
+  const at = ref ? git(["show", `${ref}:${ROUTING_FILE}`], root, 10000) : "";
+  if (at) return at;
+  const dir = ref ? guestDir(root) : docRoot(root);
+  try { return dir ? fs.readFileSync(path.join(dir, ROUTING_FILE), "utf8") : ""; } catch { return ""; }
+}
 
 // the tier proteus-worktree.js --tier records in a worktree's owned-path list, as a comment ownedDenial skips:
 // "# tier <tier> [human] <base sha>"
@@ -661,7 +672,7 @@ function editsLast(command, depth = 0) {
   return false;
 }
 // proteus-signoff.js posts the verifier's verdict as the commit status the ruleset requires: only a verifier runs
-// it, and --security (proteus/security) only the security verifier. ev.agentType names the agent; a harness that
+// it, and --security (proteus/security) only the security verifier. agentTypeOf(ev) names the agent; a harness that
 // does not say leaves it "", which passes, so the guard never blocks a verifier it cannot name. The lead's main
 // thread is refused by proteus-lead-guard.js (signsOff). A guard, not a boundary: the token is the agents' one.
 const SIGNOFF = /(^|[\\/])proteus-signoff\.js$/;
@@ -692,9 +703,10 @@ const SIGNOFF_MSG = {
 function signoffDenial(ev, unnamed = null) {
   const w = signsOff(ev.command);
   if (!w) return null;
-  if (!ev.agentType) return unnamed;
-  if (!isVerifier(ev.agentType)) return SIGNOFF_MSG.role(ev.agentType);
-  return w.includes("--security") && agentName(ev.agentType) !== "proteus-security-verifier" ? SIGNOFF_MSG.security(ev.agentType) : null;
+  const type = agentTypeOf(ev); // a named spawn's subagent_type, not its name (#180)
+  if (!type) return unnamed;
+  if (!isVerifier(type)) return SIGNOFF_MSG.role(type);
+  return w.includes("--security") && agentName(type) !== "proteus-security-verifier" ? SIGNOFF_MSG.security(type) : null;
 }
 // The verifier App's private key (#81) is no agent's: Read and Edit of it are refused, and so is a shell command
 // naming it (its file name, so any path to it counts). An agent's shell never sets GH_TOKEN or GITHUB_TOKEN either
@@ -1405,6 +1417,28 @@ const AGENT_MSG = {
 const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
 function bound(common, agent) {
   try { return fs.readFileSync(bindFile(common, agent), "utf8").trim() || null; } catch { return null; }
+}
+// A spawn the lead names (#180): Claude Code then reports the spawn's name as the subagent's agent_type, not its
+// subagent_type. The lead guard records each main-thread spawn's name -> subagent_type in
+// <git-common-dir>/proteus/spawns/ (recordSpawn), and agentTypeOf maps a reported type that matches a recorded
+// name back to it; an unrecorded value is used as it is. Only the lead's own Agent call writes a record, and a
+// subagent's edits and shell writes to .git/ are refused (agentShellDenial, AGENT_NEVER). A guard, not a boundary.
+const spawnFile = (common, name) => path.join(stateDir(common), "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
+function recordSpawn(ev) {
+  if (ev.agent || !ev.spawnName || !ev.spawnType || ev.spawnName === ev.spawnType) return;
+  const common = gitCommonDir(path.resolve(projectRoot(ev)));
+  if (!common) return;
+  const file = spawnFile(common, ev.spawnName);
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ name: ev.spawnName, type: ev.spawnType }) + "\n"); } catch {}
+}
+function agentTypeOf(ev) {
+  const t = ev && typeof ev.agentType === "string" ? ev.agentType : "";
+  if (!t || !ev.agent) return t;
+  const common = gitCommonDir(path.resolve(projectRoot(ev)));
+  if (!common) return t;
+  let rec = null;
+  try { rec = JSON.parse(fs.readFileSync(spawnFile(common, t), "utf8")); } catch {}
+  return rec && rec.name === t && typeof rec.type === "string" && rec.type ? rec.type : t;
 }
 // the prepared worktree of this repo a subagent's brief names (roles.md: "worktree <absolute path>"), else null.
 // A path counts written absolute (either slash, or its real path) or relative to the main checkout, as a whole
@@ -2584,10 +2618,10 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnFile, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
