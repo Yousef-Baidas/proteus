@@ -10,6 +10,8 @@
 // 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
 //    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
 //    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
+//    A spawn let through that names its agent records name -> subagent_type (lib.recordSpawn), since Claude Code
+//    reports the name as the subagent's agent_type; lib.agentTypeOf maps it back.
 // 4. `--edit-last` is refused: every agent posts as the same GitHub account. So is a comment that opens with
 //    ACCEPT, CHANGES or ANSWER, the human's words (lib.verdictPost). The human's verdict goes out as
 //    `proteus-verdict.js <issue> --post --body-file <f> --sha <h>` under their own gh login: on the main thread
@@ -91,7 +93,7 @@ else lib.run((ev, ad) => {
   if (secret) ad.deny(secret);
 
   const root = lib.projectRoot(ev);
-  if (lib.isLinked(root)) return;
+  if (lib.isLinked(root)) return ev.tool === "spawn" ? lib.recordSpawn(ev) : undefined;
 
   if (ev.tool === "spawn") {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
@@ -102,7 +104,7 @@ else lib.run((ev, ad) => {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
     }
-    return;
+    return lib.recordSpawn(ev); // a spawn let through: its name -> subagent_type, for lib.agentTypeOf (#180)
   }
 
   const target = ev.path;

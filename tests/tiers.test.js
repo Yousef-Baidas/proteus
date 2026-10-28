@@ -91,11 +91,24 @@ r = commit(WT, "docs/b.md", lines(4));
 ok("pre-commit: the batch is measured from its base, so a second change that passes lines=5 is refused",
   r.status !== 0 && /needs the quick tier, declared direct:\n  docs\/a\.md, docs\/b\.md: direct \(docs\/\*\*\), over lines=5 \(6\) → quick/.test(r.stderr), r.stderr);
 g(WT, "reset", "-q", "--hard");
-T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WT, "--tier", "direct", "docs/", "README.md"] });
-ok("worktree: a re-run for the next change in the batch keeps the first base", list() === `# tier direct ${base}\ndocs/\nREADME.md\n`, list());
-r = commit(WT, "README.md", "readme\n");
-ok("pre-commit: a path with no tier rule is standard and refused on a Direct branch", r.status !== 0 && /needs the standard tier/.test(r.stderr), r.stderr);
-g(WT, "reset", "-q", "--hard");
+r = T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WT, "--tier", "direct", "docs/", "README.md"] });
+ok("worktree: a --tier below what the owned paths need is raised to it, in one line, keeping the first base",
+  r.code === 0 && list() === `# tier standard ${base}\ndocs/\nREADME.md\n` &&
+  r.out.split("\n").filter((l) => /--tier direct is below what these paths need; prepared at standard \(.*README\.md: standard \(no tier rule\)/.test(l)).length === 1, r.out + r.err + list());
+T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WT, "--tier", "direct", "docs/"] });
+ok("worktree: paths a lower tier allows keep the declared one", list() === `# tier direct ${base}\ndocs/\n`, list());
+// a full path (**/auth/**) owned under a lower --tier: prepared at full, which may also be asked for outright
+const WF = path.join(W, "full");
+g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r/9", WF, "main");
+const listF = () => fs.readFileSync(lib.ownedFile(WF), "utf8");
+r = T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WF, "--tier", "standard", "src/auth/", "src/x.ts"] });
+ok("worktree: an owned full-tier path prepares the worktree at full, never standard",
+  r.code === 0 && listF().startsWith("# tier full ") && /--tier standard is below what these paths need; prepared at full \(src\/auth\/: full \(\*\*\/auth\/\*\*\)\)/.test(r.out) && /tier full/.test(r.out), r.out + r.err);
+ok("pre-commit: so the full path commits there", commit(WF, "src/auth/login.ts", "z\n").status === 0);
+r = T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WF, "--tier", "full", "docs/"] });
+ok("worktree: --tier may raise the tier above what the paths need", r.code === 0 && listF().startsWith("# tier full ") && !/below/.test(r.out), r.out + r.err);
+r = T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WF, "--tier", "quick", "--human", "src/auth/"] });
+ok("worktree: a human quick: never covers a full path either", r.code === 0 && listF().startsWith("# tier full ") && /--tier quick --human is below/.test(r.out), r.out + r.err);
 
 // a Quick worktree under the human's quick: covers standard paths, never full ones
 const WQ = path.join(W, "quick");
@@ -104,6 +117,13 @@ T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: REPO, args: [WQ, "--ti
 ok("pre-commit: quick (human) commits a standard path", commit(WQ, "src/x.ts", "y\n").status === 0);
 r = commit(WQ, "src/auth/login.ts", "z\n");
 ok("pre-commit: quick (human) still refuses a full path", r.status !== 0 && /needs the full tier, declared quick \(human\)/.test(r.stderr), r.stderr);
+// the refusal names the lead's exact re-run: this script, this worktree, --tier full, the same owned paths (#177)
+const rerun = /\nTo re-prepare this worktree at full: node (\S+)\/proteus-worktree\.js (\S+) --tier full src\/\n?$/.exec(r.stderr);
+ok("pre-commit: a full-tier refusal names the re-run command with the real values",
+  rerun !== null && rerun[1] === HOOKS.replace(/\\/g, "/") && fs.realpathSync(rerun[2]) === fs.realpathSync(WQ), r.stderr);
+r = commit(WT, "docs/b.md", lines(9));
+ok("pre-commit: a refusal that needs less than full names no re-run", r.status !== 0 && /needs the quick tier/.test(r.stderr) && !/re-prepare/.test(r.stderr), r.stderr);
+g(WT, "reset", "-q", "--hard");
 g(WQ, "reset", "-q", "--hard");
 
 // CI: the diff since the base against the declared tier, with the rules as of the base
@@ -133,7 +153,7 @@ g(W, "init", "-q", "-b", "main", GR);
 put(GR, "docs/a.md", "a\n");
 g(GR, "add", "-A"); g(GR, "commit", "-qm", "init");
 const GD = path.join(W, "guest-dir");
-put(GD, "teams/ROUTING.md", block("docs/**  direct  lines=5"));
+put(GD, "teams/ROUTING.md", block("docs/**  direct  lines=5\nsecret/**  full"));
 put(GR, ".git/proteus/guest.json", JSON.stringify({ dir: GD }));
 r = tier(GR, ["docs/a.md"]);
 ok("guest: the lead's command reads ROUTING.md from the guest dir", r.code === 0 && r.out.startsWith("direct\n  docs/a.md: direct (docs/**)"), r.out + r.err);
@@ -144,6 +164,11 @@ r = commit(GW, "docs/a.md", "b\n");
 ok("guest: pre-commit measures against the guest dir's rules, so a Direct change commits", r.status === 0, r.stderr);
 r = commit(GW, "docs/a.md", lines(9));
 ok("guest: and still refuses one over them", r.status !== 0 && /needs the quick tier, declared direct/.test(r.stderr), r.stderr);
+const GF = path.join(W, "guest-full");
+g(GR, "worktree", "add", "-q", "-b", "proteus-work/r/g2", GF, "main");
+r = T.run(path.join(HOOKS, "proteus-worktree.js"), "", { cwd: GR, args: [GF, "--tier", "direct", "secret/"] });
+ok("guest: the worktree's tier floor reads the guest dir's rules", r.code === 0 && fs.readFileSync(lib.ownedFile(GF), "utf8").startsWith("# tier full ") &&
+  /prepared at full \(secret\/: full \(secret\/\*\*\)\)/.test(r.out), r.out + r.err);
 
 // the shipped CI template wires the tier step on worker PRs and a docs-only job for Direct batches into main
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
