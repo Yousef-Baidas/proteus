@@ -76,7 +76,7 @@ else lib.run((ev, ad) => {
     const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
-    if (ev.tool === "shell") return shellCheck("snapshot", ev);
+    if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
     return;
   }
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
@@ -171,10 +171,10 @@ function unnamedSignoff(ev, ad) {
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run
 // proteus-shell-check.js before a call it lets through: a subagent's fingerprint (snapshot), the lead's window
 // (leadStart); a hook copy without it (an old install) skips it
-async function shellCheck(fn, ev) {
+async function shellCheck(fn, ev, ad) {
   let check;
   try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
-  try { if (typeof check[fn] === "function") await check[fn](ev); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
+  try { if (typeof check[fn] === "function") await check[fn](ev, ad); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
 }
 
 function subagentEdit(ev, ad) {
