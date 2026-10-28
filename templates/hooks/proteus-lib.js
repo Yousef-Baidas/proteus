@@ -1412,22 +1412,31 @@ function bound(common, agent) {
 // <git-common-dir>/proteus/spawns/ (recordSpawn), and agentTypeOf maps a reported type that matches a recorded
 // name back to it; an unrecorded value is used as it is. Only the lead's own Agent call writes a record, and a
 // subagent's edits and shell writes to .git/ are refused (agentShellDenial, AGENT_NEVER). A guard, not a boundary.
+// An unnamed spawn is recorded under its subagent_type (Claude Code reports that as its agent_type), and each
+// record carries the spawn's time: the watchdog tracks only agents with a lead spawn record (spawnRecord, #179).
 const spawnFile = (common, name) => path.join(stateDir(common), "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
 function recordSpawn(ev) {
-  if (ev.agent || !ev.spawnName || !ev.spawnType || ev.spawnName === ev.spawnType) return;
+  const name = ev.spawnName || ev.spawnType;
+  if (ev.agent || !name || !ev.spawnType) return;
   const common = gitCommonDir(path.resolve(projectRoot(ev)));
   if (!common) return;
-  const file = spawnFile(common, ev.spawnName);
-  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ name: ev.spawnName, type: ev.spawnType }) + "\n"); } catch {}
+  const file = spawnFile(common, name);
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ name, type: ev.spawnType, at: new Date().toISOString() }) + "\n"); } catch {}
+}
+// the lead's record of this subagent's spawn, found by the agent_type its harness reports, else null
+function spawnRecord(ev) {
+  const t = ev && typeof ev.agentType === "string" ? ev.agentType : "";
+  if (!t || !ev.agent) return null;
+  const common = gitCommonDir(path.resolve(projectRoot(ev)));
+  if (!common) return null;
+  let rec = null;
+  try { rec = JSON.parse(fs.readFileSync(spawnFile(common, t), "utf8")); } catch {}
+  return rec && rec.name === t && typeof rec.type === "string" && rec.type ? rec : null;
 }
 function agentTypeOf(ev) {
   const t = ev && typeof ev.agentType === "string" ? ev.agentType : "";
-  if (!t || !ev.agent) return t;
-  const common = gitCommonDir(path.resolve(projectRoot(ev)));
-  if (!common) return t;
-  let rec = null;
-  try { rec = JSON.parse(fs.readFileSync(spawnFile(common, t), "utf8")); } catch {}
-  return rec && rec.name === t && typeof rec.type === "string" && rec.type ? rec.type : t;
+  const rec = spawnRecord(ev);
+  return rec ? rec.type : t;
 }
 // the prepared worktree of this repo a subagent's brief names (roles.md: "worktree <absolute path>"), else null.
 // A path counts written absolute (either slash, or its real path) or relative to the main checkout, as a whole
@@ -2457,23 +2466,45 @@ function handoffLines(ev, root) {
 
 // Liveness of the lead's workers and verifiers, read by proteus-watchdog.js: one file per agent in
 // <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
-// "ended" (proteus-stall.js, a stop without a report) stamps `ended`, "done" (a stop with a report)
+// "ended" (proteus-stall.js, a stop with no final message) stamps `ended`, "done" (a stop that hands one back)
 // removes the file. Other agent types (scout, guide) are not tracked: they end without a report.
+// Only an agent the lead spawned itself is tracked (#179): one with a lead spawn record (spawnRecord), so nested
+// agents a worker or verifier starts, and foreign ones, are not. An agent `--forget` dropped stays dropped
+// (forgotten): by its id, or by `--forget all` at or after its spawn, so a late stop does not bring it back.
 // the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
 const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
 const isPipelineAgent = (type) => PIPELINE_AGENT.test(agentName(type));
 const beatsDir = (common) => path.join(stateDir(common), "beats");
+const forgetFile = (common) => path.join(stateDir(common), "forgotten.json");
+const isoMs = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? t : 0; };
+// proteus-watchdog.js --forget: ids forgotten now, and all = every agent spawned until now; a week's ids are kept
+function forget(common, ids, all = false) {
+  const prev = readJSON(forgetFile(common), null) || {};
+  const now = new Date().toISOString();
+  const keep = Date.now() - 7 * 24 * 3600e3;
+  const agents = {};
+  for (const [id, at] of Object.entries(prev.agents && typeof prev.agents === "object" ? prev.agents : {})) if (isoMs(at) >= keep) agents[id] = at;
+  for (const id of ids) agents[id] = now;
+  writeJSON(forgetFile(common), { all: all ? now : prev.all || "", agents });
+}
+function forgotten(common, id, spawnAt) {
+  const f = readJSON(forgetFile(common), null) || {};
+  if (f.agents && typeof f.agents === "object" && Object.prototype.hasOwnProperty.call(f.agents, id)) return true;
+  return !!f.all && isoMs(f.all) >= isoMs(spawnAt);
+}
 function beat(ev, state) {
-  if (!ev.agent || (ev.agentType && !isPipelineAgent(ev.agentType))) return;
+  if (!ev.agent) return;
   try {
     const common = gitCommonDir(projectRoot(ev));
     if (!common) return;
     const file = path.join(beatsDir(common), `${String(ev.agent).replace(/[^\w.-]/g, "_")}.json`);
     if (state === "done") { fs.rmSync(file, { force: true }); return; }
+    const spawn = spawnRecord(ev);
+    if (!spawn || !isPipelineAgent(spawn.type) || forgotten(common, ev.agent, spawn.at)) return;
     const prev = readJSON(file, null) || {};
     const now = new Date().toISOString();
     // a rewrite drops `flagged`: a tool call after the watchdog's STALL is the agent answering
-    const rec = { agent: ev.agent, type: ev.agentType || prev.type || "", session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
+    const rec = { agent: ev.agent, type: spawn.type, session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
     if (state === "ended") { rec.last = prev.last || now; rec.ended = now; rec.flagged = prev.flagged; }
     writeJSON(file, rec);
   } catch {}
@@ -2604,13 +2635,13 @@ function verifyInstalled(bare, sha) {
 module.exports = {
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
-  run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat,
+  run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnFile, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnRecord, spawnFile, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
