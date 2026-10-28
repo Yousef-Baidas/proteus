@@ -1429,6 +1429,32 @@ function agentTypeOf(ev) {
   try { rec = JSON.parse(fs.readFileSync(spawnFile(common, t), "utf8")); } catch {}
   return rec && rec.name === t && typeof rec.type === "string" && rec.type ? rec.type : t;
 }
+// An agent's own memory (#181): Claude Code keeps a `memory: local` agent's notes in
+// <spawning checkout>/.claude/agent-memory-local/<its agent type, [^\w-] as ->/, which is the lead's main
+// checkout, where every other .claude/ path is refused. A subagent edit there passes when the dir is its own type
+// (agentTypeOf; the bare name past proteus: counts too) and that Proteus agent declares `memory: local`
+// (MEMORY_LOCAL, kept equal to agents/*.md by tests/agentmemory.test.js). The lead, another agent's dir, the
+// memory root itself and any path a link on the way moves elsewhere stay refused.
+const MEMORY_LOCAL = new Set(["proteus-verifier", "proteus-backend-verifier", "proteus-frontend-verifier", "proteus-qa-verifier", "proteus-security-verifier", "proteus-guide"]);
+function ownMemory(ev, abs) {
+  if (!ev || !ev.agent) return false;
+  const type = agentTypeOf(ev), name = agentName(type);
+  if (!MEMORY_LOCAL.has(name)) return false;
+  const root = gitRoot(path.resolve(projectRoot(ev)));
+  if (!root) return false;
+  const dirs = new Set([type.replace(/[^a-zA-Z0-9\-_]/g, "-"), name].map((d) => d.toLowerCase()));
+  const mine = (rel) => {
+    const seg = rel === null ? [] : rel.split("/");
+    return seg.length > 3 && seg[0] === ".claude" && seg[1] === "agent-memory-local" && dirs.has(seg[2]) && seg.every((s) => s && s !== "." && s !== "..");
+  };
+  const rel = relPath(root, abs);
+  if (!mine(rel === null ? null : fileKey(rel)) || /~\d/.test(rel)) return false;
+  let st = null;
+  try { st = fs.lstatSync(abs); } catch {}
+  if (st && st.isSymbolicLink()) return false;
+  const real = realTarget(abs), realRel = real && relPath(realOr(root), real);
+  return !!realRel && fileKey(realRel) === fileKey(rel);
+}
 // the prepared worktree of this repo a subagent's brief names (roles.md: "worktree <absolute path>"), else null.
 // A path counts written absolute (either slash, or its real path) or relative to the main checkout, as a whole
 // token. None named, or several (a contracts worker's brief lists one per ticket), is null: the cwd and
@@ -2611,6 +2637,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnFile, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
