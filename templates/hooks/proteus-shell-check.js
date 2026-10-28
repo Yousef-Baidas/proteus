@@ -458,22 +458,38 @@ function rebaseRecords(common, w) {
 
 // ---- before the call
 
-// own: the agent's worktree (its cwd's prepared worktree, else its binding, else the linked worktree of this repo
-// its cwd is in, one a brief named without preparing it (#172); a worker session's own checkout)
-function ownOf(ev, common) {
+// own: the agent's worktree (its cwd's prepared worktree, else its binding, else the one prepared worktree its
+// brief names, bound then as a first edit binds (#178: a subagent's shell cwd resets to the main checkout, so a
+// build worker whose first call is `npm install` has neither), else the linked worktree of this repo its cwd is
+// in, one a brief named without preparing it (#172); a worker session's own checkout)
+function ownOf(ev, common, ad) {
   const cwd = lib.shellCwd(ev);
   if (!ev.agent) return lib.gitRoot(cwd) || lib.projectRoot(ev);
-  const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent);
+  const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent) || briefBind(ev, common, ad);
   if (prepared) return prepared;
   const at = lib.gitRoot(cwd), c = at && lib.isLinked(at) && lib.gitCommonDir(at);
   return c && lib.realOr(c) === lib.realOr(common) ? at : "";
 }
 
-async function snapshot(ev) {
+// the one prepared worktree an agent's brief names (lib.briefWorktree), recorded as its binding; null without one
+function briefBind(ev, common, ad) {
+  let brief = "";
+  try { brief = String((ad && ad.briefText(ev)) || ""); } catch {}
+  const named = lib.briefWorktree(brief, common);
+  if (!named) return null;
+  const file = lib.bindFile(common, ev.agent);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, named + "\n", { flag: "wx" }); // exclusive, as the lead guard's first-edit binding
+  } catch {}
+  return lib.bound(common, ev.agent) || named;
+}
+
+async function snapshot(ev, ad) {
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common || ev.tool !== "shell") return;
   const id = callId(ev), at = Date.now();
-  const own = lib.realOr(ownOf(ev, common) || lib.projectRoot(ev));
+  const own = lib.realOr(ownOf(ev, common, ad) || lib.projectRoot(ev));
   const marker = { id, key: whoKey(ev), agent: ev.agent || "", own, at };
   lib.writeJSON(path.join(flightDir(common), `${id}.json`), marker);
   const fl = flights(common, id), agents = boundAgents(common);
@@ -689,7 +705,7 @@ async function check(ev, ad) {
     if (rec && rec.open) lib.writeJSON(recFile, { ...rec, open: false, items: [], closed: new Date().toISOString(), history: [...(rec.history || []), ...(rec.items || [])].slice(-200) });
     return;
   }
-  const own = (snap && snap.own) || (rec && rec.worktree) || ownOf(ev, common);
+  const own = (snap && snap.own) || (rec && rec.worktree) || ownOf(ev, common, ad);
   const add = fresh.filter((i) => !(i.path && byPath.has(i.path)));
   const all = [...left, ...add].map((i) => withAfter(i.kind === "snapshot" ? { ...i, reported: true } : i));
   lib.writeJSON(recFile, {
