@@ -68,6 +68,7 @@
       "15b9fceabe258688dc82a2839672eeacd8029efd",
       "2252a69d196d893b7f179ce128682f5722ecaa98",
       "3c704beb83beb1eef4c892d65a4bbab00d583f39",
+      "62a9546a7f39045a5a270fc3b09763ebed467c32",
       "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
       "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
       "d0777c39e7e61c830e31b36b371029851cc3b610",
@@ -79,6 +80,7 @@
       "3c7db010d5a7bb0442fec3a0e1d5d5923f3721f7",
       "475201567b975c9ea2f91702a8edeba5d32b03bc",
       "7f0c55dad0cc9fe73632113d32dc8fb878592b19",
+      "a07a7c8b4599af96f5e07dd2a81016c8688bac44",
       "b06e0422870d2f906077fd3173a6a1b5dd4348e8",
       "cec173e74657cd37b0e6b0d20a60e30adaa8f3cc"
     ],
@@ -88,12 +90,14 @@
       "8944dd36b51ab68a6ad02ef7aee55c225fa54cdf",
       "b31c85bdd059ad15c0272ec216876de0180be50a",
       "cca7e257c812fafb1b8dda67614bc8bfb19f1b78",
+      "f4bc10bd30ea14bb9f115cfe8c0d3e1f188b7f2e",
       "f91d7a3fa24eb740f2c257f9330ff8afbc70a85e"
     ],
     "agents/proteus-frontend-verifier.md": [
       "08f090611dd0652d5a2e1d376bd0a344f866f036",
       "16853f12e3f175087845b0928ceb673020648cc4",
       "413aa920b13454277b88b648d95eebdbdc9f7f31",
+      "666ec4129789fb52f2cd7ef96a21d8f5f5e49eac",
       "717c7a89a8c0d69b6642bde95322e043420bde91",
       "83006ca2df0160c773fbe7108665c383fdc5bd4c",
       "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
@@ -106,12 +110,14 @@
       "8de24922eab05c824a60477785241f9ae0a69c7e",
       "a0f61b1613c11854bfb7d3173171187b43109721",
       "b368b6710cc9f760a297c12a54536f264a4ff549",
+      "c282a4d64e56559402cfe23952056de1f6ce81c5",
       "fe412f9c2e951e1a1fb3fc80250221e3fbaf620f"
     ],
     "agents/proteus-guide.md": [
       "23e50af7a841236311165344663882b546f70c18",
       "32a561d826490a30f14a9425c2d9688d9c82125c",
       "537123bc82f78da1c50cee22503acd465e7c0e3c",
+      "7a42f06bb015b79c4b7e58f8e92dee5fd0bd05ac",
       "820c553ca8da6970179609bf1db5785051273927",
       "9085a9296b951dcbd1dfa507bb21ec4dc382a204",
       "96012da4266056baa86f362755b7c0e7b8ef47ee",
@@ -120,6 +126,7 @@
     ],
     "agents/proteus-qa-verifier.md": [
       "3b608ec2c734b140a740ab7d7e718f0d00087f80",
+      "56a8485860e35fd2f5acf9e0ad53a0742ecfb436",
       "66c8b94e8ab86c76ee1a7ad0a7d7e9c9026af7c7",
       "8af418feb8a6290a87042b5d4a83d4c4ac2b29c8",
       "8b92fa663002db8b3dec78bc597aee6629eb07aa",
@@ -132,6 +139,7 @@
       "0cfad86e09d7ece8c65993596a11aec69dfa96bb",
       "1708ef98872a74f09dc9c0dfa820b89bfb54863e",
       "587203c805468d48d9d9f85be216a37432f6b14b",
+      "d255df67c50f65e04b25d5ac316bba514631ae1c",
       "d57160119f820e6ed2f06018cae8f727c8ebc421",
       "d70061c1ec453ee757d0a7f2e1a03282cc707e1c"
     ],
@@ -143,10 +151,12 @@
       "6c5c813fbb659629df1d313b33dee14f7972f243",
       "998eec07b55be6b8e65f510a1472738a584824ae",
       "c09e510f67331a68839864016cbc4b6adad002bd",
+      "d432d7062346b0941a3fc9bacdabb0a1ef093894",
       "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
     ],
     "agents/proteus-verifier.md": [
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
+      "5745fd11b97aee5d2882b95405a7e61dafa2d731",
       "6ef7877f844cb074c53f10c7cde5b1e72f65f6f6",
       "8a129250f1e3e0c9b121bffc7e6116cd37345c78",
       "944ae5caa2869c96c7e224ac3cdcdb8671c5ee0e",
@@ -160,6 +170,7 @@
       "5cfb9ee081cda56e1e189e013efb77b6babebb0e",
       "8262186937f1219d773c8ffc478a48b754b5e01c",
       "94eb0754ed34791d83cd11666aef52bbdc111844",
+      "dae64d247cab1e8fdce1466aba1128d15f046eee",
       "fa7dca6500e97f9c2a59d5491d6a76c673c1005a"
     ],
     "templates/ci/hive-gates.yml": [
@@ -448,6 +459,7 @@
       "5dd381a41c1927ab8028bf593c7af36693ee2e19",
       "619e3668c2831408aff23a76e1b229dcec8cd2b6",
       "64d511aa0f7581a80d619a15aa335a9f28181741",
+      "6783274c641286d4b74738e5d06ec2e63a3b6405",
       "72005b0d57e33c75a332b21e1d7ce5d0ec375e9d",
       "8d3273453afb65983cba020cb7d60f1f630d5123",
       "9397823d6b4246c1f85fa8b0868127938781296e",
@@ -462,6 +474,7 @@
       "c14d52134797859520fecb6bdee25e4c3c7aadb9",
       "c1abaac5fc5e35f5b39c7cd94b75fa098222fcfd",
       "d568e1ccb41b4c71316c8a343da07a24b5b2bc9b",
+      "d9336a1244906f205fd4bcf6ccc4c7fa1a46b459",
       "e41b0e45932ae0fcddf4088f101a218cc77ee0fe",
       "eeacc25ab53140905ef91a0a237525f81d1c69f3",
       "f9a59003dedafe62f272c1a4504afd98b8f65487",
@@ -483,6 +496,7 @@
       "285d025638de31807005185efe33e93ea0640f97",
       "2be489b65243f77f4da6df8438b1e20a58d3637d",
       "30fbb98f511dcf65bb844eda422af9fd0021a4e8",
+      "3162c6d97a09c9ac58f38a058e7e1542be8f8d5c",
       "3285e36918ed400d93e016fedf4ae274fb01412a",
       "32a9c7d0a3f66cb7fa0d297c849d89ef8f9d961b",
       "375113c1459bb8b6ccd821249e7cf588cb3371e6",
@@ -561,6 +575,7 @@
       "c164087b9bb85495d72ae7ae35eb052c039df9c3"
     ],
     "templates/hooks/proteus-shell-check.js": [
+      "237f44636a2b419442e5716bc0c3a29db3dd5b0e",
       "3deb1bd9d4d8a15153cbec938b0fd403692860ed",
       "3f57e951f3e571bfb3856043110d97d1f159079e",
       "42a47093f91705d6c6ab34c37ade1707c900efec",
@@ -597,6 +612,7 @@
       "b1a1118a552a52002d644638ceb954033dcb0169"
     ],
     "templates/hooks/proteus-tier.js": [
+      "40a694e6265d904da1bafa982d8b449b3cbcf4c7",
       "6a461c893d24e0a8193011ca86298403661ebc9a",
       "b13912db9982ed1bdda51de7adfec4cb27fbb011"
     ],
@@ -618,6 +634,7 @@
     "templates/hooks/proteus-worktree.js": [
       "0a052d7b36fd035ce16880416e7853947050a4f1",
       "1b6d6eebb8caf858f47d84f617ac15bbf70c99e5",
+      "531d77a807769d88a1bda70697673d11c02f2148",
       "6137fdf998ab3ca1058f7c0ff3ca9d41b643b82e",
       "9645b5d835332c74cf76ff128756950e37606f8c",
       "b1971a9cec288d9891026f69a8631276d3c7274c",
@@ -713,6 +730,7 @@
       "22d4f788ebfe50d79f2106b62c9be7aabf3d3fa4",
       "5b9fa6205036a63025d0c89c273446e3b44ed14b",
       "61a0ce6f254f26f18212a0dcd2fdb93175cbef24",
+      "6246d2c5ea5c48229c10f1dbbff033b4ccf4c5c8",
       "7ff0fb1f58082557001be94c831edcf1a85c4931",
       "8115078ff296fcfcba7e42d28fd6822eb564405e",
       "a74caf54d8c0a04c7694495b83972f2d45481523",
@@ -777,6 +795,7 @@
       "22d4f788ebfe50d79f2106b62c9be7aabf3d3fa4": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
       "5b9fa6205036a63025d0c89c273446e3b44ed14b": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nThe mechanical part runs in CI, not in your session: every merge pushes `proteus/<run>`, and `proteus-gates.yml` runs `gates` (full suite) and then `qa` (steps `e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files that merge changed) on it. Read the results, do not re-run them:\n\n1. The run for the branch head: `gh run list --workflow proteus-gates.yml --branch proteus/<run> --event push --json databaseId,headSha,status,conclusion --limit 50`, the entry whose `headSha` is `git rev-parse origin/proteus/<run>`. Not `completed` yet → `gh run watch <id> --exit-status` in the foreground (timeout 10 minutes, again until it ends).\n2. Its summary: `gh run view <id> --json conclusion,jobs -q '.jobs[] | {name, conclusion, failed: [.steps[] | select(.conclusion == \"failure\") | .name]}'`. Each failed step is a finding; read its cause with `gh run view <id> --log-failed` through context-mode, never raw into your context.\n3. What CI does not cover runs locally, every gate as `node .claude/hooks/proteus-gates-cache.js \"<gate>\"` on a clean checkout (a tree the lead already passed after the last merge is not run again): no run for the head (no workflow, Actions disabled, `protection: none` in `AGENTS.md ## Learned`), or a step the project's workflow lacks (no `e2e` step while an e2e suite exists; a `rebuild` that needs hardware CI lacks, such as a GPU render, of every non-code deliverable from the branch alone, matching the merged evidence). Compress output with rtk.\n\nThen map each test to a ticket id by reading the tests, not running them; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the steps above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. CI ran it per merge: list the push runs whose `headSha` is in `git rev-list --first-parent <merge-base>..origin/proteus/<run>` (the list command above), and each whose `mutation` step failed gives its survivors from `--log-failed`. Only when the workflow has no `mutation` step, run it locally on those files: Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
       "61a0ce6f254f26f18212a0dcd2fdb93175cbef24": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on Opus.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..hive/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment on the `hive-debt` issue (create it if absent), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the `hive-debt` issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
+      "6246d2c5ea5c48229c10f1dbbff033b4ccf4c5c8": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nThe mechanical part runs in CI, not in your session: every merge pushes `proteus/<run>`, and `proteus-gates.yml` runs `gates` (full suite) and then `qa` (steps `e2e`, `smoke` from a fresh install, `rebuild` of the deliverables, `mutation` on the files that merge changed) on it. Read the results, do not re-run them:\n\n1. The run for the branch head: `gh run list --workflow proteus-gates.yml --branch proteus/<run> --event push --json databaseId,headSha,status,conclusion --limit 50`, the entry whose `headSha` is `git rev-parse origin/proteus/<run>`. Not `completed` yet → `gh run watch <id> --exit-status` in the foreground (timeout 10 minutes, again until it ends).\n2. Its summary: `gh run view <id> --json conclusion,jobs -q '.jobs[] | {name, conclusion, failed: [.steps[] | select(.conclusion == \"failure\") | .name]}'`. Each failed step is a finding; read its cause with `gh run view <id> --log-failed` through context-mode when its tools are listed for you, else into a scratch file you grep, not raw into your context.\n3. What CI does not cover runs locally, every gate as `node <hooks>/proteus-gates-cache.js \"<gate>\"` (`<hooks>` is `.claude/hooks`, or `.codex/hooks` on Codex) on a clean checkout (a tree the lead already passed after the last merge is not run again): no run for the head (no workflow, Actions disabled, `protection: none` in `AGENTS.md ## Learned`), or a step the project's workflow lacks (no `e2e` step while an e2e suite exists; a `rebuild` that needs hardware CI lacks, such as a GPU render, of every non-code deliverable from the branch alone, matching the merged evidence). Compress output with rtk.\n\nThen map each test to a ticket id by reading the tests, not running them; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the steps above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. CI ran it per merge: list the push runs whose `headSha` is in `git rev-list --first-parent <merge-base>..origin/proteus/<run>` (the list command above), and each whose `mutation` step failed gives its survivors from `--log-failed`. Only when the workflow has no `mutation` step, run it locally on those files: Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), not a ticket or a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
       "7ff0fb1f58082557001be94c831edcf1a85c4931": "# qa profile (verifier only)\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `hive/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nMilestone wave only (the lead says so): mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
       "8115078ff296fcfcba7e42d28fd6822eb564405e": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the `judge` tier.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node .claude/hooks/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",
       "a74caf54d8c0a04c7694495b83972f2d45481523": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo: full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n",

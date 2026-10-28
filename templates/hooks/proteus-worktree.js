@@ -10,7 +10,8 @@
 // plus a commit-msg hook running commit-msg.js when the repo has none of its own.
 // --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
 // the list, which the same pre-commit hook checks with proteus-tier.js --staged; --human marks a human's quick:.
-// A re-run keeps the first base, so a Direct batch is measured as a whole.
+// A re-run keeps the first base, so a Direct batch is measured as a whole. A --tier below what the owned paths
+// need by the tiers block (proteus-tier.js's rules) is raised to it, with one line saying so.
 // On a worker branch proteus-work/<run>/<id>, the paths are compared with the lead's record .proteus/owned/<id>
 // that the branch carries from the run branch, which CI checks the PR against; a difference is warned about.
 "use strict";
@@ -26,7 +27,7 @@ Prepares a worktree made with \`git worktree add\` for one worker, before dispat
   <owned path>...   the ticket's owned paths and globs, the check's files among them; the pre-commit
                     hook refuses a staged path outside them
   --tier <tier>     the tier proteus-tier.js classified; the pre-commit hook fails a change that outgrows
-                    it and names the tier it needs
+                    it and names the tier it needs. Below what the owned paths need, it is raised to that
   --human           with --tier quick: the human's quick: prefix (covers Standard work, never Full)
   <worktree> --allow force-push
                     alone: lets the worker force-push once (the guard consumes the entry)
@@ -85,6 +86,17 @@ if (tier) {
     process.exitCode = 1;
     return;
   }
+  // the tier the owned paths need, by the rules the pre-commit check reads (#177): --tier may raise it, never lower it
+  const rules = lib.parseTiers(lib.routingText(wt, base));
+  if (rules && rules.errors.length) console.error(`proteus-worktree: ${lib.ROUTING_FILE}: ${rules.errors.join("; ")}; the tier is not checked against the paths`);
+  else {
+    const need = lib.plannedTier(rules, entries);
+    if (lib.tierOverrun({ tier, human }, need)) {
+      console.log(`proteus-worktree: --tier ${tier}${human ? " --human" : ""} is below what these paths need; prepared at ${need.tier} (${need.why.join("; ")})`);
+      tier = need.tier;
+      human = false;
+    }
+  }
   head = [`# tier ${tier}${human ? " human" : ""} ${base}`, ...entries];
 }
 fs.mkdirSync(path.dirname(lib.ownedFile(wt)), { recursive: true });
@@ -138,7 +150,7 @@ function installPreCommit() {
   const msgCheck = [__dirname, ...(lead ? [path.join(lib.docRoot(lead), "teams", "templates", "hooks")] : [])]
     .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
   if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
-  write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
+  write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged ${sq(path.join(__dirname, "proteus-worktree.js"))} || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
   if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--worktree", "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";
 }
