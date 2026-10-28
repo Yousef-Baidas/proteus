@@ -209,6 +209,32 @@ ok("config: ...while another branch's merge key is caught, naming it", r.blocked
 r = call("sh tools/untrack.sh", ["git", "config", "--unset", "branch.proteus-work/r1/2.merge"], e1);
 ok("config: ...unsetting it again passes and closes the record", !r.blocked && record("agent-e1").open === false, r.why);
 
+// #178: a build worker whose first call is a shell one, from the main checkout (a subagent's cwd resets there), is
+// bound to the one prepared worktree its brief names; a sibling's stays refused, and a brief naming two binds none
+const WT6 = path.join(REPO, ".worktrees", "r1-6");
+g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/6", WT6, "main");
+lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [WT6, "src/**"] });
+const briefOf = (id, text) => {
+  const f = path.join(W, `brief-${id}.jsonl`);
+  fs.writeFileSync(f, JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n");
+  return { who: { agent_id: id, agent_type: "proteus-devops-worker", agent_transcript_path: f }, cwd: REPO };
+};
+const lock = path.join(WT6, "package-lock.json");
+const f1 = briefOf("f1", `Ticket #67, worktree ${WT6}. Add the font dependency.`);
+r = call("npm install", node(`require('fs').writeFileSync(${JSON.stringify(lock)}, '{}')`), f1);
+ok("brief bind: a first shell call changing the brief's worktree is not refused", r.pre.code === 0 && !r.blocked && record("agent-f1") === null, r.pre.err + r.why);
+ok("brief bind: ...and binds the agent to it", fs.existsSync(path.join(STATE, "agents", "agent-f1")) && fs.readFileSync(path.join(STATE, "agents", "agent-f1"), "utf8").trim() === WT6);
+r = call("sh tools/x.sh", node(`require('fs').writeFileSync(${JSON.stringify(path.join(WT2, "src", "f1.js"))}, 'x')`), f1);
+ok("brief bind: ...while a change to a sibling worktree is still refused", r.blocked && r.why.includes(slash(WT2)), r.why);
+r = call("sh tools/undo.sh", node(`require('fs').rmSync(${JSON.stringify(path.join(WT2, "src", "f1.js"))})`), f1);
+ok("brief bind: ...removing it again passes", !r.blocked && record("agent-f1").open === false, r.why);
+fs.rmSync(lock);
+const f2 = briefOf("f2", `Contracts: worktree ${WT6} for #67, worktree ${WT2} for #68.`);
+r = call("npm install", node(`require('fs').writeFileSync(${JSON.stringify(lock)}, '{}')`), f2);
+ok("brief bind: a brief naming two worktrees binds none, as before", r.blocked && r.why.includes(slash(WT6)) && !fs.existsSync(path.join(STATE, "agents", "agent-f2")), r.why);
+r = call("sh tools/undo.sh", node(`require('fs').rmSync(${JSON.stringify(lock)})`), f2);
+ok("brief bind: ...removing it again passes", !r.blocked && record("agent-f2").open === false, r.why);
+
 // the lead's own shell calls: what changes while one overlaps an agent's call is a notice to the lead, not a block
 let m = 0;
 const evOf = (who, cwd, command) => ({ session_id: "s1", cwd, tool_name: "Bash", tool_input: { command }, tool_use_id: `toolu_lead${++m}`, ...who });
