@@ -144,6 +144,35 @@ Auto mode's classifier judges every tool call and every subagent's task descript
 
 The installer never writes it: an agent editing your settings is self-modification to auto mode, and the call is yours. When a call is denied anyway, the lead tells you in one line what was denied, the reason tag and why the run needs it, then waits or carries on with other work; reply naming the action to clear it. A worker that hits a denial stops with `BLOCKED #<n> classifier <tag>: <action>` and is not re-spawned.
 
+## Sandboxed bypass
+
+Auto mode can still deny ordinary Proteus work, and prompts stall an unattended run. `bypassPermissions` turns prompts off, which is only safe behind an isolation layer. On macOS (Seatbelt), Linux and WSL2 (bubblewrap and socat), Claude Code's own sandbox is that layer. A plugin cannot ship sandbox or permission settings, so the installer writes them to a file of their own, which you pass at launch. Run it in the repo:
+
+```sh
+node install.js --sandbox
+claude --settings ~/.claude/proteus-sandbox/<repo>-<hash>.json --permission-mode bypassPermissions
+```
+
+It prints the exact command. Your `settings.json` and `settings.local.json` are never touched. Run `--sandbox` again after you move the repo, update Proteus, or change `AGENTS.md ## Learned`, rather than editing the file. Native Windows has no sandbox, so the flag refuses there; use WSL2.
+
+The file sets:
+
+- `sandbox.enabled`, `failIfUnavailable` (no sandbox means no session) and `allowUnsandboxedCommands: false`, so a failed command is never retried outside the sandbox. Because these come from `--settings`, a repo's own settings cannot loosen the sandbox.
+- Writes from shell commands go only to the repo (`.worktrees/` included), its git dir, the temp dir that holds scratch, and the guest dir in guest mode.
+- Shell commands cannot read `~/.ssh`, `~/.aws`, `~/.azure` or `~/.config/gcloud`. When `agentGh` is set (`--agent-login`), your own gh config dir is blocked too. `GH_TOKEN`, `GITHUB_TOKEN` and the enterprise variants are removed from their environment, so `gh` uses its config dir.
+- `network.strictAllowlist` with GitHub (`github.com`, `*.github.com`, `*.githubusercontent.com`) and the registries of the package managers `## Learned` names (npm, yarn, pip, cargo, Go, gem, Maven/Gradle, NuGet, Composer). Any other host is refused, with no prompt.
+- `permissions.deny`, because the sandbox covers only Bash and its children. It removes `WebFetch`, blocks `Read` of the same secrets, and blocks `Edit` (which covers Write) outside the repo, the temp dir and the guest dir, and on the repo's `.claude` dirs, `.git/config` and git hooks. A deny rule cannot carve out an exception, so the installer lists everything next to each directory on the path down to the repo. A file or dir created there later is not covered, except a dotfile.
+- `excludedCommands` for the two lead scripts whose writes the sandbox always refuses: `proteus-worktree.js` (a worktree's `.claude/settings.local.json`, its hooks, and `extensions.worktreeConfig` in `.git/config`) and `install.js --project` (`.claude/hooks/`). Each is matched by its exact path, which the `Edit` rules and the sandbox's protected paths keep agents from replacing. These two run with your full access.
+
+The review session (`/proteus-review`) runs without the profile. Under `bypassPermissions`, `proteus-verdict.js --post` gets no permission dialog, so the guard prints the command for you to run instead.
+
+What it does not cover:
+
+- **Prompt injection.** Bypass approves whatever the model decides. The sandbox limits what a shell command can reach. It does not limit what the agent tries.
+- **Read, Edit and Write** run outside the sandbox. They are held only by the deny rules above and by Proteus's hooks. Reads are open everywhere except the named secrets, because skills and plugins live outside the repo.
+- **The gh token.** Agents need a token that reaches github.com, so a command can use it there, including against other repos it has access to. Use `identity=separate` (`--agent-login`): agents then hold a machine user's token, never yours. Never log in to anything from inside the sandboxed session.
+- **Caches.** A package manager that writes its cache under your home (for example `~/.npm`) fails inside the sandbox. Point its cache at the temp dir for the session (e.g. `npm_config_cache`).
+
 ## Manual install (any platform)
 
 1. Link or copy `skills/proteus/` and `skills/proteus-review/` to `~/.claude/skills/`. Not also to `<repo>/.claude/skills/`: two copies show up as two commands.

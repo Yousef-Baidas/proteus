@@ -64,6 +64,11 @@
 //   node install.js --remove-user-install [--dry-run]   once the plugin is installed: remove the 1.x user install
 //                                     (skill links in ~/.claude/skills, unedited proteus-*.md in ~/.claude/agents,
 //                                     autoUpdate in proteus.json); edited agents stay and are named
+//   node install.js --sandbox         in a repo: write a settings file of its own (in ~/.claude/proteus-sandbox/) for
+//                                     claude --settings <file> --permission-mode bypassPermissions: the sandbox on and
+//                                     strict, writes to the repo and the temp dir, reads of ~/.ssh and cloud credentials
+//                                     denied, network limited to GitHub and the registries ## Learned names. Never edits
+//                                     settings.json or settings.local.json (docs/install.md, Sandboxed bypass)
 //   --harness codex                   any of the above for OpenAI Codex CLI instead (or PROTEUS_HARNESS=codex;
 //                                     default claude): skills linked into ~/.agents/skills, agents as
 //                                     TOML in $CODEX_HOME/agents, the lead's hooks in .codex/hooks.json
@@ -2188,6 +2193,120 @@ function releaseState(root) {
   return { sha, at: typeof c.sha === "string" ? c.sha : "", result: isObj(c.result) ? c.result : null };
 }
 
+// --sandbox (#188): a settings file of its own for `claude --settings <file> --permission-mode bypassPermissions`.
+// Never touches settings.json, settings.local.json or any permission config; the human passes the file each launch.
+// The sandbox covers Bash and its children only, so Edit/Write/Read/WebFetch get permissions.deny rules too.
+const SANDBOX_GITHUB = ["github.com", "*.github.com", "*.githubusercontent.com"];
+// a word in AGENTS.md ## Learned -> the registries that package manager fetches from
+const SANDBOX_REGISTRIES = [
+  [/\b(npm|npx|pnpm|bun|node(\.js)?)\b/i, ["registry.npmjs.org"]],
+  [/\byarn\b/i, ["registry.npmjs.org", "registry.yarnpkg.com", "repo.yarnpkg.com"]],
+  [/\b(pip|pipx|uv|poetry|pipenv|pypi|python)\b/i, ["pypi.org", "files.pythonhosted.org"]],
+  [/\b(cargo|crates|rust)\b/i, ["crates.io", "index.crates.io", "static.crates.io"]],
+  [/\b(go mod|golang|go\.mod)\b/i, ["proxy.golang.org", "sum.golang.org"]],
+  [/\b(gem|bundler|ruby)\b/i, ["rubygems.org", "index.rubygems.org"]],
+  [/\b(maven|gradle)\b/i, ["repo.maven.apache.org", "repo1.maven.org", "plugins.gradle.org", "services.gradle.org"]],
+  [/\b(nuget|dotnet)\b/i, ["api.nuget.org"]],
+  [/\b(composer|packagist)\b/i, ["repo.packagist.org", "packagist.org"]],
+];
+const SANDBOX_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
+const SANDBOX_SECRETS = ["~/.ssh", "~/.aws", "~/.azure", "~/.config/gcloud"];
+
+const learnedText = (docs) => {
+  const t = norm(readText(path.join(docs, "AGENTS.md")) || "");
+  const m = /^## Learned[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(t);
+  return m ? m[1] : "";
+};
+const registries = (learned) => [...new Set(SANDBOX_REGISTRIES.filter(([re]) => re.test(learned)).flatMap(([, d]) => d))];
+
+// Edit deny rules for everything outside keep (dirs that stay editable). A deny rule cannot carve an exception, so
+// each dir on the way from / to a kept dir has its other entries denied one by one, plus .* for dotfiles made later.
+// A snapshot: an entry created afterwards beside an ancestor (other than a dotfile) is not covered.
+// a permission rule for an absolute path: //path (a single / would be project-relative)
+const slashRule = (tool, p) => `${tool}(/${p.split(path.sep).join("/")})`;
+function outsideEdits(keep) {
+  const open = new Set(), kept = new Set(keep);
+  for (const k of keep) for (let d = path.dirname(k); ; d = path.dirname(d)) { open.add(d); if (path.dirname(d) === d) break; }
+  const rules = [], rule = (p) => slashRule("Edit", p);
+  for (const a of [...open].sort()) {
+    let names = [];
+    try { names = fs.readdirSync(a); } catch { continue; }
+    let dotOpen = false;
+    for (const n of names.sort()) {
+      const full = path.join(a, n);
+      if (kept.has(full) || open.has(full)) { if (n.startsWith(".")) dotOpen = true; continue; }
+      const st = lstat(full);
+      if (!st || !st.isFile()) rules.push(rule(path.join(full, "**")));
+      if (!st || !st.isDirectory()) rules.push(rule(full));
+    }
+    if (!dotOpen) rules.push(rule(path.join(a, ".*")), rule(path.join(a, ".*", "**")));
+  }
+  return rules;
+}
+
+function sandboxProfile(root) {
+  const lib = hl(), common = commonDir(root) || path.join(root, ".git");
+  const guest = lib.guestDir(root), tmp = os.tmpdir();
+  const writable = [...new Set([root, common, tmp, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
+  const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
+  const agent = agentGh(), human = lib.humanGhDir();
+  const secrets = [...SANDBOX_SECRETS, ...(agent && human && !samePath(path.resolve(human), agent) ? [human] : [])];
+  const domains = [...SANDBOX_GITHUB, ...registries(learnedText(lib.docRoot(root)))];
+  const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
+  // the lead scripts whose writes the sandbox always refuses (.claude settings and hooks, .git/config): out of it,
+  // matched only by their exact path, which the Edit rules and the sandbox's protected paths keep agents from replacing
+  const scripts = [
+    ".claude/hooks/proteus-worktree.js", path.join(HERE, "templates", "hooks", "proteus-worktree.js"),
+  ];
+  const excluded = [...new Set([
+    ...scripts.flatMap((s) => [`node ${s} *`, `node ${q(s)} *`]),
+    ...[path.join(HERE, "install.js")].flatMap((s) => [`node ${s} --project`, `node ${s} --project *`, `node ${q(s)} --project`, `node ${q(s)} --project *`]),
+  ])];
+  return {
+    $comment: `written by proteus install.js --sandbox for ${root}; run it again rather than editing (docs/install.md, Sandboxed bypass)`,
+    sandbox: {
+      enabled: true,
+      failIfUnavailable: true,
+      allowUnsandboxedCommands: false,
+      excludedCommands: excluded,
+      filesystem: { allowWrite: writable, denyRead: secrets },
+      network: { allowedDomains: domains, strictAllowlist: true },
+      credentials: { envVars: SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
+    },
+    permissions: {
+      deny: [
+        "WebFetch",
+        ...secrets.map((s) => (s.startsWith("~/") ? `Read(${s}/**)` : slashRule("Read", path.join(s, "**")))),
+        // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config)
+        ...[[root, "**", ".claude", "**"], [common, "config"], [common, "hooks", "**"], [common, "worktrees", "*", "config.worktree"],
+          [common, "worktrees", "*", "proteus-hooks", "**"]].map((s) => slashRule("Edit", path.join(...s))),
+        ...outsideEdits(keep),
+      ],
+    },
+  };
+}
+
+const sandboxFile = (root) => {
+  const common = commonDir(root) || root;
+  const name = path.basename(root).replace(/[^\w.-]/g, "_");
+  return path.join(CLAUDE, "proteus-sandbox", `${name}-${crypto.createHash("sha256").update(real(common) || common).digest("hex").slice(0, 8)}.json`);
+};
+
+function sandbox() {
+  if (WIN) die("--sandbox: native Windows has no Claude Code sandbox; run Claude Code in WSL2 and run this there (docs/install.md, Sandboxed bypass)", 2);
+  const top = git(["rev-parse", "--show-toplevel"], process.cwd());
+  if (!top.ok || !top.out) die("--sandbox: run it inside the repo the profile is for (no git repo here)", 2);
+  const root = real(top.out) || path.resolve(top.out);
+  const file = sandboxFile(root);
+  writeJson(file, sandboxProfile(root));
+  const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
+  log(`sandbox  -> ${file}`);
+  log("Start Claude Code in the repo root with it (your own settings files are untouched):");
+  log(`  claude --settings ${q(file)} --permission-mode bypassPermissions`);
+  log("Run the review session (/proteus-review) without it. Run --sandbox again after moving the repo or updating Proteus.");
+  return true;
+}
+
 // main
 
 const FLAGS = {
@@ -2195,7 +2314,7 @@ const FLAGS = {
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
   "--tour-done": "tourDone", "--protect": "protect", "--no-guest": "noGuest",
   "--plugin-setup": "pluginSetup", "--dry-run": "dryRun", "--remove-user-install": "removeUser",
-  "--only-here": "onlyHere", "--migrate": "migrate", "--migrate-here": "migrateHere",
+  "--only-here": "onlyHere", "--migrate": "migrate", "--migrate-here": "migrateHere", "--sandbox": "sandbox",
 };
 let harnessArg = null;
 
@@ -2256,10 +2375,13 @@ function main() {
   }
   if (opt.migrateHere && SCANS.length) die("--migrate-here takes no other flag", 2);
   if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
+  if (opt.sandbox && (Object.keys(opt).length > 1 || SCANS.length)) die("--sandbox takes no other flag", 2);
+  if (opt.sandbox && codex()) die("--sandbox is for Claude Code; Codex runs its own sandbox", 2);
 
   (async () => {
     if (opt.doctor) process.exitCode = (await doctor(opt.fix)) ? 0 : 1;
     else if (opt.tourDone) tourDone();
+    else if (opt.sandbox) process.exitCode = sandbox() ? 0 : 1;
     else if (opt.agentLogin) process.exitCode = agentLogin(opt.agentLogin === true ? "" : opt.agentLogin) ? 0 : 1;
     else if (opt.protect) process.exitCode = protect() ? 0 : 1;
     else if (opt.verifierApp) process.exitCode = (await verifierApp(...opt.verifierApp)) ? 0 : 1;
