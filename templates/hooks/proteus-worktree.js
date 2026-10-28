@@ -34,6 +34,30 @@ Re-run on the same worktree with every path so far to extend a Direct batch; the
 Exit 1 on bad usage or when <worktree> is not a git worktree.`;
 if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); return; }
 const [wtArg, ...rest] = process.argv.slice(2);
+// The copy install.js --sandbox makes (#188) runs outside the sandbox on whatever arguments an agent passes, so it
+// serves only a worktree of the repo it was made for (sandbox-root.json beside it names that repo): under
+// <root>/.worktrees/, listed by `git worktree list`, its git dir and common dir the repo's, and nothing it writes
+// through a link. A plain run outside the sandbox that cannot write names the copy to run instead.
+const PIN = path.join(__dirname, "sandbox-root.json");
+if (fs.existsSync(PIN)) {
+  let why;
+  try { why = sandboxRefusal(wtArg, JSON.parse(fs.readFileSync(PIN, "utf8"))); } catch (e) { why = `cannot read ${PIN} (${e.message})`; }
+  if (why) {
+    console.error(`proteus-worktree: refused: ${why}`);
+    process.exitCode = 1;
+    return;
+  }
+} else {
+  process.on("uncaughtException", (e) => {
+    const C = require(path.join(__dirname, "proteus-confine.js"));
+    const common = wtArg && lib.gitCommonDir(path.resolve(wtArg));
+    const copy = common && path.join(C.sandboxBin(common), "proteus-worktree.js");
+    if (copy && ["EPERM", "EACCES", "EROFS"].includes(e && e.code) && fs.existsSync(copy))
+      console.error(`proteus-worktree: ${e.message}\nIn a sandboxed session (install.js --sandbox) run the copy that runs outside the sandbox: node ${copy} ${process.argv.slice(2).join(" ")}`);
+    else console.error(e && e.stack ? e.stack : String(e));
+    process.exitCode = 1;
+  });
+}
 // --allow <what>: the lead's one-off authorisation for this worktree's worker, consumed by the first use the
 // guard lets through (lib.workerDenial); the owned-path list is left as it is
 if (rest[0] === "--allow") {
@@ -163,3 +187,42 @@ if (work && work[1] !== "lead-docs") {
 }
 
 console.log(`worktree ${wt}: hooks + ${entries.length} owned paths${tier ? `, tier ${tier}${human ? " (human)" : ""}` : ""}`);
+
+// why the sandbox copy refuses arg ("" when it is a worktree of pin.root it may prepare); hoisted for the top
+function sandboxRefusal(arg, pin) {
+  const C = require(path.join(__dirname, "proteus-confine.js"));
+  const under = (child, parent) => C.inside(child, parent) && !C.samePath(child, parent);
+  const run = (cwd, ...a) => { try { return execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 10000 }).trim(); } catch { return null; } };
+  const root = C.real(String(pin.root || "")), common = C.real(String(pin.common || ""));
+  if (!root || !common) return "the repo this copy was made for is gone; run install.js --sandbox again";
+  const nest = path.join(root, ".worktrees");
+  const wt = arg ? C.real(path.resolve(arg)) : null;
+  if (!wt || !under(wt, nest)) return `${arg || "(no worktree)"} is not a checkout under ${nest}`;
+  const listed = (run(root, "worktree", "list", "--porcelain") || "").split(/\r?\n/)
+    .filter((l) => l.startsWith("worktree ")).map((l) => C.real(l.slice(9)));
+  if (!listed.some((l) => l && C.samePath(l, wt))) return `${wt} is not a worktree \`git -C ${root} worktree list\` names`;
+  const dotgit = path.join(wt, ".git"), st = C.lstat(dotgit);
+  if (!st || !st.isFile()) return `${dotgit} is not a worktree's .git file`;
+  const m = /^gitdir:[ \t]*(.+?)[ \t]*$/m.exec(fs.readFileSync(dotgit, "utf8"));
+  const gitdir = m ? C.real(path.resolve(wt, m[1])) : null;
+  if (!gitdir || !under(gitdir, path.join(common, "worktrees"))) return `${wt}'s git dir is not inside ${path.join(common, "worktrees")}`;
+  // what git itself resolves, which the writes below go through (a commondir file can point anywhere)
+  const said = (run(wt, "rev-parse", "--absolute-git-dir", "--git-common-dir") || "").split(/\r?\n/);
+  if (said.length !== 2 || !C.samePath(C.real(said[0]) || "", gitdir) || !C.samePath(C.real(path.resolve(wt, said[1])) || "", common))
+    return `git resolves ${wt} to another git dir or common dir than ${gitdir} and ${common}`;
+  if (!C.samePath(C.real(lib.gitCommonDir(wt) || "") || "", common)) return `${wt}'s common dir is not ${common}`;
+  const link = (p) => {
+    const s2 = C.lstat(p);
+    if (!s2) return "";
+    if (s2.isSymbolicLink()) return p;
+    if (s2.isDirectory()) for (const n of fs.readdirSync(p)) { const l = link(path.join(p, n)); if (l) return l; }
+    return "";
+  };
+  for (const d of [path.join(wt, ".claude"), path.join(gitdir, "proteus-hooks"), path.join(gitdir, "config.worktree"),
+    path.join(common, "info"), path.join(common, "config"), path.join(common, "proteus", "allow")]) {
+    const l = link(d);
+    if (l) return `${l} is a link, which this copy will not write through`;
+  }
+  for (const d of [path.join(common, "proteus")]) { const s3 = C.lstat(d); if (s3 && s3.isSymbolicLink()) return `${d} is a link, which this copy will not write through`; }
+  return "";
+}

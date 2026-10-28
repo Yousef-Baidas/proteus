@@ -33,6 +33,11 @@ const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r
 const userHome = () => { try { return realish(os.userInfo().homedir); } catch { return null; } };
 // Claude Code's config dir: $CLAUDE_CONFIG_DIR, else ~/.claude (here: install.js, link-skills.js and the hooks all load this file)
 const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+// install.js --sandbox (#188): a repo's key (its git common dir, hashed) and the dir its copy of
+// proteus-worktree.js and the hooks beside it go in. That copy runs outside the sandbox, so it sits outside every
+// path the sandbox lets agents write, and proteus-worktree.js names it when a sandboxed run cannot write.
+const sandboxKey = (common) => require("crypto").createHash("sha256").update(real(common) || path.resolve(common)).digest("hex").slice(0, 8);
+const sandboxBin = (common) => path.join(claudeDir(), "proteus-sandbox", "bin", sandboxKey(common));
 // the plugin's own folder when these hooks run as a Claude Code plugin's (it sets CLAUDE_PLUGIN_ROOT), else ""
 const pluginRoot = () => (process.env.CLAUDE_PLUGIN_ROOT ? path.resolve(process.env.CLAUDE_PLUGIN_ROOT) : "");
 
@@ -128,4 +133,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };

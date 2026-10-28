@@ -2209,8 +2209,13 @@ const SANDBOX_REGISTRIES = [
   [/\b(nuget|dotnet)\b/i, ["api.nuget.org"]],
   [/\b(composer|packagist)\b/i, ["repo.packagist.org", "packagist.org"]],
 ];
-const SANDBOX_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"];
-const SANDBOX_SECRETS = ["~/.ssh", "~/.aws", "~/.azure", "~/.config/gcloud"];
+const SANDBOX_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "NPM_TOKEN", "ANTHROPIC_API_KEY"];
+// credentials shell commands and the Read tool never see; a trailing / marks a dir (its contents denied too)
+const SANDBOX_SECRETS = ["~/.ssh/", "~/.aws/", "~/.azure/", "~/.config/gcloud/", "~/.claude/.credentials.json", "~/.git-credentials",
+  "~/.netrc", "~/.npmrc", "~/.docker/config.json", "~/.kube/", "~/.gnupg/", "~/.local/share/keyrings/", "~/Library/Keychains/"];
+// MCP servers that run commands or fetch pages run outside the sandbox: their tools are denied in the profile
+const SANDBOX_MCP = ["mcp__plugin_context-mode_context-mode__*", "mcp__context-mode__*", "mcp__plugin_playwright_playwright__*",
+  "mcp__playwright__*", "mcp__claude-in-chrome__*"];
 
 const learnedText = (docs) => {
   const t = norm(readText(path.join(docs, "AGENTS.md")) || "");
@@ -2244,41 +2249,59 @@ function outsideEdits(keep) {
   return rules;
 }
 
-function sandboxProfile(root) {
+// the scratch dir agents' shell commands may write in the temp dir: per user, made 0700, never a link
+const sandboxScratch = () => {
+  const who = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username.replace(/[^\w.-]/g, "_");
+  return path.join(os.tmpdir(), `proteus-${who}`);
+};
+function makeScratch(dir) {
+  try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") return `cannot make ${dir} (${e.message})`; }
+  const st = lstat(dir);
+  if (!st || !st.isDirectory()) return `${dir} is not a directory (a link or a file is there)`;
+  if (typeof process.getuid === "function" && st.uid !== process.getuid()) return `${dir} belongs to another user`;
+  try { fs.chmodSync(dir, 0o700); } catch (e) { return `cannot make ${dir} private (${e.message})`; }
+  return "";
+}
+
+function sandboxProfile(root, bin, scratch) {
   const lib = hl(), common = commonDir(root) || path.join(root, ".git");
-  const guest = lib.guestDir(root), tmp = os.tmpdir();
-  const writable = [...new Set([root, common, tmp, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
+  const guest = lib.guestDir(root);
+  const writable = [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
   const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
-  const agent = agentGh(), human = lib.humanGhDir();
-  const secrets = [...SANDBOX_SECRETS, ...(agent && human && !samePath(path.resolve(human), agent) ? [human] : [])];
+  // the human's gh config dir, always (agents read theirs, agentGh), and the credentials Claude Code itself keeps
+  const human = lib.humanGhDir();
+  const own = path.join(CLAUDE, ".credentials.json");
+  const secrets = [...new Set([...SANDBOX_SECRETS, ...(human ? [path.resolve(human) + "/"] : []), own])];
   const domains = [...SANDBOX_GITHUB, ...registries(learnedText(lib.docRoot(root)))];
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
-  // the lead scripts whose writes the sandbox always refuses (.claude settings and hooks, .git/config): out of it,
-  // matched only by their exact path, which the Edit rules and the sandbox's protected paths keep agents from replacing
-  const scripts = [
-    ".claude/hooks/proteus-worktree.js", path.join(HERE, "templates", "hooks", "proteus-worktree.js"),
-  ];
-  const excluded = [...new Set([
-    ...scripts.flatMap((s) => [`node ${s} *`, `node ${q(s)} *`]),
-    ...[path.join(HERE, "install.js")].flatMap((s) => [`node ${s} --project`, `node ${s} --project *`, `node ${q(s)} --project`, `node ${q(s)} --project *`]),
-  ])];
+  // the lead script whose writes the sandbox always refuses (.claude settings and hooks, .git/config) runs outside
+  // it, matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
+  const copy = path.join(bin, "proteus-worktree.js");
+  const excluded = [...new Set([`node ${copy} *`, `node ${q(copy)} *`])];
+  const dir = (s) => s.endsWith("/");
+  const bare = (s) => s.replace(/\/$/, "");
+  const readRule = (s) => (s.startsWith("~/") ? `Read(${bare(s)}${dir(s) ? "/**" : ""})` : slashRule("Read", dir(s) ? path.join(bare(s), "**") : s));
   return {
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       excludedCommands: excluded,
-      filesystem: { allowWrite: writable, denyRead: secrets },
+      filesystem: { allowWrite: writable, denyRead: secrets.map(bare) },
       network: { allowedDomains: domains, strictAllowlist: true },
       credentials: { envVars: SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
     },
     permissions: {
       deny: [
         "WebFetch",
-        ...secrets.map((s) => (s.startsWith("~/") ? `Read(${s}/**)` : slashRule("Read", path.join(s, "**")))),
+        ...SANDBOX_MCP,
+        ...secrets.map(readRule),
+        // the copies that run outside the sandbox, and the profile itself
+        slashRule("Edit", path.join(path.dirname(path.dirname(bin)), "**")),
         // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config)
         ...[[root, "**", ".claude", "**"], [common, "config"], [common, "hooks", "**"], [common, "worktrees", "*", "config.worktree"],
-          [common, "worktrees", "*", "proteus-hooks", "**"]].map((s) => slashRule("Edit", path.join(...s))),
+          [common, "worktrees", "*", "proteus-hooks", "**"], [common, "modules", "**", "config"], [common, "modules", "**", "hooks", "**"]]
+          .map((s) => slashRule("Edit", path.join(...s))),
         ...outsideEdits(keep),
       ],
     },
@@ -2288,20 +2311,52 @@ function sandboxProfile(root) {
 const sandboxFile = (root) => {
   const common = commonDir(root) || root;
   const name = path.basename(root).replace(/[^\w.-]/g, "_");
-  return path.join(CLAUDE, "proteus-sandbox", `${name}-${crypto.createHash("sha256").update(real(common) || common).digest("hex").slice(0, 8)}.json`);
+  return path.join(CLAUDE, "proteus-sandbox", `${name}-${C.sandboxKey(common)}.json`);
 };
+
+// a fresh copy of templates/hooks (proteus-worktree.js and every file it requires or copies into a worktree) in
+// bin, with sandbox-root.json naming the one repo it serves; "" or why not
+function sandboxCopy(bin, root, common) {
+  const src = path.join(HERE, "templates", "hooks");
+  try {
+    fs.rmSync(bin, { recursive: true, force: true });
+    fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
+    for (const f of fs.readdirSync(src)) {
+      const st = lstat(path.join(src, f));
+      if (st && st.isFile()) fs.copyFileSync(path.join(src, f), path.join(bin, f));
+    }
+    fs.writeFileSync(path.join(bin, "sandbox-root.json"), JSON.stringify({ root, common: real(common) || common }, null, 2) + "\n");
+  } catch (e) { return `cannot copy the hooks to ${bin} (${e.message})`; }
+  return "";
+}
 
 function sandbox() {
   if (WIN) die("--sandbox: native Windows has no Claude Code sandbox; run Claude Code in WSL2 and run this there (docs/install.md, Sandboxed bypass)", 2);
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
   if (!top.ok || !top.out) die("--sandbox: run it inside the repo the profile is for (no git repo here)", 2);
   const root = real(top.out) || path.resolve(top.out);
-  const file = sandboxFile(root);
-  writeJson(file, sandboxProfile(root));
+  const common = commonDir(root) || path.join(root, ".git");
+  const file = sandboxFile(root), bin = C.sandboxBin(common), scratch = sandboxScratch();
+  // the copies run outside the sandbox: refused when an agent could write them (Claude Code's config dir inside the
+  // repo, the temp dir or the guest dir)
+  const guest = hl().guestDir(root);
+  const open = [root, common, scratch, ...(guest ? [guest] : [])].map((p) => realish(p));
+  const place = realish(path.dirname(path.dirname(bin)));
+  const hit = open.find((w) => inside(place, w) || inside(w, place));
+  if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
+  const bad = makeScratch(scratch) || sandboxCopy(bin, root, common);
+  if (bad) die(`--sandbox: ${bad}`, 1);
+  writeJson(file, sandboxProfile(root, bin, scratch));
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   log(`sandbox  -> ${file}`);
-  log("Start Claude Code in the repo root with it (your own settings files are untouched):");
+  log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
+  log(`sandbox  -> ${scratch} (scratch dir sandboxed commands may write)`);
+  if (!agentGh()) warn("warning: no agent identity (--agent-login): the profile hides your gh config from shell commands, so gh has no login inside the sandbox");
+  log("Before launching, run the project setup outside the sandbox if this repo needs it (it writes .claude/hooks/, which the sandbox refuses):");
+  log(`  node ${q(path.join(HERE, "install.js"))} --project`);
+  log("Start Claude Code in the repo root with the profile (your own settings files are untouched):");
   log(`  claude --settings ${q(file)} --permission-mode bypassPermissions`);
+  log(`In that session prepare worktrees with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree> ...`);
   log("Run the review session (/proteus-review) without it. Run --sandbox again after moving the repo or updating Proteus.");
   return true;
 }

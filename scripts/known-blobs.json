@@ -328,6 +328,7 @@
     "templates/hooks/proteus-confine.js": [
       "62b8ba083e1f3db000633f432be23ef93570a170",
       "af563f04a6079bacd2175b4ebd33b7883bc60e1f",
+      "eef919332eb9c1ec202977e336286a18ec3d6ef9",
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
     "templates/hooks/proteus-gates-cache.js": [
@@ -613,6 +614,7 @@
     "templates/hooks/proteus-worktree.js": [
       "0a052d7b36fd035ce16880416e7853947050a4f1",
       "1b6d6eebb8caf858f47d84f617ac15bbf70c99e5",
+      "531d77a807769d88a1bda70697673d11c02f2148",
       "6137fdf998ab3ca1058f7c0ff3ca9d41b643b82e",
       "9645b5d835332c74cf76ff128756950e37606f8c",
       "b1971a9cec288d9891026f69a8631276d3c7274c",
