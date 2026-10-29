@@ -416,6 +416,9 @@
       "9305ad7457d16e30c359da90c8be2b0332681ebb",
       "9c8481535010e2146a3c6ce92b887a02b21c0188"
     ],
+    "templates/hooks/proteus-goal.js": [
+      "b30c789dacb8d897b68265b6b2fc4068caccfdf7"
+    ],
     "templates/hooks/proteus-harness-claude.js": [
       "0704b7507e0a470b0965ffc897ff3ecf676853b7",
       "0dc85c0f84b3c24e850d16d674d13608188b5a64",
