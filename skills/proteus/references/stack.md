@@ -5,7 +5,7 @@
 |---|---|---|---|
 | graphify | once, unfamiliar repo | – | – |
 | LSP plugin / Serena | – | yes | yes |
-| ponytail | – | full on Quick and mechanical tickets | – |
+| ponytail | – | full on Quick and mechanical tickets, lite on standard and hard | – |
 | caveman | lite | full | lite |
 | rtk + context-mode (optional) | yes | yes | yes |
 | code-review-graph | – | – | yes |

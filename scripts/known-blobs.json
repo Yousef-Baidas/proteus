@@ -68,8 +68,11 @@
       "15b9fceabe258688dc82a2839672eeacd8029efd",
       "2252a69d196d893b7f179ce128682f5722ecaa98",
       "3c704beb83beb1eef4c892d65a4bbab00d583f39",
+      "478c2bd97ccea894ff6e39dfa162e5d87f99dda8",
       "62a9546a7f39045a5a270fc3b09763ebed467c32",
+      "a4bc35d7b38c214382b468071ddd9a506bf5cf0d",
       "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
+      "af3458bd67c01da60c029fa88ee0911b6d97d994",
       "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
       "d0777c39e7e61c830e31b36b371029851cc3b610",
       "dfa387d013959ccaf38a9ea4204af6d4d566ebd8",
@@ -87,12 +90,14 @@
       "a07a7c8b4599af96f5e07dd2a81016c8688bac44",
       "b06e0422870d2f906077fd3173a6a1b5dd4348e8",
       "cec173e74657cd37b0e6b0d20a60e30adaa8f3cc",
+      "de94531dd4a2f52212b84073a297f9c56ddeb737",
       "fc40a9e0b32f40dda6e5c857c2ed5ab9ee1d4131"
     ],
     "agents/proteus-devops-worker.md": [
       "01260f65c4f9bbb61104bed4f49e98111042706c",
       "0fd5b71ed61ea26133d9d9dad07418e63b53ff89",
       "1f984d50f63ec804299753540f0bd0a57e6d2837",
+      "53d06e91dfc0763633b02e097b676a594b59f953",
       "7c622b06191d318d05cf4487dde864c54f77197a",
       "8944dd36b51ab68a6ad02ef7aee55c225fa54cdf",
       "9c5c6242b9c16f5b9c2928694f6ce72b66c65f35",
@@ -104,17 +109,21 @@
     "agents/proteus-frontend-verifier.md": [
       "08f090611dd0652d5a2e1d376bd0a344f866f036",
       "16853f12e3f175087845b0928ceb673020648cc4",
+      "18612da15bb49e641fe475af1b79e499e98ddf0b",
       "413aa920b13454277b88b648d95eebdbdc9f7f31",
       "666ec4129789fb52f2cd7ef96a21d8f5f5e49eac",
       "717c7a89a8c0d69b6642bde95322e043420bde91",
       "83006ca2df0160c773fbe7108665c383fdc5bd4c",
       "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
       "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
+      "ad5ae7682864958f2bcee67f19f22515e38a45bf",
+      "bce00894e6501b6e8ec8a42f26fb8f72abe239d1",
       "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2",
       "d6e4aa16ae4577f1f053ae2f1c9e8c82bd9f88c9",
       "e83eab959f58de1de73ff7f9004199f68f5027e7"
     ],
     "agents/proteus-frontend-worker.md": [
+      "07600e3fa36f4206c898b468c16a0c1c18f81ea4",
       "180dd8841ec70faf12c9a3cf2efe915390fb05b1",
       "1812328748f30d729f7ae682ceceec90ea50f9d8",
       "1c9f5372bf9123c6a458f1f539c2fccb9cf4ff0d",
@@ -138,10 +147,12 @@
       "a4e9a41bad25ac510fce050c2c8fd1f40aa057a2",
       "abaa55eead5a78f324c0c6729fa2dc58556178bb",
       "aef6c41494d5e1721488831393299462254cd776",
-      "cb744c335552648e644f1d55e98c3833bba375c7"
+      "cb744c335552648e644f1d55e98c3833bba375c7",
+      "f7552cefe19bb783999101e6ba4c48ec7ec4c00a"
     ],
     "agents/proteus-qa-verifier.md": [
       "3b608ec2c734b140a740ab7d7e718f0d00087f80",
+      "4cd63f48f22283359ff05c80de37051e18438cf5",
       "536ddb74acaf1016349d4c1df12d390d94d567a6",
       "56a8485860e35fd2f5acf9e0ad53a0742ecfb436",
       "66c8b94e8ab86c76ee1a7ad0a7d7e9c9026af7c7",
@@ -154,6 +165,7 @@
     ],
     "agents/proteus-scout.md": [
       "0cfad86e09d7ece8c65993596a11aec69dfa96bb",
+      "166640d0a603693c507731fa1e3905f8f622f8a3",
       "1708ef98872a74f09dc9c0dfa820b89bfb54863e",
       "587203c805468d48d9d9f85be216a37432f6b14b",
       "67ad6d32f70e35a8c157c1c79a5ac8c9cc6c2ac3",
@@ -164,11 +176,15 @@
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "1166ba4bdb5dcf09d86960e3888c6af52c63b7d7",
+      "214e2e9f1cdb2bb16c91dc7b8807df562045bb76",
       "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
+      "3f65e82b4bff91542424eee83bec5f5e64d96e9a",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
       "6c5c813fbb659629df1d313b33dee14f7972f243",
+      "8e9addb182414c3e4ec675d8b465d8ba3ad92bce",
       "998eec07b55be6b8e65f510a1472738a584824ae",
       "b28d8cecf81a5e282749c4056984369ff1f6bce4",
       "c09e510f67331a68839864016cbc4b6adad002bd",
@@ -177,12 +193,15 @@
       "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
     ],
     "agents/proteus-verifier.md": [
+      "261b9eb5c4a85e6e91612d2829fe0605ad93c4df",
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
       "3cceddc42e540b2b3bf6c63ae15f1ec4949b2037",
+      "3dc1038aa88d531fac67399b2ef24b20ba011748",
       "5745fd11b97aee5d2882b95405a7e61dafa2d731",
       "6ef7877f844cb074c53f10c7cde5b1e72f65f6f6",
       "8a129250f1e3e0c9b121bffc7e6116cd37345c78",
       "944ae5caa2869c96c7e224ac3cdcdb8671c5ee0e",
+      "a12f1767b959b3141ccf584b3a003a4e7613f81f",
       "ab9aa75210df2653da0397cb885f2c74421fc5d9",
       "b805215a0408d2bdc26cf2ba746b8d1489b4ceb8",
       "b9ae6e35b344fb3b777ea1303ef63fe6e1eabe92",
@@ -198,6 +217,7 @@
       "8262186937f1219d773c8ffc478a48b754b5e01c",
       "94eb0754ed34791d83cd11666aef52bbdc111844",
       "dae64d247cab1e8fdce1466aba1128d15f046eee",
+      "dc08bab884baf9ea08191e0e36b79af0b7ffce05",
       "fa7dca6500e97f9c2a59d5491d6a76c673c1005a"
     ],
     "templates/ci/hive-gates.yml": [
@@ -415,6 +435,9 @@
       "91466d27ca379f1f1e6c17d160981d9416719506",
       "9305ad7457d16e30c359da90c8be2b0332681ebb",
       "9c8481535010e2146a3c6ce92b887a02b21c0188"
+    ],
+    "templates/hooks/proteus-goal.js": [
+      "b30c789dacb8d897b68265b6b2fc4068caccfdf7"
     ],
     "templates/hooks/proteus-harness-claude.js": [
       "0704b7507e0a470b0965ffc897ff3ecf676853b7",

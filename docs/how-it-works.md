@@ -60,7 +60,7 @@ The session you start is the lead, on whatever model you started it with, and it
 
 Before any spec the lead must be able to state six things without guessing: the outcome you will see, how you will check it is done, what is out of scope, the areas and teams touched, the constraints, and that no question is open. Any blank and it grills you (`/grill-with-docs`, or `/grilling` on a blank repo), one question at a time. Work bigger than a milestone or a session goes through `/wayfinder` first. Unattended, a work order with a blank is parked, never assumed.
 
-Until you approve the spec the lead is free to explore: it can add spikes, prototypes, research, competing designs sketched by helpers or a devil's-advocate pass, and it can propose a bolder direction or a different scope. That work is thrown away. Once the spec is approved the tier's steps run in order, and skipping one needs your word, a research finding or a settled default, logged on the run log. Workers on `standard` and `hard` tickets choose the design inside their contract and owned paths and favour clear, well-made code over the fewest lines; the minimal-code style is kept for Quick and mechanical tickets.
+Until you approve the spec the lead is free to explore: it can add spikes, prototypes, research, competing designs sketched by helpers or a devil's-advocate pass, and it can propose a bolder direction or a different scope. That work is thrown away. Once the spec is approved the tier's steps run in order, and skipping one needs your word, a research finding or a settled default, logged on the run log. Workers on `standard` and `hard` tickets choose the design inside their contract and owned paths, with ponytail at lite; Quick and mechanical tickets run it at full. Every worker and verifier, on every team, works under the same five Principles (`roles.md`): the simplest thing that meets the contract, nothing without a caller in this run, one source of truth, delete before you add, leave the touched area no worse.
 
 ## Survives compaction
 
@@ -244,6 +244,7 @@ templates/
     proteus-run-tree.js     checks a commit out in .worktrees/_run for the suite, run sandboxed
     proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-intake-coverage.js  the intake draft's coverage table maps every finding exactly once
+    proteus-goal.js         one goal-loop round: runs the frozen scorecard, prints NEXT or STOP
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-retro.js        the close retro: recurring bounces, escalations, guard hits, denials, red gates
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json

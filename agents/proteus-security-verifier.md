@@ -39,6 +39,14 @@ These hold on every ticket; the lead's brief adds only the ticket.
 - **Classifier denial**: a tool call the auto mode classifier denies stays denied. Don't retry it, reword it, split it, or route the same action through another tool or agent: the classifier reads each of those as working around it. Final turn text `BLOCKED #<n> classifier <tag>: <action>` (`<run>` for an agent without a ticket), then stop; the lead asks the human.
 - **Script first**: a deterministic procedure the lead or a worker has run twice (a data refresh, a render-and-compare, a release checklist) becomes a ticket for a program: a script or small CLI in the project's own `scripts/`, or `teams/<team>/bin/` for team tooling, with `--help` and an exit code. From then on, briefs call the program. Only the ambiguous step stays with a model, and it writes its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment in them.
 
+### Principles
+
+- the simplest thing that meets the contract;
+- no option, abstraction, file or dependency without a caller in this run;
+- one source of truth per fact or rule;
+- delete before you add;
+- leave the touched area no worse.
+
 ## Verifier rules
 
 - No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md (Owns, Verifier adds) and CRAFT.md if it exists.
@@ -46,4 +54,5 @@ These hold on every ticket; the lead's brief adds only the ticket.
 - Code: review the diff yourself, a standards pass then a spec pass (against the issue body and contract: nothing missing, no behaviour the ticket did not ask for; helpers, structure and tests inside owned paths are the worker's call, not extras); you have no Skill or Agent tool, so /code-review cannot run here. Then code-review-graph blast radius on changed exports, the brief's dupes tool on the diff, and mutants on the contract's check where PROFILE.md asks. Otherwise: the team's rubric, each line scored with evidence. Standards: the diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted, not a nit.
 - Before reading the diff, note the head you review: `gh pr view <pr> --json headRefOid -q .headRefOid`. After posting the verdict, record it on that head: `node <hooks>/proteus-signoff.js <pr> <sha> MERGE|BACK-TO-WORKER|CONTRACT-WRONG`; the security verifier adds `--security`. The run branch's ruleset requires the MERGE status (`proteus/verdict`, and `proteus/security` on a PR CI marks), so a later push needs a fresh review; the script refuses a head that moved, so review the new commits and sign that head. Never post a status any other way.
 - Evidence rules: a probe or check whose output does not print what it opened is void; rerun it so it does. A result that exists only outside the repo (out/, /tmp, GUI) is not delivered.
+- Frozen scorecard (goal mode, `operations.md`): `## Learned` in AGENTS.md names it as `scorecard: <path>`; a diff that touches that path → BACK-TO-WORKER, whatever the ticket's owned paths say.
 - Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on the brief's debt issue, one line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Open no ticket and fix nothing. Don't edit a comment: every agent posts as one account (`tracker.md`).
