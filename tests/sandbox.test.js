@@ -421,52 +421,6 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
     fs.rmSync(path.join(repo, "teams"), { recursive: true });
   }
 
-  // #212 B9: the Skill guard the profile registers, run from bin's copy. A skill whose SKILL.md sits in a nested
-  // .claude/skills in the write set is refused (Claude Code would run its hooks: outside the sandbox); one in the
-  // root's .claude/skills (denied), a plugin's and the user's pass. A scan error or a cap refuses; no profile, no guard
-  {
-    const guard = path.join(bin, "proteus-skill-guard.js");
-    const pre = ((read(file).hooks || {}).PreToolUse || []).find((e) => e && e.matcher === "Skill");
-    ok("profile: a PreToolUse hook on Skill runs the guard's copy in bin", Boolean(pre) && pre.hooks.some((h) => h.command === `node ${guard}`), JSON.stringify(read(file).hooks));
-    const skill = (name) => run(guard, { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: name } }, { cwd: repo });
-    const plant = (...dir) => {
-      const d = path.join(...dir);
-      fs.mkdirSync(d, { recursive: true });
-      fs.writeFileSync(path.join(d, "SKILL.md"), "---\nname: x\nhooks: agent-written\n---\n");
-    };
-    plant(repo, "src", ".claude", "skills", "nest");
-    plant(repo, ".worktrees", "w9", ".claude", "skills", "wtskill");
-    plant(repo, ".claude", "skills", "rootskill");
-    plant(CLAUDE, "skills", "mine");
-    const n1 = skill("nest"), n2 = skill("wtskill"), n3 = skill("other:nest");
-    ok("skill guard: a SKILL.md in a nested src/.claude/skills is refused", n1.code === 2 && n1.err.includes(["src", ".claude", "skills", "nest", "SKILL.md"].join(path.sep)), n1.err);
-    ok("skill guard: a SKILL.md in a worktree's .claude/skills is refused", n2.code === 2 && n2.err.includes(["w9", ".claude", "skills", "wtskill"].join(path.sep)), n2.err);
-    ok("skill guard: a plugin: prefix is stripped before matching", n3.code === 2, n3.err);
-    const okp = skill("proteus:proteus"), oku = skill("mine"), okr = skill("rootskill");
-    ok("skill guard: a plugin skill and a user skill pass", okp.code === 0 && oku.code === 0, okp.err + oku.err);
-    ok("skill guard: the root's own .claude/skills (denied to sandboxed writes) passes", okr.code === 0, okr.err);
-    const deep = path.join(repo, "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9");
-    fs.mkdirSync(deep, { recursive: true });
-    const cap = skill("mine");
-    ok("skill guard: a scan over the depth cap refuses", cap.code === 2 && /deeper than 8/.test(cap.err), cap.err);
-    fs.rmSync(path.join(repo, "d1"), { recursive: true });
-    if (typeof process.getuid === "function" && process.getuid() !== 0) {
-      const locked = path.join(repo, "locked");
-      fs.mkdirSync(locked);
-      fs.chmodSync(locked, 0);
-      const er = skill("mine");
-      fs.chmodSync(locked, 0o700);
-      fs.rmSync(locked, { recursive: true });
-      ok("skill guard: a scan error refuses", er.code === 2 && /could not be checked/.test(er.err), er.err);
-    } else ok("skill guard: scan-error case skipped (root reads every dir)", true);
-    fs.renameSync(file, file + ".aside");
-    const none = skill("nest");
-    fs.renameSync(file + ".aside", file);
-    ok("skill guard: no profile, nothing to guard", none.code === 0, none.err);
-    for (const d of ["src", ".worktrees", ".claude"]) fs.rmSync(path.join(repo, d), { recursive: true });
-    fs.rmSync(path.join(CLAUDE, "skills"), { recursive: true });
-  }
-
   // #212 B10: /proteus:setup (--plugin-setup) after --sandbox in a repo with no statusLine adds one that runs bin's
   // copy, in settings.local.json only. A Proteus statusLine in settings.json counts as set: settings.json is left as it
   // is, and settings.local.json overrides it with bin's copy

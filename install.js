@@ -2304,9 +2304,6 @@ function sandboxProfile(root, common, bin, scratch, guest) {
   // matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
   const copy = path.join(bin, "proteus-worktree.js");
   const excluded = [...new Set([`node ${copy} *`, `node ${q(copy)} *`])];
-  // the Skill guard, from bin too: a skill whose SKILL.md is in a nested .claude/skills the profile cannot deny on
-  // Linux is refused before it loads (#212 B9)
-  const guard = path.join(bin, "proteus-skill-guard.js");
   const dir = (s) => s.endsWith("/");
   const bare = (s) => s.replace(/\/$/, "");
   const readRule = (s) => (s.startsWith("~/") ? `Read(${bare(s)}${dir(s) ? "/**" : ""})` : slashRule("Read", dir(s) ? path.join(bare(s), "**") : s));
@@ -2320,7 +2317,6 @@ function sandboxProfile(root, common, bin, scratch, guest) {
       network: { allowedDomains: domains, strictAllowlist: true },
       credentials: { envVars: SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
     },
-    hooks: { PreToolUse: [{ matcher: "Skill", hooks: [{ type: "command", command: `node ${q(guard)}` }] }] },
     permissions: {
       deny: [
         "WebFetch",
@@ -2336,7 +2332,8 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         // the root's and the guest dir's whole .claude/, by a rule Linux honours too: a planted hook or a flipped gate
         // runs install.js outside the sandbox at the next SessionStart (#237 r2), a planted SKILL.md's hooks: run
         // outside it once the skill loads (#212 B8), a workflow runs in Claude Code's own process (#212 B9). A nested
-        // .claude/skills is proteus-skill-guard.js's. The settings files also exactly, for when they do not exist yet
+        // .claude/skills stays open: a known gap (enforcement.md). The settings files also exactly, for when they do
+        // not exist yet
         ...[root, ...(guest ? [guest] : [])].map((d) => slashRule("Edit", path.join(d, ".claude", "**"))),
         ...["settings.json", "settings.local.json"].map((f) => slashRule("Edit", path.join(root, ".claude", f))),
         ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
