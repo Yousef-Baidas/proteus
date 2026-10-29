@@ -164,6 +164,7 @@
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
@@ -516,6 +517,10 @@
       "dbe5b73aae9a94b9d2c480a17aeb0fc0c28624a4",
       "e7dc427ff79208729041c1c9a69683f2e66396c4"
     ],
+    "templates/hooks/proteus-intake-coverage.js": [
+      "0df9353d589cb1182716c5788279868fa26ba639",
+      "6cee88d3e4acb8a51a9ed7dad4a9cf16b47bcddc"
+    ],
     "templates/hooks/proteus-intake.js": [
       "b88191ee085a69294e34cb230299931a7c0e8111",
       "e535047ffa36c3cc56b90df036adaa4f3650bcfb"
@@ -633,9 +638,11 @@
       "764d887fbf379603c56b40ad237fb96eefdee56a",
       "7cf3c4a89345a1d9d0c5e51ceed238603b256ea4",
       "7f4d92f0b09068740f13cf6545ee8bc56da143a0",
+      "886a4b33883db9d54ff6068adf380aa35eb7350d",
       "8e9de778dbd8d06ee520385c2ac883cd892f4632",
       "8f3a5dce2dfce647d7001f5ff7a78ea5ea09ac22",
       "8f51aa17fbadfb84fabf0f315c83d2ed2d9e144a",
+      "91ab35334feef042ab65d263bb04a67a878b47ca",
       "934271dee434b55629756037bea0d92a7f3f6905",
       "98a95a2fd65477c770093583103142aa02f281cb",
       "9e267c3615c704cc8ac5eb640af85758b3709a3f",
@@ -671,6 +678,7 @@
       "d8e297add159968fc30c40f8744af108330577c6",
       "da0dc38e445cdd4a14475c4056b788d281bd1566",
       "df3a3c3b791f165375f61e7deaa78470daf23eda",
+      "e526a40eb6db0277338b388623794fb0e3eb95c1",
       "e531fd175ea89077ef1fe378cf51f21472f7b4b6",
       "e5f4e22ae781d9495c4fe066f4e41eb63deb0e09",
       "e6e67201f69ea5a6bf37c0d740a111376906f74d",
