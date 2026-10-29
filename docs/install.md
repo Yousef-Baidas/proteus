@@ -191,6 +191,7 @@ Claude Code loads and runs project files, such as a nested `.claude/skills/` who
 - **Nested skills.** An agent can write a skill under a deeper `.claude/skills/`, such as `src/.claude/skills/<name>/`, a worktree's, or one under `node_modules`. When the skill is invoked, its `hooks:` run outside the sandbox.
 - **A planted skill you type.** Typing `/<name>` for such a skill runs it the same way.
 - **Local agent memory.** The `.claude/` deny makes `.claude/agent-memory-local/` read-only, so the agents with `memory: local` (proteus-verifier, the qa, security, frontend and backend verifiers, and proteus-guide) keep no new memory under the profile.
+- **Your own git and auto maintenance.** A `git fetch`, `pull`, `merge` or `worktree prune` you run in a Proteus repo can start git's auto maintenance, whose worktree prune follows a link an agent planted under `.git/worktrees/` and empties its target (#235). Proteus's own git turns it off; `git config maintenance.auto false` in the repo closes it for yours. Proteus does not change your config.
 - **Other config dirs.** Proteus reads profiles only from the current Claude Code config dir, so a repo sandboxed under another `CLAUDE_CONFIG_DIR` is invisible to the session-start check for a writable 1.x home.
 
 ## Manual install (any platform)

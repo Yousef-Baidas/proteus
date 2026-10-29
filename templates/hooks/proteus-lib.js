@@ -691,11 +691,11 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 // and never into a submodule, whose config under <common>/modules an agent can write (#226), and no automatic gc or
 // maintenance, so no hook's git prunes <common>/worktrees, where an agent can plant a link git deletes through (#237).
-// maintenance.auto=false is what holds: gc's prune drops a worktrees/<x> with no gitdir file whatever the expiry, so
-// worktreePruneExpire=never covers only entries whose gitdir names a missing path.
+// maintenance.auto=false and gc.auto=0 are what hold (#235): gc's prune drops a worktrees/<x> with no gitdir file
+// whatever the expiry, so worktreePruneExpire=never covers only entries whose gitdir names a missing path.
 const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
   "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false",
-  "-c", "gc.worktreePruneExpire=never", "-c", "maintenance.auto=false"];
+  "-c", "gc.worktreePruneExpire=never", "-c", "maintenance.auto=false", "-c", "gc.auto=0"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
 // o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)
