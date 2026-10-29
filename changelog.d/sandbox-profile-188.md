@@ -18,4 +18,10 @@
   `--sandbox` writes beside it, never from a `.git` file, `commondir` or the cwd, and refuses without it.
   The only guest dir the profile makes writable is `~/.proteus/guest/<repo>-<hash>`; a `guest.json` naming
   another dir is warned about and left out. Your own settings files are never edited.
+  The profile also denies the repo root's `.claude/hooks/` and `.claude/settings*.json` (the two settings files
+  by exact path too) and `.git/proteus-lead/`, the lead's state the hooks write. `--sandbox` makes that dir
+  first, mode 0700, and refuses a link or a file there. Hooks run `git diff` on a private copy of a worktree's
+  index, so swapping its dir under `.git/worktrees/` for a link cannot aim git's index rewrite elsewhere; an
+  index that is a link or not a regular file reports no changes known. A 1.x release checkout that is the repo
+  itself is no longer fetched or updated at session start, with one line saying so.
   docs/install.md has a "Sandboxed bypass" section with the residuals.
