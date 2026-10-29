@@ -84,6 +84,7 @@ The status line at the bottom of the terminal shows `proteus: 2 questions · 1 r
 ## Commands mid-run
 
 - `questions` / `inbox` — every open question as a picker, in order.
+- `intake <urls|file>` — one helper per video posts structured notes on the issue `Intake: <date>`.
 - `status` — one line: milestone, tickets closed/total, open PRs and verdicts, running workers, ETA from this run's median ticket time.
 - `pause` (or your own alias, e.g. `gaming`) — stops every worker and heavy job (renders, encodes, test farms), logs the position; `resume` picks up on the same worktrees.
 - `revision` — fast review rounds for small taste tweaks: one standing worker commits each tweak as a script in the repo, you approve each by eye, one verifier checks the whole round and that a clean rebuild reproduces it. Nothing lives outside git.
@@ -193,7 +194,7 @@ skills/proteus/
   references/conventions.md  CONVENTIONS.md interview, taste beyond code
   references/roles.md        worker / contracts / verifier / guide / QA / scout prompts, pre-dispatch check
   references/review.md       milestones, debt, the human review gate
-  references/operations.md   status, questions, pause/resume, stall check, revision mode
+  references/operations.md   status, questions, pause/resume, intake, stall check, revision mode
   references/lessons.md      trigger-based lessons and upstream proposals
   references/docs-diet.md    root-doc budget and where everything else goes
   references/tracker.md      where state lives: GitHub operations table, Jira slot
@@ -239,6 +240,7 @@ templates/
     proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
     proteus-ready.js        the tickets ready to dispatch, and why the rest are blocked
+    proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents
