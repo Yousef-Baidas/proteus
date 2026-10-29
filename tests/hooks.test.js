@@ -793,9 +793,25 @@ ok("scratch sweep run: deletes only ledgered entries", !has(t("tmp.AbC123")) && 
 ok("scratch sweep: symlinks removed as links, targets untouched", !has(t("hs-link")) && fs.readFileSync(path.join(OUTSIDE, "keep.txt"), "utf8") === "k" && fs.readdirSync(OUTSIDE).length === 1);
 ok("scratch sweep: forged paths outside the temp dir kept", has(OUTSIDE) && /kept .*outside.*not directly in os\.tmpdir\(\)/.test(r.out) && ledger().some((e) => e.path === path.join(OUTSIDE, "keep.txt")), r.out);
 ok("scratch sweep: freed MB printed", /proteus-scratch: freed [2-9]\.\d MB/.test(r.out), r.out);
+// #235: a link planted at <common>/worktrees/<x> (no gitdir file) would have git worktree prune empty its target
+const WTS = path.join(REPO, ".git", "worktrees"), VICT = path.join(W, "victim"), EVIL = path.join(WTS, "evil");
+fs.mkdirSync(VICT); fs.writeFileSync(path.join(VICT, "keep.txt"), "v");
+let planted = false;
+try { fs.symlinkSync(VICT, EVIL, "junction"); planted = true; } catch {}
 g(REPO, "worktree", "unlock", t("hs-wtlock"));
 r = run(SC, "", { args: ["--sweep", "bl1077-5"], env: TENV });
 ok("scratch sweep: unlocked worktree removed on the next sweep", !has(t("hs-wtlock")) && !wtList().includes(t("hs-wtlock")), r.out);
+if (planted) {
+  ok("scratch sweep: a link in <common>/worktrees skips the prune, names it, and its target survives",
+    has(EVIL) && fs.readFileSync(path.join(VICT, "keep.txt"), "utf8") === "v" && /proteus-scratch: git worktree prune skipped, inspect .*evil: a link or not a dir/.test(r.out), r.out + r.err);
+  fs.unlinkSync(EVIL);
+} else ok("scratch sweep: the planted worktrees link case skipped (no symlink here)", true);
+// a normal worktrees dir still prunes: an entry whose gitdir names a missing checkout goes
+const STALE = path.join(WTS, "stale");
+fs.mkdirSync(STALE); fs.writeFileSync(path.join(STALE, "gitdir"), path.join(W, "gone", ".git") + "\n");
+bash(`git worktree add --detach ${t("hs-wt2")}`, () => g(REPO, "worktree", "add", "-q", "--detach", t("hs-wt2")), { extra: sw });
+r = run(SC, "", { args: ["--sweep", "bl1077-5"], env: TENV });
+ok("scratch sweep: with only real entries in <common>/worktrees the prune runs", !has(t("hs-wt2")) && !has(STALE) && !/prune skipped/.test(r.out), r.out + r.err);
 ok("scratch sweep: bad arg → usage", run(SC, "", { args: ["--sweep", "--everything"], env: TENV }).code === 1);
 r = run(SC, "", { args: ["--size"], env: TENV });
 ok("scratch --size", r.code === 0 && /^\d+\.\d MB$/.test(r.out.trim()), r.out + r.err);
