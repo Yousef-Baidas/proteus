@@ -251,9 +251,12 @@ function leadAppend(common, file, text) {
     fs.writeSync(fd, text);
   } finally { fs.closeSync(fd); }
 }
-// create file only if no entry has its name; false when one has
+// create file only if no entry has its name; false when one has. The lstat first: on Windows 'wx' creates through
+// a dangling link. What is left there is the race between the lstat and the open, Windows only, and outside any
+// boundary: Windows has no Proteus sandbox, so an agent there can write proteus-lead directly anyway.
 function leadCreate(common, file, text) {
   const f = leadTarget(common, file);
+  try { fs.lstatSync(f); return false; } catch (e) { if (e.code !== "ENOENT") throw e; }
   try { fs.writeFileSync(f, text, { flag: "wx", mode: 0o600 }); return true; } catch (e) { if (e.code === "EEXIST") return false; throw e; }
 }
 // unlink file (a link is removed as a link), or with tree a whole dir; no error when it is gone
@@ -261,13 +264,6 @@ function leadRemove(common, file, tree = false) {
   const f = leadTarget(common, file);
   if (tree) return fs.rmSync(f, { recursive: true, force: true }); // rm never follows a link inside the tree
   try { fs.unlinkSync(f); } catch (e) { if (e.code !== "ENOENT") throw e; }
-}
-// move an agent-writable entry into <lead>/trash, to delete it there: a rename moves a link at src, never its target;
-// returns the new path
-function leadTrash(common, src) {
-  const f = leadTarget(common, leadPath(common, "trash", tmpName(path.basename(src))));
-  fs.renameSync(src, f);
-  return f;
 }
 // an agent-writable file's text: a regular file only (never via a link, never a FIFO), at most cap bytes
 function readUntrusted(file, cap = 1 << 20) {
@@ -283,11 +279,12 @@ function readUntrusted(file, cap = 1 << 20) {
 function readUntrustedJSON(file, dflt, cap) {
   try { const v = JSON.parse(readUntrusted(file, cap)); return v && typeof v === "object" ? v : dflt; } catch { return dflt; }
 }
-// what moves from <common>/proteus on first use: the lead's own files; the rest there (scratch, allow,
-// unattributed, guest.json, gates, forgotten.json) is agents' or the lead shell's and stays
+// what moves from <common>/proteus on first use: the lead's own files and the shell check's notices (read once
+// here, never there again; checked again when shown); the rest there (scratch, allow, guest.json, gates,
+// forgotten.json) is agents' or the lead shell's and stays
 const LEAD_FILES = ["journal.jsonl", "questions-nudged", "visibility.json", "skills-drift.json", "lead-model.json", "inbox.json",
   "lesson-hits.jsonl", "lessons-cache.json", "scratch-ledger.jsonl", "scratch-size.json", "stall-blocked.json", "guard-hash.json"];
-const LEAD_DIRS = ["agents", "spawns", "beats", "tamper", "lessons-seen"];
+const LEAD_DIRS = ["agents", "spawns", "beats", "tamper", "lessons-seen", "unattributed"];
 // regular files only, each lstat'd first and opened without following a link; nothing already there is overwritten
 function migrateLead(common, dst) {
   const src = stateDir(common);
@@ -687,7 +684,11 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 // off. git then reads <common>/config and <common>/config.worktree only, which the sandbox profile denies. A linked
 // worktree's HEAD is read as a file under <common>/worktrees/<id>; its working tree through its index (treeChanges).
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
-const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false"];
+// and no automatic gc or maintenance, so no hook's git prunes <common>/worktrees, where an agent can plant a link
+// git deletes through (#237). maintenance.auto=false is what holds: gc's prune drops a worktrees/<x> with no gitdir
+// file whatever the expiry, so worktreePruneExpire=never covers only entries whose gitdir names a missing path.
+const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
+  "-c", "gc.worktreePruneExpire=never", "-c", "maintenance.auto=false"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
 // o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)
@@ -3029,7 +3030,7 @@ function verifyInstalled(bare, sha) {
 }
 
 module.exports = {
-  LEAD, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, leadTrash, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
+  LEAD, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,

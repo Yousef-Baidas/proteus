@@ -7,8 +7,8 @@
 // checks the checkout for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
-// compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
-// (proteus-scratch.js --sweep --stale) detached, so it never slows the start.
+// compaction, the human's last ten messages from the journal. Says when scratch may be stale, for the lead to run
+// proteus-scratch.js --sweep --stale from its own shell: this hook runs unsandboxed, so it deletes nothing (#237).
 // Under the plugin (CLAUDE_PLUGIN_ROOT) the plugin manager owns updates, so the checkout update is off; instead
 // releaseCheck says, in one line, when the installed commit is not a release tag the user's trusted key signed.
 // On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
@@ -67,7 +67,7 @@ lib.run(async (ev, ad) => {
   if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
   const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
-  safe(() => scratchSweep(root));
+  safe(() => scratchNote(root, notes));
 
   if (src === "resume" || src === "fork") {
     // a resumed session still has the skill in its transcript; only the state line is new
@@ -277,13 +277,22 @@ function publicNote(root, notes) {
   lib.leadJSON(common, file, { at, visibility: vis, warned: new Date().toISOString() });
 }
 
-// only when the run has scratch state; the sweep caches the size the next state line reads
-function scratchSweep(root) {
+// one line when a scratch dir or a ledgered stray has been idle 72h, the --stale sweep's shortest wait. The sweep
+// itself deletes under <common>/proteus/scratch and <common>/worktrees, which agents can write, so only the lead's
+// sandboxed shell runs it (#237); this only lstat's. The sweep caches the size the next state line reads.
+const SCRATCH_IDLE = 72 * 3600e3;
+function scratchNote(root, notes) {
   const common = lib.gitCommonDir(root);
-  if (!fs.existsSync(lib.leadPath(common, "scratch-ledger.jsonl")) && !fs.existsSync(lib.scratchDir(common))) return;
-  const c = spawn(process.execPath, [path.join(__dirname, "proteus-scratch.js"), "--sweep", "--stale"], { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
-  c.on("error", () => {});
-  c.unref();
+  if (!common) return;
+  const old = (t) => Date.now() - t > SCRATCH_IDLE;
+  const dir = lib.scratchDir(common);
+  let stale = false;
+  try {
+    const st = fs.lstatSync(dir);
+    if (st.isDirectory() && !st.isSymbolicLink()) stale = fs.readdirSync(dir).some((n) => { try { return old(fs.lstatSync(path.join(dir, n)).mtimeMs); } catch { return false; } });
+  } catch {}
+  if (!stale) stale = lib.tailLines(lib.leadPath(common, "scratch-ledger.jsonl"), 1 << 20, true).some((l) => { try { const r = JSON.parse(l); return typeof r.path === "string" && old(+r.at || 0); } catch { return false; } });
+  if (stale) notes.push(`proteus: scratch may be stale (idle 72h or more); free it from your shell: node "${path.join(__dirname, "proteus-scratch.js")}" --sweep --stale`);
 }
 
 // Codex: worker worktrees live in .worktrees/, inside the project, so writable_roots needs no entry for them. A

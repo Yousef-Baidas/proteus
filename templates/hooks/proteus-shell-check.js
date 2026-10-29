@@ -34,7 +34,9 @@
 // the watchdog's idle window counts as no longer in flight.
 // <state> is <git-common-dir>/proteus-lead (lib.leadPath, #236): every file this check writes or removes is there,
 // through lib's lead-state writers. Notices an older version wrote to <git-common-dir>/proteus/unattributed are
-// read as untrusted and never written: that they were shown or cleared is a mark in <state>.
+// imported once, when lib.leadDir makes <state> (#237), and that dir is never read for notices again. Every notice
+// is checked before it is shown (seq a positive integer, times numbers, each string printable and capped): one that
+// fails is dropped and named on stderr, as an agent could have written it before the import.
 //   node <hooks>/proteus-shell-check.js --list | --clear <seq>|all   (the lead reads and clears the notices)
 // Accepted residuals: see enforcement.md (layer 2).
 "use strict";
@@ -65,7 +67,7 @@ const TRACK_KEY = /^branch\.(.+)\.(?:remote|merge)$/;
 const flightDir = (common) => lib.leadPath(common, "guard-flight");
 const tamperDir = (common) => lib.leadPath(common, "tamper");
 const noticeDir = (common) => lib.leadPath(common, "unattributed");
-// notices from before #236, in the agent-writable state dir: read only
+// where notices were before #236: agent-writable, so never read for notices (lib.migrateLead imported them once)
 const oldNoticeDir = (common) => path.join(lib.stateDir(common), "unattributed");
 const leadFile = (common) => lib.leadPath(common, "lead-flight.json");
 const snapDir = (common) => lib.leadPath(common, "scratch-snap");
@@ -345,7 +347,8 @@ const overlapping = (lf, from, to) => lf.windows.filter((w) => w.start <= to && 
 // a notice: what changed while lead call `w` overlapped an agent's call; one file per lead call, one entry per agent
 function addNotice(common, w, entry) {
   const f = path.join(noticeDir(common), `${w.seq}.json`);
-  const n = lib.readJSON(f, null) || { seq: w.seq, lead: { start: w.start, end: w.end }, agents: [] };
+  const cur = lib.readJSON(f, null); // one that fails renderable (an imported agent's file) is replaced, not merged into
+  const n = cur && !renderable(cur) ? cur : { seq: w.seq, lead: { start: w.start, end: w.end }, agents: [] };
   n.lead = { start: w.start, end: w.end ?? n.lead.end ?? null };
   if (w.cause) n.cause = w.cause;
   const had = n.agents.find((a) => a.key === entry.key);
@@ -355,23 +358,32 @@ function addNotice(common, w, entry) {
   lib.leadJSON(common, f, n);
 }
 
-// [file, notice, mark]: mark is null for the lead's own notices, and for an old one (oldNoticeDir) the name its
-// shown and cleared marks have in <state>: its file name and content hash, so a rewritten one shows again
+// [file, notice]: the lead's notices that pass renderable; the rest are named on stderr once per process
+const dropped = new Set();
 function notices(common) {
-  const ls = (d) => { try { return fs.readdirSync(d).filter((n) => /^\d+\.json$/.test(n)); } catch { return []; } };
-  const own = ls(noticeDir(common)).map((n) => [path.join(noticeDir(common), n), lib.readJSON(path.join(noticeDir(common), n), null), null]);
-  const old = ls(oldNoticeDir(common)).flatMap((n) => {
-    let text;
-    try { text = lib.readUntrusted(path.join(oldNoticeDir(common), n), 256 * 1024); } catch { return []; }
-    const mark = `${n.replace(/\.json$/, "")}-${crypto.createHash("sha256").update(text).digest("hex").slice(0, 16)}`;
-    if (fs.existsSync(lib.leadPath(common, "unattributed-cleared", mark))) return [];
-    let v = null;
-    try { v = JSON.parse(text); } catch {}
-    if (!v || typeof v !== "object" || !Array.isArray(v.agents) || !v.lead || typeof v.lead !== "object") return [];
-    const shown = fs.existsSync(lib.leadPath(common, "unattributed-shown", mark));
-    return [[path.join(oldNoticeDir(common), n), { ...v, agents: v.agents.filter((a) => a && typeof a === "object" && Array.isArray(a.paths)), shown }, mark]];
+  let names = [];
+  try { names = fs.readdirSync(noticeDir(common)).filter((n) => /^\d+\.json$/.test(n)); } catch {}
+  return names.flatMap((n) => {
+    const f = path.join(noticeDir(common), n), v = lib.readJSON(f, null), why = renderable(v);
+    if (!why) return [[f, v]];
+    if (!dropped.has(f)) { dropped.add(f); console.error(`proteus-shell-check: notice ${n} dropped: ${why}`); }
+    return [];
   });
-  return [...own, ...old].filter(([, n]) => n && Array.isArray(n.agents));
+}
+// what NOTICE_MSG prints, checked: "" when it may be shown, else why not. An imported notice is an agent's text.
+const SAFE_TEXT = /^[^\p{C}\p{Zl}\p{Zp}]{1,512}$/u;
+const isTime = (t) => t === null || t === undefined || (Number.isFinite(t) && t >= 0 && t < 1e14);
+function renderable(n) {
+  if (!n || typeof n !== "object" || Array.isArray(n)) return "not an object";
+  if (!Number.isSafeInteger(n.seq) || n.seq < 1) return "seq is not a positive integer";
+  if (!n.lead || typeof n.lead !== "object" || !isTime(n.lead.start) || !isTime(n.lead.end)) return "a bad time";
+  if (n.cause !== undefined && !(typeof n.cause === "string" && SAFE_TEXT.test(n.cause))) return "a bad cause";
+  if (!Array.isArray(n.agents)) return "no agents";
+  for (const a of n.agents) {
+    if (!a || typeof a !== "object" || !Array.isArray(a.paths)) return "a bad agent entry";
+    for (const t of [a.agent || a.key, ...(a.branch ? [a.branch] : []), ...a.paths]) if (typeof t !== "string" || !SAFE_TEXT.test(t)) return "an unprintable or over-long string";
+  }
+  return "";
 }
 // p is under a notice dir: the hooks' own writes there are not an agent's change
 const inNotices = (common, p) => !!p && [noticeDir(common), oldNoticeDir(common)].some((d) => under(p, lib.realOr(d)));
@@ -404,7 +416,7 @@ async function leadEnd(common, w) {
   for (const x of lf.windows) if (x.id === w.id) x.end = now;
   lib.leadJSON(common, leadFile(common), lf);
   w = { ...w, end: now };
-  for (const [f, n, mark] of notices(common)) if (!mark && n.seq === w.seq) { n.lead.end = now; lib.leadJSON(common, f, n); }
+  for (const [f, n] of notices(common)) if (n.seq === w.seq) { n.lead.end = now; lib.leadJSON(common, f, n); }
   let snaps = [];
   try { snaps = fs.readdirSync(snapDir(common)).filter((n) => n.endsWith(".guard")).map((n) => path.join(snapDir(common), n)); } catch {}
   // a call that never got its PostToolUse or its agent's stop (killed, crashed) is no longer in flight
@@ -432,10 +444,7 @@ async function leadEnd(common, w) {
   }
   rebaseRecords(common, w);
   const fresh = notices(common).filter(([, n]) => !n.shown);
-  for (const [f, n, mark] of fresh) {
-    if (mark) lib.leadCreate(common, lib.leadPath(common, "unattributed-shown", mark), "");
-    else lib.leadJSON(common, f, { ...n, shown: true });
-  }
+  for (const [f, n] of fresh) lib.leadJSON(common, f, { ...n, shown: true });
   return fresh.map(([, n]) => NOTICE_MSG(n)).join("\n");
 }
 
@@ -750,12 +759,8 @@ function cli(argv) {
     return 0;
   }
   const gone = all.filter(([, n]) => arg === "all" || String(n.seq) === arg);
-  // an old notice is never removed (#236): a cleared mark hides it
   try {
-    for (const [f, , mark] of gone) {
-      if (mark) lib.leadCreate(common, lib.leadPath(common, "unattributed-cleared", mark), "");
-      else lib.leadRemove(common, f);
-    }
+    for (const [f] of gone) lib.leadRemove(common, f);
   } catch (e) { console.error(`proteus-shell-check: ${e.message}`); return 1; }
   console.log(`proteus-shell-check: cleared ${gone.length} notice${gone.length === 1 ? "" : "s"}`);
   return gone.length || arg === "all" ? 0 : 1;

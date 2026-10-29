@@ -4,7 +4,7 @@
 //   node .claude/hooks/proteus-scratch.js --path <key>       mkdir <git-common-dir>/proteus/scratch/<key>/, bump its mtime, print it
 //   node .claude/hooks/proteus-scratch.js --sweep <key>      delete scratch/<key>[-*] and the strays keyed <key>[-*]
 //   node .claude/hooks/proteus-scratch.js --sweep --all-done the same for every key whose branch is gone
-//   node .claude/hooks/proteus-scratch.js --sweep --stale    the autostart's: done and idle 72h, or idle 7 days regardless
+//   node .claude/hooks/proteus-scratch.js --sweep --stale    done and idle 72h, or idle 7 days regardless (the autostart says when)
 //   node .claude/hooks/proteus-scratch.js --size             MB held in scratch dirs and ledgered strays
 // <key> is a ticket's <run>-<id> (its branch proteus-work/<run>/<id>) or a run's <run>.
 // As a hook (lead's session, before and after every shell call, failed or not): the first snapshots the
@@ -14,9 +14,9 @@
 // paths and scratch dirs, each re-checked first: same inode, this user, directly in os.tmpdir(), a symlink
 // removed as a link and never followed. A git worktree goes through `git worktree remove --force` and `prune`.
 // What this script writes for itself (ledger, snapshots, size) is lead state, in proteus-lead through lib's
-// lead-state writers (#236). A scratch dir the autostart's --stale sweep (outside any sandbox) deletes is first
-// moved into proteus-lead/trash and deleted there only if it is the entry it checked; the lead's own --sweep runs in
-// its shell, sandboxed or not, and deletes in place when proteus-lead is not writable from there.
+// lead-state writers (#236). --sweep deletes under <common>/proteus/scratch and <common>/worktrees, which agents can
+// write, so it runs only from the lead's own shell, sandboxed like theirs, never from a hook (#237): a delete or
+// rename by path there outside the sandbox can be pointed at any dir the user owns by a parent swapped for a link.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -35,7 +35,7 @@ Per-ticket and per-run temp space, under <git-common-dir>/proteus/scratch/, dele
   --sweep <key>       delete scratch/<key> and scratch/<key>-*, plus the /tmp strays recorded under them
                       (the lead: <run>-<id> after a ticket merges, <run> at close)
   --sweep --all-done  the same for every key whose branch is gone (session start, on a scratch= note)
-  --sweep --stale     the autostart's: done and idle 72h, or idle 7 days regardless
+  --sweep --stale     done and idle 72h, or idle 7 days regardless (the session start says when there is any)
   --size              MB held in scratch dirs and recorded strays
 <key> is a ticket's <run>-<id> (branch proteus-work/<run>/<id>) or a run's <run>. Only paths Proteus made are deleted.`;
 const argv = process.argv.slice(2);
@@ -141,7 +141,7 @@ function sweep(common, what) {
     let st;
     try { st = fs.lstatSync(d); } catch { continue; }
     if (!pick(name, now - st.mtimeMs)) continue;
-    const res = removeScratch(d, st, prune, common, what === "--stale");
+    const res = removeScratch(d, st, prune);
     if (res.keep) { out.kept.push(`${d}: ${res.keep}`); continue; }
     out.bytes += res.bytes;
     out.dirs++;
@@ -178,10 +178,8 @@ function removeStray(r, tmpReal, uid, prune) {
   } catch (e) { return { keep: e.code || e.message }; }
 }
 
-// a scratch dir: its worktrees (top level) go through git first, then the dir. It is moved into proteus-lead/trash
-// and deleted there, unless what arrived is not the entry st describes (a parent swapped for a link meanwhile).
-// When proteus-lead cannot be written (the lead's sandboxed shell), a --stale sweep keeps it and any other deletes in place.
-function removeScratch(d, st, prune, common, stale) {
+// a scratch dir: its worktrees (top level) go through git first, then the dir, in place (the lead's sandboxed shell)
+function removeScratch(d, st, prune) {
   try {
     const link = st.isSymbolicLink();
     if (!link && !st.isDirectory()) return { keep: "not a directory" };
@@ -191,15 +189,7 @@ function removeScratch(d, st, prune, common, stale) {
       const gd = gitdirOf(c);
       if (gd && fs.existsSync(gd) && !removeWorktree(c, prune)) return { keep: `git worktree remove ${f} failed (locked?)` };
     }
-    let at;
-    try { at = lib.leadTrash(common, d); } catch (e) {
-      if (stale || e.code === "ENOENT") return { keep: `${e.code || e.message}, not moved to proteus-lead/trash` };
-      if (link) fs.unlinkSync(d); else fs.rmSync(d, { recursive: true, force: true }); // rm never follows a symlink inside the tree
-      return { bytes };
-    }
-    const now = fs.lstatSync(at);
-    if (now.dev !== st.dev || now.ino !== st.ino) return { keep: `replaced while it was swept; moved to ${at}, not deleted` };
-    lib.leadRemove(common, at, true);
+    if (link) fs.unlinkSync(d); else fs.rmSync(d, { recursive: true, force: true }); // rm never follows a symlink inside the tree
     return { bytes };
   } catch (e) { return { keep: e.code || e.message }; }
 }
