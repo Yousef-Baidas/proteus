@@ -373,7 +373,8 @@
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
     "templates/hooks/proteus-container-entry.js": [
-      "59d0adb626417fecc991881bc40a56ea3458c0f1"
+      "59d0adb626417fecc991881bc40a56ea3458c0f1",
+      "5ee7e5d8b012ecdeee454ac10ff8b8c950153b5a"
     ],
     "templates/hooks/proteus-container.js": [
       "41eeb50c78d1dc30ec8397788477ee88b02ce170",
