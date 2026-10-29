@@ -372,6 +372,9 @@
       "eef919332eb9c1ec202977e336286a18ec3d6ef9",
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
+    "templates/hooks/proteus-container.js": [
+      "41eeb50c78d1dc30ec8397788477ee88b02ce170"
+    ],
     "templates/hooks/proteus-gates-cache.js": [
       "2381dd4c00d385148521efe32a0be9e13dc43d19",
       "91466d27ca379f1f1e6c17d160981d9416719506",
