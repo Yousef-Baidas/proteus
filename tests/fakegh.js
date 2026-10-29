@@ -125,9 +125,12 @@ if (process.env.FAKE_GH_PR) {
   }
 }
 const iso = (h) => new Date(Date.UTC(2026, 8, 1) + h * 3600e3).toISOString();
-// FAKE_GH_RUN (a JSON file {issues, prs, logs}) answers the close report's three list calls
+// FAKE_GH_RUN (a JSON file {issues, prs, logs}) answers the close report's three list calls, and a run log's body and
+// comments (its logs entry's body and comments) for proteus-goal.js
 if (process.env.FAKE_GH_RUN) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_RUN, "utf8"));
+  const v = /^issue view (\d+) --json body,comments$/.exec(a), log = v && (s.logs || []).find((l) => l.number === +v[1]);
+  if (log) out({ body: log.body || "", comments: log.comments || [] });
   if (a.startsWith("issue list --label proteus-log ")) out(s.logs || []);
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);

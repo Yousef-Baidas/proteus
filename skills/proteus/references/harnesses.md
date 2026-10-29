@@ -37,6 +37,7 @@ The skill is written in Claude Code's names. On Codex CLI (you spawn with `spawn
 | Model ladder | default `haiku < sonnet < opus < fable`, floor Sonnet (Haiku is under it), Fable once per project (Mythos counts as Fable) | none: `models=unknown`, every spawn names your own model, until `models.ladder` in `~/.claude/proteus.json` or a `models:` line in `AGENTS.md` names the rungs |
 | Effort per role tier | not per spawn: the Agent tool takes a `model` only, so the judge agents (verifiers, scout) carry `effort: high` in their frontmatter and the rest run at the session's effort | `spawn_agent` takes `reasoning_effort`: `judge` high, `build` medium, `helper` low on your own model (`models=…,judge:<model>@high,…`) |
 | Container workers (`isolation: container`) | `proteus-container.js run` as a background shell (`flow.md` step 4) | none yet: the runner drives Claude Code only, so `proteus-state` shows `isolation=container-unready` |
+| Goal-loop schedule (`operations.md`) | `/schedule`, a recurring run with `goal round for <run>` | none: no scheduler path, so the human runs each round by hand |
 | Cost at close | `npx ccusage@20.0.26 session --json` | `npx @ccusage/codex@19.0.0 session --json` |
 | AI commit trailer | off via `attribution` in `~/.claude/settings.json` (`commits.md`) | no setting (a ChatGPT account option may add one); the commit-msg hook is the gate |
 | Review from the phone | `/remote-control` | none; the GitHub app |

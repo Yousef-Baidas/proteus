@@ -82,3 +82,13 @@ For a review round of small, taste-driven tweaks ("warmer", "lower the camera", 
 4. Close: the human says `done`. Then one verifier (`judge`) on the cumulative diff of `proteus-work/<run>/rev<k>` with two checks beyond the team checklist: every change sits in owned paths, and a clean rebuild from the branch reproduces the approved evidence. `MERGE` → merge into `proteus/<run>`, stop the standing worker, and the milestone's review issue gets the new evidence for the verdict. Anything it cannot reproduce is a `BACK-TO-WORKER` before merge.
 
 Revision mode adds no scope. A note that needs a new deliverable or a second team is a ticket for the next wave.
+
+## Goal loop
+
+For work with a measurable target (render time, bundle size, a score against a reference) rather than a feature list. The work order carries `goal: <name> <min|max> <target>` (`min`: lower is better) and may carry `budget: <n> rounds` (default 10, at most 50). The loop runs only under the sandbox: `proteus-goal.js` refuses otherwise.
+
+1. Step 1: ticket 1 is the scorecard, a program in the project's `scripts/` with `--help` whose last stdout line is `SCORE <number>` and which exits 0; built and verified like any ticket. Once it merges, record `scorecard: <path>` under `## Learned` in AGENTS.md. It is frozen: no later ticket gets it in its owned paths, and the verifier rejects any diff that touches it (`roles.md`). Log the goal, the budget and the cadence on the run log.
+2. Schedule (Claude Code): `/schedule` a recurring run at the cadence the human picks at step 1 (default daily) with the instruction `goal round for <run>`. Other harnesses have no scheduler path (`harnesses.md`): the human starts each round by hand with that sentence.
+3. Each round: `node <hooks>/proteus-run-tree.js <proteus/<run>'s tip sha>`, then `node <hooks>/proteus-goal.js round --run <run> --scorecard <path> --goal "<name> <min|max> <target>" --budget <n>`; under `isolation: container` add `--worktree <wt>`, a linked worktree on `proteus/<run>` (`git worktree add .worktrees/_goal proteus/<run>`), and it runs the scorecard as a container check. Append its `goal-round: <k> score <v>` line to the run log as printed; the past rounds are read from those lines.
+4. `NEXT <k> score <v>` (exit 0): open one improvement ticket that names the current score and the goal, and route it like any other; it merges through normal verification.
+5. `STOP target <v>`, `STOP budget`, `STOP falling <prev> -> <v>` or `STOP error <reason>` (exit 1): delete the schedule and post the trend table on the review issue (`review.md`). Exit 2 is a usage error or the sandbox refusal: fix it, the loop does not stop on it.

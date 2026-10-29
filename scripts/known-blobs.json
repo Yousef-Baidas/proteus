@@ -70,7 +70,9 @@
       "3c704beb83beb1eef4c892d65a4bbab00d583f39",
       "478c2bd97ccea894ff6e39dfa162e5d87f99dda8",
       "62a9546a7f39045a5a270fc3b09763ebed467c32",
+      "a4bc35d7b38c214382b468071ddd9a506bf5cf0d",
       "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
+      "af3458bd67c01da60c029fa88ee0911b6d97d994",
       "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
       "d0777c39e7e61c830e31b36b371029851cc3b610",
       "dfa387d013959ccaf38a9ea4204af6d4d566ebd8",
@@ -114,6 +116,8 @@
       "83006ca2df0160c773fbe7108665c383fdc5bd4c",
       "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
       "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
+      "ad5ae7682864958f2bcee67f19f22515e38a45bf",
+      "bce00894e6501b6e8ec8a42f26fb8f72abe239d1",
       "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2",
       "d6e4aa16ae4577f1f053ae2f1c9e8c82bd9f88c9",
       "e83eab959f58de1de73ff7f9004199f68f5027e7"
@@ -172,9 +176,11 @@
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "1166ba4bdb5dcf09d86960e3888c6af52c63b7d7",
       "214e2e9f1cdb2bb16c91dc7b8807df562045bb76",
       "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
+      "3f65e82b4bff91542424eee83bec5f5e64d96e9a",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
       "6c5c813fbb659629df1d313b33dee14f7972f243",
@@ -190,10 +196,12 @@
       "261b9eb5c4a85e6e91612d2829fe0605ad93c4df",
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
       "3cceddc42e540b2b3bf6c63ae15f1ec4949b2037",
+      "3dc1038aa88d531fac67399b2ef24b20ba011748",
       "5745fd11b97aee5d2882b95405a7e61dafa2d731",
       "6ef7877f844cb074c53f10c7cde5b1e72f65f6f6",
       "8a129250f1e3e0c9b121bffc7e6116cd37345c78",
       "944ae5caa2869c96c7e224ac3cdcdb8671c5ee0e",
+      "a12f1767b959b3141ccf584b3a003a4e7613f81f",
       "ab9aa75210df2653da0397cb885f2c74421fc5d9",
       "b805215a0408d2bdc26cf2ba746b8d1489b4ceb8",
       "b9ae6e35b344fb3b777ea1303ef63fe6e1eabe92",
@@ -427,6 +435,9 @@
       "91466d27ca379f1f1e6c17d160981d9416719506",
       "9305ad7457d16e30c359da90c8be2b0332681ebb",
       "9c8481535010e2146a3c6ce92b887a02b21c0188"
+    ],
+    "templates/hooks/proteus-goal.js": [
+      "b30c789dacb8d897b68265b6b2fc4068caccfdf7"
     ],
     "templates/hooks/proteus-harness-claude.js": [
       "0704b7507e0a470b0965ffc897ff3ecf676853b7",
