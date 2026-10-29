@@ -2135,7 +2135,7 @@ async function doctor(fix) {
         const cfg = ["lefthook", ".lefthook", "lefthook-local"].flatMap((n) => ["yml", "yaml", "json", "toml"].map((x) => `${n}.${x}`));
         const bin = process.env.PROTEUS_LEFTHOOK || "lefthook", budget = Number(process.env.PROTEUS_PRECOMMIT_BUDGET_MS) > 0 ? Number(process.env.PROTEUS_PRECOMMIT_BUDGET_MS) : 3000;
         if (!cfg.some((f) => fs.existsSync(path.join(root, f)))) return ["ok", "pre-commit time: skipped (no lefthook config)"];
-        const js = /\.js$/.test(bin), t0 = Date.now();
+        const js = bin.endsWith(".js"), t0 = Date.now();
         const r = spawnSync(js ? process.execPath : bin, js ? [bin, "run", "pre-commit"] : ["run", "pre-commit"], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30000, stdio: "ignore" });
         if (r.error && r.error.code !== "ETIMEDOUT") return ["ok", "pre-commit time: skipped (lefthook not found)"];
         const ms = Date.now() - t0, secs = (ms / 1000).toFixed(1);
