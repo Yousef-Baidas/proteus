@@ -23,7 +23,7 @@ function listField(text, key) {
   const inline = lines[i].slice(key.length + 1).trim().replace(/^\[|\]$/g, "");
   const block = [];
   for (const l of lines.slice(i + 1)) { const b = /^\s+-\s*(.+?)\s*$/.exec(l); if (!b) break; block.push(b[1]); }
-  return [...(inline ? inline.split(",") : []), ...block].map((t) => t.trim().replace(/^(["'])(.*)\1$/, "$2")).filter(Boolean);
+  return [...(inline ? inline.split(",") : []), ...block].flatMap((t) => { const v = t.trim().replace(/^(["'])(.*)\1$/, "$2"); return v ? [v] : []; });
 }
 
 const workers = fs.readdirSync(path.join(ROOT, "agents")).filter((f) => /^proteus-(?:[\w-]+-)?worker\.md$/.test(f)).sort();
