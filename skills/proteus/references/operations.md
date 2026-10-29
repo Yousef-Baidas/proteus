@@ -51,7 +51,7 @@ Agents write temp files, renders, clones and inspection worktrees under `node <h
 
 - **Ticket merged** (step 7): `--sweep <run>-<id>` after the agents are stopped.
 - **Run closed** (step 8): `--sweep <run>`, which takes every `<run>-*` key with it.
-- **Safety net**: the autostart runs `--sweep --stale` in the background each session (done and idle 72h, or idle 7 days); `proteus-state` shows `scratch=<MB>` over 1 GB, and then `--sweep --all-done` clears every key whose branch is gone.
+- **Safety net**: when the session start says scratch may be stale, the lead runs `node <hooks>/proteus-scratch.js --sweep --stale` from its own sandboxed shell (done and idle 72h, or idle 7 days). No hook runs a sweep: it deletes under dirs agents can write (#237); `proteus-state` shows `scratch=<MB>` over 1 GB, and then `--sweep --all-done` clears every key whose branch is gone.
 
 A sweep deletes only ledgered entries and scratch dirs, re-checks each (same inode, this user, directly in the temp dir), unlinks a symlink without following it, removes a git worktree with `git worktree remove --force` and `prune`, and prints the MB freed plus a `kept <path>: <why>` line for anything it refused, such as a locked worktree.
 
