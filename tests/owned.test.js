@@ -224,6 +224,102 @@ ok("worktree script: paths that differ from the record are warned about", r.stat
 r = node(path.join(HOOKS, "proteus-worktree.js"), [W8, "docs/"], { cwd: RREPO, env: AT(RREPO) });
 ok("worktree script: the record's own paths raise no warning", r.status === 0 && !r.stderr, r.stderr);
 
+// #232: a merge of the base is judged by what it changes beyond MERGE_HEAD, not by the base's own changes
+const MREPO = path.join(W, "merge");
+g(W, "init", "-q", "-b", "main", MREPO);
+put(MREPO, "src/a.txt", "a\n"); put(MREPO, "docs/d.md", "d\n");
+commitAll(MREPO, "init");
+const MWT = path.join(W, "merge-wt");
+g(MREPO, "worktree", "add", "-q", "-b", "proteus-work/r2/1", MWT);
+r = node(path.join(HOOKS, "proteus-worktree.js"), [MWT, "src/"], { env: AT(MREPO) });
+put(MWT, "src/b.txt", "b\n");
+commitAll(MWT, "feat(src): add b");
+// main moves on in docs/, which the worker does not own; origin/main is the remote-tracking ref the hook trusts
+put(MREPO, "docs/x.md", "x\n");
+commitAll(MREPO, "docs: add x");
+const sync = (ref) => g(MREPO, "update-ref", `refs/remotes/origin/${ref}`, g(MREPO, "rev-parse", "main"));
+sync("main");
+const mcommit = () => spawnSync("git", ["commit", "-qm", "chore: merge"], { cwd: MWT, encoding: "utf8", env: { ...process.env, ...ID } });
+const unmerge = () => { spawnSync("git", ["merge", "--abort"], { cwd: MWT }); g(MWT, "reset", "-q", "--hard", "HEAD"); };
+const head0 = g(MWT, "rev-parse", "HEAD");
+g(MWT, "merge", "-q", "--no-commit", "--no-ff", "origin/main");
+r = mcommit();
+ok("merge: committing a clean merge of origin/main passes; main's docs are not the worker's change", r.status === 0, r.stderr);
+g(MWT, "reset", "-q", "--hard", head0);
+g(MWT, "merge", "-q", "--no-commit", "--no-ff", "origin/main");
+put(MWT, "docs/hidden.md", "h\n");
+g(MWT, "add", "docs/hidden.md");
+r = mcommit();
+ok("merge: an unowned edit hidden in a merge of main is refused, and main's own paths are not listed",
+  r.status !== 0 && /docs\/hidden\.md/.test(r.stderr) && !/docs\/x\.md/.test(r.stderr), r.stderr);
+unmerge();
+// a conflict in docs/d.md: the worker's side reached the branch past the hook, the resolution is still theirs
+put(MWT, "docs/d.md", "worker\n");
+commitAll(MWT, "docs: worker side");
+put(MREPO, "docs/d.md", "main\n");
+commitAll(MREPO, "docs: main side");
+sync("main");
+spawnSync("git", ["merge", "-q", "--no-ff", "origin/main"], { cwd: MWT, encoding: "utf8", env: { ...process.env, ...ID } });
+put(MWT, "docs/d.md", "resolved\n");
+g(MWT, "add", "docs/d.md");
+r = mcommit();
+ok("merge: a conflict resolution in an unowned file is refused", r.status !== 0 && /docs\/d\.md/.test(r.stderr) && !/docs\/x\.md/.test(r.stderr), r.stderr);
+unmerge();
+g(MWT, "reset", "-q", "--hard", "HEAD~1");
+// a branch no protected ref holds is judged in full: everything it brings is the worker's change
+g(MREPO, "branch", "side", "main~1");
+const SIDE = path.join(W, "merge-side");
+g(MREPO, "worktree", "add", "-q", SIDE, "side");
+put(SIDE, "docs/y.md", "y\n");
+commitAll(SIDE, "docs: add y");
+g(MWT, "merge", "-q", "--no-commit", "--no-ff", "side");
+r = mcommit();
+ok("merge: a merge of a branch no protected ref holds keeps the full check", r.status !== 0 && /docs\/y\.md/.test(r.stderr), r.stderr);
+unmerge();
+// the run branch named by proteus-work/<run>/<id> counts, under origin/
+g(MREPO, "update-ref", "refs/remotes/origin/proteus/r2", "side");
+g(MWT, "merge", "-q", "--no-commit", "--no-ff", "side");
+r = mcommit();
+ok("merge: a merge of the run branch origin/proteus/<run> passes", r.status === 0, r.stderr);
+g(MWT, "reset", "-q", "--hard", head0);
+
+// CI: a merge commit whose second parent the base holds is judged against that parent, every other commit as before.
+// Dated commits make the base and the PR share two merge bases, the newer one the run's own src/r.txt, so a diff
+// of the range alone would list main's docs/x.md as the PR's
+const CREPO = path.join(W, "merge-ci");
+// dated runs under the suite's ENV like g: a runner's system core.autocrlf=true (Windows) would check out
+// merged files with CRLF that g, which ignores system config, then sees as local changes
+let tick = 0;
+const dated = (dir, ...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8", env: { ...lib.ENV, GIT_COMMITTER_DATE: `${1700000000 + 60 * ++tick} +0000` } });
+const cput = (dir, file, msg) => { put(dir, file, `${file}\n`); g(dir, "add", "-A"); dated(dir, "commit", "-qm", msg, "--no-verify"); };
+g(W, "init", "-q", "-b", "main", CREPO);
+cput(CREPO, "src/a.txt", "init");
+g(CREPO, "branch", "side");
+g(CREPO, "checkout", "-q", "-b", "up");
+cput(CREPO, "docs/x.md", "docs: add x");
+g(CREPO, "checkout", "-q", "main");
+cput(CREPO, "src/r.txt", "feat(src): add r");
+const CWT = path.join(W, "merge-ci-wt");
+g(CREPO, "worktree", "add", "-q", "-b", "proteus-work/quick/9", CWT);
+cput(CWT, "src/c.txt", "feat(src): add c");
+dated(CWT, "merge", "-q", "--no-ff", "-m", "chore: merge up", "up");
+dated(CREPO, "merge", "-q", "--no-ff", "-m", "chore: merge up", "up");
+const cci = () => rci(CWT, "main", "proteus-work/quick/9", "Owned: src/");
+r = cci();
+ok("ci: a merge whose second parent the base holds passes when the rest is owned", r.status === 0, r.stderr);
+put(CWT, "docs/sneak.md", "s\n");
+g(CWT, "add", "docs/sneak.md"); dated(CWT, "commit", "-q", "--amend", "--no-edit", "--no-verify");
+r = cci();
+ok("ci: an unowned edit hidden in a merge of the base fails, and the base's paths are not listed",
+  r.status === 1 && /docs\/sneak\.md/.test(r.stderr) && !/docs\/x\.md/.test(r.stderr), r.stderr);
+g(CWT, "reset", "-q", "--hard", "HEAD~1");
+g(CREPO, "checkout", "-q", "side");
+cput(CREPO, "docs/y.md", "docs: add y");
+g(CREPO, "checkout", "-q", "main");
+dated(CWT, "merge", "-q", "--no-ff", "-m", "chore: merge side", "side");
+r = cci();
+ok("ci: a merge of a branch the base does not hold keeps the full check", r.status === 1 && /docs\/y\.md/.test(r.stderr), r.stderr);
+
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
 const tpl = fs.readFileSync(path.join(ROOT, "templates", "ci", "proteus-gates.yml"), "utf8").replace(/\r\n/g, "\n"); // a win32 checkout may have CRLF
 const steps = tpl.split("\n").filter((l) => /^\s*- run: echo "EDIT-/.test(l));
