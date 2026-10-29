@@ -17,15 +17,21 @@
   check of the PR is. It takes only the repo's own worktrees. That copy takes the repo's main root and state dir from the `sandbox-root.json`
   `--sandbox` writes beside it, never from a `.git` file, `commondir` or the cwd, and refuses without it.
   The only guest dir the profile makes writable is `~/.proteus/guest/<repo>-<hash>`; a `guest.json` naming
-  another dir is warned about and left out. Your own settings files are never edited.
+  another dir is warned about and left out. Your own settings files under `~/.claude` are never edited.
   The profile also denies the repo root's `.claude/hooks/` and `.claude/settings*.json` (the two settings files
   by exact path too) and `.git/proteus-lead/`, the lead's state the hooks write. `--sandbox` makes that dir
   first, mode 0700, and refuses a link or a file there. Hooks run `git diff` on a private copy of a worktree's
   index, made under `.git/proteus-lead/`, so swapping its dir under `.git/worktrees/` for a link cannot aim
   git's index rewrite elsewhere. An index that is a link, is not a regular file or is over 64 MB reports no
-  changes known. A 1.x release checkout that agents can write (the repo itself, or another place inside the
-  sandbox's write set) is never updated, moved to the plugin, synced or loaded from at session start. The
-  session-start hook runs outside the sandbox, so any of those would carry an agent's edits out of it. One line
-  says so and names `node <home>/install.js --update`, which you run from your own terminal; `--sandbox` warns
-  about such a home.
+  changes known. A 1.x release checkout that agents can write is never updated, moved to the
+  plugin, synced or loaded from at session start, in any project. That covers the repo itself, another place in
+  the sandbox's write set, and any path a profile in `~/.claude/proteus-sandbox/` makes writable, so a home
+  self-hosted in one sandboxed repo is skipped from every other project too. The session-start hook runs outside
+  the sandbox, so any of those would carry an agent's edits out of it. The home is judged by its named path and
+  its real location, and read only through the real location. One line says so and names
+  `node <home>/install.js --update`, which you run from your own terminal. `--sandbox` refuses such a home and
+  writes nothing: under the profile, install Proteus as a plugin, or move the home outside every sandboxed repo.
+  The profile also denies the `.claude/skills/` of the repo root and the guest dir. `--sandbox` points a Proteus
+  `statusLine` whose script sandboxed commands can write at its own copy outside the write set, and warns about a
+  plugin installed inside it.
   docs/install.md has a "Sandboxed bypass" section with the residuals.
