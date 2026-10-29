@@ -32,7 +32,8 @@
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its brief names, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
-//   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+//   scout's teams/*/skills.txt, scratch under <git-common-dir>/proteus/scratch/, lib.inScratch, and a
+//   `memory: local` agent's own .claude/agent-memory-local/<type>/, lib.ownMemory). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 //   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
 //   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
@@ -191,6 +192,7 @@ function subagentPath(ev, target, briefOf) {
   const abs = path.resolve(cwd, String(target));
   const guest = guestPath(ev, abs);
   if (guest !== null) return guest;
+  if (lib.ownMemory(ev, abs)) return ""; // its own .claude/agent-memory-local/<type>/ in the lead's checkout (#181)
   const wt = lib.gitRoot(path.dirname(abs));
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
