@@ -28,7 +28,7 @@ Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, 
 PR base proteus/<run> (Quick: main), tier <the ticket's tier>.
 Contract: commit <contract sha>; check files: <file:line pointers>. Check: <file::name or command>.
 You own: <paths>. Edit only these, and commit through the hook.
-<Quick or mechanical: Ponytail full, the smallest change that turns the check green. | standard or hard: inside the contract and owned paths the design is yours; favour clarity and good craft over the fewest lines, since later tickets build on it.>
+<Quick or mechanical: Ponytail full, the smallest change that turns the check green. | standard or hard: Ponytail lite; inside the contract and owned paths the design is yours, under the Principles, since later tickets build on it.>
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
 Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 ```
@@ -165,6 +165,13 @@ Each shipped agent file carries the four rules at the top and its role's block b
 
 ### Every agent file
 - **Script first**: a deterministic procedure the lead or a worker has run twice (a data refresh, a render-and-compare, a release checklist) becomes a ticket for a program: a script or small CLI in the project's own `scripts/`, or `teams/<team>/bin/` for team tooling, with `--help` and an exit code. From then on, briefs call the program. Only the ambiguous step stays with a model, and it writes its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment in them.
+
+### Principles
+- the simplest thing that meets the contract;
+- no option, abstraction, file or dependency without a caller in this run;
+- one source of truth per fact or rule;
+- delete before you add;
+- leave the touched area no worse.
 
 ## Lead pre-dispatch check
 The tier is classified with `proteus-tier.js` and each worktree prepared with `--tier`. From Standard up: every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names the role's tier from `models=` (`SKILL.md` rule 2), and so does a container run's `--model`. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open, or the ticket is `speculative` (`review.md`). `proteus/<run>` protected. Each ticket's owned paths recorded as `.proteus/owned/<id>` on `proteus/<run>`, and its worktree prepared by `proteus-worktree.js` with the same paths. Stall watchdog running. Every fix I decided went out as a ticket or a `BACK-TO-WORKER`.

@@ -1,6 +1,6 @@
 // Prompt contract tests: node tests/prompts.test.js. Reads the shipped skill, roles and worker agents and
 // checks the rules that split exploration from the approved pipeline: the lead may add steps only before
-// the spec is approved, ponytail binds only Quick and mechanical tickets, and the verifier does not count
+// the spec is approved, ponytail is full on Quick and mechanical tickets and lite on the rest, and the verifier does not count
 // a worker's own helpers as extras. Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
 const fs = require("fs");
@@ -20,7 +20,7 @@ ok("rule 3: after approval no step is skipped without an exit and a run-log line
 
 const worker = block("Worker");
 ok("worker prompt: ponytail is not unconditional", !/Ponytail full\.\s*$/m.test(worker.split("\n").find((l) => l.startsWith("Long jobs")) || ""), worker);
-ok("worker prompt: ponytail only on Quick or mechanical tickets, craft on standard and hard", /<Quick or mechanical: Ponytail full[^>]*\| standard or hard:[^>]*good craft[^>]*>/.test(worker), worker);
+ok("worker prompt: ponytail full on Quick or mechanical tickets, lite on standard and hard", /<Quick or mechanical: Ponytail full[^>]*\| standard or hard: Ponytail lite;[^>]*the design is yours[^>]*>/.test(worker) && !/fewest lines/.test(worker), worker);
 ok("worker prompt: no IDEA report line", !/IDEA/.test(worker));
 
 for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteus-(\w+-)?verifier\.md$/.test(n) && n !== "proteus-qa-verifier.md")) {
@@ -30,7 +30,7 @@ for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteu
 
 for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteus-(\w+-)?worker\.md$/.test(n))) {
   const a = read("agents", f);
-  ok(`${f}: the design inside the contract is the worker's; minimal style only on Quick and mechanical`, /the design is yours/.test(a) && /Quick and mechanical/.test(a));
+  ok(`${f}: the design inside the contract is the worker's; ponytail full on Quick and mechanical, lite on standard and hard`, /the design is yours/.test(a) && /Ponytail full on Quick and mechanical tickets, lite on `standard` and `hard`/.test(a) && !/fewest lines/.test(a));
 }
 
 // #203: authorization in one place; no verifier fixture harness exists, so the text is the contract
