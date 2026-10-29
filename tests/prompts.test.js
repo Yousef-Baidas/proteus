@@ -33,6 +33,15 @@ for (const f of fs.readdirSync(path.join(ROOT, "agents")).filter((n) => /^proteu
   ok(`${f}: the design inside the contract is the worker's; minimal style only on Quick and mechanical`, /the design is yours/.test(a) && /Quick and mechanical/.test(a));
 }
 
+// #203: authorization in one place; no verifier fixture harness exists, so the text is the contract
+const authz = ["Authorization lives in one module, the one `CONVENTIONS.md` names: the single source of truth, field-level rules included", "Every handler or service call goes through it", "Query filters are derived from it, not copied"];
+for (const team of ["backend", "security"]) {
+  const p = read("templates", "teams", team, "PROFILE.md");
+  ok(`${team} PROFILE.md: the three authorization rules`, authz.every((r) => p.includes(`- ${r}`)), p);
+  ok(`${team} PROFILE.md: the verifier fails an inline permission check, quoting the rule`, /new inline permission check outside the authorization module is `BACK-TO-WORKER` quoting the rule/.test(p), p);
+}
+ok("conventions interview asks where the authorization module is", /^ {3}- authorization: the path of the one module/m.test(read("skills", "proteus", "references", "conventions.md")));
+
 // the prose points to --help for the scripts' flags, so --help must explain them and exit 0
 const { spawnSync } = require("child_process");
 ok("SKILL.md points to the scripts' --help for their flags", /--help/.test(skill));

@@ -121,8 +121,10 @@
       "820c553ca8da6970179609bf1db5785051273927",
       "9085a9296b951dcbd1dfa507bb21ec4dc382a204",
       "96012da4266056baa86f362755b7c0e7b8ef47ee",
+      "a4e9a41bad25ac510fce050c2c8fd1f40aa057a2",
       "abaa55eead5a78f324c0c6729fa2dc58556178bb",
-      "aef6c41494d5e1721488831393299462254cd776"
+      "aef6c41494d5e1721488831393299462254cd776",
+      "cb744c335552648e644f1d55e98c3833bba375c7"
     ],
     "agents/proteus-qa-verifier.md": [
       "3b608ec2c734b140a740ab7d7e718f0d00087f80",
@@ -671,7 +673,8 @@
     ],
     "templates/teams/backend/PROFILE.md": [
       "4f56d1358f6f0f823d3f5c53bfe6565dc46dcf12",
-      "baad11f11b98500cbadb857ef5f3da222c2ccfc3"
+      "baad11f11b98500cbadb857ef5f3da222c2ccfc3",
+      "fc4ac0c12c67cb5f8009d037be09adb229342b19"
     ],
     "templates/teams/backend/skills.txt": [
       "40fc4c835613608744a4a9f5a07cb62688442e7a",
@@ -747,7 +750,8 @@
     ],
     "templates/teams/security/PROFILE.md": [
       "309d5b0d05c50a7d91c1a633a5ebea5f1bd857d1",
-      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c"
+      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c",
+      "ced1433c9ab71690495979320979aa9e2d4c0ce5"
     ],
     "templates/teams/security/skills.txt": [
       "26ac911e187999468e09cf0c251f5d3aa173cf17",
@@ -763,7 +767,8 @@
     },
     "templates/teams/backend/PROFILE.md": {
       "4f56d1358f6f0f823d3f5c53bfe6565dc46dcf12": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nOwns: API, data, auth, background jobs.\n\nRules:\n- Contract signatures are frozen. Need a change: `CONTRACT-WRONG` in the task, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n",
-      "baad11f11b98500cbadb857ef5f3da222c2ccfc3": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nOwns: API, data, auth, background jobs.\n\nRules:\n- Contract signatures are frozen. Need a change: comment `NEEDS contract <file:line>: <why>` on the issue, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n"
+      "baad11f11b98500cbadb857ef5f3da222c2ccfc3": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nOwns: API, data, auth, background jobs.\n\nRules:\n- Contract signatures are frozen. Need a change: comment `NEEDS contract <file:line>: <why>` on the issue, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n",
+      "fc4ac0c12c67cb5f8009d037be09adb229342b19": "# backend profile\n\nReading this file loads the skills in `teams/backend/.claude/skills/`. Read it once, first.\n\nReal-world role: backend engineer.\nOwns: API, data, auth, background jobs.\nNever touches: frontend UI and styling, CI and deploy config.\n\nRules:\n- Contract signatures are frozen. Need a change: comment `NEEDS contract <file:line>: <why>` on the issue, stop.\n- Every migration has a down. Every external call has a timeout.\n- Validate at the boundary once; trust typed data inside.\n- Language and library skills (`rust-*`, `python-*`, `better-auth-*`) apply only when owned paths use them.\n\nGreen adds: integration test for the changed endpoint or job; migration applies and rolls back.\n\nVerifier adds: boundary validation present, error paths tested, no N+1 or unbounded query, blast radius on changed exports.\n"
     },
     "templates/teams/backend/skills.txt": {
       "40fc4c835613608744a4a9f5a07cb62688442e7a": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
@@ -812,7 +817,8 @@
     },
     "templates/teams/security/PROFILE.md": {
       "309d5b0d05c50a7d91c1a633a5ebea5f1bd857d1": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nRuns alongside the profile verifier on tickets touching auth, input parsing, secrets, file or network I/O.\n\nCheck only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O; new dependencies with known advisories.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n",
-      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nRuns alongside the profile verifier on tickets touching auth, input parsing, secrets, file or network I/O.\n\nFirst, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. New dependency in the diff → OSV query per `references/enforcement.md` §8.\n\nThen read. Check only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n"
+      "a58ee76f07e4918326a4c8b51ef2c3bab3f1358c": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nRuns alongside the profile verifier on tickets touching auth, input parsing, secrets, file or network I/O.\n\nFirst, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. New dependency in the diff → OSV query per `references/enforcement.md` §8.\n\nThen read. Check only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n",
+      "ced1433c9ab71690495979320979aa9e2d4c0ce5": "# security profile (verifier only)\n\nReading this file loads the skills in `teams/security/.claude/skills/`. Read it once, first.\n\nReal-world role: application security engineer. Owns nothing; second verifier.\n\nRuns alongside the team verifier on tickets touching auth, input parsing, secrets, file or network I/O, money, personal data, or anything published.\n\nNot code: check personal data exposure, credentials in files, rights and licences of included material, money flows, and claims that create legal exposure; skip semgrep.\n\nFirst, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. New dependency in the diff → OSV query per `references/enforcement.md` §8.\n\nThen read. Check only: injection (SQL, shell, path, template); authn/authz on every new route or handler; secret handling; unsafe deserialisation; SSRF and open redirects; unvalidated input reaching I/O.\n\nIgnore style, structure, duplication; the profile verifier owns those.\n"
     },
     "templates/teams/security/skills.txt": {
       "26ac911e187999468e09cf0c251f5d3aa173cf17": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Claude Code's built-in /security-review is always available; these add stack-specific checks.\n# hive-scout rewrites this file for your stack during bootstrap; human approves the list.\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills two-factor-authentication-best-practices\n",
