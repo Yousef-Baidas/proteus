@@ -81,7 +81,7 @@ function runLog(root, run) {
 function scoreArgv(rel) {
   const p = rel.split(/[\\/]/).join("/");
   if (/\.[cm]?js$/.test(p)) return ["node", p];
-  if (/\.sh$/.test(p)) return ["bash", p];
+  if (p.endsWith(".sh")) return ["bash", p];
   return [p];
 }
 

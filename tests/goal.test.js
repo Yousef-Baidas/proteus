@@ -117,7 +117,7 @@ function round(score, extra = [], { sandbox = ON, exit = "0", goalArg = "render-
   r = round(150, [], { exit: "3" });
   ok("a scorecard that exits non-zero gives STOP error", r.code === 1 && r.out === "STOP error the scorecard exited 3", r.out);
   r = round("fast");
-  ok("a SCORE that is not a number gives STOP error", r.code === 1 && /^STOP error /.test(r.out), r.out);
+  ok("a SCORE that is not a number gives STOP error", r.code === 1 && r.out.startsWith("STOP error "), r.out);
 }
 
 // ---- the run log and _run
@@ -128,7 +128,7 @@ function round(score, extra = [], { sandbox = ON, exit = "0", goalArg = "render-
   process.env.FAKE_GH = "fail";
   r = round(150);
   delete process.env.FAKE_GH;
-  ok("an unreachable tracker gives STOP error", r.code === 1 && /^STOP error run log unreachable/.test(r.out), r.out);
+  ok("an unreachable tracker gives STOP error", r.code === 1 && r.out.startsWith("STOP error run log unreachable"), r.out);
   logWith(...rounds(180));
   const agents = fs.readFileSync(path.join(REPO, "AGENTS.md"), "utf8");
   fs.writeFileSync(path.join(REPO, "AGENTS.md"), agents + "isolation: container\n");
