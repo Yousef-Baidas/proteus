@@ -53,3 +53,7 @@ Guide modes: open the review issue: `Review: <run>/<milestone>`, labels `proteus
 ## Classifier denial
 
 - **Classifier denial**: a tool call the auto mode classifier denies stays denied. Don't retry it, reword it, split it, or route the same action through another tool or agent: the classifier reads each of those as working around it. Final turn text `BLOCKED #<n> classifier <tag>: <action>` (`<run>` for an agent without a ticket), then stop; the lead asks the human.
+
+## Script first
+
+- **Script first**: a deterministic procedure the lead or a worker has run twice (a data refresh, a render-and-compare, a release checklist) becomes a ticket for a program: a script or small CLI in the project's own `scripts/`, or `teams/<team>/bin/` for team tooling, with `--help` and an exit code. From then on, briefs call the program. Only the ambiguous step stays with a model, and it writes its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment in them.
