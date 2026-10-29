@@ -3,7 +3,7 @@
 // run with the same stdin), then " · proteus: N questions · M reviews" when either is above 0, and
 // " · proteus: update ready" when the autostart found a newer Proteus release.
 // Reads only the inbox cache; a cache older than 60 s triggers one detached
-// `proteus-inbox.js --refresh` per 60 s (lock: <common>/proteus/inbox.refresh). Never throws.
+// `proteus-inbox.js --refresh` per 60 s (lock: <common>/proteus-lead/inbox.refresh). Never throws.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -32,11 +32,10 @@ try {
   const root = lib.repoRoot((ev.workspace && ev.workspace.project_dir) || ev.cwd);
   const common = root && lib.gitCommonDir(root);
   if (common) {
-    const store = lib.stateDir(common);
     const cache = lib.inboxFile(common);
     let age = Infinity;
     try { age = Date.now() - fs.statSync(cache).mtimeMs; } catch {}
-    if (age > STALE_MS) refresh(store, root);
+    if (age > STALE_MS) refresh(common, root);
     const inbox = lib.readInbox(common);
     const q = inbox ? inbox.questions.length : 0;
     const r = inbox ? inbox.reviews.length : 0;
@@ -52,12 +51,11 @@ try {
 
 process.stdout.write(out + "\n");
 
-function refresh(store, root) {
-  const lock = path.join(store, "inbox.refresh");
+function refresh(common, root) {
+  const lock = lib.leadPath(common, "inbox.refresh");
   try { if (Date.now() - fs.statSync(lock).mtimeMs < STALE_MS) return; } catch {}
   try {
-    fs.mkdirSync(store, { recursive: true });
-    fs.writeFileSync(lock, String(Date.now()));
+    lib.leadWrite(common, lock, String(Date.now()));
     const c = require("child_process").spawn(process.execPath, [path.join(__dirname, "proteus-inbox.js"), "--refresh"], { detached: true, stdio: "ignore", windowsHide: true, cwd: root });
     c.on("error", () => {});
     c.unref();

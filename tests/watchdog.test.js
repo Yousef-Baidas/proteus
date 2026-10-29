@@ -21,7 +21,7 @@ g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "init");
 const LG = path.join(SRC, "proteus-lead-guard.js");
 const ST = path.join(SRC, "proteus-stall.js");
 const WD = path.join(SRC, "proteus-watchdog.js");
-const BEATS = path.join(REPO, ".git", "proteus", "beats");
+const BEATS = path.join(REPO, ".git", "proteus-lead", "beats");
 const beatFile = (a) => path.join(BEATS, `${a}.json`);
 const beat = (a) => { try { return JSON.parse(fs.readFileSync(beatFile(a), "utf8")); } catch { return null; } };
 const ago = (m) => new Date(Date.now() - m * 60000).toISOString();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // UserPromptSubmit hook for the lead's session (main checkout, main thread).
-// 1. Journals every human message to <git-common-dir>/proteus/journal.jsonl (last 500 kept), verbatim
+// 1. Journals every human message to <git-common-dir>/proteus-lead/journal.jsonl (last 500 kept), verbatim
 //    but for secrets (tokens, keys, private key blocks, password=… ; lib.redact), which become
 //    [redacted]; the autostart re-injects the newest ten after a compaction.
 // 2. Nudges the lead to log decisions to the run log.
@@ -25,7 +25,7 @@ lib.run((ev, ad) => {
   // task notifications, loop wakeups and peer messages arrive here too; they are not the human
   if (ev.fromHuman && prompt.trim()) {
     const common = lib.gitCommonDir(root);
-    if (common) journal(path.join(lib.stateDir(common), "journal.jsonl"), { ts: new Date().toISOString(), session_id: ev.session, prompt: lib.redact(prompt) });
+    if (common) journal(common, lib.leadPath(common, "journal.jsonl"), { ts: new Date().toISOString(), session_id: ev.session, prompt: lib.redact(prompt) });
     if (prompt.length > 40 && !prompt.trimStart().startsWith("/"))
       out.push("proteus: if this message holds a decision, correction, or taste note, log it as one line on the run log before acting.");
   }
@@ -45,20 +45,17 @@ function questionsNudge(root) {
   const common = lib.gitCommonDir(root);
   const inbox = common && lib.readInbox(common);
   if (!inbox || !inbox.questions.length) return "";
-  const stamp = path.join(lib.stateDir(common), "questions-nudged");
+  const stamp = lib.leadPath(common, "questions-nudged");
   try { if (Date.now() - fs.statSync(stamp).mtimeMs < 10 * 60 * 1000) return ""; } catch {}
-  fs.writeFileSync(stamp, new Date().toISOString() + "\n");
+  lib.leadWrite(common, stamp, new Date().toISOString() + "\n");
   return `open questions: ${inbox.questions.map((i) => "#" + i.n).join(", ")} (answer via ${lib.skillCommand("proteus-review")} or type questions)`;
 }
 
-function journal(file, rec) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, JSON.stringify(rec) + "\n");
+function journal(common, file, rec) {
+  lib.leadAppend(common, file, JSON.stringify(rec) + "\n");
   // a record is at least 60 bytes, so a smaller file cannot hold more than KEEP lines
   if (fs.statSync(file).size < KEEP * 60) return;
   const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
   if (lines.length <= KEEP) return;
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, lines.slice(-KEEP).join("\n") + "\n");
-  fs.renameSync(tmp, file);
+  lib.leadWrite(common, file, lines.slice(-KEEP).join("\n") + "\n");
 }

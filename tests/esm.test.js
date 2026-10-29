@@ -57,15 +57,18 @@ ok("the lead's marker is excluded from git; teams/'s are not (CI needs them)",
   !st.some((l) => l.endsWith(".claude/hooks/package.json")) && st.some((l) => l.endsWith("teams/package.json")) && st.some((l) => l.endsWith("teams/templates/hooks/package.json")), st.join("\n"));
 
 // an install from before the fix, in a repo that was not ESM yet: the autostart's sync brings the
-// marker in and excludes it, so it never shows up for `git add -A`
+// marker in, and install.js --project excludes it (the autostart writes nothing in the git dir, #236)
 const EXF = path.join(REPO, ".git", "info", "exclude");
 fs.writeFileSync(EXF, fs.readFileSync(EXF, "utf8").split("\n").filter((l) => l !== ".claude/hooks/package.json").join("\n"));
 fs.rmSync(path.join(REPO, ".claude", "hooks", "package.json"));
 fs.writeFileSync(path.join(REPO, "package.json"), JSON.stringify({ name: "esm-app" }) + "\n");
 r = autostart();
 g(REPO, "checkout", "--", "package.json");
-ok("autostart sync: the marker comes back, excluded from git",
-  marker(REPO, ".claude", "hooks") === "commonjs" && fs.readFileSync(EXF, "utf8").split("\n").includes(".claude/hooks/package.json") && !/\.claude\/hooks\/package\.json/.test(g(REPO, "status", "--porcelain", "-uall")), both(r).slice(-800));
+ok("autostart sync: the marker comes back; the exclude file is left alone",
+  marker(REPO, ".claude", "hooks") === "commonjs" && !fs.readFileSync(EXF, "utf8").split("\n").includes(".claude/hooks/package.json"), both(r).slice(-800));
+r = lib.run(INSTALL, "", { cwd: REPO, args: ["--project"] });
+ok("install.js --project excludes the marker from git",
+  r.code === 0 && fs.readFileSync(EXF, "utf8").split("\n").includes(".claude/hooks/package.json") && !/\.claude\/hooks\/package\.json/.test(g(REPO, "status", "--porcelain", "-uall")), both(r).slice(-800));
 
 // a worker's worktree: its hooks get the marker too, the pre-commit hook runs them, and the copy stays out of git
 g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "chore: add proteus");
