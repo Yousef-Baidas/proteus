@@ -3,6 +3,8 @@
 //   node <hooks>/proteus-container.js run --worktree <dir> --prompt-file <file> [--model <id>] [--agent <name>]
 //        [--ticket <n> --base <branch>] [--image <name>] [--runtime docker|podman]
 //        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>]
+//   node <hooks>/proteus-container.js check --worktree <dir> --ref <sha> [--image <name>] [--runtime docker|podman]
+//        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>] -- <command...>
 //   node <hooks>/proteus-container.js build [--image <name>] [--runtime docker|podman]
 //   node <hooks>/proteus-container.js doctor [--image <name>] [--runtime docker|podman]
 // run: bundles the worktree's branch (lib's pinned git on the trusted common dir, #215) into a fresh 0700 dir under
@@ -25,6 +27,11 @@
 // first line is `<STATUS> #<n>`, else RED), the branch pushed by its one refspec, a PR on DONE whose Closes, Owned: and
 // Tier: lines come first from the host, and the report posted on the ticket, gh as the agents. The last stdout line
 // is then `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1), whatever was thrown.
+// check: runs <command...> on <sha> (a commit reachable from the worktree's branch) in the same hardened container,
+// with no credential env at all and --network none unless given, and brings back only data: out/check.log (stdout
+// and stderr, at most 1 MiB each) and out/status.json { exit, timedOut }, each lstat'ed as a regular file under its
+// cap. It prints the log's path, then the last line `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. Nothing
+// is imported or pushed and no git ref is created. Exit 0 when the command exited 0, else 1; 2 usage.
 // build: builds templates/container/Dockerfile with the entrypoint. doctor: runtime, rootless, image, credential.
 // Exit 0 imported, nothing to import, published, built or doctor clean; 1 refused or failed (reason on stderr); 2 usage.
 "use strict";
@@ -41,11 +48,17 @@ const GH_ENV = ["GH_TOKEN", "GITHUB_TOKEN"];
 const FALLBACK = "run this worker without the container, in its worktree as usual (docs/container.md)";
 const REPORT_MAX = 64 << 10;
 const STATUSES = ["DONE", "BLOCKED", "RED", "NEEDS", "CONTRACT-UNCLEAR"];
-const USAGE = "usage: node proteus-container.js run --worktree <dir> --prompt-file <file> [options] | build [--image <name>] | doctor";
+// check's caps: each of the command's streams in check.log (plus a truncation note each), and status.json
+const STREAM_MAX = 1 << 20;
+const LOG_MAX = 2 * STREAM_MAX + 4096;
+const STATUS_MAX = 64 << 10;
+const USAGE = "usage: node proteus-container.js run --worktree <dir> --prompt-file <file> [options] | check --worktree <dir> --ref <sha> [options] -- <command...> | build [--image <name>] | doctor";
 const HELP = `${USAGE}
 Runs one Claude Code worker session in a container that never sees the host's .git:
   run      bundle the worktree's branch, run claude -p (bypassPermissions) on it in the container, and
            fast-forward the branch to what comes back when every changed path is owned
+  check    run <command...> on --ref's commit in the container, with no credential and no network; prints
+           check.log's path and the last line "CHECK <sha12> exit <n>" (or "timed out"); imports nothing
   build    build the image (templates/container/Dockerfile: node:22-slim, git, Claude Code)
   doctor   the runtime, whether it is rootless, the image, the credential env var
 Options:
@@ -59,14 +72,17 @@ Options:
   --image <name>       default ${IMAGE}; a project's own image built FROM it adds toolchains
   --runtime <name>     docker or podman; default podman when found (rootless), else docker
   --memory 4g  --cpus 2  --pids 512   the container's caps
-  --network <name>     the container's network; default the runtime's (open egress)
+  --ref <sha>          check: the commit to check out (detached); reachable from the worktree's branch
+  --network <name>     the container's network; default the runtime's (open egress), none for check
   --timeout <min>      wall clock before the container is killed; default 60
 Credential: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the env, passed by name. No GitHub token.
-Exit 0 imported or nothing to import (and published, with --ticket); 1 refused or failed; 2 usage.`;
+Exit 0 imported or nothing to import (and published, with --ticket); 1 refused or failed; 2 usage.
+check: exit 0 when the command exited 0, 1 otherwise, 2 usage.`;
 
 const FLAGS = { "--worktree": "worktree", "--prompt-file": "prompt", "--image": "image", "--runtime": "runtime", "--memory": "memory", "--cpus": "cpus", "--pids": "pids", "--network": "network", "--timeout": "timeout",
-  "--model": "model", "--agent": "agent", "--ticket": "ticket", "--base": "base" };
-const ONLY_RUN = ["worktree", "prompt", "memory", "cpus", "pids", "network", "timeout", "model", "agent", "ticket", "base"];
+  "--model": "model", "--agent": "agent", "--ticket": "ticket", "--base": "base", "--ref": "ref" };
+const CAPS = ["image", "runtime", "memory", "cpus", "pids", "network", "timeout"];
+const ALLOWED = { run: [...CAPS, "worktree", "prompt", "model", "agent", "ticket", "base"], check: [...CAPS, "worktree", "ref"], build: ["image", "runtime"], doctor: ["image", "runtime"] };
 const CHECKS = {
   runtime: [/^(?:docker|podman)$/, "docker or podman"],
   image: [/^[A-Za-z0-9][\w./:@-]*$/, "an image name"],
@@ -79,6 +95,7 @@ const CHECKS = {
   agent: [/^(?:proteus:)?[A-Za-z0-9][\w-]*$/, "an agent name"],
   ticket: [/^[1-9]\d*$/, "an issue number"],
   base: [/^(?!.*\.\.)\w[\w./-]*$/, "a branch name"],
+  ref: [/^[0-9a-f]{7,64}$/i, "a commit sha"],
 };
 // a segment git or a host agent session acts on, at any depth: a .git* name (.gitattributes, .gitmodules, a nested
 // .git) or an agent config dir (.claude, .codex, .agents: host sessions load nested skills and hooks from them)
@@ -94,15 +111,20 @@ class Stop extends Error { constructor(msg, code) { super(msg); this.code = code
 const die = (msg, code = 1) => { throw new Stop(msg, code); };
 
 function parse(argv) {
-  const [cmd, ...rest] = argv;
-  if (!["run", "build", "doctor"].includes(cmd)) die(`${USAGE}\n(--help explains each command)`, 2);
+  const [cmd, ...args] = argv;
+  if (!Object.keys(ALLOWED).includes(cmd)) die(`${USAGE}\n(--help explains each command)`, 2);
   const o = { cmd, image: IMAGE, memory: "4g", cpus: "2", pids: "512", timeout: "60" };
+  // check's command is everything after --, passed as argv
+  const dash = args.indexOf("--"), rest = dash < 0 ? args : args.slice(0, dash);
+  if (dash >= 0) o.command = args.slice(dash + 1);
   for (let i = 0; i < rest.length; i += 2) {
     const k = FLAGS[rest[i]];
     if (!k || rest[i + 1] === undefined) die(`${USAGE}\n${rest[i]}: unknown or missing its value`, 2);
-    if (cmd !== "run" && ONLY_RUN.includes(k)) die(`${USAGE}\n${rest[i]} is for run only`, 2);
+    if (!ALLOWED[cmd].includes(k)) die(`${USAGE}\n${rest[i]} is not a ${cmd} option`, 2);
     o[k] = rest[i + 1];
   }
+  if (cmd === "check" && (!o.worktree || !o.ref || !o.command || !o.command.length)) die(`${USAGE}\ncheck needs --worktree, --ref and a command after --`, 2);
+  if (cmd !== "check" && o.command) die(`${USAGE}\n-- <command...> is for check only`, 2);
   for (const [k, [re, what]] of Object.entries(CHECKS)) if (o[k] !== undefined && !re.test(o[k])) die(`--${k} ${o[k]}: not ${what}`, 2);
   if (!(+o.cpus > 0) || !(+o.timeout > 0)) die("--cpus and --timeout must be above 0", 2);
   if (cmd === "run" && (!o.worktree || !o.prompt)) die(`${USAGE}\nrun needs --worktree and --prompt-file`, 2);
@@ -131,15 +153,16 @@ function needRuntime(want) {
   return findRuntime(want) || die(`${want ? `${want} is` : "no container runtime (podman or docker) is"} not on PATH; ${FALLBACK}`);
 }
 
-// the runtime's env: the caller's, less any GitHub token (the host pushes; the container never can)
-function childEnv(env = process.env) {
+// the runtime's env: the caller's, less any GitHub token (the host pushes; the container never can); check drops the
+// credentials too
+function childEnv(env = process.env, drop = GH_ENV) {
   const out = { ...env };
-  for (const k of Object.keys(out)) if (GH_ENV.includes(k.toUpperCase())) delete out[k];
+  for (const k of Object.keys(out)) if (drop.includes(k.toUpperCase())) delete out[k];
   return out;
 }
 const credential = (env = process.env) => CREDS.find((k) => env[k]) || "";
 
-// `<runtime> run` argv. o: name, image, memory, cpus, pids, network, cred (a NAME), in, out (host dirs)
+// `<runtime> run` argv. o: name, image, memory, cpus, pids, network, cred (a NAME, or "" for none), in, out (host dirs)
 function runArgs(rt, o) {
   const mount = (src, dst, ro) => {
     // --mount splits on commas, and a quote starts csv quoting
@@ -154,7 +177,7 @@ function runArgs(rt, o) {
     "--user", "node", ...(rt.name === "podman" ? ["--userns", "keep-id"] : []),
     ...(o.network ? ["--network", o.network] : []),
     ...mount(o.in, "/in", true), ...mount(o.out, "/out", false),
-    "-e", o.cred, o.image];
+    ...(o.cred ? ["-e", o.cred] : []), o.image];
 }
 
 // a regular file the container wrote, never through a link; null otherwise
@@ -162,9 +185,9 @@ function regular(file, max = 0) {
   try { const st = fs.lstatSync(file); return st.isFile() && (!max || st.size <= max) ? st : null; } catch { return null; }
 }
 
-// a fresh 0700 dir under <common>/proteus/scratch (lib.scratchDir) holding in/ (the bundle and the prompt, readable
+// a fresh 0700 dir under <common>/proteus/scratch (lib.scratchDir) holding in/ (the bundle and run's prompt, readable
 // by the container's user) and out/ (writable by it: the 0700 parent keeps every other host user out)
-function prepare(common, prompt) {
+function prepare(common, prompt = "") {
   const root = lib.scratchDir(common);
   fs.mkdirSync(root, { recursive: true });
   for (const d of [lib.stateDir(common), root]) if (!fs.lstatSync(d).isDirectory()) die(`${d} is not a real directory (a link); nothing written through it`);
@@ -172,10 +195,9 @@ function prepare(common, prompt) {
   const inDir = path.join(dir, "in"), outDir = path.join(dir, "out");
   fs.mkdirSync(inDir);
   fs.mkdirSync(outDir);
-  fs.copyFileSync(prompt, path.join(inDir, "prompt.md"));
+  if (prompt) { fs.copyFileSync(prompt, path.join(inDir, "prompt.md")); fs.chmodSync(path.join(inDir, "prompt.md"), 0o644); }
   fs.chmodSync(dir, 0o700);
   fs.chmodSync(inDir, 0o755);
-  fs.chmodSync(path.join(inDir, "prompt.md"), 0o644);
   fs.chmodSync(outDir, 0o777);
   return { dir, id: path.basename(dir).slice("container-".length), inDir, outDir };
 }
@@ -213,13 +235,19 @@ function dropBundles(s) {
   for (const f of [path.join(s.inDir, "in.bundle"), path.join(s.outDir, "out.bundle")]) try { fs.rmSync(f, { force: true }); } catch {}
 }
 
-function runCmd(o) {
-  const wt = path.resolve(o.worktree);
+// --worktree: a linked worktree of this project's repo, never the main checkout, on a branch; dies otherwise
+function workerCheckout(worktree) {
+  const wt = path.resolve(worktree);
   const co = lib.checkoutOf(wt);
   if (!co || !lib.samePath(co.root, lib.realOr(wt))) die(`${wt} is not a worktree of this project's repo (run from the project, naming the worktree's root)`);
   if (co.gitDir === co.common) die(`${wt} is the main checkout; the runner takes a worker's linked worktree (proteus-worktree.js makes one)`);
   const branch = lib.branchOf(wt), base = lib.headOf(wt);
   if (!branch || !/^[\w][\w./-]*$/.test(branch) || !base) die(`${wt} has no branch checked out (or an unusual branch name)`);
+  return { wt, co, branch, base };
+}
+
+function runCmd(o) {
+  const { wt, co, branch, base } = workerCheckout(o.worktree);
   // read once, before the run: the import checks against this copy, whatever happens to the file meanwhile
   let owned;
   try { owned = fs.readFileSync(lib.ownedFile(wt), "utf8"); }
@@ -366,6 +394,52 @@ function publish(o, wt, branch, s, g, owned, moved) {
   return 0;
 }
 
+// check: <command...> on --ref's commit in the container, with no credential and --network none unless given. Only
+// check.log and status.json come back, each lstat'ed as a regular file under its cap; nothing is imported and no ref
+// is made. The entry stops the command at --timeout; the host kills the container a little later.
+function checkCmd(o) {
+  const { co, branch } = workerCheckout(o.worktree);
+  const g = (args, x = {}) => lib.gitTry(co.common, args, { timeout: 600000, ...x });
+  const sha = g(["rev-parse", "--verify", "-q", `${o.ref}^{commit}`]).out;
+  if (!sha) die(`--ref ${o.ref}: no such commit`);
+  const short = sha.slice(0, 12);
+  if (!g(["merge-base", "--is-ancestor", sha, `refs/heads/${branch}`]).ok) die(`refused: ${short} is not reachable from ${branch}`);
+  const rt = needRuntime(o.runtime);
+  const ms = Math.round(+o.timeout * 60000), network = o.network || "none";
+  const s = prepare(co.common);
+  try {
+    fs.writeFileSync(path.join(s.inDir, "run.json"), JSON.stringify({ mode: "check", ref: sha, command: o.command, timeout: ms }) + "\n");
+    fs.chmodSync(path.join(s.inDir, "run.json"), 0o644);
+    const inBundle = path.join(s.inDir, "in.bundle");
+    const r = g(["bundle", "create", inBundle, `refs/heads/${branch}`]);
+    if (!r.ok) die(`cannot bundle ${branch}: ${r.err}`);
+    fs.chmodSync(inBundle, 0o644);
+    const name = `proteus-${s.id}`;
+    console.log(`check: ${rt.name} running ${o.image} on ${short} (${name}, network ${network}, timeout ${o.timeout} min)`);
+    // the container's own output is never shown: only the files below are read, as data
+    const run = lib.spawnArgv(rt.bin, runArgs(rt, { ...o, network, name, cred: "", in: s.inDir, out: s.outDir }),
+      { env: childEnv(process.env, [...GH_ENV, ...CREDS]), stdio: ["ignore", "ignore", "pipe"], timeout: ms + Math.min(60000, ms / 10 + 5000) });
+    const timedOut = () => { console.log(`CHECK ${short} timed out`); return 1; };
+    if (run.error && run.error.code === "ETIMEDOUT") {
+      lib.spawnArgv(rt.bin, ["kill", name], { env: childEnv(), stdio: "ignore", timeout: 60000 });
+      return timedOut();
+    }
+    if (run.error) die(`${rt.name} did not start: ${run.error.message}`);
+    if (run.status !== 0) die(`${rt.name} run exited ${run.status}: ${plain(run.stderr || "").slice(-300)}. Is the image built (\`node ${path.basename(__filename)} doctor\`)?`);
+    const log = path.join(s.outDir, "check.log"), stat = path.join(s.outDir, "status.json");
+    if (!regular(stat, STATUS_MAX)) die(`status.json is missing, not a regular file (a link or a FIFO, say), or over ${STATUS_MAX >> 10} KiB; not read`);
+    if (!regular(log, LOG_MAX)) die(`check.log is missing, not a regular file (a link or a FIFO, say), or over ${LOG_MAX} bytes; not read`);
+    const st = lib.readJSON(stat, null);
+    if (!st || typeof st.timedOut !== "boolean" || !(st.timedOut || Number.isInteger(st.exit))) die(`status.json holds no result${st && st.error ? `: ${plain(st.error).slice(0, 300)}` : ""}`);
+    console.log(`check: log at ${log}`);
+    if (st.timedOut) return timedOut();
+    console.log(`CHECK ${short} exit ${st.exit}`);
+    return st.exit === 0 ? 0 : 1;
+  } finally {
+    dropBundles(s);
+  }
+}
+
 // templates/container/Dockerfile: beside this file's templates/ (checkout, plugin), else the project's teams/ copy
 function dockerfile() {
   const lead = lib.mainRoot(lib.gitCommonDir(process.cwd()) || "") || lib.repoRoot();
@@ -409,7 +483,7 @@ function main(argv) {
   let o = {};
   try {
     o = parse(argv);
-    return o.cmd === "run" ? runCmd(o) : o.cmd === "build" ? buildCmd(o) : doctorCmd(o);
+    return { run: runCmd, check: checkCmd, build: buildCmd, doctor: doctorCmd }[o.cmd](o);
   } catch (e) {
     const stop = e instanceof Stop;
     if (!stop && !o.ticket) throw e;

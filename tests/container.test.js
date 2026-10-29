@@ -2,7 +2,8 @@
 // running proteus-container-entry.js locally with PROTEUS_CONTAINER_TEST_ROOT mapping /in, /out and /work into the
 // scratch dir, and a fake claude that edits, commits, plants or reports. Covers the import, every refusal, the hardening
 // flags and mounts, the credential and GitHub token handling, the timeout's kill, the fallback, win32 paths, --model
-// and --agent, the clone's commit hooks, and --ticket's publish (report, push, PR, comment) through the fake gh.
+// and --agent, the clone's commit hooks, --ticket's publish (report, push, PR, comment) through the fake gh, and check:
+// no network, no credential, a detached --ref, the caps, a planted link or FIFO, the timeout and the last line.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -33,7 +34,8 @@ const FAKE_DOCKER = `
 const fs = require("fs"), path = require("path"), { spawnSync } = require("child_process");
 const me = path.basename(process.argv[1]).replace(/\\.fake\\.js$/, "");
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify({ me, args, gh: Object.keys(process.env).filter((k) => /^(GH_TOKEN|GITHUB_TOKEN)$/i.test(k)) }) + "\\n");
+fs.appendFileSync(process.env.FAKE_DOCKER_LOG, JSON.stringify({ me, args, gh: Object.keys(process.env).filter((k) => /^(GH_TOKEN|GITHUB_TOKEN)$/i.test(k)),
+  creds: Object.keys(process.env).filter((k) => /^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)$/i.test(k)) }) + "\\n");
 const cmd = args[0];
 if (cmd === "info") { console.log(process.env.FAKE_DOCKER_INFO || "[name=seccomp,profile=builtin]"); process.exit(0); }
 if (cmd === "image") process.exit(process.env.FAKE_DOCKER_NOIMAGE ? 1 : 0);
@@ -55,6 +57,14 @@ if (process.env.FAKE_DOCKER_EXTRA) {
   git("tag", "evil");
   fs.rmSync(path.join(root, "out", "out.bundle"), { force: true });
   git("bundle", "create", path.join(root, "out", "out.bundle"), "--branches", "--tags");
+}
+// check: what a container could leave in /out after the entry, as <file>:link|fifo|big
+if (process.env.FAKE_DOCKER_PLANT) {
+  const [f, kind] = process.env.FAKE_DOCKER_PLANT.split(":"), p = path.join(root, "out", f);
+  fs.rmSync(p, { force: true });
+  if (kind === "link") fs.symlinkSync(process.env.FAKE_DOCKER_TARGET, p);
+  if (kind === "fifo") spawnSync("mkfifo", [p]);
+  if (kind === "big") fs.writeFileSync(p, f === "status.json" ? JSON.stringify({ exit: 0, timedOut: false, pad: "x".repeat(64 << 10) }) : "x".repeat((2 << 20) + 4097));
 }
 process.exit(+(process.env.FAKE_DOCKER_EXIT || 0));
 `;
@@ -477,8 +487,95 @@ function publishRun(t, report, env = {}, keep = false) {
   ok("without --ticket it is still thrown", thrown instanceof TypeError);
 }
 
+// ---- check: the command runs on a commit in the container; only check.log and status.json come back
+const checkIn = (t, ref, cmd, env, extra = []) => run(["check", "--worktree", t.wt, "--ref", ref, "--runtime", "docker", ...extra, "--", ...cmd], env);
+const NODE = (src) => [process.execPath, "-e", src];
+const logOf = (res) => read((/^check: log at (.+)$/m.exec(res.out) || [])[1] || "");
+const OUT_DIR = "require('path').join(process.env.PROTEUS_CONTAINER_TEST_ROOT, 'out')";
+{
+  const t = worktree();
+  const before = refs();
+  const res = checkIn(t, t.base, NODE("console.log(Object.keys(process.env).filter((k) => /TOKEN|API_KEY/i.test(k)).join(',') || 'no-creds')"), { ANTHROPIC_API_KEY: "k-host", GH_TOKEN: "ghp_x" });
+  const c = calls().find((x) => x.args[0] === "run") || { args: [], creds: [] };
+  const a = c.args;
+  ok("check exits 0 when the command exits 0, last line CHECK <sha12> exit 0", res.code === 0 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} exit 0`, res.out + res.err);
+  ok("check's network defaults to none", a.some((x, i) => a[i - 1] === "--network" && x === "none"), a.join(" "));
+  ok("check passes no credential: no -e, none in the runtime's env, none in the command's", !a.includes("-e") && c.creds.length === 0 && logOf(res).trim() === "no-creds" && !a.join(" ").includes(SECRET), JSON.stringify(c.creds) + a.join(" ") + logOf(res));
+  ok("check keeps run's hardening and its two mounts", a.includes("--read-only") && a.some((x, i) => a[i - 1] === "--cap-drop" && x === "ALL") && a.filter((x, i) => a[i - 1] === "--mount").length === 2, a.join(" "));
+  ok("check creates no ref and imports nothing", refs() === before && tip(t) === t.base && g(t.wt, "status", "--porcelain") === "", refs());
+  ok("check leaves no bundle behind", !fs.readdirSync(scratch).some((d) => fs.existsSync(path.join(scratch, d, "in", "in.bundle"))));
+  const res2 = checkIn(t, t.base, NODE("process.exit(0)"), {}, ["--network", "registry"]);
+  const a2 = (calls().find((x) => x.args[0] === "run") || { args: [] }).args;
+  ok("check passes --network when given", res2.code === 0 && a2.some((x, i) => a2[i - 1] === "--network" && x === "registry"), a2.join(" "));
+}
+{
+  // a --ref behind the branch tip is checked out detached; one off the branch is refused before the container
+  const t = worktree();
+  fs.writeFileSync(path.join(t.wt, "src", "one.js"), "1\n");
+  g(t.wt, "add", "-A");
+  g(t.wt, "commit", "-q", "-m", "one");
+  const one = tip(t);
+  g(t.wt, "commit", "-q", "--allow-empty", "-m", "two");
+  const res = checkIn(t, one.slice(0, 10), NODE("const x = (...a) => require('child_process').spawnSync('git', a, { encoding: 'utf8' }); console.log(x('rev-parse', 'HEAD').stdout.trim(), x('symbolic-ref', '-q', 'HEAD').status === 1 ? 'detached' : 'on-branch', require('fs').existsSync('src/one.js'))"));
+  ok("check runs on --ref's commit, detached, though it is not the branch tip", res.code === 0 && logOf(res).trim() === `${one} detached true` && lastLine(res) === `CHECK ${one.slice(0, 12)} exit 0`, res.out + res.err + logOf(res));
+  const off = g(R, "commit-tree", "-m", "off", `${t.base}^{tree}`);
+  const res2 = checkIn(t, off, NODE("process.exit(0)"));
+  ok("a --ref not reachable from the branch is refused before the container", res2.code === 1 && /not reachable from/.test(res2.err) && !calls().length && !/^CHECK/m.test(res2.out), res2.out + res2.err);
+  const res3 = checkIn(t, "0123456789abcdef", NODE("process.exit(0)"));
+  ok("a --ref that is no commit is refused", res3.code === 1 && /no such commit/.test(res3.err) && !calls().length, res3.err);
+  const res4 = run(["check", "--worktree", R, "--ref", t.base, "--runtime", "docker", "--", ...NODE("process.exit(0)")]);
+  ok("check refuses the main checkout", res4.code === 1 && /is the main checkout/.test(res4.err) && !calls().length, res4.err);
+}
+{
+  const t = worktree();
+  const res = checkIn(t, t.base, NODE("console.error('bad'); process.exit(3)"));
+  ok("a failing command: exit 1, last line CHECK <sha12> exit 3, its stderr in the log", res.code === 1 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} exit 3` && logOf(res).includes("bad"), res.out + res.err);
+  const res2 = checkIn(t, t.base, ["proteus-no-such-command"]);
+  ok("a command that is not found exits 127", res2.code === 1 && lastLine(res2) === `CHECK ${t.base.slice(0, 12)} exit 127`, res2.out + res2.err);
+  const big = "const n = 1.5 * (1 << 20); process.stdout.write('z'.repeat(n)); process.stderr.write('q'.repeat(n));";
+  const res3 = checkIn(t, t.base, NODE(big));
+  const log = logOf(res3);
+  ok("stdout and stderr are capped at 1 MiB each in check.log", res3.code === 0 && log.split("z").length - 1 === 1 << 20 && log.split("q").length - 1 === 1 << 20 && log.length <= (2 << 20) + 4096
+    && log.includes("[proteus: stdout truncated at 1 MiB]") && log.includes("[proteus: stderr truncated at 1 MiB]"), `${res3.err} ${log.length}`);
+  for (const f of ["check.log", "status.json"]) {
+    const r = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_PLANT: `${f}:big` });
+    ok(`an oversized ${f} is refused, not read`, r.code === 1 && r.err.includes(`${f} is missing, not a regular file`) && !/^CHECK/m.test(r.out), r.out + r.err);
+  }
+  // the command forges status.json and leaves check.log a link; the entry writes both fresh after it
+  const forge = `const fs = require('fs'), p = require('path'), o = ${OUT_DIR}; fs.writeFileSync(p.join(o, 'status.json'), '{"exit":0,"timedOut":false}'); console.log('real');`
+    + (process.platform !== "win32" ? ` fs.symlinkSync(${JSON.stringify(PROMPT)}, p.join(o, 'check.log'));` : "") + " process.exit(4);";
+  const res4 = checkIn(t, t.base, NODE(forge));
+  ok("what the command writes at status.json or check.log is replaced by the entry's", res4.code === 1 && lastLine(res4) === `CHECK ${t.base.slice(0, 12)} exit 4` && logOf(res4).trim() === "real", res4.out + res4.err + logOf(res4));
+}
+if (process.platform !== "win32") {
+  const t = worktree();
+  const host = path.join(W, "host-status.json");
+  fs.writeFileSync(host, JSON.stringify({ exit: 0, timedOut: false }));
+  for (const plant of ["check.log:link", "status.json:link", "check.log:fifo", "status.json:fifo"]) {
+    const r = checkIn(t, t.base, NODE("process.exit(5)"), { FAKE_DOCKER_PLANT: plant, FAKE_DOCKER_TARGET: host });
+    ok(`a ${plant.replace(":", " that is a ")} is refused, not read`, r.code === 1 && /not a regular file/.test(r.err) && !/^CHECK/m.test(r.out), r.out + r.err);
+  }
+  // a background child keeps forging status.json after the command exits; the entry kills the group first
+  const bg = `const o = ${OUT_DIR}; require('child_process').spawn(process.execPath, ['-e', 'const f = require("path").join(' + JSON.stringify(o) + ', "status.json"), end = Date.now() + 4000; while (Date.now() < end) try { require("fs").writeFileSync(f, JSON.stringify({ exit: 0, timedOut: false })); } catch {}'], { stdio: 'ignore' }); setTimeout(() => process.exit(2), 300);`;
+  const res = checkIn(t, t.base, NODE(bg));
+  ok("a child the command leaves behind cannot rewrite status.json", res.code === 1 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} exit 2`, res.out + res.err);
+}
+{
+  const t = worktree();
+  const res = checkIn(t, t.base, NODE("setTimeout(() => {}, 60000)"), {}, ["--timeout", "0.03"]);
+  ok("the entry stops a command at --timeout: CHECK <sha12> timed out, exit 1, the log still shown", res.code === 1 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} timed out` && /^check: log at /m.test(res.out) && res.ms < 30000, res.out + res.err);
+  const res2 = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_SLEEP: "30000" }, ["--timeout", "0.01"]);
+  const kill = calls().find((x) => x.args[0] === "kill");
+  ok("a container that outlives the timeout is killed: CHECK <sha12> timed out, exit 1", res2.code === 1 && lastLine(res2) === `CHECK ${t.base.slice(0, 12)} timed out` && kill && res2.ms < 25000, res2.out + res2.err);
+}
+
 // ---- usage
 {
+  ok("check without --ref is a usage error", run(["check", "--worktree", "x", "--", "true"]).code === 2);
+  ok("check without a command is a usage error", run(["check", "--worktree", "x", "--ref", "abcdef1"]).code === 2);
+  ok("a --ref that is no sha is a usage error", run(["check", "--worktree", "x", "--ref", "HEAD", "--", "true"]).code === 2);
+  ok("a run-only flag on check is a usage error", run(["check", "--worktree", "x", "--ref", "abcdef1", "--prompt-file", PROMPT, "--", "true"]).code === 2);
+  ok("-- <command> on run is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--", "true"]).code === 2);
   ok("--ticket without --base is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--model", "m", "--ticket", "5"]).code === 2);
   ok("--ticket without --model is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--ticket", "5", "--base", "proteus/r1"]).code === 2);
   ok("a --ticket that is no issue number is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--model", "m", "--ticket", "5x", "--base", "b"]).code === 2);
