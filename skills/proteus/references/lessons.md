@@ -30,7 +30,7 @@ Why: the GUI falls back to the active view; background mode does not.
 
 ## How recall works
 
-`proteus-lessons.js` runs on shell calls, file access, and human messages, in the lead and in every worker worktree. On a trigger match it injects the lesson once per session, two at most per event, and appends the hit (`{file, at}`, one line each) to `.git/proteus/lesson-hits.jsonl`. Workers get lessons without the lead passing them.
+`proteus-lessons.js` runs on shell calls, file access, and human messages, in the lead and in every worker worktree. On a trigger match it injects the lesson once per session, two at most per event, and appends the hit (`{file, at}`, one line each) to `.git/proteus-lead/lesson-hits.jsonl`. Workers get lessons without the lead passing them.
 
 ## At step 8 (close)
 
