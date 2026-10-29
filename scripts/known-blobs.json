@@ -73,7 +73,8 @@
       "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
       "d0777c39e7e61c830e31b36b371029851cc3b610",
       "dfa387d013959ccaf38a9ea4204af6d4d566ebd8",
-      "e7b06b76b30950f8ffcfe003f2d93331a6d670ec"
+      "e7b06b76b30950f8ffcfe003f2d93331a6d670ec",
+      "e8c9c8003208360ad8c4d4656b8355d91b63a980"
     ],
     "agents/proteus-backend-worker.md": [
       "06677e9d339590f220f6ed1d31b1ef4378d8edab",
@@ -106,7 +107,8 @@
       "83006ca2df0160c773fbe7108665c383fdc5bd4c",
       "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
       "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
-      "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2"
+      "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2",
+      "d6e4aa16ae4577f1f053ae2f1c9e8c82bd9f88c9"
     ],
     "agents/proteus-frontend-worker.md": [
       "180dd8841ec70faf12c9a3cf2efe915390fb05b1",
@@ -158,6 +160,7 @@
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "6c5c813fbb659629df1d313b33dee14f7972f243",
       "998eec07b55be6b8e65f510a1472738a584824ae",
+      "b28d8cecf81a5e282749c4056984369ff1f6bce4",
       "c09e510f67331a68839864016cbc4b6adad002bd",
       "d432d7062346b0941a3fc9bacdabb0a1ef093894",
       "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
@@ -171,6 +174,7 @@
       "ab9aa75210df2653da0397cb885f2c74421fc5d9",
       "b805215a0408d2bdc26cf2ba746b8d1489b4ceb8",
       "b9ae6e35b344fb3b777ea1303ef63fe6e1eabe92",
+      "c3683bf23cab2e0c142887e64ca81719604c3cdb",
       "d718f34d496e67ccce3bd92907acaedac9063a6c"
     ],
     "agents/proteus-worker.md": [
@@ -381,6 +385,7 @@
       "5ee7e5d8b012ecdeee454ac10ff8b8c950153b5a"
     ],
     "templates/hooks/proteus-container.js": [
+      "257be1b5b235ba6e6db5954a934677591b54bcf2",
       "2646a843c22bdfa0d4876278b4ffa15330f6195c",
       "2d679659f6ceec20acf86e25c0e25e8090f0d434",
       "41eeb50c78d1dc30ec8397788477ee88b02ce170",
@@ -535,6 +540,7 @@
       "acbd8a4d162338ab5b2d0118ab1649501e8ca78e",
       "b9e1b2d7502e121f657861b341df1ff9fdfb5f2e",
       "bd95e592669e8c2375e310f7a0786d45a00e74cf",
+      "bda66e2e4efca7e5b8f834e3804826fbc551ee72",
       "c14d52134797859520fecb6bdee25e4c3c7aadb9",
       "c1abaac5fc5e35f5b39c7cd94b75fa098222fcfd",
       "d568e1ccb41b4c71316c8a343da07a24b5b2bc9b",
