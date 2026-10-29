@@ -11,7 +11,8 @@
 // passes the command's exit code through, so an unrecorded gate stays strict.
 // Modes, per gate:
 //   lines: every output line matching `match` is a finding, compared as a multiset after stripping ANSI codes,
-//          the checkout path, `ignore`, and digits (line numbers and timings move; the finding does not)
+//          the checkout path, `ignore`, and digits (line numbers and timings move; the finding does not), except
+//          for the gate `security`, whose lines (a CVE id, a path) keep their digits
 //   count: the sum of the numbers `match` captures (first group, every match) must not grow
 // A gate that exited 0 at record time fails on any non-zero exit; a non-zero exit with no finding the
 // parser recognises fails too, so a crash or a changed output format never passes as "nothing new".
@@ -72,7 +73,7 @@ const roots = [...new Set([root, root.split(path.sep).join("/")])];
 const norm = (line) => {
   let s = line;
   for (const p of roots) s = s.split(p).join(".");
-  return lib.normFinding(s, ignore);
+  return (gate === "security" ? lib.exactFinding : lib.normFinding)(s, ignore);
 };
 const hit = (line) => { match.lastIndex = 0; return match.test(line); };
 const found = mode === "lines" ? lines.filter(hit).map(norm).filter(Boolean).sort() : null;

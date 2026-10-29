@@ -7,8 +7,8 @@
 // teams/ROUTING.md (lib.parseSecurity, matched like the tiers block); the PR's paths come from the API
 // (repos/<repo>/pulls/<pr>/files, both ends of a rename), so no PR code is run. --findings adds the scanners'
 // findings: a SARIF report, or every .sarif and .json in a directory (proteus-scan.js's output). Every finding counts
-// except those the base's teams/baseline.json records under the gate `security` (lines mode, as
-// proteus-baseline.js normalises them); a semgrep JSON report (`semgrep --json`, from the head's root) counts only
+// except those the base's teams/baseline.json records under the gate `security` (lines mode, matched
+// exactly, digits included, as proteus-baseline.js records that gate); a semgrep JSON report (`semgrep --json`, from the head's root) counts only
 // its findings in a changed file.
 // It posts the commit status proteus/security on <head-sha>, which the ruleset on proteus/* requires:
 // - no changed path matches and no finding: success, "no security path touched";
@@ -30,6 +30,9 @@ const NONE = "no security path touched";
 const NO_BLOCK = "no security block in teams/ROUTING.md; nothing checked";
 const USAGE = "usage: proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>] | --list <report or dir>";
 const fail = (msg) => { console.error(`proteus-security: ${msg}`); return 1; };
+// head-derived text (a path, a rule id) as one inert line: neither a newline in a filename nor a filename starting with
+// :: (the runner trims leading spaces) can start a workflow command
+const inert = (s) => String(s).replace(/\p{Cc}/gu, "?").replace(/^(\s*):/u, "$1?");
 
 // the findings in a report, or in every .sarif and .json of a directory: [{ tool, rule, path, changedOnly }]
 function readFindings(report) {
@@ -46,11 +49,11 @@ function readFindings(report) {
     if (j && Array.isArray(j.runs)) {
       for (const run of j.runs) for (const r of (run && run.results) || []) {
         const loc = ((r && r.locations) || [])[0];
-        found.push({ tool: (run.tool && run.tool.driver && run.tool.driver.name) || "sarif", rule: (r && (r.ruleId || (r.rule && r.rule.id))) || "finding",
-          path: rel(loc && loc.physicalLocation && loc.physicalLocation.artifactLocation && loc.physicalLocation.artifactLocation.uri) || "(no file)" });
+        found.push({ tool: inert((run.tool && run.tool.driver && run.tool.driver.name) || "sarif"), rule: inert((r && (r.ruleId || (r.rule && r.rule.id))) || "finding"),
+          path: inert(rel(loc && loc.physicalLocation && loc.physicalLocation.artifactLocation && loc.physicalLocation.artifactLocation.uri) || "(no file)") });
       }
     } else if (j && Array.isArray(j.results)) {
-      for (const r of j.results) found.push({ tool: "semgrep", rule: (r && r.check_id) || "finding", path: rel(r && r.path), changedOnly: true });
+      for (const r of j.results) found.push({ tool: "semgrep", rule: inert((r && r.check_id) || "finding"), path: inert(rel(r && r.path)), changedOnly: true });
     } else throw new Error(`${path.basename(f)} is neither SARIF nor a semgrep JSON report`);
   }
   return found;
@@ -67,7 +70,7 @@ function unrecorded(found, cwd) {
   try { ignore = entry.ignore ? new RegExp(entry.ignore, "g") : null; } catch {}
   const left = new Map();
   for (const x of entry.findings) left.set(x, (left.get(x) || 0) + 1);
-  return found.filter((f) => { const k = lib.normFinding(line(f), ignore), n = left.get(k) || 0; if (n) left.set(k, n - 1); return !n; });
+  return found.filter((f) => { const k = lib.exactFinding(line(f), ignore), n = left.get(k) || 0; if (n) left.set(k, n - 1); return !n; });
 }
 
 function main(argv) {
@@ -107,9 +110,9 @@ function main(argv) {
   const hits = [];
   for (const p of changed) {
     const g = globs.find((x) => lib.tierMatch(x, p));
-    if (g) hits.push(`${p} (${g})`);
+    if (g) hits.push(`${inert(p)} (${g})`);
   }
-  const scoped = found.filter((f) => !f.changedOnly || changed.includes(f.path));
+  const scoped = found.filter((f) => !f.changedOnly || changed.some((p) => inert(p) === f.path));
   const fresh = unrecorded(scoped, cwd);
   if (scoped.length) console.log(`proteus-security: ${scoped.length} finding(s), ${scoped.length - fresh.length} of them in the baseline`);
   for (const f of fresh) if (!hits.some((h) => h.startsWith(`${f.path} (`))) hits.push(`${f.path} (${f.tool} ${f.rule})`);
@@ -118,7 +121,7 @@ function main(argv) {
   const status = (() => { try { return JSON.parse(gh(["api", `repos/${repo}/commits/${sha}/status`])); } catch { return null; } })();
   const mine = ((status && status.statuses) || []).find((s) => s.context === CONTEXT);
   if (mine && mine.state === "success" && mine.description !== NONE && mine.description !== NO_BLOCK) {
-    console.log(`proteus-security: ${hits.length} security path(s) touched, and ${CONTEXT} is already signed off: ${mine.description}`);
+    console.log(`proteus-security: ${hits.length} security path(s) touched, and ${CONTEXT} is already signed off: ${inert(mine.description)}`);
     return 0;
   }
   console.log(`proteus-security: security paths touched:\n  ${hits.join("\n  ")}`);
