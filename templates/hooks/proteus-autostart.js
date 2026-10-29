@@ -9,6 +9,7 @@
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Says when scratch may be stale, for the lead to run
 // proteus-scratch.js --sweep --stale from its own shell: this hook runs unsandboxed, so it deletes nothing (#237).
+// A home agents can write (lib.homeWritable: self-hosted in the project, #212) gets none of the sync, patches or update.
 // Under the plugin (CLAUDE_PLUGIN_ROOT) the plugin manager owns updates, so the checkout update is off; instead
 // releaseCheck says, in one line, when the installed commit is not a release tag the user's trusted key signed.
 // On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
@@ -21,7 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
-const { pluginRoot, samePath } = require(path.join(__dirname, "proteus-confine.js"));
+const { pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
 
 if (process.env.PROTEUS === "0") process.exit(0);
 
@@ -42,8 +43,14 @@ lib.run(async (ev, ad) => {
   const writes = () => {
     if (pluginRoot()) safe(() => lib.releaseCheck(root, notes, pluginRoot(), process.env.CLAUDE_PLUGIN_DATA));
     // a 1.x checkout proteus.json still names syncs nothing under the plugin: its copies would run beside the plugin's
-    if (home && !pluginRoot()) {
-      pending = safe(() => update(home, cfg, notes, root), "");
+    // a home agents can write (self-hosted in the project, #212 B6) is never fetched, merged, synced or run from,
+    // and no patched agent is regenerated from its agents/ (the shipped text would carry an agent's edit, hooks: in
+    // the frontmatter included, into the denied .claude/agents/): this hook runs unsandboxed
+    const open = home && !pluginRoot() && safe(() => lib.homeWritable(home, root, lib.trustedCommon(root)), true);
+    if (open) {
+      notes.push(`proteus: ${home} is a place agents can write, so this session does not update it, move it to the plugin, sync its hooks and agents, regenerate patched agents from it, or load code from it; update by running node "${path.join(home, "install.js")}" --update from your own terminal`);
+    } else if (home && !pluginRoot()) {
+      pending = safe(() => update(home, cfg, notes), "");
       if (ad.name === "claude" && !pending) safe(() => pluginMove(home, cfg, notes));
       safe(() => sync(ad, home, root, notes));
       if (!lib.agentPrefix()) safe(() => agentPatches(ad, home, root, notes));
@@ -103,15 +110,13 @@ function safe(fn, dflt) { try { return fn(); } catch { return dflt; } }
 // background fetch (with tags) at most once a day; the update is the newest release tag past HEAD
 // (lib.release). Its commit count goes to proteus.json for the status line, so a release shows even
 // with autoUpdate off. With it on, the checkout fast-forwards to that tag only once verifyRelease
-// accepts its signature; otherwise one note says why and how to update by hand. A home self-hosted in the project
-// (its git dir is the project's common dir, which sandboxed agents write, #212) gets neither: fetch writes FETCH_HEAD
-// and merge the index and tree by path, through any link planted there, so one note says to update it by hand.
-function update(home, cfg, notes, root) {
+// accepts its signature; otherwise one note says why and how to update by hand. A home agents can write
+// (lib.homeWritable, #212) never gets here: fetch writes FETCH_HEAD and merge the index and tree by path, through
+// any link planted there.
+function update(home, cfg, notes) {
   const patch = {};
   const last = typeof cfg.lastFetch === "number" ? cfg.lastFetch : Date.parse(cfg.lastFetch) || 0;
-  const common = lib.trustedCommon(root), own = Boolean(common) && samePath(lib.homeGitDir(home), common);
-  if (own) notes.push(`proteus: not updating ${home}: its git dir is this project's (${common}), which agents can write; update it by hand outside the session`);
-  if (!own && Date.now() - last > 24 * 3600e3) {
+  if (Date.now() - last > 24 * 3600e3) {
     try {
       // the human's global config (credentials, proxy) but none the repo's worktrees could plant (lib.gitCall, #215)
       const [args, o] = lib.gitCall(lib.homeGitDir(home), ["fetch", "--quiet", "--tags"], { user: true });
@@ -123,7 +128,7 @@ function update(home, cfg, notes, root) {
   }
   const rel = lib.release(home);
   let behind = rel.ahead;
-  if (behind && cfg.autoUpdate === true && !own) {
+  if (behind && cfg.autoUpdate === true) {
     try {
       const v = lib.verifyRelease(home, rel.tag);
       const gd = lib.homeGitDir(home);

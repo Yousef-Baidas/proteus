@@ -841,23 +841,33 @@ function changeCalls(co, specs, ignored) {
 }
 const changeLines = (outs, calls) => (outs.some((x) => x === null) ? null : outs.flatMap((out, i) => String(out).split("\0").filter(Boolean).map((p) => calls[i][1] + p)));
 // co with its index swapped for a private copy, and done() to delete the copy; null when co is, or its index is a
-// link or not a regular file. git diff rewrites a stat-dirty index (a lock, then a rename, both by path), and
-// GIT_OPTIONAL_LOCKS=0 does not stop it, so run on <common>/worktrees/<id>/index it writes wherever an agent swaps
-// that dir for a link (#212). The copy is a 'wx' file in a fresh mkdtemp dir; its source is lstat'd and opened
-// without following a link. A checkout with no index yet gets a name in that dir with nothing there, as before
+// link, not a regular file or over INDEX_CAP. git diff rewrites a stat-dirty index (a lock, then a rename, both by
+// path), and GIT_OPTIONAL_LOCKS=0 does not stop it, so run on <common>/worktrees/<id>/index it writes wherever an
+// agent swaps that dir for a link (#212). The copy is a 'wx' file in a fresh mkdtemp dir under <common>/proteus-lead,
+// which the sandbox profile denies (a temp dir agents can write would let them swap that dir too); its source is
+// lstat'd and opened without following a link. A checkout with no index yet gets a name in that dir with nothing there
+const INDEX_CAP = 64 << 20;
 function privateIndex(co) {
   if (!co) return null;
   let st = null;
   try { st = fs.lstatSync(co.index); } catch (e) { if (e.code !== "ENOENT") return null; }
-  if (st && !st.isFile()) return null;
+  if (st && (!st.isFile() || st.size > INDEX_CAP)) return null;
   let dir;
-  try { dir = fs.mkdtempSync(path.join(os.tmpdir(), "proteus-index-")); } catch { return null; }
+  try { dir = fs.mkdtempSync(path.join(leadDir(co.common), "index-")); } catch { return null; }
   const done = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
   const index = path.join(dir, "index");
   if (st) {
     try {
-      const { fd } = openRegular(co.index);
-      try { fs.writeFileSync(index, fs.readFileSync(fd), { flag: "wx", mode: 0o600 }); } finally { fs.closeSync(fd); }
+      const { fd, st: open } = openRegular(co.index);
+      try {
+        if (open.size > INDEX_CAP) throw new Error("index too large");
+        // the size fstat saw, no more: an index that grows meanwhile is refused, not read past the cap
+        const buf = Buffer.alloc(open.size);
+        let n = 0, got;
+        while (n < buf.length && (got = fs.readSync(fd, buf, n, buf.length - n, null)) > 0) n += got;
+        if (fs.readSync(fd, Buffer.alloc(1), 0, 1, null)) throw new Error("index grew while read");
+        fs.writeFileSync(index, buf.subarray(0, n), { flag: "wx", mode: 0o600 });
+      } finally { fs.closeSync(fd); }
     } catch { done(); return null; }
   }
   return { co: { ...co, index }, done };
@@ -886,6 +896,22 @@ function homeGitDir(home) {
   return trustedCommon(home);
 }
 const homeGit = (home, args, timeout = 3000, o = {}) => gitIn(homeGitDir(home), args, timeout, o);
+// the scratch root install.js --sandbox makes writable: <tmpdir>/proteus-<uid>
+function sandboxScratch() {
+  const who = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username.replace(/[^\w.-]/g, "_");
+  return path.join(os.tmpdir(), `proteus-${who}`);
+}
+// a release home agents can write (#212 B6): its realpath is inside the project root, <common>, a registered
+// worktree, the scratch roots or a guest dir, or its git dir is <common>. The autostart then fetches, merges, copies,
+// spawns and requires nothing from it, and install.js --sandbox warns
+function homeWritable(home, root, common) {
+  if (!home) return false;
+  const h = realOr(path.resolve(String(home)));
+  if (common && samePath(homeGitDir(h), realOr(common))) return true;
+  const places = [root, sandboxScratch(), root && guestDir(root)];
+  if (common) places.push(common, scratchDir(common), defaultGuestDir(common), ...registeredWorktrees(common));
+  return places.some((p) => p && relPath(realOr(path.resolve(p)), h) !== null);
+}
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
 // The autostart (autoUpdate) and install.js --update share these.
@@ -3072,7 +3098,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, homeWritable,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,

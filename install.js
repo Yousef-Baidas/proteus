@@ -2253,10 +2253,7 @@ function outsideEdits(keep) {
 }
 
 // the scratch dir agents' shell commands may write in the temp dir: per user, made 0700, never a link
-const sandboxScratch = () => {
-  const who = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username.replace(/[^\w.-]/g, "_");
-  return path.join(os.tmpdir(), `proteus-${who}`);
-};
+const sandboxScratch = () => hl().sandboxScratch();
 function makeScratch(dir) {
   try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") return `cannot make ${dir} (${e.message})`; }
   const st = lstat(dir);
@@ -2402,6 +2399,9 @@ function sandbox() {
   log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
   log(`sandbox  -> ${scratch} (scratch dir sandboxed commands may write)`);
   if (guest) log(`sandbox  -> ${guest} (guest dir sandboxed commands may write)`);
+  // a 1.x home agents can write (self-hosted in this repo): the autostart never updates or syncs it (#212 B6)
+  const home = (readJson(CONFIG) || {}).home;
+  if (typeof home === "string" && isDir(home) && lib.homeWritable(home, root, common)) warn(`warning: the Proteus home in ${CONFIG}, ${home}, is a place sandboxed commands can write, so the autostart never updates it or syncs its hooks and agents; update by running node ${q(path.join(home, "install.js"))} --update from your own terminal`);
   if (!agentGh()) warn("warning: no agent identity (--agent-login): the profile hides your gh config from shell commands, so gh has no login inside the sandbox");
   log("Before launching, run the project setup outside the sandbox if this repo needs it (it writes .claude/hooks/, which the sandbox refuses):");
   log(`  node ${q(path.join(HERE, "install.js"))} --project`);

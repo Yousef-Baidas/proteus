@@ -37,7 +37,8 @@ const GD = path.join(COMMON, "worktrees", "w1"), INDEX = path.join(GD, "index");
 // every tracked file's mtime moved, so each entry in the index is stat-dirty and git diff would rewrite it
 let clock = Math.floor(Date.now() / 1000) - 100000;
 const dirty = () => { clock += 10; for (const f of FILES) fs.utimesSync(path.join(WT, f), clock, clock); };
-const leftovers = () => fs.readdirSync(TMP).filter((n) => n.startsWith("proteus-index-"));
+const LEADD = path.join(COMMON, "proteus-lead");
+const leftovers = () => [...fs.readdirSync(TMP), ...(fs.existsSync(LEADD) ? fs.readdirSync(LEADD) : [])].filter((n) => /^(proteus-)?index-/.test(n));
 
 (async () => {
   dirty();
@@ -94,6 +95,41 @@ const leftovers = () => fs.readdirSync(TMP).filter((n) => n.startsWith("proteus-
     ok("flipper: the victim dir is unchanged, no index or lock written there", snap(VICTIM) === was, fs.readdirSync(VICTIM).join(" "));
     ok("flipper: the worktree's own git dir is back in place", !isLink(GD) && fs.existsSync(INDEX));
   } else ok("flipper: skipped (no symlink, or Windows)", true);
+
+  // the copy's dir is made under <common>/proteus-lead, which the sandbox profile denies, never in the temp dir
+  // (agents can write it when the hooks' TMPDIR is theirs); and the copy is 'wx': a name already there (a link
+  // planted in the dir between its mkdtemp and the write) is never written through
+  {
+    const mk = fs.mkdtempSync, made = [];
+    const VIC = path.join(W, "wx-victim");
+    fs.writeFileSync(VIC, "victim\n");
+    fs.mkdtempSync = (prefix, ...rest) => { const d = mk(prefix, ...rest); made.push(prefix); if (link(VIC, path.join(d, "index"), "file")) made.push("planted"); return d; };
+    let r;
+    try { dirty(); r = L.treeChanges(WT); } finally { fs.mkdtempSync = mk; }
+    ok("privateIndex: the copy's dir is under <common>/proteus-lead, not the temp dir", made.length > 0 && made[0].startsWith(LEADD + path.sep), made.join(" "));
+    if (made.includes("planted")) {
+      ok("privateIndex: a link already at the copy's name is not written through ('wx'), and no changes are known", r === null && fs.readFileSync(VIC, "utf8") === "victim\n", String(r));
+    } else ok("privateIndex: wx case skipped (no symlink here)", true);
+  }
+
+  // an index over 64 MB (sparse, so cheap) is not copied: no changes known, nothing read
+  {
+    const real = path.join(W, "big-aside");
+    fs.renameSync(INDEX, real);
+    const fd = fs.openSync(INDEX, "w");
+    fs.ftruncateSync(fd, (64 << 20) + 1);
+    fs.closeSync(fd);
+    const mk = fs.mkdtempSync;
+    let copies = 0;
+    fs.mkdtempSync = (...a) => { copies++; return mk(...a); };
+    let r;
+    try { r = L.treeChanges(WT); } finally { fs.mkdtempSync = mk; }
+    ok("privateIndex: an index over 64 MB is not copied, and no changes are known (fails closed)", r === null && copies === 0, `${r} copies=${copies}`);
+    fs.rmSync(INDEX);
+    fs.renameSync(real, INDEX);
+    dirty();
+    ok("privateIndex: the real index back, treeChanges answers again", Array.isArray(L.treeChanges(WT)));
+  }
 
   ok("treeChanges: every private copy is deleted afterwards", !leftovers().length, leftovers().join(" "));
   lib.summary();

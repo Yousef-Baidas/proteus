@@ -138,6 +138,26 @@ if (WIN) {
   fs.unlinkSync(leadDir);
   fs.renameSync(leadAside, leadDir);
   ok("--sandbox writes the profile again once proteus-lead is a real dir", sandbox({ XDG_CONFIG_HOME: XDG }).code === 0 && fs.existsSync(file));
+  // a proteus-lead made before, more open than 0700: --sandbox makes it private again
+  fs.chmodSync(leadDir, 0o755);
+  sandbox({ XDG_CONFIG_HOME: XDG });
+  ok("--sandbox makes an existing <common>/proteus-lead mode 0700", (fs.statSync(leadDir).mode & 0o777) === 0o700, (fs.statSync(leadDir).mode & 0o777).toString(8));
+
+  // #212 B6: a 1.x home proteus.json names inside the repo (self-hosted) is one agents write; --sandbox warns, names
+  // the manual update and still writes the profile. A home outside every writable place gets no warning
+  const CFG = path.join(CLAUDE, "proteus.json"), hadCfg = fs.existsSync(CFG) ? fs.readFileSync(CFG) : null;
+  const OUTHOME = path.join(W, "release-home");
+  fs.mkdirSync(OUTHOME, { recursive: true });
+  const warned = (home) => {
+    fs.writeFileSync(CFG, JSON.stringify({ home }));
+    const r = sandbox({ XDG_CONFIG_HOME: XDG });
+    return { r, hit: r.code === 0 && /the Proteus home .* is a place sandboxed commands can write/.test(r.err) && r.err.includes(`${path.join(home, "install.js")} --update`) };
+  };
+  const self = warned(repo);
+  ok("--sandbox warns when the configured home is inside the repo, naming the manual update, and still writes the profile", self.hit && fs.existsSync(file), self.r.err);
+  const out = warned(OUTHOME);
+  ok("--sandbox does not warn about a home outside every writable place", out.r.code === 0 && !/the Proteus home/.test(out.r.err), out.r.err);
+  if (hadCfg) fs.writeFileSync(CFG, hadCfg); else fs.rmSync(CFG);
 
   // gitDenyRules: each submodule git dir (nested ones and ones under a name path), no worktree's, no other wildcard
   const C = require(path.join(ROOT, "templates", "hooks", "proteus-confine.js"));
