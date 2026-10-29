@@ -155,7 +155,7 @@ The tracker is GitHub via `gh` today. `references/tracker.md` is an operations t
 
 Each worker works in its own git worktree under `.worktrees/<id>/` in your checkout (`.worktrees/direct-<batch>` and `.worktrees/quick-<n>` for the Direct and Quick tiers). `proteus-worktree.js` adds `/.worktrees/` to `.git/info/exclude`, never to `.gitignore`, so `git status` and `git add -A` in the main checkout skip it. A run started under Proteus 1.1 or earlier keeps its worktrees in `../<repo>-proteus/` until they merge; on Codex that folder stays in `writable_roots` until then. `git clean -ffdx` in the main checkout deletes the nested worktrees with everything else.
 
-Some tools walk into `.worktrees/` from the main checkout and run or lint the workers' copies too. Proteus runs the full suite and the bisect from `.worktrees/_run`, a plain copy of the tree under test with nothing nested in it, and `proteus-gates-cache.js` warns when it runs a command in a folder that holds worktrees. For your own runs from the main checkout, add `.worktrees/` to the ignores of each tool marked yes:
+Some tools walk into `.worktrees/` from the main checkout and run or lint the workers' copies too. Proteus runs the full suite and the bisect from `.worktrees/_run`, a checkout of the commit under test in a repo of its own with nothing nested in it, and `proteus-gates-cache.js` warns when it runs a command in a folder that holds worktrees. For your own runs from the main checkout, add `.worktrees/` to the ignores of each tool marked yes:
 
 | Tool | Walks into `.worktrees/` | Why (default config) | Ignore it with |
 |---|---|---|---|
@@ -241,7 +241,7 @@ templates/
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
     proteus-ready.js        the tickets ready to dispatch, and why the rest are blocked
     proteus-merge.js        a merge batch: ready PRs in dependency order, the suite step for _run, bisect on red
-    proteus-run-tree.js     fills .worktrees/_run with a commit's tree for the suite, run sandboxed
+    proteus-run-tree.js     checks a commit out in .worktrees/_run for the suite, run sandboxed
     proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
