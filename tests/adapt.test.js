@@ -2,7 +2,8 @@
 // small git repo in a temp dir; <name>.json beside it declares what Proteus's deterministic code must decide for it:
 // the teams it gets and does not get (proteus-teamfit.js and what install.js --plugin-setup copies), the --doctor
 // rows, the gate commands setup proposes (null: Proteus derives none), the tier and security signoff of planned
-// changes (classifyTier, tierMatch on the copied teams/ROUTING.md) and the fixture's ceremony (the baseline ratchet
+// changes (classifyTier, tierMatch on the copied teams/ROUTING.md), with the threat model gate item (g) they
+// trigger (flow.md step 1: a security path or the Full tier), and the fixture's ceremony (the baseline ratchet
 // for a red suite, guest mode for a repo the human cannot push to, where --plugin-setup and --project both leave the
 // checkout untouched). An expectation no code decides is null and names its reason under "gaps". Prints a score
 // table (a row per fixture, a column per expectation) and fails on any miss. node tests/adapt.test.js (needs git). Fake HOME, gh and claude; never the network or the real ~/.claude.
@@ -104,6 +105,8 @@ function score(name) {
     if (got.tier !== c.tier) tbad.push(`${changes.map((x) => x.path).join("+")}: ${got.tier}, want ${c.tier} (${got.why.join("; ")})`);
     const needs = changes.some((x) => sec.some((glob) => HL.tierMatch(glob, x.path)));
     if (needs !== c.security) sbad.push(`${changes.map((x) => x.path).join("+")}: security ${needs}, want ${c.security}`);
+    const threat = needs || got.tier === "full";
+    if ("threatModel" in c && threat !== c.threatModel) sbad.push(`${changes.map((x) => x.path).join("+")}: threat model ${threat}, want ${c.threatModel}`);
   }
   if (want.tier) {
     cell("tier", !!tiers && !tiers.errors.length && !tbad.length, tiers ? tbad.join(", ") : "no tiers block in the copied ROUTING.md");
