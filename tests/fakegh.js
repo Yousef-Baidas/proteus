@@ -118,7 +118,7 @@ if (process.env.FAKE_GH_RUN) {
 }
 // FAKE_GH_MERGE (a JSON file {origin, issues, prs: [{number, headRefName, baseRefName, body, statusCheckRollup}]}) answers
 // proteus-merge.js: the open PRs, the run's issues, and `pr merge` as a real merge commit in the origin repo (git merge-tree);
-// a conflicting one fails and its `mergeable` turns CONFLICTING
+// a conflicting one fails and its `mergeable` turns CONFLICTING; `pr view --json headRefName,state` is MERGED once merged
 if (process.env.FAKE_GH_MERGE) {
   const fs = require("fs"), { spawnSync } = require("child_process"), file = process.env.FAKE_GH_MERGE;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -127,6 +127,11 @@ if (process.env.FAKE_GH_MERGE) {
   if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged));
   if (a.startsWith("issue list --label proteus --state all --json number,state,body ")) out(s.issues || []);
   if ((m = /^pr view (\d+) --json mergeable -q \.mergeable$/.exec(a))) { process.stdout.write((s.prs.find((p) => p.number === +m[1]) || {}).mergeable || "MERGEABLE"); process.exit(0); }
+  if ((m = /^pr view (\d+) --json headRefName,state$/.exec(a))) {
+    const p = s.prs.find((x) => x.number === +m[1]);
+    if (!p) { process.stderr.write(`GraphQL: Could not resolve to a PullRequest with the number of ${m[1]}.\n`); process.exit(1); }
+    out({ headRefName: p.headRefName, state: p.merged ? "MERGED" : "OPEN" });
+  }
   if ((m = /^pr merge (\d+) --merge$/.exec(a))) {
     const p = s.prs.find((x) => x.number === +m[1]);
     const tree = git("merge-tree", "--write-tree", `refs/heads/${p.baseRefName}`, `refs/heads/${p.headRefName}`);

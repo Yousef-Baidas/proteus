@@ -187,8 +187,9 @@ function verdict(route, name, target, ran) {
   verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
 }
 
-// 9. proteus-merge.js: the ready PR's worktree, which it leaves, and .worktrees/_run, which it moves for the lead's suite,
-// each with core.fsmonitor in its config.worktree; the fake gh merges the PR in a local origin
+// 9. proteus-merge.js: the ready PR's worktree, which it leaves, and the lead's checkout on the run branch, each with
+// core.fsmonitor in its config.worktree; the fake gh merges the PR in a local origin. Then proteus-run-tree.js fills
+// .worktrees/_run, a plain directory, through git pinned to the common dir, whose config.worktree is the lead's
 {
   const O = path.join(W, "merge-origin.git"), R = path.join(W, "merge-root");
   g(W, "init", "-q", "--bare", "-b", "main", O);
@@ -204,24 +205,25 @@ function verdict(route, name, target, ran) {
   g(WT, "add", "-A"); g(WT, "commit", "-qm", "ticket 1");
   g(WT, "push", "-q", "origin", "proteus-work/r1/1");
   g(WT, "config", "--worktree", "core.fsmonitor", cmd("merge-wt"));
-  g(R, "worktree", "add", "-q", "--detach", RUN, "origin/proteus/r1");
-  g(RUN, "config", "--worktree", "core.fsmonitor", cmd("merge-run"));
-  // the lead on the run branch, which the script fast-forwards
+  // the lead on the run branch, which the script leaves for the lead to fast-forward
   g(R, "checkout", "-q", "-b", "proteus/r1", "origin/proteus/r1");
   g(R, "config", "--worktree", "core.fsmonitor", cmd("merge-lead"));
+  const lead = g(R, "rev-parse", "HEAD");
   const state = path.join(W, "merge-gh.json");
   fs.writeFileSync(state, JSON.stringify({ origin: O, issues: [{ number: 1, state: "OPEN", body: "" }],
     prs: [{ number: 10, headRefName: "proteus-work/r1/1", baseRefName: "proteus/r1", body: "Closes #1", isDraft: false,
       statusCheckRollup: [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }] }] }));
   const res = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", `"${fw(process.execPath)}" -e 0`] });
-  ok("proteus-merge.js merged the PR and moved _run to it", res.code === 0 && res.out.startsWith("merged PR #10 for #1; suite: in .worktrees/_run run ") && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
-  // a red tip: --result fail with one merge names it and moves _run back, read-tree again on _run's own index
+  const tip = g(R, "rev-parse", "origin/proteus/r1");
+  ok("proteus-merge.js merged the PR and printed the commands for its tip", res.code === 0 && res.out.startsWith("merged PR #10 for #1; suite: run node ") && res.out.includes(`proteus-run-tree.js ${tip}, then`), res.out + res.err);
+  const tree = lib.run(path.join(SRC, "proteus-run-tree.js"), "", { cwd: R, args: [tip] });
+  ok("proteus-run-tree.js filled _run with the tip", tree.code === 0 && fs.existsSync(path.join(RUN, "b.js")), tree.out + tree.err);
+  // a red tip: --result fail with one merge names it
   const red = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", "x", "--result", "fail"] });
   ok("proteus-merge.js --result fail names the first bad merge", red.code === 1 && red.out.startsWith("run r1: suite red; first bad PR #10 for #1 "), red.out + red.err);
   ok("proteus-merge.js: no git call ran the plant in the PR's worktree, which stays", !fired("merge-wt") && fs.existsSync(WT));
-  ok("proteus-merge.js fast-forwarded the lead's checkout on the run branch", fs.existsSync(path.join(R, "b.js")) && g(R, "rev-parse", "HEAD") === g(R, "rev-parse", "origin/proteus/r1"), res.out + res.err);
-  verdict("proteus-merge.js", "merge-run", RUN, [["merge", res], ["result", red]]);
-  verdict("proteus-merge.js in the lead's checkout", "merge-lead", R, [["merge", res], ["result", red]]);
+  ok("proteus-merge.js left the lead's checkout where it was", g(R, "rev-parse", "HEAD") === lead && !fs.existsSync(path.join(R, "b.js")), res.out + res.err);
+  verdict("proteus-merge.js and proteus-run-tree.js in the lead's checkout", "merge-lead", R, [["merge", res], ["run-tree", tree], ["result", red]]);
 }
 
 lib.summary();
