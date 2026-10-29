@@ -52,7 +52,7 @@ lib.run(async (ev, ad) => {
     // the frontmatter included, into the denied .claude/agents/): this hook runs unsandboxed
     const open = home && !pluginRoot() && safe(() => lib.homeWritable(named, root, lib.trustedCommon(root), { real: home }), true);
     if (open) {
-      notes.push(`proteus: ${named} is a place agents can write, so this session does not update it, move it to the plugin, sync its hooks and agents, regenerate patched agents from it, or load code from it; update by running node "${path.join(named, "install.js")}" --update from your own terminal`);
+      notes.push(`proteus: ${named} is a place agents can write, so this session does not update it, move it to the plugin, sync its hooks and agents, regenerate patched agents from it, or load code from it; update by running node "${path.join(named, "install.js")}" --update from your own terminal. Its skill link ${ad.skillDirs(root)[1]} still loads a SKILL.md agents can edit: remove that link (the link itself, not the folder it points to) from your own terminal unless you check that file`);
     } else if (home && !pluginRoot()) {
       pending = safe(() => update(home, cfg, notes), "");
       if (ad.name === "claude" && !pending) safe(() => pluginMove(home, cfg, notes));

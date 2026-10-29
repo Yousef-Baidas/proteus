@@ -46,7 +46,10 @@ const setCfg = (home) => fs.writeFileSync(CFG, JSON.stringify({ home, autoUpdate
 const start = (env = {}) => lib.run(path.join(HOOKS, "proteus-autostart.js"), { hook_event_name: "SessionStart", source: "compact", session_id: "h1", cwd: R }, { cwd: R, env: { FAKE_GH: "fail", ...env } });
 const snap = (d) => { try { return JSON.stringify(fs.readdirSync(d).sort().map((n) => [n, fs.readFileSync(path.join(d, n)).toString("base64")])); } catch { return "none"; } };
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-const skipLine = (out, home) => out.split("\n").filter((l) => l.includes("is a place agents can write") && l.includes(home) && l.includes("install.js") && /--update from your own terminal/.test(l));
+// the line also names the skill link the skip leaves loading, and how to remove it
+const LINK_NOTE = `Its skill link ${path.join(HOME, ".claude", "skills", "proteus")} still loads`;
+const skipLine = (out, home) => out.split("\n").filter((l) => l.includes("is a place agents can write") && l.includes(home) && l.includes("install.js") && /--update from your own terminal/.test(l)
+  && l.includes(LINK_NOTE) && /remove that link \(the link itself, not the folder it points to\)/.test(l));
 
 // ---- the agent side: every path is inside <root>, which the sandbox profile makes writable
 const PWN = (n) => path.join(W, `PWNED-${n}`);
@@ -209,6 +212,35 @@ if (links) {
   const rl = start();
   ok("autostart: a linked home outside is read through its realpath alone", rl.out.includes(`synced 1 files from ${fs.realpathSync.native(CLEAN)}`) && !rl.out.includes(`from ${OUTLINK}`), rl.out.slice(0, 1200));
 } else ok("homeWritable: link-home cases skipped (no symlink here)", true);
+
+// ---- profileWrites: a "~/" entry is under the home; a place is compared by its realpath too; a linked
+// proteus-sandbox dir (an agent could point it at profiles of its own) is refused, not read
+{
+  const tilde = path.join(HOME, "tilde-place");
+  fs.mkdirSync(path.join(tilde, "proteus"), { recursive: true });
+  profile("tilde", ["~/tilde-place"]);
+  ok("profileWrites: a ~/ entry is the path under the home", L.profileWrites().includes(tilde), JSON.stringify(L.profileWrites()));
+  ok("homeWritable: a home under a profile's ~/ entry is writable", L.homeWritable(path.join(tilde, "proteus"), null, null) === true);
+  noProfiles();
+  const real = path.join(W, "real-place"), via = path.join(W, "via-link");
+  fs.mkdirSync(path.join(real, "proteus"), { recursive: true });
+  let made = false;
+  try { fs.symlinkSync(real, via, "dir"); made = true; } catch {}
+  if (made) {
+    profile("vialink", [via]);
+    ok("homeWritable: a home inside the target of a linked profile entry is writable", L.homeWritable(fs.realpathSync(path.join(real, "proteus")), null, null) === true);
+    noProfiles();
+    const elsewhere = path.join(W, "other-profiles");
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.writeFileSync(path.join(elsewhere, "x.json"), JSON.stringify({ sandbox: { filesystem: { allowWrite: [] } } }));
+    fs.mkdirSync(path.dirname(PROFILES), { recursive: true });
+    fs.symlinkSync(elsewhere, PROFILES, "dir");
+    let threw = false;
+    try { L.profileWrites(); } catch { threw = true; }
+    ok("profileWrites: a linked proteus-sandbox dir throws", threw);
+    try { fs.unlinkSync(PROFILES); } catch { fs.rmdirSync(PROFILES); }
+  } else ok("profileWrites: link cases skipped (no symlink here)", true);
+}
 
 // ---- macOS and Windows: containment folds case and Unicode form, as their file systems do by default
 ok("within: darwin folds case", L.within("/Users/Me/Repo", "/users/me/repo/proteus", "darwin") === true);

@@ -31,7 +31,14 @@
   its real location, and read only through the real location. One line says so and names
   `node <home>/install.js --update`, which you run from your own terminal. `--sandbox` refuses such a home and
   writes nothing: under the profile, install Proteus as a plugin, or move the home outside every sandboxed repo.
-  The profile also denies the `.claude/skills/` of the repo root and the guest dir. `--sandbox` points a Proteus
-  `statusLine` whose script sandboxed commands can write at its own copy outside the write set, and warns about a
-  plugin installed inside it.
+  The profile denies everything under the `.claude/` of the repo root and the guest dir, by a rule Linux honours.
+  A deeper `.claude/skills/` is held by a `PreToolUse` hook on `Skill`, run from the copy outside the write set: it
+  refuses a skill while a `SKILL.md` for its name sits in any `.claude/skills/` the profile makes writable, other
+  than those two, and refuses every skill when its scan errs or passes 8 levels or 50,000 entries. `--sandbox`
+  points a Proteus `statusLine` whose script sandboxed commands can write at its own copy outside the write set,
+  in `.claude/settings.local.json` only, and warns about a plugin installed inside it. It checks both settings
+  files before writing anything. Once a profile exists, `--project`, `--plugin-setup` and `--migrate-here` do the
+  same for a status line they write. `--sandbox` refuses when Claude Code's config dir or the Proteus checkout is
+  in any profile's write set, or a profile cannot be read; the 1.x install refuses such a checkout too. The
+  session-start line for a skipped 1.x home names the skill link `~/.claude/skills/proteus` and how to remove it.
   docs/install.md has a "Sandboxed bypass" section with the residuals.

@@ -120,11 +120,12 @@ if (WIN) {
   // #237 r2: the root's hooks and settings, which the plugin's SessionStart acts on outside the sandbox
   ok("profile: an agent write to the root's .claude/hooks is denied", deniedOnLinux(path.join(realRepo, ".claude", "hooks", "proteus-lib.js")),
     deny.filter((x) => x.includes(".claude")).join(" "));
-  ok("profile: an agent write to the root's .claude/settings*.json is denied", deny.includes(`${rule("Edit", path.join(realRepo, ".claude", "settings*.json"))})`)
-    && ["settings.json", "settings.local.json"].every((f) => deniedOnLinux(path.join(realRepo, ".claude", f))), deny.filter((x) => x.includes(".claude")).join(" "));
-  // #212 B8: the root's skills, whose SKILL.md hooks: run outside the sandbox once the skill loads
-  ok("profile: an agent write to the root's .claude/skills is denied, by a rule Linux honours", deny.includes(`${rule("Edit", path.join(realRepo, ".claude", "skills"))}/**)`)
-    && deniedOnLinux(path.join(realRepo, ".claude", "skills", "x", "SKILL.md")), deny.filter((x) => x.includes(".claude")).join(" "));
+  ok("profile: an agent write to the root's .claude/settings files is denied, exactly too", ["settings.json", "settings.local.json"]
+    .every((f) => deniedOnLinux(path.join(realRepo, ".claude", f)) && deny.includes(`${rule("Edit", path.join(realRepo, ".claude", f))})`)), deny.filter((x) => x.includes(".claude")).join(" "));
+  // #212 B8, B9: the root's whole .claude/ by a rule Linux honours: skills, whose SKILL.md hooks: run outside the
+  // sandbox once the skill loads, and workflows, which Claude Code runs in its own process
+  ok("profile: an agent write to the root's .claude/ is denied, by a rule Linux honours", deny.includes(`${rule("Edit", path.join(realRepo, ".claude"))}/**)`)
+    && ["skills/x/SKILL.md", "workflows/x.js", "agents/x.md", "settings.local.json"].every((f) => deniedOnLinux(path.join(realRepo, ".claude", ...f.split("/")))), deny.filter((x) => x.includes(".claude")).join(" "));
   // proteus-lead a link or a file: --sandbox refuses, writes no profile and nothing through the link
   const leadVictim = path.join(W, "lead-victim"), leadAside = path.join(W, "lead-aside");
   fs.mkdirSync(leadVictim);
@@ -420,6 +421,121 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
     fs.rmSync(path.join(repo, "teams"), { recursive: true });
   }
 
+  // #212 B9: the Skill guard the profile registers, run from bin's copy. A skill whose SKILL.md sits in a nested
+  // .claude/skills in the write set is refused (Claude Code would run its hooks: outside the sandbox); one in the
+  // root's .claude/skills (denied), a plugin's and the user's pass. A scan error or a cap refuses; no profile, no guard
+  {
+    const guard = path.join(bin, "proteus-skill-guard.js");
+    const pre = ((read(file).hooks || {}).PreToolUse || []).find((e) => e && e.matcher === "Skill");
+    ok("profile: a PreToolUse hook on Skill runs the guard's copy in bin", Boolean(pre) && pre.hooks.some((h) => h.command === `node ${guard}`), JSON.stringify(read(file).hooks));
+    const skill = (name) => run(guard, { hook_event_name: "PreToolUse", tool_name: "Skill", tool_input: { skill: name } }, { cwd: repo });
+    const plant = (...dir) => {
+      const d = path.join(...dir);
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "SKILL.md"), "---\nname: x\nhooks: agent-written\n---\n");
+    };
+    plant(repo, "src", ".claude", "skills", "nest");
+    plant(repo, ".worktrees", "w9", ".claude", "skills", "wtskill");
+    plant(repo, ".claude", "skills", "rootskill");
+    plant(CLAUDE, "skills", "mine");
+    const n1 = skill("nest"), n2 = skill("wtskill"), n3 = skill("other:nest");
+    ok("skill guard: a SKILL.md in a nested src/.claude/skills is refused", n1.code === 2 && n1.err.includes(["src", ".claude", "skills", "nest", "SKILL.md"].join(path.sep)), n1.err);
+    ok("skill guard: a SKILL.md in a worktree's .claude/skills is refused", n2.code === 2 && n2.err.includes(["w9", ".claude", "skills", "wtskill"].join(path.sep)), n2.err);
+    ok("skill guard: a plugin: prefix is stripped before matching", n3.code === 2, n3.err);
+    const okp = skill("proteus:proteus"), oku = skill("mine"), okr = skill("rootskill");
+    ok("skill guard: a plugin skill and a user skill pass", okp.code === 0 && oku.code === 0, okp.err + oku.err);
+    ok("skill guard: the root's own .claude/skills (denied to sandboxed writes) passes", okr.code === 0, okr.err);
+    const deep = path.join(repo, "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9");
+    fs.mkdirSync(deep, { recursive: true });
+    const cap = skill("mine");
+    ok("skill guard: a scan over the depth cap refuses", cap.code === 2 && /deeper than 8/.test(cap.err), cap.err);
+    fs.rmSync(path.join(repo, "d1"), { recursive: true });
+    if (typeof process.getuid === "function" && process.getuid() !== 0) {
+      const locked = path.join(repo, "locked");
+      fs.mkdirSync(locked);
+      fs.chmodSync(locked, 0);
+      const er = skill("mine");
+      fs.chmodSync(locked, 0o700);
+      fs.rmSync(locked, { recursive: true });
+      ok("skill guard: a scan error refuses", er.code === 2 && /could not be checked/.test(er.err), er.err);
+    } else ok("skill guard: scan-error case skipped (root reads every dir)", true);
+    fs.renameSync(file, file + ".aside");
+    const none = skill("nest");
+    fs.renameSync(file + ".aside", file);
+    ok("skill guard: no profile, nothing to guard", none.code === 0, none.err);
+    for (const d of ["src", ".worktrees", ".claude"]) fs.rmSync(path.join(repo, d), { recursive: true });
+    fs.rmSync(path.join(CLAUDE, "skills"), { recursive: true });
+  }
+
+  // #212 B10: /proteus:setup (--plugin-setup) after --sandbox in a repo with no statusLine adds one that runs bin's
+  // copy, in settings.local.json only. A Proteus statusLine in settings.json counts as set: settings.json is left as it
+  // is, and settings.local.json overrides it with bin's copy
+  {
+    const local = path.join(repo, ".claude", "settings.local.json"), shared = path.join(repo, ".claude", "settings.json");
+    const setup = () => run(INSTALL, "", { cwd: repo, args: ["--plugin-setup", "--only-here"], env: { TMPDIR: TMP, XDG_CONFIG_HOME: XDG } });
+    const status = (f) => { const c = String((read(f).statusLine || {}).command || ""); return (/^node "([^"]+)"$/.exec(c) || [])[1] || c; };
+    const pw = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
+    const binLine = path.join(bin, "proteus-statusline.js").split(path.sep).join("/");
+    const ps = setup();
+    ok("--plugin-setup after --sandbox: the statusLine it adds runs bin's copy, no path in allowWrite", ps.code === 0 && status(local) === binLine
+      && !pw.some((w) => status(local) === w || status(local).startsWith(w + "/")), status(local) + ps.err + ps.out);
+    ok("--plugin-setup after --sandbox: settings.json gets no statusLine", !("statusLine" in read(shared)), JSON.stringify(read(shared)));
+    fs.rmSync(local);
+    const teamsLine = path.join(repo, "teams", "templates", "hooks", "proteus-statusline.js").split(path.sep).join("/");
+    fs.writeFileSync(shared, JSON.stringify({ ...read(shared), statusLine: { type: "command", command: `node "${teamsLine}"` } }, null, 2) + "\n");
+    const before = fs.readFileSync(shared, "utf8");
+    const ps2 = setup();
+    ok("--plugin-setup after --sandbox: a Proteus statusLine in settings.json counts as set and is left as it is", ps2.code === 0 && fs.readFileSync(shared, "utf8") === before, ps2.err + ps2.out);
+    ok("--plugin-setup after --sandbox: settings.local.json overrides it with bin's copy", status(local) === binLine, status(local) + ps2.err);
+    fs.rmSync(local);
+    const rs = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox: a Proteus statusLine in settings.json is overridden in settings.local.json, settings.json left as it is", rs.code === 0
+      && fs.readFileSync(shared, "utf8") === before && status(local) === binLine, status(local) + rs.err);
+    fs.rmSync(path.join(repo, ".claude"), { recursive: true });
+    fs.rmSync(path.join(repo, "teams"), { recursive: true, force: true });
+  }
+
+  // a settings file that is a link: --sandbox refuses before it writes anything (the profile included), and writes
+  // nothing through the link
+  {
+    const victim = path.join(W, "victim.json"), local = path.join(repo, ".claude", "settings.local.json");
+    fs.writeFileSync(victim, JSON.stringify({ original: true }));
+    fs.mkdirSync(path.dirname(local), { recursive: true });
+    fs.symlinkSync(victim, local);
+    const old = fs.readFileSync(file, "utf8");
+    fs.rmSync(file);
+    const rl = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox refuses a linked settings.local.json, writing no profile and nothing through the link", rl.code === 1 && /not a regular file/.test(rl.err)
+      && !fs.existsSync(file) && fs.readFileSync(victim, "utf8") === JSON.stringify({ original: true }), rl.err);
+    fs.rmSync(path.join(repo, ".claude"), { recursive: true });
+    fs.writeFileSync(file, old);
+  }
+
+  // profiles that cannot be read, this checkout or the config dir in another profile's write set: refused, nothing written
+  {
+    const old = fs.readFileSync(file, "utf8"), cfg = path.join(CLAUDE, "proteus.json"), had = fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : null;
+    const elsewhere = path.join(W, "release-home");
+    fs.mkdirSync(elsewhere, { recursive: true });
+    fs.writeFileSync(cfg, JSON.stringify({ home: elsewhere }));
+    fs.writeFileSync(path.join(profileDir(), "broken.json"), "{");
+    const rb = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox with a 1.x home dies on a profile it cannot read", rb.code === 1 && /cannot read the profiles in/.test(rb.err) && fs.readFileSync(file, "utf8") === old, rb.err);
+    if (had === null) fs.rmSync(cfg); else fs.writeFileSync(cfg, had);
+    const rb2 = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox dies on a profile it cannot read", rb2.code === 1 && /cannot be read/.test(rb2.err) && fs.readFileSync(file, "utf8") === old, rb2.err);
+    fs.rmSync(path.join(profileDir(), "broken.json"));
+    fs.writeFileSync(path.join(profileDir(), "self.json"), JSON.stringify({ sandbox: { filesystem: { allowWrite: [ROOT] } } }));
+    const rh = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox refuses when this Proteus checkout is in a profile's write set", rh.code === 2 && /this Proteus checkout/.test(rh.err) && fs.readFileSync(file, "utf8") === old, rh.err);
+    fs.rmSync(path.join(profileDir(), "self.json"));
+    const shared2 = path.join(W, "shared-place"), cfg2 = path.join(shared2, "cfg");
+    fs.mkdirSync(profileDir(cfg2), { recursive: true });
+    fs.writeFileSync(path.join(profileDir(cfg2), "other.json"), JSON.stringify({ sandbox: { filesystem: { allowWrite: [shared2] } } }));
+    const rp = sandbox({ CLAUDE_CONFIG_DIR: cfg2 });
+    ok("--sandbox refuses a config dir inside another profile's write set", rp.code === 2 && /CLAUDE_CONFIG_DIR/.test(rp.err) && !fs.existsSync(path.join(profileDir(cfg2), "bin")), rp.err);
+    fs.rmSync(shared2, { recursive: true });
+  }
+
   // a plugin install sandboxed commands can write (claude --plugin-dir <repo>, a directory source in the repo): warned
   {
     const inst = path.join(CLAUDE, "plugins", "installed_plugins.json");
@@ -452,7 +568,7 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
   const gf = sandbox({ XDG_CONFIG_HOME: XDG });
   const gw2 = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
   ok("guest: guest.json naming the fixed guest dir makes it writable and --sandbox prints it", gf.code === 0 && gw2.includes(fixedGuest) && gf.out.includes(fixedGuest), gw2.join(" ") + gf.err);
-  ok("guest: an agent write to the guest dir's .claude/skills is denied, by a rule Linux honours", (((read(file).permissions || {}).deny) || []).includes(`${rule("Edit", path.join(fixedGuest, ".claude", "skills"))}/**)`));
+  ok("guest: an agent write to the guest dir's .claude/ is denied, by a rule Linux honours", (((read(file).permissions || {}).deny) || []).includes(`${rule("Edit", path.join(fixedGuest, ".claude"))}/**)`));
   fs.rmSync(guestJson);
 
   // agentGh set: the human's gh dir still unreadable, the agents' own readable; the profile is rewritten in place
@@ -482,6 +598,18 @@ const outside = path.join(W, "nogit");
 fs.mkdirSync(outside);
 const r6 = run(INSTALL, "", { cwd: outside, args: ["--sandbox"], env: { GIT_CEILING_DIRECTORIES: W } });
 ok("--sandbox outside a git repo refuses", r6.code === 2, r6.err);
+
+// #212 B7: the 1.x install (no flag) from a checkout a sandbox profile makes writable is refused, nothing written
+{
+  const pd = profileDir();
+  fs.mkdirSync(pd, { recursive: true });
+  fs.writeFileSync(path.join(pd, "self.json"), JSON.stringify({ sandbox: { filesystem: { allowWrite: [ROOT] } } }));
+  const cfg = path.join(CLAUDE, "proteus.json"), had = fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : null;
+  const ru = run(INSTALL, "", { cwd: path.join(W, "work", "sibling"), args: [] });
+  ok("1.x install: a checkout in a profile's write set is refused, no skill link and no config written", ru.code === 1 && /this Proteus checkout/.test(ru.err)
+    && !fs.existsSync(path.join(CLAUDE, "skills", "proteus")) && (fs.existsSync(cfg) ? fs.readFileSync(cfg, "utf8") : null) === had, ru.err);
+  fs.rmSync(path.join(pd, "self.json"));
+}
 
 // docs
 const install = fs.readFileSync(path.join(ROOT, "docs", "install.md"), "utf8");
