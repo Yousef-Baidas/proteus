@@ -7,6 +7,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const CAP_MS = 5000;
 // server-rendered templates count as UI only past this many, so an email template adds no team
@@ -143,8 +144,11 @@ function evidence(root, opt = {}) {
   if (left() <= 0) return over;
   const specs = [...new Set(Object.values(KINDS).flat())].map((g) => `:(glob,icase)${g}`)
     .concat(EXCLUDE.map((g) => `:(glob,icase,exclude)${g}`));
-  const r = spawnSync("git", ["-c", "core.quotepath=off", "ls-files", "-z", "--", ...specs],
-    { cwd: root, encoding: "utf8", timeout: Math.max(1, left()), maxBuffer: 1 << 28, windowsHide: true });
+  // git through lib's wrapper (#215): the checkout's own index, the common dir's config only
+  const co = lib.checkoutOf(root, root);
+  if (!co) return { capped: true, why: "git ls-files failed here (not a git checkout)" };
+  const run = (args, o) => { const [a, opts] = lib.gitCall(co.common, args, { stdio: ["ignore", "pipe", "pipe"], ...o }); return spawnSync("git", a, { ...opts, timeout: Math.max(1, left()) }); };
+  const r = run(["-c", "core.quotepath=off", "ls-files", "-z", "--", ...specs], { cwd: root, workTree: co.root, index: co.index });
   if (r.error && r.error.code === "ETIMEDOUT") return over;
   if (r.error || r.status !== 0) return { capped: true, why: `git ls-files failed here (${r.error ? r.error.message : (r.stderr || "").trim().split("\n")[0]})` };
   const files = r.stdout.split("\0").filter(Boolean);
@@ -159,7 +163,7 @@ function evidence(root, opt = {}) {
   const docsDirs = manifests.flatMap((m) => (m.fam === "npm" && depIn(m, DOCS_DEPS) ? [m.dir] : []));
   const docsFiles = (f) => docsDirs.some((d) => under(f, d)) || manifests.some((m) => m.fam === "mkdocs" && under(f, m.dir ? `${m.dir}/overrides` : "overrides"));
   if (left() <= 0) return over;
-  const rem = spawnSync("git", ["remote"], { cwd: root, encoding: "utf8", timeout: Math.max(1, left()), windowsHide: true });
+  const rem = run(["remote"], {});
   if (rem.error && rem.error.code === "ETIMEDOUT") return over;
   const remotes = rem.status === 0 ? rem.stdout.split(/\r?\n/).filter(Boolean) : [];
   const code = by.code.length + by.uiFile.length + by.uiTemplate.length + manifests.filter((m) => m.fam !== "mkdocs").length;
