@@ -186,7 +186,7 @@ for (const [what, key, val] of [
   ["alias.p", "alias.p", "push --force"],
   ["remote.origin.push", "remote.origin.push", "+refs/heads/*:refs/heads/main"],
   ["includeIf", "includeIf.gitdir:/x/.path", path.join(W, "evil.cfg")],
-  ["another agent's branch upstream", "branch.proteus-work/r1/2.remote", "origin"],
+  ["the upstream of a branch no worktree has out", "branch.release.remote", "origin"],
   ["a pushRemote other than the branch's remote", "branch.proteus-work/r1/1.pushRemote", "elsewhere"],
 ]) {
   r = call("node -e ...", gitc(key, val)); // past Layer 1, which reads the command line
@@ -195,7 +195,7 @@ for (const [what, key, val] of [
   ok(`config: ...unsetting it again passes and closes the record`, !r.blocked && record().open === false, r.why + JSON.stringify(record()));
 }
 // #172: a worker whose brief named a worktree the lead never prepared (no owned list, no binding) runs in it;
-// its push -u is its own branch's upstream, the same keys for another branch are not
+// its push -u is its own branch's upstream, the same keys for a branch no worktree has out are not
 const WT5 = path.join(REPO, ".worktrees", "s5");
 g(REPO, "worktree", "add", "-q", "-b", "fix/s5", WT5, "main");
 const e1 = { who: { agent_id: "e1", agent_type: "proteus-worker" }, cwd: WT5 };
@@ -204,9 +204,9 @@ ok("config: push -u from an unprepared worktree leaves no record", r.pre.code ==
 r = call("git branch --set-upstream-to=origin/main", ["git", "branch", "--set-upstream-to=origin/main"], e1);
 ok("config: ...nor does --set-upstream-to on that branch", !r.blocked && record("agent-e1") === null, r.why);
 // Layer 1 refuses an interpreter here (no prepared worktree), so the command line names none: a script on disk
-r = call("sh tools/track.sh", ["git", "config", "branch.proteus-work/r1/2.merge", "refs/heads/main"], e1);
-ok("config: ...while another branch's merge key is caught, naming it", r.blocked && record("agent-e1") && record("agent-e1").open && r.why.includes("branch.proteus-work/r1/2.merge"), r.why + r.pre.err);
-r = call("sh tools/untrack.sh", ["git", "config", "--unset", "branch.proteus-work/r1/2.merge"], e1);
+r = call("sh tools/track.sh", ["git", "config", "branch.release.merge", "refs/heads/main"], e1);
+ok("config: ...while another branch's merge key is caught, naming it", r.blocked && record("agent-e1") && record("agent-e1").open && r.why.includes("branch.release.merge"), r.why + r.pre.err);
+r = call("sh tools/untrack.sh", ["git", "config", "--unset", "branch.release.merge"], e1);
 ok("config: ...unsetting it again passes and closes the record", !r.blocked && record("agent-e1").open === false, r.why);
 
 // #178: a build worker whose first call is a shell one, from the main checkout (a subagent's cwd resets there), is
@@ -302,6 +302,59 @@ ok("lead: ...and the agent's next call is not blocked on the lead's change", !r.
 // the lead's own calls are not checked
 r = call("node -e ...", node("require('fs').writeFileSync('.claude/agents/lead.md','x')"), { who: {}, cwd: REPO });
 ok("lead: the main thread's own shell calls are not checked here", !r.blocked, r.why);
+
+// #182: what another agent's push -u or the removal of a worktree changes is no change of this agent's, and a
+// record whose agent has ended stops refusing MERGE once its paths are back or explained
+r = call("npm test", ["git", "-C", WT2, "push", "-q", "-u", "origin", "proteus-work/r1/2"]);
+ok("#182 tracking: ticket B's push -u during ticket A's call is not flagged on A", r.pre.code === 0 && !r.blocked && g(REPO, "config", "branch.proteus-work/r1/2.merge") === "refs/heads/proteus-work/r1/2" && record().open === false, r.why);
+r = call("npm test", gitc("branch.proteus-work/r1/9.remote", "origin"));
+ok("#182 tracking: ...nor a work branch no worktree has out", !r.blocked, r.why);
+r = call("npm test", gitc("branch.proteus-work/r1/9.pushRemote", "elsewhere"));
+ok("#182 tracking: ...while its pushRemote elsewhere is still caught", r.blocked && r.why.includes("branch.proteus-work/r1/9.pushremote"), r.why);
+r = call("npm test", gitc("--unset", "branch.proteus-work/r1/9.pushRemote"));
+ok("#182 tracking: ...and passes once unset", !r.blocked && record().open === false, r.why);
+const SCR = path.join(W, "proteus-scratch", "r1-106-broken");
+g(REPO, "worktree", "add", "-q", "--detach", SCR, "main");
+g(REPO, "config", "extensions.worktreeConfig", "true");
+g(SCR, "config", "--worktree", "core.hooksPath", "/dev/null");
+const scrCfg = path.join(fs.realpathSync(path.join(REPO, ".git")), "worktrees", "r1-106-broken", "config.worktree");
+ok("setup: the scratch worktree has a config.worktree", fs.existsSync(scrCfg));
+r = call("node tools/clean.js", node(`require('fs').rmSync(${JSON.stringify(SCR)},{recursive:true,force:true});require('child_process').execFileSync('git',['-C',${JSON.stringify(REPO)},'worktree','prune'])`));
+ok("#182 scratch: a deleted and pruned worktree's config.worktree is not flagged", r.pre.code === 0 && !r.blocked && !fs.existsSync(scrCfg) && record().open === false, r.why + r.pre.err);
+
+// a contracts agent with no worktree of its own runs from the main checkout, on the lead's docs branch
+g(REPO, "checkout", "-q", "-b", "proteus-work/r1/lead-docs");
+const k1 = { who: { agent_id: "k1", agent_type: "proteus-worker" }, cwd: REPO };
+r = call("sh tools/x.sh", node("require('fs').mkdirSync('.claude/agents',{recursive:true});require('fs').writeFileSync('.claude/agents/k1.md','x')"), k1);
+ok("#182 keying: an agent without a worktree is still blocked", r.pre.code === 0 && r.blocked && r.why.includes(".claude/agents/k1.md"), r.why + r.pre.err);
+ok("#182 keying: ...but its record is not keyed by the main checkout's branch", record("agent-k1") && record("agent-k1").open && record("agent-k1").branch === "", JSON.stringify(record("agent-k1")));
+fs.writeFileSync(PR, JSON.stringify({ head: HEAD, branch: "proteus-work/r1/lead-docs", files: [], statuses: {} }));
+s = sign("MERGE");
+ok("#182 keying: ...so a lead-docs MERGE is not refused for it", s.code === 0, s.err);
+r = call("sh tools/undo.sh", node("require('fs').rmSync('.claude/agents/k1.md')"), k1);
+ok("#182 keying: ...and it closes once put back", !r.blocked && record("agent-k1").open === false, r.why);
+
+// a record from before the fix, of an agent that has ended: filed under lead-docs, B's tracking key and the scratch
+// worktree's config.worktree on it. The signoff re-checks it and finds both explained
+const mainCfg = path.join(fs.realpathSync(path.join(REPO, ".git")), "config");
+g(REPO, "config", "branch.proteus-work/r1/105.remote", "origin");
+g(REPO, "config", "branch.proteus-work/r1/105.merge", "refs/heads/proteus-work/r1/105");
+const old = { key: "agent-old", agent: "old", session: "s0", worktree: fs.realpathSync(REPO), branch: "proteus-work/r1/lead-docs", open: true, at: new Date().toISOString(), history: [],
+  items: [
+    { kind: "path", path: scrCfg, before: 'c:[["core.hookspath","/dev/null"]]', keys: { "core.hookspath": "/dev/null" } },
+    { kind: "path", path: mainCfg, before: "c:[]", keys: { "branch.proteus-work/r1/105.remote": null, "branch.proteus-work/r1/105.merge": null } },
+  ] };
+fs.writeFileSync(path.join(STATE, "tamper", "agent-old.json"), JSON.stringify(old));
+s = sign("MERGE");
+ok("#182 re-check: an ended agent's record whose paths are all explained does not refuse MERGE", s.code === 0, s.err);
+old.items[1].keys["branch.release.merge"] = null;
+fs.writeFileSync(path.join(STATE, "tamper", "agent-old.json"), JSON.stringify(old));
+g(REPO, "config", "branch.release.merge", "refs/heads/release");
+s = sign("MERGE");
+ok("#182 re-check: ...one with a key still changed does, naming the file", s.code === 1 && /open guard-violation record/.test(s.err) && s.err.includes(slash(mainCfg)), s.err);
+g(REPO, "config", "--unset", "branch.release.merge");
+s = sign("MERGE");
+ok("#182 re-check: ...until the key is put back by hand, with no call of that agent", s.code === 0, s.err);
 
 // registration
 const claudeH = require(path.join(SRC, "proteus-harness-claude.js")), codexH = require(path.join(SRC, "proteus-harness-codex.js"));
