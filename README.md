@@ -100,6 +100,7 @@ Details: [docs/install.md](docs/install.md).
 - A verifier GitHub App, so only verifiers can sign off: `install.js --verifier-app` ([docs/github.md](docs/github.md)).
 - An auto mode entry, so Claude Code's classifier knows Proteus ([docs/install.md](docs/install.md#auto-mode-claude-code)).
 - Auto-update for installer users: `install.js --auto-update` ([docs/updating.md](docs/updating.md)).
+- A container for one worker session, so it never sees the host's `.git`: `proteus-container.js` ([docs/container.md](docs/container.md)).
 
 ## Learn more
 
