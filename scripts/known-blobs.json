@@ -594,11 +594,13 @@
       "9e3e5b94cef1d96f53a83f97a775dc4db1fe3e54",
       "ae3c5bf9f9d5a8c91cf38825b8fcdc3e111e98f9",
       "af0b4340ead8190db66d63876edc235c9658208f",
+      "b91c86c7e18ba71d0ca0edc6bd23c34dcce0b06f",
       "df156dee2636ff64eddea4d73ae81c6849787f02"
     ],
     "templates/hooks/proteus-signoff.js": [
       "1d5a1920f954c2eeb75f2f7263cf5b4b6b37580c",
-      "2e609df56dc710c35196481be324c90a191d6617"
+      "2e609df56dc710c35196481be324c90a191d6617",
+      "ec14d370f4b5d90f4ad67b05d77f25d827f2648d"
     ],
     "templates/hooks/proteus-skillpath.js": [
       "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"

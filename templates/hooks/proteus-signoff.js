@@ -99,7 +99,9 @@ function securityMirror(pr, head, repo, run) {
 }
 
 // a MERGE is refused while the PR's head branch has a guard-violation record (proteus-shell-check.js) whose
-// paths still differ from their state before: the PR asks for review, not the worktree that holds the change
+// paths still differ from their state before, re-checked here (openFor) rather than taken from the record's
+// open flag, so a record whose agent has ended stops counting once its paths are back or explained (#182): the PR
+// asks for review, not the worktree that holds the change
 async function tampered(cwd, pr, run) {
   const common = lib.gitCommonDir(lib.gitRoot(cwd) || cwd);
   if (!common) return "";
