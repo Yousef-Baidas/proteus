@@ -60,7 +60,7 @@ for (const f of GUARDED) {
 // tier and scratch have no guard: no generated rule matches a worker's nested copy, by relative or absolute path
 {
   const text = cx.rules(M);
-  const named = text.split("\n").filter((l) => l.startsWith('prefix_rule(pattern=["node"')).flatMap((l) => JSON.parse(/\[("[^\]]*")\]\]/.exec(l)[0].slice(1, -1)));
+  const named = text.split("\n").filter((l) => l.startsWith('prefix_rule(pattern=["node"')).flatMap((l) => JSON.parse(/, (\[[^\]]*\])\]/.exec(l)[1]));
   const nested = (f) => [`.codex/hooks/${f}`, slash(path.join(WT, ".codex", "hooks", f)), slash(path.relative(M, path.join(WT, ".codex", "hooks", f)))];
   ok("rules: no generated rule matches a nested copy of proteus-tier.js or proteus-scratch.js",
     named.length === cx.RULE_SCRIPTS.length && WORKER_RUN.every((f) => named.includes(slash(path.join(M, ".codex", "hooks", f))) && nested(f).every((a) => !named.includes(a))), JSON.stringify(named));
