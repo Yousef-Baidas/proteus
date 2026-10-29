@@ -245,6 +245,7 @@ templates/
     proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-intake-coverage.js  the intake draft's coverage table maps every finding exactly once
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
+    proteus-retro.js        the close retro: recurring bounces, escalations, guard hits, denials, red gates
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core

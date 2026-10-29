@@ -41,6 +41,15 @@ One subagent reads `lesson-hits.jsonl` (count lines per file; last `at` is the l
 - A lesson with a trigger so broad it fired on unrelated work: narrow the trigger.
 - No hits for three runs: leave it; it costs nothing until it fires.
 
+Then the retro mines what went wrong in the run, not just lesson hits. A `helper` (Retro helper prompt, `roles.md`) runs `node <hooks>/proteus-retro.js`, which reads the close report's saved data and the guard records and prints the groups that recurred (2 or more): the same `BACK-TO-WORKER` reason, escalations, guard-violation records of the same rule, classifier denials of the same command shape, gates that stayed red. Steps repeated by hand are already `script-ticket:` lines (`flow.md` step 2). For each group the helper picks exactly one proposal:
+
+- A check or hook ticket: preferred whenever the problem can be caught deterministically; a gate beats a lesson.
+- A script ticket (`roles.md`, Script first): a procedure an agent kept doing by hand.
+- A `CONVENTIONS.md` line, for the human to approve.
+- An upstream Proteus proposal (below): the fault is in Proteus itself.
+
+It posts all of them as one comment on the close PR, a `- [ ]` checklist. The human ticks the ones to keep; the lead files or applies only the ticked items, nothing unasked. No groups: nothing is posted, and the run log gets `retro: none`.
+
 ## Improving Proteus itself
 
 When a problem is not about this project but about the workflow (a step that always wastes time, a missing guard, a better order), the fix belongs upstream, not in a lesson:
