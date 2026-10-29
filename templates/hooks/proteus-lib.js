@@ -684,10 +684,12 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 // off. git then reads <common>/config and <common>/config.worktree only, which the sandbox profile denies. A linked
 // worktree's HEAD is read as a file under <common>/worktrees/<id>; its working tree through its index (treeChanges).
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
-// and no automatic gc or maintenance, so no hook's git prunes <common>/worktrees, where an agent can plant a link
-// git deletes through (#237). maintenance.auto=false is what holds: gc's prune drops a worktrees/<x> with no gitdir
-// file whatever the expiry, so worktreePruneExpire=never covers only entries whose gitdir names a missing path.
+// and never into a submodule, whose config under <common>/modules an agent can write (#226), and no automatic gc or
+// maintenance, so no hook's git prunes <common>/worktrees, where an agent can plant a link git deletes through (#237).
+// maintenance.auto=false is what holds: gc's prune drops a worktrees/<x> with no gitdir file whatever the expiry, so
+// worktreePruneExpire=never covers only entries whose gitdir names a missing path.
 const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
+  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false",
   "-c", "gc.worktreePruneExpire=never", "-c", "maintenance.auto=false"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
@@ -728,6 +730,14 @@ const gitAsync = (gitDir, args, o = {}) => new Promise((resolve) => {
   if (!gitDir) return resolve(null);
   try { execFile("git", ...gitCall(gitDir, args, { timeout: 5000, ...o }), (err, out) => resolve(err ? null : out)); } catch { resolve(null); }
 });
+// fn's trimmed stdout as { ok, out, err }, for a caller that must tell a failure from empty output or read why it failed
+function attempt(fn) {
+  try { return { ok: true, out: String(fn()).trim(), err: "" }; }
+  catch (e) { return { ok: false, out: String(e.stdout || "").trim(), err: String(e.stderr || e.message || "").trim() }; }
+}
+// gitRun as { ok, out, err }; gitDir a common dir from repoCommon or checkoutOf, never a shell's cwd
+const gitTry = (gitDir, args, o = {}) => (gitDir ? attempt(() => gitRun(gitDir, args, { ...o, stdio: ["ignore", "pipe", "pipe"] }))
+  : { ok: false, out: "", err: "not in this project's repo" });
 // git on dir's repo (repoCommon); "" on any failure. Revisions and refs only: no working tree, and HEAD is the main checkout's
 const git = (args, dir, timeout = 3000) => gitIn(repoCommon(dir), args, timeout);
 
@@ -776,10 +786,13 @@ function checkoutAt(common, dir) {
   return best && { common, ...best, index: path.join(best.gitDir, "index"), headFile: path.join(best.gitDir, "HEAD") };
 }
 // the common dir git runs on for dir: the project's when dir is in one of its checkouts, else null (no checkout).
-// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215)
+// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215).
+// Null too when <common>/commondir exists: git's files ref backend follows it even with GIT_COMMON_DIR pinned (#226)
 function repoCommon(dir) {
   const c = anchorCommon();
-  return c && (!dir || checkoutAt(c, dir)) ? c : null;
+  if (!c) return null;
+  try { fs.lstatSync(path.join(c, "commondir")); return null; } catch {}
+  return !dir || checkoutAt(c, dir) ? c : null;
 }
 // dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
 // whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command
@@ -916,12 +929,15 @@ function changelog(home, commit, from, to, max = 8) {
 
 // configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login;
 // token: a GH_TOKEN for this one call (the verifier App's), in the env only, never on the command line
+const ghEnv = () => ({ ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" });
 function gh(args, cwd, timeout = 6000, configDir = "", token = "") {
-  const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
+  const env = ghEnv();
   if (configDir) env.GH_CONFIG_DIR = configDir;
   if (token) env.GH_TOKEN = token;
   try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
+// gh as { ok, out, err }, this process's login
+const ghTry = (args, cwd, timeout = 6000) => attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, ghEnv()), stdio: ["ignore", "pipe", "pipe"] }));
 
 const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); return Number.isFinite(n) && n > 0 ? n : dflt; };
 
@@ -3037,7 +3053,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
