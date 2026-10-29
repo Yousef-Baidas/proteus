@@ -139,6 +139,30 @@ function writeFile(p, data, roots, from = null) {
 }
 const copyFile = (src, dest, roots) => writeFile(dest, null, roots, src);
 
+// p's text, "" when it is missing, a link (never followed) or not a regular file (a fifo never blocks)
+function readText(p) {
+  let fd;
+  try { fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0)); } catch (e) { if (["ENOENT", "ELOOP", "EMLINK"].includes(e.code)) return ""; throw e; }
+  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd, "utf8") : ""; } finally { fs.closeSync(fd); }
+}
+// replace p the way git does: <p>.lock made new ('wx': refused when anything, a link included, is there), filled
+// with next(p's text), renamed over p. A link at p is replaced, never followed. next returning null leaves p as it
+// was; mode defaults to p's own. True when p was replaced; throws, the lock removed, on any failure (#212 B1)
+function replaceFile(p, next, mode) {
+  const lock = p + ".lock", st = lstat(p);
+  const fd = fs.openSync(lock, "wx", mode || (st && st.isFile() ? st.mode & 0o777 : 0o644));
+  try {
+    let data;
+    try {
+      data = next(readText(p));
+      if (data !== null) { fs.writeFileSync(fd, data); if (mode) fs.fchmodSync(fd, mode); }
+    } finally { fs.closeSync(fd); }
+    if (data === null) { fs.unlinkSync(lock); return false; }
+    fs.renameSync(lock, p);
+    return true;
+  } catch (e) { try { fs.unlinkSync(lock); } catch {} throw e; }
+}
+
 // point link at the directory target; a link already there goes through remove(link), which refuses by
 // default. False when a real file or directory is in the way or the old link stays
 function linkDir(target, link, rm = () => false) {
@@ -153,4 +177,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, gitDenyRules, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, gitDenyRules, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, readText, replaceFile, linkDir };

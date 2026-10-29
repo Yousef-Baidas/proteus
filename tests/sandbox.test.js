@@ -126,10 +126,19 @@ if (WIN) {
 
   // 3: the copy prepares only this repo's listed worktrees under .worktrees/
   const runCopy = (...a) => run(copy, "", { cwd: repo, args: a });
+  // the in-repo script writes the worktree half, then names the copy; the copy writes the git half only (#212 B1)
+  const runTree = (...a) => run(path.join(ROOT, "templates", "hooks", "proteus-worktree.js"), "", { cwd: repo, args: a });
   const w1 = path.join(repo, ".worktrees", "w1");
   g(repo, "worktree", "add", "-q", "-b", "w1", w1);
-  const good = runCopy(w1, "src/**");
-  ok("copy: prepares a listed worktree under .worktrees/", good.code === 0 && fs.existsSync(path.join(repo, ".worktrees", "w1", ".claude", "settings.local.json")), good.err + good.out);
+  const half = runTree(w1, "src/**");
+  ok("in-repo script: writes the worktree half and names the copy for the git half",
+    half.code === 0 && fs.existsSync(path.join(w1, ".claude", "settings.local.json")) && fs.existsSync(path.join(w1, ".claude", "proteus-owned")) && half.out.includes(`node ${copy} ${fs.realpathSync(w1)}`), half.err + half.out);
+  fs.rmSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks"), { recursive: true, force: true });
+  fs.rmSync(path.join(w1, ".claude"), { recursive: true, force: true });
+  const good = runCopy(w1);
+  ok("copy: prepares the git half of a listed worktree under .worktrees/, nothing in the worktree",
+    good.code === 0 && fs.existsSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks", "pre-commit")) && !fs.existsSync(path.join(w1, ".claude"))
+      && /hooksPath = /.test(fs.readFileSync(path.join(dotGit, "worktrees", "w1", "config.worktree"), "utf8")) && /worktreeConfig = true/i.test(fs.readFileSync(path.join(dotGit, "config"), "utf8")), good.err + good.out);
   ok("copy: sandbox-root.json names the profile", read(path.join(bin, "sandbox-root.json")).profile === file);
   const w1Rules = [["config.worktree"], ["proteus-hooks", "**"]].map((s) => `${rule("Edit", path.join(dotGit, "worktrees", "w1", ...s))})`);
   const after = (read(file).permissions || {}).deny || [];
@@ -159,13 +168,56 @@ if (WIN) {
   fs.mkdirSync(victim);
   fs.symlinkSync(victim, path.join(w2, ".claude"));
   const esc5 = runCopy(w2, "src/**");
-  ok("copy: refuses a worktree whose .claude is a link", esc5.code === 1 && /link/.test(esc5.err) && !files(victim).length, esc5.err);
+  ok("copy: writes nothing through a worktree's .claude link", esc5.code === 0 && !files(victim).length, esc5.err);
+  // a link at a fixed path under <common> is replaced, never written through; a merged file that is a link refuses
+  const outsideFile = path.join(W, "outside-hook");
+  fs.writeFileSync(outsideFile, "keep\n");
+  fs.rmSync(path.join(dotGit, "worktrees", "w2", "proteus-hooks", "pre-commit"), { force: true });
+  fs.symlinkSync(outsideFile, path.join(dotGit, "worktrees", "w2", "proteus-hooks", "pre-commit"));
+  const esc6 = runCopy(w2);
+  ok("copy: refuses a link at a hook file it writes, leaving its target", esc6.code === 1 && /link/.test(esc6.err) && fs.readFileSync(outsideFile, "utf8") === "keep\n", esc6.err);
+  const CB = require(path.join(bin, "proteus-confine.js"));
+  const leaf = path.join(W, "leaf");
+  fs.mkdirSync(leaf);
+  fs.symlinkSync(outsideFile, path.join(leaf, "f"));
+  CB.replaceFile(path.join(leaf, "f"), () => "mine\n");
+  ok("replaceFile: a link at the path is replaced by a file, its target left", fs.readFileSync(outsideFile, "utf8") === "keep\n" && !fs.lstatSync(path.join(leaf, "f")).isSymbolicLink() && fs.readFileSync(path.join(leaf, "f"), "utf8") === "mine\n");
+  fs.symlinkSync(outsideFile, path.join(leaf, "f.lock"));
+  let threw = false;
+  try { CB.replaceFile(path.join(leaf, "f"), () => "x"); } catch { threw = true; }
+  ok("replaceFile: a link at <path>.lock refuses, its target left", threw && fs.readFileSync(outsideFile, "utf8") === "keep\n");
+
+  // the copy opens no path under the worktree: every fs call that opens, reads, makes or moves a path is traced
+  const trace = path.join(W, "trace.js"), traced = path.join(W, "traced.txt");
+  fs.writeFileSync(trace, `const fs = require("fs"), p = require("path"), log = fs.appendFileSync, out = ${JSON.stringify(traced)};
+let busy = false;
+const two = new Set(["renameSync", "copyFileSync", "symlinkSync", "linkSync"]);
+for (const k of ["openSync", "readFileSync", "writeFileSync", "appendFileSync", "copyFileSync", "cpSync", "mkdirSync", "mkdtempSync", "readdirSync", "opendirSync", "renameSync", "rmSync", "unlinkSync", "rmdirSync", "symlinkSync", "linkSync", "chmodSync", "truncateSync"]) {
+  const f = fs[k];
+  fs[k] = function (a, b, ...r) {
+    if (!busy) { busy = true; try { for (const x of two.has(k) ? [a, b] : [a]) if (typeof x === "string") log(out, k + " " + p.resolve(x) + "\\n"); } finally { busy = false; } }
+    return f.call(this, a, b, ...r);
+  };
+}
+`);
+  const w5 = path.join(repo, ".worktrees", "w5");
+  g(repo, "worktree", "add", "-q", "-b", "w5", w5);
+  for (const a of [[w5, "src/**"], [w5, "--allow", "force-push"]]) {
+    fs.mkdirSync(path.join(w5, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(w5, ".claude", "proteus-owned"), "src/**\n");
+    fs.rmSync(traced, { force: true });
+    const tr = run(copy, "", { cwd: repo, args: a, env: { NODE_OPTIONS: `--require ${JSON.stringify(trace)}` } });
+    const opened = files(W).includes("traced.txt") ? fs.readFileSync(traced, "utf8").split("\n").filter(Boolean) : [];
+    const realW5 = fs.realpathSync(w5);
+    const inTree = opened.filter((l) => [w5, realW5].some((d) => l.split(" ").slice(1).join(" ").startsWith(d + path.sep) || l.endsWith(" " + d)));
+    ok(`copy ${a.slice(1).join(" ")}: opens no path under the worktree (${opened.length} traced)`, tr.code === 0 && opened.length > 0 && !inTree.length, inTree.join(" ") + tr.err);
+  }
 
   // the copy's main root and state dir come from sandbox-root.json: a worktree's planted .git file and commondir,
   // the cwd and CLAUDE_PROJECT_DIR move neither
   const w3 = path.join(repo, ".worktrees", "w3"), evil = path.join(w3, "evil");
   g(repo, "worktree", "add", "-q", "-b", "w3", w3);
-  ok("copy: prepares w3", runCopy(w3, "src/**").code === 0);
+  ok("copy: prepares w3", runTree(w3, "src/**").code === 0 && runCopy(w3).code === 0);
   fs.mkdirSync(path.join(evil, "gd"), { recursive: true });
   fs.mkdirSync(path.join(evil, "common", "info"), { recursive: true });
   fs.writeFileSync(path.join(evil, "gd", "commondir"), "../common\n");
@@ -192,14 +244,31 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
   const bare = path.join(W, "cfg2", "proteus-sandbox", "bin", "deadbeef");
   fs.mkdirSync(bare, { recursive: true });
   for (const f of files(bin)) if (f !== "sandbox-root.json") fs.copyFileSync(path.join(bin, f), path.join(bare, f));
-  fs.rmSync(path.join(w1, ".claude", "proteus-owned"));
+  const w1Hooks = path.join(dotGit, "worktrees", "w1", "proteus-hooks");
+  fs.rmSync(w1Hooks, { recursive: true, force: true });
   const nopin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [path.join(repo, ".worktrees", "w1"), "src/**"] });
-  ok("copy: no sandbox-root.json refuses and writes nothing", nopin.code === 1 && /sandbox-root\.json/.test(nopin.err) && !fs.existsSync(path.join(w1, ".claude", "proteus-owned")), nopin.err + nopin.out);
+  ok("copy: no sandbox-root.json refuses and writes nothing", nopin.code === 1 && /sandbox-root\.json/.test(nopin.err) && !fs.existsSync(w1Hooks), nopin.err + nopin.out);
   const noallow = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "--allow", "force-push"] });
   ok("copy: no sandbox-root.json refuses --allow too", noallow.code === 1 && /sandbox-root\.json/.test(noallow.err), noallow.err);
   fs.writeFileSync(path.join(bare, "sandbox-root.json"), "{not json");
   const badpin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "src/**"] });
-  ok("copy: an unreadable sandbox-root.json refuses", badpin.code === 1 && /sandbox-root\.json/.test(badpin.err) && !fs.existsSync(path.join(w1, ".claude", "proteus-owned")), badpin.err);
+  ok("copy: an unreadable sandbox-root.json refuses", badpin.code === 1 && /sandbox-root\.json/.test(badpin.err) && !fs.existsSync(w1Hooks), badpin.err);
+
+  // guest.json sits under <common>, where sandboxed commands write: --sandbox makes writable only the fixed guest dir
+  // ~/.proteus/guest/<repo>-<hash>, and warns about and leaves out any other dir it names (#212 B2)
+  const guestJson = path.join(dotGit, "proteus", "guest.json"), planted2 = path.join(HOME, ".config");
+  fs.mkdirSync(path.dirname(guestJson), { recursive: true });
+  fs.writeFileSync(guestJson, JSON.stringify({ dir: planted2 }));
+  const gp = sandbox({ XDG_CONFIG_HOME: XDG });
+  const gw = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
+  const fixedGuest = path.join(HOME, ".proteus", "guest", `app-${require("crypto").createHash("sha256").update(dotGit).digest("hex").slice(0, 8)}`);
+  ok("guest: a planted guest.json naming another dir does not reach allowWrite, and is warned about naming both",
+    gp.code === 0 && !gw.some((w) => w.startsWith(planted2)) && gp.err.includes(planted2) && gp.err.includes(fixedGuest), gw.join(" ") + gp.err);
+  fs.writeFileSync(guestJson, JSON.stringify({ dir: fixedGuest }));
+  const gf = sandbox({ XDG_CONFIG_HOME: XDG });
+  const gw2 = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
+  ok("guest: guest.json naming the fixed guest dir makes it writable and --sandbox prints it", gf.code === 0 && gw2.includes(fixedGuest) && gf.out.includes(fixedGuest), gw2.join(" ") + gf.err);
+  fs.rmSync(guestJson);
 
   // agentGh set: the human's gh dir still unreadable, the agents' own readable; the profile is rewritten in place
   const agent = path.join(HOME, ".config", "gh-proteus");
