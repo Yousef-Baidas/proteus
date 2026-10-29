@@ -195,7 +195,9 @@ function exclude(root, rels) {
 
 // carries the plan out: {error} or {written, removed, kept: [{path, name}], refused, file} with paths relative
 // to root, "/"-separated. remove: removes a file and returns true (install.js passes its guarded remover).
-function apply(root, home, ad, remove) {
+// noExclude: info/exclude is left alone. The SessionStart hook passes it: it runs unsandboxed, and info/exclude
+// is writable from the sandbox, so a link planted there would be followed (#236); install.js --project adds them.
+function apply(root, home, ad, remove, noExclude = false) {
   try {
     const p = plan(root, home, ad);
     if (p.error) return p;
@@ -211,7 +213,7 @@ function apply(root, home, ad, remove) {
     }
     const ex = p.write.map((w) => relOf(root, w.path));
     if (lib.guestDir(root) && p.present) ex.push(p.file);
-    exclude(root, ex);
+    if (!noExclude) exclude(root, ex);
     return r;
   } catch (e) {
     return { error: `agent patches not applied: ${e.message}` };

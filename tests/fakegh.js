@@ -116,6 +116,39 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
+// FAKE_GH_MERGE (a JSON file {origin, issues, prs: [{number, headRefName, baseRefName, body, statusCheckRollup}]}) answers
+// proteus-merge.js: the open PRs, the run's issues, and `pr merge` as a real merge commit in the origin repo (git merge-tree);
+// a conflicting one fails and its `mergeable` turns CONFLICTING; `pr view --json headRefName,state` is MERGED once merged
+if (process.env.FAKE_GH_MERGE) {
+  const fs = require("fs"), { spawnSync } = require("child_process"), file = process.env.FAKE_GH_MERGE;
+  const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const git = (...args) => spawnSync("git", ["-C", s.origin, ...args], { encoding: "utf8" });
+  let m;
+  if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged));
+  if (a.startsWith("issue list --label proteus --state all --json number,state,body ")) out(s.issues || []);
+  if ((m = /^pr view (\d+) --json mergeable -q \.mergeable$/.exec(a))) { process.stdout.write((s.prs.find((p) => p.number === +m[1]) || {}).mergeable || "MERGEABLE"); process.exit(0); }
+  if ((m = /^pr view (\d+) --json headRefName,state$/.exec(a))) {
+    const p = s.prs.find((x) => x.number === +m[1]);
+    if (!p) { process.stderr.write(`GraphQL: Could not resolve to a PullRequest with the number of ${m[1]}.\n`); process.exit(1); }
+    out({ headRefName: p.headRefName, state: p.merged ? "MERGED" : "OPEN" });
+  }
+  if ((m = /^pr merge (\d+) --merge$/.exec(a))) {
+    const p = s.prs.find((x) => x.number === +m[1]);
+    const tree = git("merge-tree", "--write-tree", `refs/heads/${p.baseRefName}`, `refs/heads/${p.headRefName}`);
+    if (tree.status !== 0) {
+      p.mergeable = "CONFLICTING";
+      fs.writeFileSync(file, JSON.stringify(s));
+      process.stderr.write(`X Pull request o/r#${p.number} is not mergeable: the merge commit cannot be cleanly created.\n`);
+      process.exit(1);
+    }
+    const c = git("commit-tree", tree.stdout.split("\n")[0], "-p", `refs/heads/${p.baseRefName}`, "-p", `refs/heads/${p.headRefName}`, "-m", `Merge pull request #${p.number} from o/${p.headRefName}`).stdout.trim();
+    git("update-ref", `refs/heads/${p.baseRefName}`, c);
+    git("branch", "-D", p.headRefName);
+    p.merged = true;
+    fs.writeFileSync(file, JSON.stringify(s));
+    process.exit(0);
+  }
+}
 if (/^api user --jq \.login$/.test(a)) { process.stdout.write((process.env.FAKE_GH_LOGIN || "human") + "\n"); process.exit(0); }
 if (/issue view 30 --json comments/.test(a)) {
   const fs = require("fs"), c = process.env.FAKE_GH_COUNTER;

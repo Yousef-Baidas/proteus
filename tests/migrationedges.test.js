@@ -36,6 +36,7 @@ const posix = process.platform !== "win32";
     fs.mkdirSync(elsewhere, { recursive: true });
     fs.writeFileSync(path.join(elsewhere, "journal.jsonl"), JSON.stringify({ prompt: "from the linked dir" }) + "\n");
     fs.symlinkSync(elsewhere, path.join(repo, ".git", "proteus"));
+    fs.symlinkSync(elsewhere, path.join(repo, ".git", "proteus-lead"));
     const r = lib.run(path.join(SRC, "proteus-autostart.js"), { hook_event_name: "SessionStart", source: "compact", session_id: "s1", cwd: repo }, { cwd: repo, env: { FAKE_GH: "fail" } });
     ok("recall: a journal in a linked state dir is not read", r.out.includes("BODY") && !r.out.includes("from the linked dir"), r.out.slice(0, 400) + r.err);
   }

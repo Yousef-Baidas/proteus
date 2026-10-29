@@ -121,11 +121,11 @@ ok("ladder: sonnet passes the floor", !/under the floor/.test(spawnAs("sonnet").
     c.on("close", resolve);
     c.stdin.end(JSON.stringify({ hook_event_name: "PreToolUse", session_id: session, cwd: REPO, tool_name: "Bash", tool_input: { command: "boom" } }));
   });
-  const hitFile = path.join(REPO, ".git", "proteus", "lesson-hits.jsonl");
+  const hitFile = path.join(REPO, ".git", "proteus-lead", "lesson-hits.jsonl");
   const count = () => { try { return fs.readFileSync(hitFile, "utf8").trim().split("\n").filter(Boolean).length; } catch { return 0; } };
   const before = count();
   await Promise.all(Array.from({ length: 12 }, (_, i) => launch(`race${i}`)));
   ok("lessons: concurrent sessions each leave one hit line", count() - before === 12, `${count() - before} of 12`);
-  ok("lessons: no read-modify-write json left behind", !fs.existsSync(path.join(REPO, ".git", "proteus", "lesson-hits.json")));
+  ok("lessons: no read-modify-write json left behind", !fs.existsSync(path.join(REPO, ".git", "proteus-lead", "lesson-hits.json")));
   lib.summary();
 })();

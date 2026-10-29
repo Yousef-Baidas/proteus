@@ -249,19 +249,16 @@ function bindingDenial(ev, cwd, wt, common, abs, briefOf = () => "") {
   if (named) {
     if (!same(lib.realOr(named), lib.realOr(wt))) return leftBrief(rel, wt, named);
     if (bound(common, ev.agent) !== named) {
-      try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, named + "\n"); } catch {}
+      try { lib.leadWrite(common, file, named + "\n"); } catch {}
     }
     return "";
   }
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, wt + "\n", { flag: "wx" }); // the first edit binds; exclusive, so two parallel calls cannot both bind
-    return "";
-  } catch {}
+  // the first edit binds; exclusive, so two parallel calls cannot both bind
+  try { if (lib.leadCreate(common, file, wt + "\n")) return ""; } catch {}
   const own = bound(common, ev.agent);
   if (!own || same(own, wt)) return "";
-  if (fs.existsSync(own) && lib.git(["status", "--porcelain"], own)) return deny(own, " (uncommitted work there)");
-  try { fs.writeFileSync(file, wt + "\n"); } catch {}
+  if (fs.existsSync(own) && (lib.treeChanges(own) || []).length) return deny(own, " (uncommitted work there)");
+  try { lib.leadWrite(common, file, wt + "\n"); } catch {}
   return "";
 }
 

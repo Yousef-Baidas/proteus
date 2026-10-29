@@ -40,7 +40,7 @@ fs.writeFileSync(RUN, JSON.stringify({
 }));
 
 // the lead's journal: two sessions inside the run's window, one before it
-const JOURNAL = path.join(REPO, ".git", "proteus", "journal.jsonl");
+const JOURNAL = path.join(REPO, ".git", "proteus-lead", "journal.jsonl");
 fs.mkdirSync(path.dirname(JOURNAL), { recursive: true });
 fs.writeFileSync(JOURNAL, [
   { ts: iso(-30), session_id: "s0", prompt: "an older run" },

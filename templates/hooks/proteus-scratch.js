@@ -4,20 +4,23 @@
 //   node .claude/hooks/proteus-scratch.js --path <key>       mkdir <git-common-dir>/proteus/scratch/<key>/, bump its mtime, print it
 //   node .claude/hooks/proteus-scratch.js --sweep <key>      delete scratch/<key>[-*] and the strays keyed <key>[-*]
 //   node .claude/hooks/proteus-scratch.js --sweep --all-done the same for every key whose branch is gone
-//   node .claude/hooks/proteus-scratch.js --sweep --stale    the autostart's: done and idle 72h, or idle 7 days regardless
+//   node .claude/hooks/proteus-scratch.js --sweep --stale    done and idle 72h, or idle 7 days regardless (the autostart says when)
 //   node .claude/hooks/proteus-scratch.js --size             MB held in scratch dirs and ledgered strays
 // <key> is a ticket's <run>-<id> (its branch proteus-work/<run>/<id>) or a run's <run>.
 // As a hook (lead's session, before and after every shell call, failed or not): the first snapshots the
 // top-level names of os.tmpdir(); after the call a new name owned by this user and named in the command or its
-// output is a stray, appended to <common>/proteus/scratch-ledger.jsonl with its key (the agent's own --path,
+// output is a stray, appended to <common>/proteus-lead/scratch-ledger.jsonl with its key (the agent's own --path,
 // the proteus/* branch of its cwd, or the one open run). Deletion happens only in --sweep, only for ledgered
 // paths and scratch dirs, each re-checked first: same inode, this user, directly in os.tmpdir(), a symlink
 // removed as a link and never followed. A git worktree goes through `git worktree remove --force` and `prune`.
+// What this script writes for itself (ledger, snapshots, size) is lead state, in proteus-lead through lib's
+// lead-state writers (#236). --sweep deletes under <common>/proteus/scratch and <common>/worktrees, which agents can
+// write, so it runs only from the lead's own shell, sandboxed like theirs, never from a hook (#237): a delete or
+// rename by path there outside the sandbox can be pointed at any dir the user owns by a parent swapped for a link.
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const DONE_IDLE = 72 * 3600e3;
@@ -32,7 +35,7 @@ Per-ticket and per-run temp space, under <git-common-dir>/proteus/scratch/, dele
   --sweep <key>       delete scratch/<key> and scratch/<key>-*, plus the /tmp strays recorded under them
                       (the lead: <run>-<id> after a ticket merges, <run> at close)
   --sweep --all-done  the same for every key whose branch is gone (session start, on a scratch= note)
-  --sweep --stale     the autostart's: done and idle 72h, or idle 7 days regardless
+  --sweep --stale     done and idle 72h, or idle 7 days regardless (the session start says when there is any)
   --size              MB held in scratch dirs and recorded strays
 <key> is a ticket's <run>-<id> (branch proteus-work/<run>/<id>) or a run's <run>. Only paths Proteus made are deleted.`;
 const argv = process.argv.slice(2);
@@ -44,19 +47,17 @@ function hook(ev) {
   if (ev.tool !== "shell") return;
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common) return;
-  const store = lib.stateDir(common);
   const id = String(ev.toolUseId || `${ev.session}-${ev.agent || "lead"}`).replace(/[^\w.-]/g, "_");
-  const snap = path.join(store, "scratch-snap", id);
+  const snap = lib.leadPath(common, "scratch-snap", id);
   const tmp = os.tmpdir();
   if (ev.kind === "pre-tool") {
     const names = fs.readdirSync(tmp);
-    fs.mkdirSync(path.dirname(snap), { recursive: true });
-    fs.writeFileSync(snap, JSON.stringify({ tmp, names }));
+    lib.leadWrite(common, snap, JSON.stringify({ tmp, names }));
     return;
   }
   if (ev.kind !== "post-tool" && ev.kind !== "tool-failed") return;
   const before = lib.readJSON(snap, null);
-  try { fs.unlinkSync(snap); } catch {}
+  try { lib.leadRemove(common, snap); } catch {}
   const cmd = ev.command;
   const who = ev.agent ? `${ev.agentType || "agent"}:${ev.agent}` : "lead";
   const file = ledgerFile(common);
@@ -82,8 +83,7 @@ function hook(ev) {
     }
   }
   if (!rows.length) return;
-  fs.mkdirSync(store, { recursive: true });
-  fs.appendFileSync(file, rows.map((r) => JSON.stringify(r) + "\n").join(""));
+  lib.leadAppend(common, file, rows.map((r) => JSON.stringify(r) + "\n").join(""));
 }
 
 function cli([cmd, arg]) {
@@ -109,7 +109,6 @@ function cli([cmd, arg]) {
 }
 
 function sweep(common, what) {
-  const store = lib.stateDir(common);
   const file = ledgerFile(common);
   const { text, rows } = readLedger(file);
   const now = Date.now();
@@ -136,7 +135,7 @@ function sweep(common, what) {
     out.strays++;
     if (res.worktree) out.worktrees++;
   }
-  const root = path.join(store, "scratch");
+  const root = lib.scratchDir(common);
   for (const name of realDir(root) ? ls(root) : []) {
     const d = path.join(root, name);
     let st;
@@ -147,11 +146,12 @@ function sweep(common, what) {
     out.bytes += res.bytes;
     out.dirs++;
   }
-  for (const cwd of prune) git(["worktree", "prune"], cwd);
-  if (keep.length !== rows.length) writeLedger(file, text, keep);
+  for (const common of prune) git(["worktree", "prune"], common);
+  // from the lead's sandboxed shell the ledger stays: the next sweep drops the rows whose paths are gone
+  if (keep.length !== rows.length) { try { writeLedger(common, file, text, keep); } catch {} }
   // a PreToolUse whose call never ran (denied, interrupted) leaves its snapshot behind
-  const snaps = path.join(store, "scratch-snap");
-  for (const f of ls(snaps)) { try { const p = path.join(snaps, f); if (now - fs.statSync(p).mtimeMs > 3600e3) fs.unlinkSync(p); } catch {} }
+  const snaps = lib.leadPath(common, "scratch-snap");
+  for (const f of ls(snaps)) { try { const p = path.join(snaps, f); if (now - fs.statSync(p).mtimeMs > 3600e3) lib.leadRemove(common, p); } catch {} }
   out.left = size(common, keep);
   return out;
 }
@@ -178,28 +178,29 @@ function removeStray(r, tmpReal, uid, prune) {
   } catch (e) { return { keep: e.code || e.message }; }
 }
 
-// a scratch dir: its worktrees (top level) go through git first, then the dir
+// a scratch dir: its worktrees (top level) go through git first, then the dir, in place (the lead's sandboxed shell)
 function removeScratch(d, st, prune) {
   try {
-    if (st.isSymbolicLink()) { fs.unlinkSync(d); return { bytes: 0 }; }
-    if (!st.isDirectory()) return { keep: "not a directory" };
-    const bytes = du(d);
-    for (const f of ls(d)) {
+    const link = st.isSymbolicLink();
+    if (!link && !st.isDirectory()) return { keep: "not a directory" };
+    const bytes = link ? 0 : du(d);
+    for (const f of link ? [] : ls(d)) {
       const c = path.join(d, f);
       const gd = gitdirOf(c);
       if (gd && fs.existsSync(gd) && !removeWorktree(c, prune)) return { keep: `git worktree remove ${f} failed (locked?)` };
     }
-    fs.rmSync(d, { recursive: true, force: true });
+    if (link) fs.unlinkSync(d); else fs.rmSync(d, { recursive: true, force: true }); // rm never follows a symlink inside the tree
     return { bytes };
   } catch (e) { return { keep: e.code || e.message }; }
 }
 
+// p's repo from <common>/worktrees/<id>/gitdir, never from p's own .git file, which the call that made p could
+// write (#215); --force skips the status check git would otherwise run in p
 function removeWorktree(p, prune) {
-  const common = lib.gitCommonDir(p);
-  const cwd = common && (lib.mainRoot(common) || common);
-  if (!cwd || !fs.existsSync(cwd)) return false;
-  if (!git(["worktree", "remove", "--force", p], cwd)) return false;
-  prune.add(cwd);
+  const co = lib.checkoutOf(p);
+  if (!co || co.gitDir === co.common || !lib.samePath(co.root, real(p))) return false;
+  if (!git(["worktree", "remove", "--force", p], co.common)) return false;
+  prune.add(co.common);
   return true;
 }
 
@@ -226,14 +227,8 @@ function keyOf(ev, who, rows, common) {
   return runs.length === 1 ? runs[0] : "";
 }
 
-function branchOf(dir) {
-  const wt = lib.gitRoot(dir);
-  if (!wt) return "";
-  try {
-    const gd = gitdirOf(wt) || path.join(wt, ".git");
-    return (/^ref: refs\/heads\/(\S+)/m.exec(fs.readFileSync(path.join(gd, "HEAD"), "utf8")) || [])[1] || "";
-  } catch { return ""; }
-}
+// the branch dir's checkout has out, from <common>/worktrees/<id>/HEAD (lib.branchOf, #215)
+const branchOf = (dir) => lib.branchOf(dir);
 
 // the gitdir a linked worktree's .git file points at; null for anything else
 function gitdirOf(p) {
@@ -253,10 +248,10 @@ function named(text, name) {
 
 // bytes in scratch dirs and in the ledgered strays still present; cached for the autostart's state line
 function size(common, rows) {
-  const root = path.join(lib.stateDir(common), "scratch");
+  const root = lib.scratchDir(common);
   let n = realDir(root) ? du(root) : 0;
   for (const r of rows || readLedger(ledgerFile(common)).rows) if (typeof r.path === "string") n += du(r.path);
-  try { lib.writeJSON(path.join(lib.stateDir(common), "scratch-size.json"), { at: new Date().toISOString(), bytes: n }); } catch {}
+  try { lib.leadJSON(common, lib.leadPath(common, "scratch-size.json"), { at: new Date().toISOString(), bytes: n }); } catch {}
   return n;
 }
 
@@ -269,7 +264,7 @@ function du(p) {
   return n;
 }
 
-function ledgerFile(common) { return path.join(lib.stateDir(common), "scratch-ledger.jsonl"); }
+function ledgerFile(common) { return lib.leadPath(common, "scratch-ledger.jsonl"); }
 
 function readLedger(file) {
   let text = "";
@@ -279,17 +274,17 @@ function readLedger(file) {
 }
 
 // rewrite with the kept rows plus whatever a hook appended while the sweep ran
-function writeLedger(file, old, rows) {
+function writeLedger(common, file, old, rows) {
   let now = "";
   try { now = fs.readFileSync(file, "utf8"); } catch {}
-  const body = rows.map((r) => JSON.stringify(r) + "\n").join("") + (now.startsWith(old) ? now.slice(old.length) : "");
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, body);
-  try { fs.renameSync(tmp, file); } catch { fs.writeFileSync(file, body); try { fs.unlinkSync(tmp); } catch {} }
+  lib.leadWrite(common, file, rows.map((r) => JSON.stringify(r) + "\n").join("") + (now.startsWith(old) ? now.slice(old.length) : ""));
 }
 
-function git(args, cwd) {
-  try { execFileSync("git", args, { cwd, stdio: "ignore", timeout: 60000, windowsHide: true }); return true; } catch { return false; }
+// git on a common dir through lib's wrapper (#215), in its main checkout when it has one; true when it worked
+function git(args, common) {
+  const main = lib.mainRoot(common);
+  const tree = main && fs.existsSync(main) ? { cwd: main, workTree: main } : {};
+  try { lib.gitRun(common, args, { ...tree, stdio: "ignore", timeout: 60000 }); return true; } catch { return false; }
 }
 
 function ls(d) { try { return fs.readdirSync(d); } catch { return []; } }

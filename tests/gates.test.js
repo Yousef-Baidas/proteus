@@ -35,48 +35,48 @@ ok("hit: surrounding whitespace is not part of the key", runs() === 1 && r.code 
 r = gate(REPO, {}, GATE + " && echo more");
 ok("miss: a different command runs", runs() === 2 && r.code === 0 && stored() === 2, r.out + r.err);
 r = gate(path.join(REPO, "sub"));
-ok("miss: the same command from another directory of the repo runs", runs() === 3 && stored() === 3, r.out + r.err);
+ok("below the top: a run from a subfolder of the checkout runs nothing, stores nothing, exits 2 (#226)", r.code === 2 && runs() === 2 && stored() === 2 && /gates-cache: .*sub is not the top of its checkout/.test(r.err), r.out + r.err);
 
 const failing = GATE + " && echo unreached";
 r = gate(REPO, { EXIT: "3" }, failing);
 const r2 = gate(REPO, { EXIT: "3" }, failing);
-ok("failure: exit code passed through and never stored, so it runs again", r.code === 3 && r2.code === 3 && runs() === 5 && stored() === 3, `${r.code} ${r2.code} ${runs()} ${stored()}`);
+ok("failure: exit code passed through and never stored, so it runs again", r.code === 3 && r2.code === 3 && runs() === 4 && stored() === 2, `${r.code} ${r2.code} ${runs()} ${stored()}`);
 
 fs.writeFileSync(path.join(REPO, "new.txt"), "untracked\n");
 r = gate();
-ok("dirty: an untracked file runs uncached, says so, stores nothing", runs() === 6 && /uncommitted or untracked/.test(r.err) && stored() === 3, r.err);
+ok("dirty: an untracked file runs uncached, says so, stores nothing", runs() === 5 && /uncommitted or untracked/.test(r.err) && stored() === 2, r.err);
 r = gate();
-ok("dirty: and runs again next time", runs() === 7, r.err);
+ok("dirty: and runs again next time", runs() === 6, r.err);
 fs.rmSync(path.join(REPO, "new.txt"));
 fs.writeFileSync(path.join(REPO, "a.txt"), "changed\n");
 r = gate();
-ok("dirty: a modified tracked file runs uncached", runs() === 8 && stored() === 3, r.err);
+ok("dirty: a modified tracked file runs uncached", runs() === 7 && stored() === 2, r.err);
 g(REPO, "commit", "-qam", "change");
 r = gate();
-ok("new tree: a commit that changes the tree runs the gate again", runs() === 9 && stored() === 4 && r.code === 0, r.err);
+ok("new tree: a commit that changes the tree runs the gate again", runs() === 8 && stored() === 3 && r.code === 0, r.err);
 
 const touch = `node -e "require('fs').appendFileSync(process.env.CNT,'x');require('fs').writeFileSync('a.txt','by the gate\\n')"`;
 r = gate(REPO, {}, touch);
 const dirtyAfter = g(REPO, "status", "--porcelain");
-ok("changed by the gate: a pass that leaves the tree changed is not stored", r.code === 0 && runs() === 10 && stored() === 4 && /a\.txt/.test(dirtyAfter), dirtyAfter);
+ok("changed by the gate: a pass that leaves the tree changed is not stored", r.code === 0 && runs() === 9 && stored() === 3 && /a\.txt/.test(dirtyAfter), dirtyAfter);
 g(REPO, "checkout", "--", "a.txt");
 
 const WT = path.join(W, "wt");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/1", WT);
 r = gate(WT, { TAG: "wt" });
-ok("worktree: another worktree on the same tree shares the pass", runs() === 10 && r.code === 0 && /suite ok t1/.test(r.out), r.out + r.err);
+ok("worktree: another worktree on the same tree shares the pass", runs() === 9 && r.code === 0 && /suite ok t1/.test(r.out), r.out + r.err);
 fs.writeFileSync(path.join(WT, "w.txt"), "w\n");
 g(WT, "add", "w.txt"); g(WT, "commit", "-qm", "wt");
 r = gate(WT, { TAG: "wt" });
-ok("worktree: its own commit is a new tree, stored in the shared common dir", runs() === 11 && stored() === 5 && /suite ok wt/.test(r.out), r.err);
+ok("worktree: its own commit is a new tree, stored in the shared common dir", runs() === 10 && stored() === 4 && /suite ok wt/.test(r.out), r.err);
 
 r = gate(REPO, { PROTEUS_GATES_CACHE: "0" });
-ok("PROTEUS_GATES_CACHE=0 runs uncached", runs() === 12 && stored() === 5 && r.code === 0, r.err);
+ok("PROTEUS_GATES_CACHE=0 runs uncached", runs() === 11 && stored() === 4 && r.code === 0, r.err);
 
 const PLAIN = path.join(W, "plain");
 fs.mkdirSync(PLAIN);
 r = gate(PLAIN, { EXIT: "4" });
-ok("outside a repo: runs, exit code passed through, no note", runs() === 13 && r.code === 4 && !/gates-cache/.test(r.err), r.err);
+ok("outside a repo: runs, exit code passed through, no note", runs() === 12 && r.code === 4 && !/gates-cache/.test(r.err), r.err);
 
 // a worker's worktree gets the script, so `node <hooks>/proteus-gates-cache.js` works from there on both CLIs
 const SRC = path.dirname(GC);
@@ -95,13 +95,23 @@ const NW = path.join(REPO, ".worktrees", "n1");
 g(REPO, "worktree", "add", "-q", "--detach", NW);
 const NG = `${GATE} nested`;
 r = gate(REPO, { TAG: "nested" }, NG);
-ok("nested: a run from the checkout holding .worktrees/n1 warns and names it", r.code === 0 && /gates-cache: 1 worktree\(s\) inside this folder \(\.worktrees[\\/]n1\).*\.worktrees\/_run/.test(r.err), r.err);
+ok("nested: a run from the checkout holding .worktrees/n1 warns and names it", r.code === 0 && /gates-cache: 1 worktree\(s\) inside this folder \(\.worktrees[\\/]n1\)/.test(r.err), r.err);
 r = gate(NW, { TAG: "nested" }, `${GATE} inner`);
 ok("nested: a run from inside the nested worktree does not warn", r.code === 0 && !/inside this folder/.test(r.err), r.err);
 r = gate(path.join(REPO, "sub"), { TAG: "nested" }, `${GATE} sub`);
-ok("nested: a run from a subfolder that holds no worktree does not warn", r.code === 0 && /suite ok nested/.test(r.out) && !/inside this folder/.test(r.err), r.err);
+ok("nested: a run from a subfolder is refused before it warns", r.code === 2 && !/suite ok/.test(r.out) && !/inside this folder/.test(r.err), r.err);
 r = gate(REPO, { TAG: "nested" }, NG);
 ok("nested: a hit from the checkout runs nothing and does not warn", /gates-cache: hit/.test(r.out) && !/inside this folder/.test(r.err), r.out + r.err);
+
+// a merge batch's .worktrees/_run, a repo of its own reading REPO's objects: it has a .git, yet its checkout is REPO's,
+// so the key would name REPO's tree; refused, nothing run or stored (#226)
+const RUN = path.join(REPO, ".worktrees", "_run");
+g(W, "init", "-q", RUN);
+fs.writeFileSync(path.join(RUN, ".git", "objects", "info", "alternates"), `${path.join(REPO, ".git", "objects").split(path.sep).join("/")}\n`);
+g(RUN, "checkout", "-q", "-f", "--detach", g(REPO, "rev-parse", "HEAD"));
+const [runsBefore, storedBefore] = [runs(), stored()];
+r = gate(RUN, { TAG: "run" }, `${GATE} run`);
+ok("_run: a run from a merge batch's _run, a repo of its own, runs nothing, stores nothing, exits 2", r.code === 2 && runs() === runsBefore && stored() === storedBefore && /gates-cache: .*_run is not the top of its checkout/.test(r.err), r.out + r.err);
 
 ok("usage: no command exits 2", lib.run(GC, "", { cwd: REPO }).code === 2);
 

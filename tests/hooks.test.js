@@ -269,8 +269,8 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   fs.mkdirSync(RB); g(RB, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(RB, "a.txt"), "a\n"); g(RB, "add", "-A"); g(RB, "commit", "-qm", "init");
   g(RB, "branch", "proteus/rb");
   g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/1", WA, "proteus/rb"); g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/2", WB, "proteus/rb");
-  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"] });
-  const inA = path.join(WA, "src", "lighting", "a.ts"), inB = path.join(WB, "src", "lighting", "a.ts"), rec = (id) => { try { return fs.readFileSync(path.join(RB, ".git", "proteus", "agents", `agent-${id}`), "utf8").trim(); } catch { return ""; } };
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"] });
+  const inA = path.join(WA, "src", "lighting", "a.ts"), inB = path.join(WB, "src", "lighting", "a.ts"), rec = (id) => { try { return fs.readFileSync(path.join(RB, ".git", "proteus-lead", "agents", `agent-${id}`), "utf8").trim(); } catch { return ""; } };
   const ed = (id, file, cwd = RB) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd, transcript_path: undefined }), { cwd: RB });
   r = ed("c1", inB, WA);
   ok("guard bind: agent whose cwd is a prepared worktree is refused in a sibling's owned path",
@@ -326,7 +326,7 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   const codexAd = require(path.join(SRC, "proteus-harness-codex.js"));
   ok("codex adapter: briefText is empty", codexAd.briefText({ agent: "d6", raw: { transcript_path: ST, session_id: "s1", agent_id: "d6" } }) === "");
   said("d6", job(WA));
-  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
   const cpatch = (file) => ({ command: `*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch` });
   const cx = (id, file) => run(LG, pre("apply_patch", cpatch(file), { agent_id: id, agent_type: "proteus-worker", cwd: RB, transcript_path: ST }), { cwd: RB, env: { PROTEUS_HARNESS: "codex", PROTEUS_PROJECT_DIR: RB } });
   ok("codex guard: a subagent's first edit binds it, brief or not", cx("d6", inB).code === 0 && rec("d6") === WB);
@@ -422,11 +422,11 @@ ok("lessons: prompt match lead scope", /lead-only/.test(ctxOf(r)), r.out + r.err
 ok("lessons: lead scope hidden from worker", run(LS, pre("Bash", { command: "release" }, { ...sub, session_id: "s9" })).out === "");
 ok("lessons: worker path scope (worktree)", /paths\.md/.test(ctxOf(run(WH("proteus-lessons.js"), wpre("Edit", { file_path: path.join(WT, "src/lighting/x.ts") }), { cwd: WT }))));
 ok("lessons: worker path hidden from lead", run(LS, pre("Read", { file_path: path.join(REPO, "src/lighting/x.ts") }, { session_id: "s3" })).out === "");
-const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => jp(l, {}));
+const hitLines = fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "lesson-hits.jsonl"), "utf8").trim().split("\n").map((l) => jp(l, {}));
 const hits = {};
 for (const h of hitLines) hits[h.file] = { hits: ((hits[h.file] || {}).hits || 0) + 1, last: h.at };
 ok("lessons: hits recorded", (hits["npm-build.md"] || {}).hits === 3 && (hits["enospc.md"] || {}).hits === 1, JSON.stringify(hits));
-ok("lessons: cache written", (jp(fs.readFileSync(path.join(REPO, ".git", "proteus", "lessons-cache.json"), "utf8"), {}).lessons || []).length === 5);
+ok("lessons: cache written", (jp(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "lessons-cache.json"), "utf8"), {}).lessons || []).length === 5);
 for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(LD, `many${i}.md`), `---\ntrigger: deploy\n---\nmany ${i}\n`);
 r = run(LS, pre("Bash", { command: "deploy" }, { session_id: "s4" }));
 ok("lessons: max 2 per event, cache invalidated", (ctxOf(r).match(/proteus lesson/g) || []).length === 2, r.out);
@@ -439,7 +439,7 @@ ok("lessons: failing output with no trigger match injects nothing", r.out === ""
 
 // ---- journal
 const JR = hook("proteus-journal.js");
-const JF = path.join(REPO, ".git", "proteus", "journal.jsonl");
+const JF = path.join(REPO, ".git", "proteus-lead", "journal.jsonl");
 const ups = (prompt, extra = {}) => ({ hook_event_name: "UserPromptSubmit", session_id: "s1", transcript_path: T100, cwd: REPO, prompt, ...extra });
 r = run(JR, ups("please use postgres, not sqlite, for every service in this run"));
 ok("journal: nudge on long prompt", /log it as one line on the run log/.test(ctxOf(r)) && JSON.parse(r.out).hookSpecificOutput.hookEventName === "UserPromptSubmit", r.out + r.err);
@@ -461,7 +461,7 @@ ok("journal: rotates to 500", jl.length === 500 && JSON.parse(jl[499]).prompt ==
 const IB = hook("proteus-inbox.js");
 r = run(IB, "", { args: ["--refresh"] });
 ok("inbox: refresh prints items", r.out.trim().split("\n").length === 3 && /question #21/.test(r.out) && /review #22/.test(r.out), r.out + r.err);
-const cache = jp(fs.readFileSync(path.join(REPO, ".git", "proteus", "inbox.json"), "utf8"), {});
+const cache = jp(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "inbox.json"), "utf8"), {});
 ok("inbox: cache shape", cache.at && (cache.questions || []).length === 2 && ((cache.reviews || [])[0] || {}).n === 22);
 ok("inbox: --count", run(IB, "", { args: ["--count"] }).out.trim() === "2 1");
 r = run(IB, "", { args: ["--refresh", "--count"], env: { FAKE_GH: "fail" } });
@@ -481,9 +481,9 @@ fs.writeFileSync(path.join(HOME, ".claude", "settings.json"), JSON.stringify({ s
 ok("statusline: no self-recursion", run(SL, slIn).out.trim() === "proteus: 2 questions · 1 review");
 fs.writeFileSync(path.join(HOME, ".claude", "settings.json"), "{}");
 const past = new Date(Date.now() - 120e3);
-fs.utimesSync(path.join(REPO, ".git", "proteus", "inbox.json"), past, past);
+fs.utimesSync(path.join(REPO, ".git", "proteus-lead", "inbox.json"), past, past);
 r = run(SL, slIn, { env: { FAKE_GH: "fail" } });
-const lock = path.join(REPO, ".git", "proteus", "inbox.refresh");
+const lock = path.join(REPO, ".git", "proteus-lead", "inbox.refresh");
 ok("statusline: stale cache spawns refresh + lock", r.out.trim() === "proteus: 2 questions · 1 review" && fs.existsSync(lock));
 const lockM = fs.statSync(lock).mtimeMs;
 run(SL, slIn, { env: { FAKE_GH: "fail" } });
@@ -623,7 +623,7 @@ const TMPD = path.join(W, "tmp"); fs.mkdirSync(TMPD);
 const OUTSIDE = path.join(W, "outside"); fs.mkdirSync(OUTSIDE); fs.writeFileSync(path.join(OUTSIDE, "keep.txt"), "k");
 const SC = hook("proteus-scratch.js");
 const TENV = { TMPDIR: TMPD, TEMP: TMPD, TMP: TMPD }; // os.tmpdir() reads TEMP/TMP on win32
-const LEDGER = path.join(REPO, ".git", "proteus", "scratch-ledger.jsonl");
+const LEDGER = path.join(REPO, ".git", "proteus-lead", "scratch-ledger.jsonl");
 const SCR = path.join(REPO, ".git", "proteus", "scratch");
 const ledger = () => { try { return fs.readFileSync(LEDGER, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 const entry = (name) => ledger().find((e) => e.path === path.join(TMPD, name));
@@ -721,7 +721,7 @@ ok("scratch sweep: unlocked worktree removed on the next sweep", !has(t("hs-wtlo
 ok("scratch sweep: bad arg → usage", run(SC, "", { args: ["--sweep", "--everything"], env: TENV }).code === 1);
 r = run(SC, "", { args: ["--size"], env: TENV });
 ok("scratch --size", r.code === 0 && /^\d+\.\d MB$/.test(r.out.trim()), r.out + r.err);
-// ---- autostart: aged safety sweep in the background, scratch= on the state line
+// ---- autostart: names the stale sweep (never runs it, #237), scratch= on the state line; the lead's --sweep --stale
 const HOURS = (h) => Date.now() - h * 3600e3;
 const aged = (name, key, h, dir = false) => {
   const p = t(name); if (dir) fs.mkdirSync(p); else fs.writeFileSync(p, "x");
@@ -730,16 +730,14 @@ const aged = (name, key, h, dir = false) => {
 };
 aged("hs-old-done", "bl1077-3", 80); aged("hs-old-open", "bl1077-4", 80); aged("hs-ancient", "bl1077-4", 8 * 24); aged("hs-fresh-done", "bl1077-3", 1);
 for (const [k, h] of [["bl1077-7", 80], ["bl1077-6", 80], ["bl1077-8", 2]]) { const d = path.join(SCR, k); fs.mkdirSync(d, { recursive: true }); const at = new Date(HOURS(h)); fs.utimesSync(d, at, at); }
-fs.writeFileSync(path.join(REPO, ".git", "proteus", "scratch-size.json"), JSON.stringify({ at: "x", bytes: 2048 * 1048576 }));
+fs.writeFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), JSON.stringify({ at: "x", bytes: 2048 * 1048576 }));
 r = run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "s1", cwd: REPO }, { env: TENV });
 ok("autostart: scratch= on the state line over 1 GB", /proteus-state .* scratch=2048MB /.test(r.out), r.out.split("\n")[3]);
-const asMs = r.ms;
-for (let i = 0; i < 100 && has(t("hs-old-done")); i++) spawnSync("sleep", ["0.05"]);
-spawnSync("sleep", ["0.3"]);
-ok("autostart: aged sweep deletes done-72h and any-7d only", !has(t("hs-old-done")) && !has(t("hs-ancient")) && has(t("hs-old-open")) && has(t("hs-fresh-done")) &&
+ok("autostart: names the stale sweep for the lead's shell, deletes nothing", /scratch may be stale.*--sweep --stale/.test(r.out) && has(t("hs-old-done")) && has(path.join(SCR, "bl1077-7")), r.out);
+r = run(SC, "", { args: ["--sweep", "--stale"], env: TENV });
+ok("scratch sweep --stale: deletes done-72h and any-7d only", !has(t("hs-old-done")) && !has(t("hs-ancient")) && has(t("hs-old-open")) && has(t("hs-fresh-done")) &&
   !has(path.join(SCR, "bl1077-7")) && has(path.join(SCR, "bl1077-6")) && has(path.join(SCR, "bl1077-8")), fs.readdirSync(TMPD).join(",") + " | " + fs.readdirSync(SCR).join(","));
-ok("autostart: sweep runs detached (start not slowed)", asMs < 3000, asMs);
-ok("autostart: size cache rewritten, under 1 GB drops scratch=", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus", "scratch-size.json"), "utf8")).bytes < 1048576 &&
+ok("scratch sweep --stale: size cache rewritten, under 1 GB drops scratch=", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), "utf8")).bytes < 1048576 &&
   !/scratch=/.test(run(AS, { source: "resume", cwd: REPO }, { env: TENV }).out));
 // fail open
 ok("scratch: garbage stdin exit 0", run(SC, "not json", { env: TENV }).code === 0);

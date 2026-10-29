@@ -102,7 +102,7 @@ const TT = path.join(REPO, "teams", "templates", "hooks");
 fs.mkdirSync(TT, { recursive: true });
 fs.copyFileSync(path.join(SRC, "commit-msg.js"), path.join(TT, "commit-msg.js"));
 g(REPO, "worktree", "add", "-q", path.join(REPO, ".worktrees", "w1"), "-b", "w1");
-r = lib.run(path.join(BARE, "proteus-worktree.js"), "", { cwd: W, args: [path.join(REPO, ".worktrees", "w1"), "src/**"], env: { ...none, PROTEUS_HARNESS: "claude" } });
+r = lib.run(path.join(BARE, "proteus-worktree.js"), "", { cwd: W, args: [path.join(REPO, ".worktrees", "w1"), "src/**"], env: { ...none, PROTEUS_HARNESS: "claude", CLAUDE_PROJECT_DIR: REPO } });
 let msg = "";
 try { msg = fs.readFileSync(path.join(REPO, ".git", "worktrees", "w1", "proteus-hooks", "commit-msg"), "utf8"); } catch {}
 ok("worktree: the commit-msg hook runs the lead repo's teams/templates/hooks/commit-msg.js", r.code === 0 && msg.replace(/\\/g, "/").includes(path.join(TT, "commit-msg.js").replace(/\\/g, "/")), r.out + r.err + msg);

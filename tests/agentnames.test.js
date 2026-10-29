@@ -108,7 +108,7 @@ ok("signoff, worker guard: bare and proteus: verifiers pass, evil: is refused",
 }
 
 // ---- beats (lib.beat, PIPELINE_AGENT)
-const BEATS = path.join(REPO, ".git", "proteus", "beats");
+const BEATS = path.join(REPO, ".git", "proteus-lead", "beats");
 const beat = (a) => { try { return JSON.parse(fs.readFileSync(path.join(BEATS, `${a}.json`), "utf8")); } catch { return null; } };
 let n = 0;
 // only an agent the lead spawned is tracked (#179): record the lead's spawn of each form first

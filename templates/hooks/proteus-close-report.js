@@ -127,7 +127,7 @@ function runSessions() {
   const to = ends.length ? Math.max(...ends) : now;
   const ids = new Set();
   let text = "";
-  try { text = fs.readFileSync(path.join(lib.stateDir(common), "journal.jsonl"), "utf8"); } catch {}
+  try { text = fs.readFileSync(lib.leadPath(common, "journal.jsonl"), "utf8"); } catch {}
   for (const line of text.split("\n")) {
     const e = parse(line);
     const t = e && Date.parse(e.ts || "");

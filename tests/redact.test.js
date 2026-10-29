@@ -56,7 +56,7 @@ const REPO = path.join(W, "repo");
 fs.mkdirSync(path.join(REPO, ".claude", "skills", "proteus"), { recursive: true });
 fs.writeFileSync(path.join(REPO, ".claude", "skills", "proteus", "SKILL.md"), "---\nname: proteus\n---\nSKILL BODY\n");
 g(W, "init", "-q", "-b", "main", REPO);
-const JOURNAL = path.join(REPO, ".git", "proteus", "journal.jsonl");
+const JOURNAL = path.join(REPO, ".git", "proteus-lead", "journal.jsonl");
 const say = (prompt) => lib.run(path.join(SRC, "proteus-journal.js"), { hook_event_name: "UserPromptSubmit", session_id: "s1", cwd: REPO, prompt }, { cwd: REPO });
 const GH = SECRETS["GitHub classic"];
 let r = say(`here is my token ${GH}, deploy with AWS ${SECRETS.AWS}`);

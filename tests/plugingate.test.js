@@ -46,7 +46,7 @@ const hooks = (cwd, env = {}) => [
   lib.run(ENTRY, "IN", { cwd, args: ["proteus-echo.js"], env: { CLAUDE_PLUGIN_ROOT: PLUG, ...env } }),
 ];
 const echoed = (rs) => rs.every((r) => r.code === 0) && rs[2].out === "ran 2\n";
-const ran = (rs, dir) => echoed(rs) && /proteus autostart/.test(rs[1].out) && fs.existsSync(path.join(dir, ".git", "proteus", "journal.jsonl"));
+const ran = (rs, dir) => echoed(rs) && /proteus autostart/.test(rs[1].out) && fs.existsSync(path.join(dir, ".git", "proteus-lead", "journal.jsonl"));
 const silent = (name, cwd, env) => {
   const before = snap();
   const rs = hooks(cwd, env);
