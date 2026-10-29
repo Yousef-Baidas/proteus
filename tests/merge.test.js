@@ -108,7 +108,7 @@ ok("green: proteus-run-tree.js checks the tip out in _run, a repo of its own", t
 ok("green: proteus-run-tree.js writes nothing under <common>", snapDir(s.common) === commonBefore);
 ok("green: git in _run answers for the tested commit: HEAD, its files, a clean status", g(RUN(s.root), "rev-parse", "HEAD") === stepSha(s.line) && g(RUN(s.root), "ls-files").split("\n").includes("c.txt") && g(RUN(s.root), "status", "--porcelain") === "", g(RUN(s.root), "status", "--porcelain"));
 let l = loop(s);
-ok("green: --result pass ends the batch, naming the worktrees and branches left as the tracker has them, exit 0", l.steps === 1 && l.r.code === 0 && /^run r1: suite green at [0-9a-f]{12}; worktree and branch left for the lead: proteus-work\/r1\/4, proteus-work\/r1\/6, proteus-work\/r1\/5$/.test(l.line) && stateGone(s.root), `${l.r.code} ${l.r.out} ${l.r.err}`);
+ok("green: --result pass ends the batch with the full sha it tested, naming the worktrees and branches left as the tracker has them, exit 0", l.steps === 1 && l.r.code === 0 && /^run r1: suite green at [0-9a-f]{40}; worktree and branch left for the lead: proteus-work\/r1\/4, proteus-work\/r1\/6, proteus-work\/r1\/5$/.test(l.line) && l.line.startsWith(`run r1: suite green at ${tipOf(s)};`) && stateGone(s.root), `${l.r.code} ${l.r.out} ${l.r.err}`);
 ok("green: no worktree removed, the lead removes the merged ones (#226)", [4, 5, 6, 7, 8].every((t) => !gone(s.root, t)));
 ok("green: the main checkout's index untouched", g(s.root, "status", "--porcelain", "-uno") === "", g(s.root, "status", "--porcelain", "-uno"));
 const none = s.merge("--result", "pass");
@@ -266,7 +266,7 @@ const named = { ...good, merged: [{ n: 77, head: "proteus-work/r1/7", sha: good.
 fs.rmSync(STATE(s.root), { force: true });
 fs.writeFileSync(STATE(s.root), JSON.stringify(named));
 const pass = s.merge("--result", "pass");
-ok("forge: on pass only a MERGED PR's head that is a worker branch is named: not an open PR's, a non-worker head, or an unknown PR", pass.code === 0 && /^run r1: suite green at [0-9a-f]{12}; worktree and branch left for the lead: proteus-work\/r1\/1$/.test(pass.out.trim()), pass.out + pass.err);
+ok("forge: on pass only a MERGED PR's head that is a worker branch is named: not an open PR's, a non-worker head, or an unknown PR", pass.code === 0 && /^run r1: suite green at [0-9a-f]{40}; worktree and branch left for the lead: proteus-work\/r1\/1$/.test(pass.out.trim()), pass.out + pass.err);
 // control characters in what the lead typed never reach the output
 fs.writeFileSync(STATE(s.root), JSON.stringify({ ...forged, head: good.head, at: good.head, merged: forged.merged.map((p) => ({ ...p, sha: good.head })) }));
 const esc = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1", "--suite", `x ${ESC}`, "--result", "pass"] });
@@ -343,7 +343,51 @@ const originAt = (rev) => g(s.W, "--git-dir", path.join(s.W, "origin.git"), "rev
 ok("shadow: with both shadow refs planted the printed commit is origin's tip", s.r.code === 0 && stepSha(s.line) === tipOf(s) && tipOf(s) !== agentSha, `${s.r.out} ${s.r.err}`);
 ok("shadow: each merge's sha is origin's", shadowState.merged.map((p) => p.sha).join() === [originAt("refs/heads/proteus/r1~1"), originAt("refs/heads/proteus/r1")].join(), JSON.stringify(shadowState));
 l = loop(s);
-ok("shadow: the batch ends green at origin's tip", l.r.code === 0 && l.line.startsWith(`run r1: suite green at ${tipOf(s).slice(0, 12)};`), l.r.out + l.r.err);
+ok("shadow: the batch ends green at origin's tip", l.r.code === 0 && l.line.startsWith(`run r1: suite green at ${tipOf(s)};`), l.r.out + l.r.err);
+
+// #226 round 4: ls-remote matches pattern tails, so origin's refs/heads/a/refs/heads/proteus/r1, which sorts first, is
+// listed too; the tip is the exact ref's
+let tailSha;
+s = setup("lstail", two, (root) => {
+  tailSha = g(root, "commit-tree", "-m", "agent", "HEAD^{tree}");
+  g(root, "push", "-q", "origin", `${tailSha}:refs/heads/a/refs/heads/proteus/r1`);
+});
+const tailState = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
+ok("lstail: with origin's a/refs/heads/proteus/r1 listed first, the printed commit and each merge's sha are the run branch's", s.r.code === 0 && stepSha(s.line) === tipOf(s) && tailState.merged.every((p) => p.sha !== tailSha) && tailState.merged[1].sha === tipOf(s), `${s.r.out} ${s.r.err} ${JSON.stringify(tailState)}`);
+
+// #226 round 4: a PR that changes a gitlink, with no local ref left reaching it, and an agent's <common>/.gitmodules,
+// <common>/index entry and <common>/modules/vx/config whose core.sshCommand writes a marker. lib runs git with cwd
+// <common>, so a submodule fetch would read all three and run that program outside the sandbox: neither the script's
+// fetch (--no-recurse-submodules) nor any lib git (GIT_SAFE) recurses
+const MARKS = lib.workdir("merge-marks");
+const gitlinkPlant = (mark) => (root, W, common) => {
+  const wt = path.join(root, ".worktrees", "1"), gm = "[submodule \"vx\"]\n\tpath = vx\n\turl = ./x\n";
+  write(wt, { ".gitmodules": gm });
+  g(wt, "add", ".gitmodules");
+  g(wt, "update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},vx`);
+  g(wt, "commit", "-q", "-m", "gitlink");
+  g(wt, "push", "-q", "origin", "proteus-work/r1/1");
+  g(wt, "reset", "-q", "--hard", "HEAD~1");
+  g(root, "update-ref", "-d", "refs/remotes/origin/proteus-work/r1/1");
+  g(root, "update-index", "--add", "--cacheinfo", `160000,${"2".repeat(40)},vx`);
+  write(common, { ".gitmodules": gm });
+  const mod = path.join(common, "modules", "vx");
+  g(W, "init", "-q", "--bare", mod);
+  fs.appendFileSync(path.join(mod, "config"), `[remote "origin"]\n\turl = ssh://example.invalid/x.git\n[core]\n\tsshCommand = "echo ran > '${mark.split(path.sep).join("/")}'; false"\n`);
+};
+const subMark = path.join(MARKS, "script");
+s = setup("submodule", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], gitlinkPlant(subMark));
+ok("submodule: the batch merges the gitlink PR and fetches no submodule, so the planted sshCommand never runs", s.r.code === 0 && s.line.startsWith("merged PR #10 for #1; suite: ") && !fs.existsSync(subMark), `${s.r.code} ${s.r.out} ${s.r.err} ${fs.existsSync(subMark)}`);
+const fetches = fs.readFileSync(SPAWNS, "utf8").trim().split("\n").map((x) => JSON.parse(x)).filter((x) => x.args.includes("fetch"));
+ok("submodule: every fetch the script runs passes --no-recurse-submodules", fetches.length > 0 && fetches.every((x) => x.args.includes("--no-recurse-submodules")), JSON.stringify(fetches.map((x) => x.args)).slice(0, 400));
+// lib's own git, on the same plants with a fetch that names no flag: GIT_SAFE alone keeps it out of the submodule
+const libMark = path.join(MARKS, "lib");
+let libFetch;
+setup("submodule-lib", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+  gitlinkPlant(libMark)(root, W, common);
+  libFetch = require(path.join(HOOKS, "proteus-lib.js")).gitTry(common, ["fetch", "-q", "--no-write-fetch-head", "--refmap=", "origin", "refs/heads/proteus-work/r1/1"], { user: true, timeout: 120000 });
+});
+ok("submodule: a lib git fetch with no flag of its own fetches no submodule either (GIT_SAFE)", libFetch.ok && !fs.existsSync(libMark), `${JSON.stringify(libFetch)} ${fs.existsSync(libMark)}`);
 
 // the run name: letters, digits, _ . -, so the worker branches it names are proteus-work/<run>/<n> only
 const badRun = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1$(touch${IFS}x)", "--suite", NEVER] });
@@ -355,6 +399,16 @@ s = setup("gatesrun", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }]);
 t = tree(s.root, stepSha(s.line));
 const gc = run(GATES, "", { cwd: RUN(s.root), env: { CLAUDE_PROJECT_DIR: s.root }, args: [NEVER] });
 ok("gates-cache: in .worktrees/_run it refuses, exit 2, and runs nothing", t.code === 0 && gc.code === 2 && /is not the top of its checkout/.test(gc.err) && !fs.existsSync(NEVER_RAN), `${t.out} ${gc.code} ${gc.out} ${gc.err}`);
+
+// #226 round 4: an agent can write _run/.git; run-tree makes _run anew for each sha, so a replace ref and a
+// skip-worktree index planted in an old one are gone and _run holds the commit's files
+const bad = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: RUN(s.root), env: lib.ENV, input: "BAD\n", encoding: "utf8" }).stdout.trim();
+g(RUN(s.root), "replace", "-f", g(RUN(s.root), "rev-parse", "HEAD:b.txt"), bad);
+g(RUN(s.root), "update-index", "--skip-worktree", "suite.js");
+fs.rmSync(path.join(RUN(s.root), "suite.js"));
+const planted = g(RUN(s.root), "show", "HEAD:b.txt") === "BAD" && g(RUN(s.root), "status", "--porcelain") === "";
+t = tree(s.root, stepSha(s.line));
+ok("replant: a replace ref and a skip-worktree index planted in an old _run are gone after run-tree", planted && t.code === 0 && fs.readFileSync(path.join(RUN(s.root), "b.txt"), "utf8") === "b\n" && fs.existsSync(path.join(RUN(s.root), "suite.js")) && g(RUN(s.root), "for-each-ref", "refs/replace") === "" && !/^S /m.test(g(RUN(s.root), "ls-files", "-v")), `${planted} ${t.code} ${t.out} ${t.err}`);
 
 // #226 round 3: _run is a repo of its own, so a suite that asks git is answered for the tested commit: Proteus's own
 // frontmatter test passes in a _run built from a clone of this repo

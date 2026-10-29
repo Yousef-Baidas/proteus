@@ -5,11 +5,12 @@
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
 // conflict or any other failed merge stops the batch. It runs outside the sandbox, so it does only that, an
 // ls-remote, a fetch that writes objects only, and its state file: no git call with a work tree, no ref read by a
-// short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD and runs
-// no auto maintenance, whose worktree prune would follow a link an agent plants under <common>/worktrees. It prints
-// the commit to test and two commands for the lead to run sandboxed: proteus-run-tree.js <sha>, which checks that
-// commit out in .worktrees/_run, then the suite in _run, bare.
-// `--result pass|fail` reports that run: pass ends the batch; fail on the tip starts a bisect over the batch's merges,
+// short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD, fetches
+// no submodule, and runs no auto maintenance, whose worktree prune would follow a link an agent plants under
+// <common>/worktrees. It prints the commit to test and two commands for the lead to run sandboxed:
+// proteus-run-tree.js <sha>, which checks that commit out in .worktrees/_run, then the suite in _run, bare.
+// `--result pass|fail` reports that run: pass ends the batch, printing the full sha it tested for the lead's
+// fast-forward; fail on the tip starts a bisect over the batch's merges,
 // each step printing the next commit and both commands again, until it names the first bad merge. The batch's state
 // between calls is <git-common-dir>/proteus/merge/<run>.json, which a sandboxed agent can write: every read checks
 // it, and the branch names the end prints come from the tracker, never from it. It removes no worktree and deletes
@@ -164,7 +165,7 @@ function main() {
       const st = readState(common, run);
       if (!st) { console.error(`run ${plain(run)}: no batch awaits a result (run it without --result first)`); return 2; }
       if (st.mid === null) {
-        if (result === "pass") { dropState(common, run); say(`run ${run}: suite green at ${st.head.slice(0, 12)}${leftFor(st)}`); return 0; }
+        if (result === "pass") { dropState(common, run); say(`run ${run}: suite green at ${st.head}${leftFor(st)}`); return 0; }
         // bisect the batch's merges: the last batch ended green, the tip failed
         st.lo = -1;
         st.hi = st.merged.length - 1;
@@ -216,13 +217,14 @@ function main() {
   if (!batch.length) { say("merged none; suite not run"); return 0; }
 
   // the run branch's tip as origin has it (ls-remote, so no local ref can shadow it), then its objects fetched, with the
-  // human's config (credentials, proxy) as lib's release fetch: no ref, reflog or FETCH_HEAD written, no maintenance
+  // human's config (credentials, proxy) as lib's release fetch: no ref, reflog or FETCH_HEAD written, no maintenance,
+  // no submodule fetched (git would read an agent-written <common>/.gitmodules and <common>/modules/<p>/config)
   const user = { user: true, timeout: 120000 };
   const tip = () => {
     const ls = lib.gitTry(common, ["ls-remote", "origin", `refs/heads/${base}`], user);
     const sha = ls.ok ? (ls.out.split("\n").map((l) => l.split("\t")).find((f) => f[1] === `refs/heads/${base}`) || [])[0] || "" : "";
     if (!SHA.test(sha)) return "";
-    const fetched = lib.gitTry(common, ["fetch", "-q", "--no-auto-maintenance", "--no-write-fetch-head", "--refmap=", "origin", `refs/heads/${base}`], user).ok;
+    const fetched = lib.gitTry(common, ["fetch", "-q", "--no-auto-maintenance", "--no-recurse-submodules", "--no-write-fetch-head", "--refmap=", "origin", `refs/heads/${base}`], user).ok;
     return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
   };
   if (!tip()) return fail(`cannot fetch origin/${base}`);

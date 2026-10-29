@@ -570,7 +570,9 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 // off. git then reads <common>/config and <common>/config.worktree only, which the sandbox profile denies. A linked
 // worktree's HEAD is read as a file under <common>/worktrees/<id>; its working tree through its index (treeChanges).
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
-const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false"];
+// and never into a submodule, whose config under <common>/modules an agent can write (#226)
+const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
+  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false", "-c", "protocol.file.allow=user"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
 // o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)

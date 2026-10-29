@@ -103,6 +103,16 @@ ok("nested: a run from a subfolder is refused before it warns", r.code === 2 && 
 r = gate(REPO, { TAG: "nested" }, NG);
 ok("nested: a hit from the checkout runs nothing and does not warn", /gates-cache: hit/.test(r.out) && !/inside this folder/.test(r.err), r.out + r.err);
 
+// a merge batch's .worktrees/_run, a repo of its own reading REPO's objects: it has a .git, yet its checkout is REPO's,
+// so the key would name REPO's tree; refused, nothing run or stored (#226)
+const RUN = path.join(REPO, ".worktrees", "_run");
+g(W, "init", "-q", RUN);
+fs.writeFileSync(path.join(RUN, ".git", "objects", "info", "alternates"), `${path.join(REPO, ".git", "objects").split(path.sep).join("/")}\n`);
+g(RUN, "checkout", "-q", "-f", "--detach", g(REPO, "rev-parse", "HEAD"));
+const [runsBefore, storedBefore] = [runs(), stored()];
+r = gate(RUN, { TAG: "run" }, `${GATE} run`);
+ok("_run: a run from a merge batch's _run, a repo of its own, runs nothing, stores nothing, exits 2", r.code === 2 && runs() === runsBefore && stored() === storedBefore && /gates-cache: .*_run is not the top of its checkout/.test(r.err), r.out + r.err);
+
 ok("usage: no command exits 2", lib.run(GC, "", { cwd: REPO }).code === 2);
 
 lib.summary();

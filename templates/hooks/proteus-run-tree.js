@@ -2,9 +2,10 @@
 // The tree a merge batch tests: node <hooks>/proteus-run-tree.js <sha>
 // Checks out <sha> in <main>/.worktrees/_run, for the lead to run the suite there. It runs sandboxed, never by a
 // prefix rule or a sandbox exclusion (#226): proteus-merge.js, which runs outside the sandbox, only prints this command
-// with the commit to test. _run is a small repo of its own, not a worktree: `git init` once, its objects read from the
-// project's through objects/info/alternates, then for each sha a branch run at it and a forced detached checkout, with
-// untracked and ignored files cleaned. So git in the suite answers for the tested commit, not the lead's checkout, and
+// with the commit to test. _run is a small repo of its own, not a worktree, its objects read from the
+// project's through objects/info/alternates, emptied and made anew for each sha (`git init`, alternates, a branch run
+// at it, a forced detached checkout), its HEAD's tree checked against <sha>'s in the project's repo. So git in the
+// suite answers for the tested commit, not the lead's checkout, nothing planted in an old _run/.git carries over, and
 // nothing under <common> is written. Its git runs on _run/.git alone, pinned as every hook's (#215), with no auto
 // maintenance. A _run that an older Proteus registered as a worktree is refused, with a message: remove it with
 // `git worktree remove` outside any agent session. Exit 0 when _run's HEAD is <sha>; 1 on a refusal or a git failure;
@@ -40,15 +41,18 @@ function main() {
     if (d === gitDir && st.isFile()) return fail("refused: .worktrees/_run is a worktree an older Proteus registered; remove it with `git worktree remove --force .worktrees/_run` outside any agent session, then run this again");
     if (!st.isDirectory()) return fail(`refused: ${d} is not a real directory (a link or a file)`);
   }
-  // _run's own repo, its git reading only _run/.git's config; a _run without one (a plain copy) starts over
+  // _run's own repo, its git reading only _run/.git's config, made anew for each sha: an agent can write _run/.git, so
+  // no replace ref, index, filter or config planted there carries over (#226)
   const git = (args) => lib.gitTry(gitDir, ["-c", "maintenance.auto=false", ...args], { cwd: dir, workTree: dir, timeout: 120000 });
   const why = (r) => r.err.split(/\r?\n/).filter(Boolean).pop() || "git failed";
-  if (!fs.existsSync(gitDir)) {
+  try {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.mkdirSync(dir, { recursive: true });
-    const r = git(["init", "-q", "-b", "run"]);
-    if (!r.ok) return fail(`cannot make .worktrees/_run a repo (${why(r)})`);
+  } catch (e) {
+    return fail(`cannot empty .worktrees/_run (${e.message})`);
   }
+  const r = git(["init", "-q", "-b", "run"]);
+  if (!r.ok) return fail(`cannot make .worktrees/_run a repo (${why(r)})`);
   // the project's objects, read only: a new alternates file, never one written through
   try {
     const alt = path.join(info, "alternates");
@@ -58,11 +62,14 @@ function main() {
   } catch (e) {
     return fail(`cannot point .worktrees/_run at the project's objects (${e.message})`);
   }
-  for (const args of [["update-ref", "refs/heads/run", sha], ["checkout", "-q", "-f", "--detach", sha], ["clean", "-q", "-ffdx"]]) {
-    const r = git(args);
-    if (!r.ok) return fail(`.worktrees/_run cannot hold ${sha.slice(0, 12)} (${why(r)})`);
+  for (const args of [["update-ref", "refs/heads/run", sha], ["checkout", "-q", "-f", "--detach", sha]]) {
+    const c = git(args);
+    if (!c.ok) return fail(`.worktrees/_run cannot hold ${sha.slice(0, 12)} (${why(c)})`);
   }
   if (git(["rev-parse", "--verify", "HEAD"]).out !== sha) return fail(`.worktrees/_run's HEAD is not ${sha.slice(0, 12)}`);
+  // its tree as the project's own repo has it, read through the pinned git on <common>
+  const want = lib.gitTry(common, ["rev-parse", "--verify", `${sha}^{tree}`]).out;
+  if (!want || git(["rev-parse", "--verify", "HEAD^{tree}"]).out !== want) return fail(`.worktrees/_run's tree is not ${sha.slice(0, 12)}'s`);
   console.log(`run-tree: .worktrees/_run holds ${sha.slice(0, 12)}`);
   return 0;
 }
