@@ -8,6 +8,7 @@
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 const args = process.argv.slice(2);
 if (args[0] === "--help" || args[0] === "-h") {

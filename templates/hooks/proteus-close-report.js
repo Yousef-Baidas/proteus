@@ -15,6 +15,7 @@
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 
 const CCUSAGE = { claude: ["-y", "ccusage@20.0.26", "session", "--json"], codex: ["-y", "@ccusage/codex@19.0.0", "session", "--json"] };

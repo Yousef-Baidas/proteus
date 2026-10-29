@@ -19,6 +19,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 const C = require(path.join(__dirname, "proteus-confine.js"));
 

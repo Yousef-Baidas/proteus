@@ -19,6 +19,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 const HUMAN_ONLY = /^(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const AUTO = /^(AUTO-ACCEPT|AUTO-HOLD)(?=\s|$)/;

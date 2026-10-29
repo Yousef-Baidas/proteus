@@ -114,6 +114,8 @@ Three steps the installer cannot do for you, once per repo:
 2. Approve the Proteus hooks in `/hooks`. Codex asks again when a hook entry changes, not when a script updates.
 3. Optional: add context-mode: `codex mcp add context-mode --env CONTEXT_MODE_PLATFORM=codex -- npx -y context-mode`.
 
+The rules name the lead's scripts by the main checkout's absolute path (`node /abs/repo/.codex/hooks/proteus-status.js`), rewritten each time `--project`, `--update` or the session-start sync registers the hooks (`--doctor` flags rules a moved checkout left stale); the scripts refuse to run from a copy anywhere else, such as a worker's nested `.codex/hooks`.
+
 Codex has no status line hook and no attribution setting; the commit-msg check still rejects an AI trailer. `~/.claude/proteus.json` records which CLIs you installed for, and `--update` refreshes each. `--doctor --harness codex` checks the Codex side: skill links, agents, the hooks and rules, leftover Claude-only hooks, the worktree folder's writable root, project trust, and context-mode (as an MCP server or an installed, enabled Codex plugin).
 
 ## Check the install

@@ -108,6 +108,6 @@ const cx = require(path.join(ROOT, "templates", "hooks", "proteus-harness-codex.
 const CX = path.join(W, "cx");
 fs.mkdirSync(CX);
 cx.registerLead(CX);
-ok("codex: the rules allow the lead's close report and tier check, never the gate cache (it runs any command)", ["close-report", "tier"].every((n) => fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes(`".codex/hooks/proteus-${n}.js"`)) && !fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes("proteus-gates-cache"));
+ok("codex: the rules allow the lead's close report and tier check, never the gate cache (it runs any command)", ["close-report", "tier"].every((n) => fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes(JSON.stringify(path.join(CX, ".codex", "hooks", `proteus-${n}.js`).split(path.sep).join("/")))) && !fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes("proteus-gates-cache"));
 
 lib.summary();

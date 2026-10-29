@@ -74,18 +74,18 @@ r = start(SUB, { CLAUDE_PROJECT_DIR: REPO });
 ok("autostart: without CLAUDE_PLUGIN_ROOT there is no skill to load", r.code === 0 && !/PLUGIN SKILL BODY/.test(r.out), r.out + r.err);
 
 // ---- repo root: the session's, never the plugin's folder
-r = run("proteus-inbox.js", "", SUB, none, ["--count"]);
+r = run("proteus-inbox.js", "", SUB, { ...none, CLAUDE_PLUGIN_ROOT: PLUG }, ["--count"]);
 ok("inbox: run from a subdir of the session's repo it reads that repo's cache", r.out.trim() === "1 2", r.out + r.err);
-r = run("proteus-inbox.js", "", W, { CLAUDE_PROJECT_DIR: REPO }, ["--count"]);
+r = run("proteus-inbox.js", "", W, { CLAUDE_PROJECT_DIR: REPO, CLAUDE_PLUGIN_ROOT: PLUG }, ["--count"]);
 ok("inbox: CLAUDE_PROJECT_DIR names the repo when the cwd is outside it", r.out.trim() === "1 2", r.out + r.err);
-r = run("proteus-inbox.js", "", W, none, ["--count"]);
+r = run("proteus-inbox.js", "", W, { ...none, CLAUDE_PLUGIN_ROOT: PLUG }, ["--count"]); // the plugin's env: a hook outside its main checkout runs only from there (#234)
 ok("inbox: outside any repo it prints nothing", r.code === 0 && r.out.trim() === "", r.out + r.err);
 // a home kept in git (dotfiles): the plugin cache sits inside a repo that is not the session's
 const DOT = path.join(W, "dotfiles"), DOTH = path.join(DOT, ".claude", "plugins", "cache", "proteus", "1.0.0", "hooks");
 fs.mkdirSync(DOTH, { recursive: true });
 g(DOT, "init", "-q");
 for (const f of fs.readdirSync(SRC)) fs.copyFileSync(path.join(SRC, f), path.join(DOTH, f));
-r = lib.run(path.join(DOTH, "proteus-inbox.js"), "", { cwd: SUB, args: ["--count"], env: none });
+r = lib.run(path.join(DOTH, "proteus-inbox.js"), "", { cwd: SUB, args: ["--count"], env: { ...none, CLAUDE_PLUGIN_ROOT: path.dirname(DOTH) } });
 ok("inbox: a plugin cache inside another repo still reads the session's repo", r.out.trim() === "1 2", r.out + r.err);
 r = lib.run(path.join(DOTH, "proteus-statusline.js"), { cwd: SUB }, { cwd: SUB, env: { ...none, CLAUDE_CONFIG_DIR: CFG } });
 ok("statusline: a plugin cache inside another repo shows the session repo's inbox", r.out.includes("1 question · 2 reviews"), r.out + r.err);
@@ -102,7 +102,7 @@ const TT = path.join(REPO, "teams", "templates", "hooks");
 fs.mkdirSync(TT, { recursive: true });
 fs.copyFileSync(path.join(SRC, "commit-msg.js"), path.join(TT, "commit-msg.js"));
 g(REPO, "worktree", "add", "-q", path.join(REPO, ".worktrees", "w1"), "-b", "w1");
-r = lib.run(path.join(BARE, "proteus-worktree.js"), "", { cwd: W, args: [path.join(REPO, ".worktrees", "w1"), "src/**"], env: { ...none, PROTEUS_HARNESS: "claude", CLAUDE_PROJECT_DIR: REPO } });
+r = lib.run(path.join(BARE, "proteus-worktree.js"), "", { cwd: W, args: [path.join(REPO, ".worktrees", "w1"), "src/**"], env: { ...none, PROTEUS_HARNESS: "claude", CLAUDE_PROJECT_DIR: REPO, CLAUDE_PLUGIN_ROOT: path.dirname(BARE) } });
 let msg = "";
 try { msg = fs.readFileSync(path.join(REPO, ".git", "worktrees", "w1", "proteus-hooks", "commit-msg"), "utf8"); } catch {}
 ok("worktree: the commit-msg hook runs the lead repo's teams/templates/hooks/commit-msg.js", r.code === 0 && msg.replace(/\\/g, "/").includes(path.join(TT, "commit-msg.js").replace(/\\/g, "/")), r.out + r.err + msg);
