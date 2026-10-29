@@ -146,7 +146,7 @@ The installer never writes it: an agent editing your settings is self-modificati
 
 ## Sandboxed bypass
 
-Auto mode can still deny ordinary Proteus work, and prompts stall an unattended run. `bypassPermissions` turns prompts off, which is only safe behind an isolation layer. On macOS (Seatbelt), Linux and WSL2 (bubblewrap and socat), Claude Code's own sandbox is extra protection there: it blocks many attacks, but it is not a boundary against a determined agent (see [Known gaps](#known-gaps)). Sandcastle (#80) is the isolation layer for workers. A plugin cannot ship sandbox or permission settings, so the installer writes them to a file of their own, which you pass at launch. Run it in the repo:
+Auto mode can still deny ordinary Proteus work, and prompts stall an unattended run. `bypassPermissions` turns prompts off, which is only safe behind an isolation layer. On macOS (Seatbelt), Linux and WSL2 (bubblewrap and socat), Claude Code's own sandbox is extra protection there: it blocks many attacks, but it is not a boundary against a determined agent (see [Known gaps](#known-gaps)). The container runner ([container.md](container.md), #80) is the isolation layer for workers. A plugin cannot ship sandbox or permission settings, so the installer writes them to a file of their own, which you pass at launch. Run it in the repo:
 
 ```sh
 node install.js --sandbox
@@ -182,7 +182,7 @@ What it does not cover:
 
 ### Known gaps
 
-Claude Code loads and runs project files, such as a nested `.claude/skills/` whose `hooks:` run outside the sandbox, from folders the sandbox lets agents write. On Linux the sandbox cannot deny "any `.claude` at any depth", so the profile cannot close this. Sandcastle (containers, #80) is the isolation layer for workers.
+Claude Code loads and runs project files, such as a nested `.claude/skills/` whose `hooks:` run outside the sandbox, from folders the sandbox lets agents write. On Linux the sandbox cannot deny "any `.claude` at any depth", so the profile cannot close this. The container runner ([container.md](container.md), #80) is the isolation layer for workers.
 
 - **Nested skills.** An agent can write a skill under a deeper `.claude/skills/`, such as `src/.claude/skills/<name>/`, a worktree's, or one under `node_modules`. When the skill is invoked, its `hooks:` run outside the sandbox.
 - **A planted skill you type.** Typing `/<name>` for such a skill runs it the same way.
