@@ -9,7 +9,8 @@
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
 // compaction, the human's last ten messages from the journal. Says when scratch may be stale, for the lead to run
 // proteus-scratch.js --sweep --stale from its own shell: this hook runs unsandboxed, so it deletes nothing (#237).
-// A home agents can write (lib.homeWritable: self-hosted in the project, #212) gets none of the sync, patches or update.
+// A home agents can write (lib.homeWritable: self-hosted in this project or in any repo a Proteus sandbox profile makes
+// writable, #212) gets none of the sync, patches or update; any other home is read through its realpath alone.
 // Under the plugin (CLAUDE_PLUGIN_ROOT) the plugin manager owns updates, so the checkout update is off; instead
 // releaseCheck says, in one line, when the installed commit is not a release tag the user's trusted key signed.
 // On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
@@ -36,7 +37,10 @@ lib.run(async (ev, ad) => {
 
   const notes = [];
   const cfg = lib.proteusConfig();
-  const home = typeof cfg.home === "string" && fs.existsSync(cfg.home) ? path.resolve(cfg.home) : null;
+  const named = typeof cfg.home === "string" && fs.existsSync(cfg.home) ? path.resolve(cfg.home) : null;
+  // resolved once (#212 B7): the check judges both paths, and everything after it reads this realpath, never the
+  // named path again, which may pass through a link an agent can retarget
+  const home = named && lib.realNative(named);
   let pending = "";
   // what these write is the lead's: a lead window for proteus-shell-check.js, so an agent's shell call in flight
   // (a compact mid-run) gets a notice, not a block, and compares against the state after
@@ -46,9 +50,9 @@ lib.run(async (ev, ad) => {
     // a home agents can write (self-hosted in the project, #212 B6) is never fetched, merged, synced or run from,
     // and no patched agent is regenerated from its agents/ (the shipped text would carry an agent's edit, hooks: in
     // the frontmatter included, into the denied .claude/agents/): this hook runs unsandboxed
-    const open = home && !pluginRoot() && safe(() => lib.homeWritable(home, root, lib.trustedCommon(root)), true);
+    const open = home && !pluginRoot() && safe(() => lib.homeWritable(named, root, lib.trustedCommon(root), { real: home }), true);
     if (open) {
-      notes.push(`proteus: ${home} is a place agents can write, so this session does not update it, move it to the plugin, sync its hooks and agents, regenerate patched agents from it, or load code from it; update by running node "${path.join(home, "install.js")}" --update from your own terminal`);
+      notes.push(`proteus: ${named} is a place agents can write, so this session does not update it, move it to the plugin, sync its hooks and agents, regenerate patched agents from it, or load code from it; update by running node "${path.join(named, "install.js")}" --update from your own terminal`);
     } else if (home && !pluginRoot()) {
       pending = safe(() => update(home, cfg, notes), "");
       if (ad.name === "claude" && !pending) safe(() => pluginMove(home, cfg, notes));

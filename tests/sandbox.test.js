@@ -122,6 +122,9 @@ if (WIN) {
     deny.filter((x) => x.includes(".claude")).join(" "));
   ok("profile: an agent write to the root's .claude/settings*.json is denied", deny.includes(`${rule("Edit", path.join(realRepo, ".claude", "settings*.json"))})`)
     && ["settings.json", "settings.local.json"].every((f) => deniedOnLinux(path.join(realRepo, ".claude", f))), deny.filter((x) => x.includes(".claude")).join(" "));
+  // #212 B8: the root's skills, whose SKILL.md hooks: run outside the sandbox once the skill loads
+  ok("profile: an agent write to the root's .claude/skills is denied, by a rule Linux honours", deny.includes(`${rule("Edit", path.join(realRepo, ".claude", "skills"))}/**)`)
+    && deniedOnLinux(path.join(realRepo, ".claude", "skills", "x", "SKILL.md")), deny.filter((x) => x.includes(".claude")).join(" "));
   // proteus-lead a link or a file: --sandbox refuses, writes no profile and nothing through the link
   const leadVictim = path.join(W, "lead-victim"), leadAside = path.join(W, "lead-aside");
   fs.mkdirSync(leadVictim);
@@ -143,20 +146,33 @@ if (WIN) {
   sandbox({ XDG_CONFIG_HOME: XDG });
   ok("--sandbox makes an existing <common>/proteus-lead mode 0700", (fs.statSync(leadDir).mode & 0o777) === 0o700, (fs.statSync(leadDir).mode & 0o777).toString(8));
 
-  // #212 B6: a 1.x home proteus.json names inside the repo (self-hosted) is one agents write; --sandbox warns, names
-  // the manual update and still writes the profile. A home outside every writable place gets no warning
+  // #212 B7: a 1.x home proteus.json names in this profile's write set (self-hosted in the repo) or in another repo's
+  // profile is refused: exit 1, no profile and no copy written, the plugin or a move named. A home outside every one
+  // is not
   const CFG = path.join(CLAUDE, "proteus.json"), hadCfg = fs.existsSync(CFG) ? fs.readFileSync(CFG) : null;
   const OUTHOME = path.join(W, "release-home");
   fs.mkdirSync(OUTHOME, { recursive: true });
-  const warned = (home) => {
+  const pinFile = path.join(files(path.join(profileDir(), "bin")).map((b) => path.join(profileDir(), "bin", b))[0] || "x", "sandbox-root.json");
+  const refused = (home) => {
     fs.writeFileSync(CFG, JSON.stringify({ home }));
+    fs.rmSync(file, { force: true });
+    const pinned = fs.statSync(pinFile).mtimeMs;
     const r = sandbox({ XDG_CONFIG_HOME: XDG });
-    return { r, hit: r.code === 0 && /the Proteus home .* is a place sandboxed commands can write/.test(r.err) && r.err.includes(`${path.join(home, "install.js")} --update`) };
+    return { r, hit: r.code === 1 && r.err.includes(home) && /as a plugin/.test(r.err) && /move the home outside every sandboxed repo/.test(r.err)
+      && /nothing written/.test(r.err) && !fs.existsSync(file) && fs.statSync(pinFile).mtimeMs === pinned };
   };
-  const self = warned(repo);
-  ok("--sandbox warns when the configured home is inside the repo, naming the manual update, and still writes the profile", self.hit && fs.existsSync(file), self.r.err);
-  const out = warned(OUTHOME);
-  ok("--sandbox does not warn about a home outside every writable place", out.r.code === 0 && !/the Proteus home/.test(out.r.err), out.r.err);
+  const self = refused(repo);
+  ok("--sandbox refuses a self-hosted home (inside the repo), writing nothing and naming the plugin or a move", self.hit, self.r.err);
+  const OTHER = path.join(W, "work", "other-proteus");
+  fs.mkdirSync(OTHER, { recursive: true });
+  const otherProfile = path.join(profileDir(), "other-proteus-12345678.json");
+  fs.writeFileSync(otherProfile, JSON.stringify({ sandbox: { filesystem: { allowWrite: [OTHER] } } }));
+  const other = refused(OTHER);
+  ok("--sandbox refuses a home in another repo's profile write set, writing nothing", other.hit, other.r.err);
+  fs.rmSync(otherProfile);
+  fs.writeFileSync(CFG, JSON.stringify({ home: OUTHOME }));
+  const out = sandbox({ XDG_CONFIG_HOME: XDG });
+  ok("--sandbox accepts a home outside every writable place", out.code === 0 && !/the Proteus 1\.x home/.test(out.err) && fs.existsSync(file), out.err);
   if (hadCfg) fs.writeFileSync(CFG, hadCfg); else fs.rmSync(CFG);
 
   // gitDenyRules: each submodule git dir (nested ones and ones under a name path), no worktree's, no other wildcard
@@ -372,6 +388,56 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
   const badpin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "src/**"] });
   ok("copy: an unreadable sandbox-root.json refuses", badpin.code === 1 && /sandbox-root\.json/.test(badpin.err) && !fs.existsSync(w1Hooks), badpin.err);
 
+  // #212 B8: a Proteus statusLine whose script sandboxed commands can write (--project's teams/ copy) is pointed at the
+  // copy in bin; Claude Code runs it outside the sandbox. One outside the write set and a foreign one are left alone,
+  // the foreign one named in a warning. Then the rewritten command runs, as Claude Code runs it, after an agent edit
+  {
+    const local = path.join(repo, ".claude", "settings.local.json"), shared = path.join(repo, ".claude", "settings.json");
+    const teamHooks = path.join(repo, "teams", "templates", "hooks");
+    fs.mkdirSync(path.dirname(teamHooks), { recursive: true });
+    fs.cpSync(path.join(ROOT, "templates", "hooks"), teamHooks, { recursive: true });
+    fs.mkdirSync(path.dirname(local), { recursive: true });
+    const inRepo = path.join(teamHooks, "proteus-statusline.js").split(path.sep).join("/");
+    fs.writeFileSync(local, JSON.stringify({ statusLine: { type: "command", command: `node "${inRepo}"`, padding: 0 }, theme: "x" }));
+    const foreign = "bash ~/my-status.sh";
+    fs.writeFileSync(shared, JSON.stringify({ statusLine: { type: "command", command: foreign } }));
+    const rs = sandbox({ XDG_CONFIG_HOME: XDG });
+    const pw = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
+    const sl = read(local).statusLine || {}, cmd = String(sl.command || "");
+    const named = (/^node "([^"]+)"$/.exec(cmd) || [])[1] || "";
+    ok("statusLine: the repo's Proteus statusLine now runs the copy in bin", rs.code === 0 && named === path.join(bin, "proteus-statusline.js").split(path.sep).join("/") && fs.existsSync(named) && sl.padding === 0 && read(local).theme === "x", cmd + rs.err);
+    ok("statusLine: under the generated profile its command names no path inside allowWrite", Boolean(named) && !pw.some((w) => named === w || named.startsWith(w + "/")), cmd);
+    ok("statusLine: a foreign statusLine is left alone and named in a warning", read(shared).statusLine.command === foreign && rs.err.includes(foreign) && /not Proteus's/.test(rs.err), rs.err);
+    const PWNED = path.join(W, "PWNED-statusline");
+    fs.appendFileSync(path.join(teamHooks, "proteus-lib.js"), `require("fs").writeFileSync(${JSON.stringify(PWNED)}, "ran");\n`);
+    run(named, { cwd: repo, workspace: { project_dir: repo } }, { cwd: repo });
+    ok("statusLine: run as Claude Code runs it, it loads nothing an agent wrote in teams/", !fs.existsSync(PWNED));
+    const outside = path.join(W, "elsewhere", "proteus-statusline.js").split(path.sep).join("/");
+    fs.writeFileSync(local, JSON.stringify({ statusLine: { type: "command", command: `node "${outside}"` } }));
+    sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("statusLine: one whose script is outside the write set is left as it is", read(local).statusLine.command === `node "${outside}"`);
+    fs.rmSync(path.join(repo, ".claude"), { recursive: true });
+    fs.rmSync(path.join(repo, "teams"), { recursive: true });
+  }
+
+  // a plugin install sandboxed commands can write (claude --plugin-dir <repo>, a directory source in the repo): warned
+  {
+    const inst = path.join(CLAUDE, "plugins", "installed_plugins.json");
+    fs.mkdirSync(path.dirname(inst), { recursive: true });
+    const devPlugin = path.join(repo, "plugin");
+    fs.mkdirSync(devPlugin, { recursive: true });
+    fs.writeFileSync(inst, JSON.stringify({ plugins: { "proteus@proteus": [{ scope: "user", installPath: devPlugin }] } }));
+    const pw1 = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox warns when the installed plugin is inside allowWrite", pw1.code === 0 && pw1.err.includes(`the Proteus plugin at ${devPlugin}`), pw1.err);
+    const pw2 = sandbox({ XDG_CONFIG_HOME: XDG, CLAUDE_PLUGIN_ROOT: devPlugin });
+    ok("--sandbox warns when CLAUDE_PLUGIN_ROOT is inside allowWrite", pw2.err.includes(`the Proteus plugin at ${devPlugin}`), pw2.err);
+    fs.writeFileSync(inst, JSON.stringify({ plugins: { "proteus@proteus": [{ scope: "user", installPath: OUTHOME }] } }));
+    const pw3 = sandbox({ XDG_CONFIG_HOME: XDG });
+    ok("--sandbox does not warn about a plugin outside every write set", pw3.code === 0 && !/the Proteus plugin at/.test(pw3.err), pw3.err);
+    fs.rmSync(path.join(CLAUDE, "plugins"), { recursive: true });
+    fs.rmSync(devPlugin, { recursive: true });
+  }
+
   // guest.json sits under <common>, where sandboxed commands write: --sandbox makes writable only the fixed guest dir
   // ~/.proteus/guest/<repo>-<hash>, and warns about and leaves out any other dir it names (#212 B2)
   const guestJson = path.join(dotGit, "proteus", "guest.json"), planted2 = path.join(HOME, ".config");
@@ -386,6 +452,7 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
   const gf = sandbox({ XDG_CONFIG_HOME: XDG });
   const gw2 = ((read(file).sandbox || {}).filesystem || {}).allowWrite || [];
   ok("guest: guest.json naming the fixed guest dir makes it writable and --sandbox prints it", gf.code === 0 && gw2.includes(fixedGuest) && gf.out.includes(fixedGuest), gw2.join(" ") + gf.err);
+  ok("guest: an agent write to the guest dir's .claude/skills is denied, by a rule Linux honours", (((read(file).permissions || {}).deny) || []).includes(`${rule("Edit", path.join(fixedGuest, ".claude", "skills"))}/**)`));
   fs.rmSync(guestJson);
 
   // agentGh set: the human's gh dir still unreadable, the agents' own readable; the profile is rewritten in place

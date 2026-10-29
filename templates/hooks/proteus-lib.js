@@ -914,16 +914,48 @@ function sandboxScratch() {
   const who = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username.replace(/[^\w.-]/g, "_");
   return path.join(os.tmpdir(), `proteus-${who}`);
 }
-// a release home agents can write (#212 B6): its realpath is inside the project root, <common>, a registered
-// worktree, the scratch roots or a guest dir, or its git dir is <common>. The autostart then fetches, merges, copies,
-// spawns and requires nothing from it, and install.js --sandbox warns
-function homeWritable(home, root, common) {
+// the path the OS resolves p to (realpathSync.native: every link followed, and on macOS and Windows the case the disk
+// stores), else p resolved
+const realNative = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+// target is place or inside it; on macOS and Windows, whose file systems ignore case by default, compared case- and
+// Unicode-folded (NFC, lower case), as samePath does. platform is for tests
+function within(place, target, platform = process.platform) {
+  const p = platform === "win32" ? path.win32 : path.posix, fold = platform === "win32" || platform === "darwin";
+  const key = (x) => { const r = p.resolve(String(x)); return fold ? r.normalize("NFC").toLowerCase() : r; };
+  const rel = p.relative(key(place), key(target));
+  return rel === "" || (rel !== ".." && !rel.startsWith(".." + p.sep) && !p.isAbsolute(rel));
+}
+// every path a Proteus sandbox profile lets sandboxed commands write: allowWrite of each
+// <claudeDir>/proteus-sandbox/*.json, which install.js --sandbox writes and every profile denies to agents. A profile
+// is read as a regular file, never through a link; one that cannot be read or parsed throws, so a caller fails closed
+function profileWrites() {
+  const dir = path.join(claudeDir(), "proteus-sandbox");
+  let names;
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) throw new Error(`${dir} is not a directory`);
+    names = fs.readdirSync(dir);
+  } catch (e) { if (e.code === "ENOENT") return []; throw e; }
+  const out = [];
+  for (const n of names.filter((x) => x.endsWith(".json")).sort()) {
+    const j = JSON.parse(readUntrusted(path.join(dir, n)));
+    const w = j && j.sandbox && j.sandbox.filesystem && j.sandbox.filesystem.allowWrite;
+    if (!Array.isArray(w)) continue;
+    for (const x of w) if (typeof x === "string" && x) out.push(x.startsWith("~/") ? path.join(os.homedir(), x.slice(2)) : x);
+  }
+  return out.filter((x) => path.isAbsolute(x));
+}
+// a release home agents can write (#212 B6, B7): the home as named or its realpath (o.real, else realNative of it) is
+// inside the project root, <common>, a registered worktree, a guest dir, a path any Proteus sandbox profile makes
+// writable (profileWrites: another sandboxed repo, the scratch root that profile names) or o.places, or its git dir is
+// <common>. The autostart then fetches, merges, copies, spawns and requires nothing from it, and install.js --sandbox
+// refuses. Throws when a profile cannot be read; callers treat that as writable
+function homeWritable(home, root, common, o = {}) {
   if (!home) return false;
-  const h = realOr(path.resolve(String(home)));
-  if (common && samePath(homeGitDir(h), realOr(common))) return true;
-  const places = [root, sandboxScratch(), root && guestDir(root)];
+  const lex = path.resolve(String(home)), h = o.real || realNative(lex);
+  if (common && samePath(homeGitDir(h), realNative(common))) return true;
+  const places = [root, root && guestDir(root), ...profileWrites(), ...(o.places || [])];
   if (common) places.push(common, scratchDir(common), defaultGuestDir(common), ...registeredWorktrees(common));
-  return places.some((p) => p && relPath(realOr(path.resolve(p)), h) !== null);
+  return places.some((p) => p && [path.resolve(p), realNative(path.resolve(p))].some((at) => within(at, lex) || within(at, h)));
 }
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
@@ -3114,7 +3146,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, homeWritable,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, profileWrites, homeWritable,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,

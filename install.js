@@ -2275,9 +2275,13 @@ function sandboxGuest(root, common) {
   return "";
 }
 
+// the paths the profile lets sandboxed commands write, each as named and as its realpath
+const sandboxWritable = (root, common, scratch, guest) =>
+  [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
+
 function sandboxProfile(root, common, bin, scratch, guest) {
   const lib = hl();
-  const writable = [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
+  const writable = sandboxWritable(root, common, scratch, guest);
   const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
   // the human's gh config dir, always (agents read theirs, agentGh), and the credentials Claude Code itself keeps
   const human = lib.humanGhDir();
@@ -2319,6 +2323,9 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         slashRule("Edit", path.join(root, ".claude", "hooks", "**")),
         slashRule("Edit", path.join(root, ".claude", "settings*.json")),
         ...["settings.json", "settings.local.json"].map((f) => slashRule("Edit", path.join(root, ".claude", f))),
+        // the root's and the guest dir's skills, by a rule Linux honours: a planted SKILL.md's hooks: run outside the
+        // sandbox once the skill loads (#212 B8)
+        ...[root, ...(guest ? [guest] : [])].map((d) => slashRule("Edit", path.join(d, ".claude", "skills", "**"))),
         ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
         ...outsideEdits(keep),
       ],
@@ -2349,6 +2356,33 @@ function sandboxCopy(bin, root, common, profile) {
     }
     fs.writeFileSync(path.join(bin, "sandbox-root.json"), JSON.stringify({ root, common: real(common) || common, profile }, null, 2) + "\n");
   } catch (e) { return `cannot copy the hooks to ${bin} (${e.message})`; }
+  return "";
+}
+
+// the repo's own Proteus statusLine (--project's from teams/, or a 1.x one from .claude/hooks), which Claude Code runs
+// outside the sandbox at every render (#212 B8): when its script is in a place sandboxed commands can write, it is
+// pointed at bin's copy, which no agent can write. Any other statusLine is left alone and named in a warning. "" or why
+// not
+function sandboxStatusLine(root, bin, writable) {
+  const lib = hl(), to = path.join(bin, "proteus-statusline.js").split(path.sep).join("/");
+  for (const f of ["settings.json", "settings.local.json"].map((n) => path.join(root, ".claude", n))) {
+    const st = lstat(f);
+    if (!st) continue;
+    if (!st.isFile()) return `${f} is not a regular file (a link, or something else); nothing written through it`;
+    const s = readJson(f);
+    if (!s) return `${f} is not a JSON object`;
+    if (!("statusLine" in s)) continue;
+    const cmd = isObj(s.statusLine) && typeof s.statusLine.command === "string" ? s.statusLine.command.trim() : "";
+    const m = /^node\s+(?:"([^"]+)"|(\S+))$/.exec(cmd), script = m && path.resolve(root, m[1] || m[2]);
+    if (!script || path.basename(script) !== "proteus-statusline.js") {
+      warn(`warning: ${f} sets a statusLine that is not Proteus's (${JSON.stringify(cmd || s.statusLine)}), left as it is; Claude Code runs it outside the sandbox, so check that it runs nothing sandboxed commands can write`);
+      continue;
+    }
+    if (!writable.some((w) => lib.within(w, script) || lib.within(w, realish(script)))) continue;
+    s.statusLine = { ...s.statusLine, command: `node "${to}"` };
+    writeJson(f, s);
+    log(`status   -> ${f} (the statusLine now runs ${to}, outside the paths sandboxed commands may write)`);
+  }
   return "";
 }
 
@@ -2391,17 +2425,32 @@ function sandbox() {
   const place = realish(path.dirname(path.dirname(bin)));
   const hit = open.find((w) => inside(place, w) || inside(w, place));
   if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
+  // a 1.x home in this profile's write set or another's (self-hosted in a sandboxed repo): its autostart is gated, but
+  // the skill link ~/.claude/skills/proteus is not, so it is refused before anything is written (#212 B7)
+  const home = (readJson(CONFIG) || {}).home;
+  if (typeof home === "string" && isDir(home)) {
+    let open;
+    try { open = lib.homeWritable(home, root, common, { places: [scratch, ...(guest ? [guest] : [])] }); } catch (e) { die(`--sandbox: cannot read the profiles in ${path.join(CLAUDE, "proteus-sandbox")} (${e.message}); nothing written`, 1); }
+    if (open) die(`--sandbox: the Proteus 1.x home in ${CONFIG}, ${home}, is in a place sandboxed commands can write (this repo, or another repo with a sandbox profile), and its skill link and hooks run outside the sandbox; nothing written. Install Proteus as a plugin (docs/install.md), or move the home outside every sandboxed repo, then run --sandbox again`, 1);
+  }
   const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common) || sandboxLead(common);
   if (bad) die(`--sandbox: ${bad}`, 1);
   writeJson(file, sandboxProfile(root, common, bin, scratch, guest));
+  const status = sandboxStatusLine(root, bin, sandboxWritable(root, common, scratch, guest));
+  if (status) die(`--sandbox: ${status}; the profile is written, but a statusLine in the repo may run code sandboxed commands can write. Fix it and run --sandbox again`, 1);
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   log(`sandbox  -> ${file}`);
   log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
   log(`sandbox  -> ${scratch} (scratch dir sandboxed commands may write)`);
   if (guest) log(`sandbox  -> ${guest} (guest dir sandboxed commands may write)`);
-  // a 1.x home agents can write (self-hosted in this repo): the autostart never updates or syncs it (#212 B6)
-  const home = (readJson(CONFIG) || {}).home;
-  if (typeof home === "string" && isDir(home) && lib.homeWritable(home, root, common)) warn(`warning: the Proteus home in ${CONFIG}, ${home}, is a place sandboxed commands can write, so the autostart never updates it or syncs its hooks and agents; update by running node ${q(path.join(home, "install.js"))} --update from your own terminal`);
+  // a plugin whose files sandboxed commands can write (claude --plugin-dir <root>, a directory source in a sandboxed
+  // repo) runs every hook from them outside the sandbox
+  let writes = [];
+  try { writes = lib.profileWrites(); } catch {}
+  const plugins = [C.pluginRoot(), ...pluginEntries().map((e) => e.installPath)].filter((p) => typeof p === "string" && p);
+  for (const p of new Set(plugins)) {
+    if (writes.some((w) => lib.within(w, p) || lib.within(w, lib.realNative(p)))) warn(`warning: the Proteus plugin at ${p} is in a place sandboxed commands can write, and Claude Code runs its hooks outside the sandbox; install it from the marketplace (docs/install.md) instead`);
+  }
   if (!agentGh()) warn("warning: no agent identity (--agent-login): the profile hides your gh config from shell commands, so gh has no login inside the sandbox");
   log("Before launching, run the project setup outside the sandbox if this repo needs it (it writes .claude/hooks/, which the sandbox refuses):");
   log(`  node ${q(path.join(HERE, "install.js"))} --project`);

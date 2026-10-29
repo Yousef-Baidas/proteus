@@ -131,6 +131,21 @@ const leftovers = () => [...fs.readdirSync(TMP), ...(fs.existsSync(LEADD) ? fs.r
     ok("privateIndex: the real index back, treeChanges answers again", Array.isArray(L.treeChanges(WT)));
   }
 
+  // an index that grows between the fstat that sized the read and the read itself is refused, never copied short or
+  // read past the size seen: the bytes are appended right after privateIndex's fstat of the opened index
+  {
+    const saved = fs.readFileSync(INDEX), ino = fs.statSync(INDEX).ino;
+    const fst = fs.fstatSync;
+    let grown = 0;
+    fs.fstatSync = (fd, ...rest) => { const st = fst(fd, ...rest); if (st.ino === ino && !grown) { fs.appendFileSync(INDEX, Buffer.alloc(16)); grown++; } return st; };
+    let r;
+    try { dirty(); r = L.treeChanges(WT); } finally { fs.fstatSync = fst; }
+    ok("privateIndex: an index that grows while read is refused, and no changes are known", grown === 1 && r === null, `grown=${grown} ${JSON.stringify(r)}`);
+    fs.writeFileSync(INDEX, saved);
+    dirty();
+    ok("privateIndex: the index as it was, treeChanges answers again", Array.isArray(L.treeChanges(WT)));
+  }
+
   ok("treeChanges: every private copy is deleted afterwards", !leftovers().length, leftovers().join(" "));
   lib.summary();
 })();
