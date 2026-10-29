@@ -68,6 +68,7 @@
       "15b9fceabe258688dc82a2839672eeacd8029efd",
       "2252a69d196d893b7f179ce128682f5722ecaa98",
       "3c704beb83beb1eef4c892d65a4bbab00d583f39",
+      "478c2bd97ccea894ff6e39dfa162e5d87f99dda8",
       "62a9546a7f39045a5a270fc3b09763ebed467c32",
       "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
       "bafb7bbdfac721ff14fcea457b0fbbd9e677a796",
@@ -104,6 +105,7 @@
     "agents/proteus-frontend-verifier.md": [
       "08f090611dd0652d5a2e1d376bd0a344f866f036",
       "16853f12e3f175087845b0928ceb673020648cc4",
+      "18612da15bb49e641fe475af1b79e499e98ddf0b",
       "413aa920b13454277b88b648d95eebdbdc9f7f31",
       "666ec4129789fb52f2cd7ef96a21d8f5f5e49eac",
       "717c7a89a8c0d69b6642bde95322e043420bde91",
@@ -164,6 +166,7 @@
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
@@ -175,6 +178,7 @@
       "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
     ],
     "agents/proteus-verifier.md": [
+      "261b9eb5c4a85e6e91612d2829fe0605ad93c4df",
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
       "3cceddc42e540b2b3bf6c63ae15f1ec4949b2037",
       "5745fd11b97aee5d2882b95405a7e61dafa2d731",
