@@ -39,7 +39,7 @@ Read `AGENTS.md`, `CONTEXT.md`, relevant ADRs, and the taste docs `CONVENTIONS.m
 
 Grill with `/grill-with-docs` when `CONTEXT.md` exists, `/grilling` on a blank repo, one question at a time until every gate item is filled. Work bigger than one milestone or one session → `/wayfinder` first, then the gate per destination. Unattended and a blank remains → park the work order, take the next. Already grilled (the run log says so) → skip.
 
-Gate item (g), the threat model, applies when a planned path matches the `security` block of `teams/ROUTING.md` (matched like the tiers block) or the tier is Full: the assets at stake, the trust boundaries the work crosses, and two to five abuse cases, each an observable outcome ("a user without the project role gets 403 on `PATCH /projects/:id`"). Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket that touches one gets a failing check for it in its contract (step 3).
+Gate item (g), the threat model: the assets at stake, the trust boundaries the work crosses, and two to five abuse cases, each an observable outcome ("a user without the project role gets 403 on `PATCH /projects/:id`"). It applies when `proteus-tier.js <planned paths>` ends with a `threat model` line (a path matches the `security` block of `teams/ROUTING.md`, or the tier is Full); go by that line, not by globs read by eye. Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket that touches one gets a failing check for it in its contract (step 3).
 
 ## 2. Tickets
 

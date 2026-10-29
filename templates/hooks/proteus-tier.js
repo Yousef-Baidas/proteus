@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Change-tier check (SKILL.md rule 3; the tiers block of teams/ROUTING.md, rules in proteus-lib classifyTier).
 //   <path>...       the lead, before dispatch: the cheapest tier these planned paths allow, then why. Only file
-//                   counts are known yet; line limits are checked after the work.
+//                   counts are known yet; line limits are checked after the work. A last line names gate item (g),
+//                   the threat model (flow.md step 1), when a path matches the security block or the tier is full.
 //   --staged        git pre-commit in a worktree proteus-worktree.js prepared with --tier: everything since the
 //                   worktree's base (earlier commits and the staged index) against that tier
 //   --ci <base>     CI on a proteus-work/ PR: what changed since <base> against the declared tier: direct on a
@@ -46,7 +47,8 @@ const shq = (s) => (/^[\w./:@%+=,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''"
 const HELP = `usage: node proteus-tier.js <planned path>... | --staged | --ci <base-ref>
 Classifies a change by the tiers block in ${ROUTING} (no block: standard), cheapest first: ${lib.TIERS.join(", ")}.
   <planned path>...   the lead, before step 1: prints the cheapest tier these paths allow, then why. Only
-                      file counts are known yet; line limits are checked after the work.
+                      file counts are known yet; line limits are checked after the work. A
+                      last line says when gate (g), the threat model, applies.
   --staged [<proteus-worktree.js>]
                       the pre-commit hook in a worktree prepared with --tier: everything since its base;
                       a change that needs full names the lead's re-run of that script at full
@@ -84,8 +86,12 @@ if (args[0] === "--staged") {
 } else if (args.length && !args[0].startsWith("-")) {
   let root = process.cwd();
   try { root = git(["rev-parse", "--show-toplevel"]).trim(); } catch {}
-  const r = lib.plannedTier(block(lib.routingText(root)), args);
+  const text = lib.routingText(root);
+  const r = lib.plannedTier(block(text), args);
   console.log(`${r.tier}\n  ${r.why.join("\n  ")}`);
+  const globs = lib.parseSecurity(text) || [];
+  const hit = args.map((p) => p.replace(/\\/g, "/").replace(/^\.\//, "")).map((p) => [p, globs.find((x) => lib.tierMatch(x, p))]).find(([, x]) => x);
+  if (hit || r.tier === "full") console.log(`threat model: gate (g) applies (${hit ? `security path ${hit[0]} (${hit[1]})` : "tier full"})`);
 } else {
   console.error(HELP.split("\n")[0] + "\n(--help explains each mode)");
   process.exit(2);
