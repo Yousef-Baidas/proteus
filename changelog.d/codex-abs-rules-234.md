@@ -5,4 +5,4 @@
   and runs sandboxed (#234). The rules are rewritten whenever the hooks are registered, and `--doctor` flags rules
   a moved checkout left stale. The lead's scripts (all those the rules name but `proteus-tier.js` and
   `proteus-scratch.js`, which a worker runs from its own hooks dir) also exit 2 when run from a copy outside the
-  main checkout's hooks dir or the plugin's.
+  main checkout's hooks dir, the plugin's folder, or the `--sandbox` copies in `<claudeDir>/proteus-sandbox/bin`.

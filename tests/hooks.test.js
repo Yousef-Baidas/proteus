@@ -386,7 +386,7 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   const codexAd = require(path.join(SRC, "proteus-harness-codex.js"));
   ok("codex adapter: briefText is empty", codexAd.briefText({ agent: "d6", raw: { transcript_path: ST, session_id: "s1", agent_id: "d6" } }) === "");
   said("d6", job(WA));
-  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
+  for (const wt of [WA, WB]) run(path.join(SRC, "proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
   const cpatch = (file) => ({ command: `*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch` });
   const cx = (id, file) => run(LG, pre("apply_patch", cpatch(file), { agent_id: id, agent_type: "proteus-worker", cwd: RB, transcript_path: ST }), { cwd: RB, env: { PROTEUS_HARNESS: "codex", PROTEUS_PROJECT_DIR: RB } });
   ok("codex guard: a subagent's first edit binds it, brief or not", cx("d6", inB).code === 0 && rec("d6") === WB);

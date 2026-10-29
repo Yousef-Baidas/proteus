@@ -926,12 +926,18 @@ function within(place, target, platform = process.platform) {
   return rel === "" || (rel !== ".." && !rel.startsWith(".." + p.sep) && !p.isAbsolute(rel));
 }
 // #234: where a script a Codex prefix rule runs outside the sandbox may sit: the hooks dir of the main checkout of the
-// repo holding it, and the hooks dir of a Proteus source tree (the plugin, or its checkout: <tree>/templates/hooks
-// beside <tree>/.claude-plugin). A copy anywhere else, a worker's nested .codex/hooks, is not the lead's script
+// repo holding it; the plugin's folder (CLAUDE_PLUGIN_ROOT) and a Proteus source tree's hooks (<tree>/templates/hooks
+// beside <tree>/.claude-plugin); and the copies install.js --sandbox keeps under <claudeDir>/proteus-sandbox/bin,
+// which every profile denies to agents. A copy anywhere else, a worker's nested .codex/hooks, is not the lead's script
 function homeDirs(file) {
   const dir = path.dirname(file), tree = path.resolve(dir, "..", "..");
   const main = mainRoot(gitCommonDir(dir));
-  return [...(main ? [harness().hooksDir(main)] : []), ...(fs.existsSync(path.join(tree, ".claude-plugin", "plugin.json")) ? [path.join(tree, "templates", "hooks")] : [])];
+  return [
+    ...(main ? [harness().hooksDir(main)] : []),
+    ...(pluginRoot() ? [pluginRoot()] : []),
+    ...(fs.existsSync(path.join(tree, ".claude-plugin", "plugin.json")) ? [path.join(tree, "templates", "hooks")] : []),
+    path.join(claudeDir(), "proteus-sandbox", "bin"),
+  ];
 }
 // here is under one of dirs (all real paths); platform is for tests
 const homeAllows = (here, dirs, platform = process.platform) => dirs.some((d) => within(d, here, platform));
