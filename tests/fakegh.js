@@ -127,7 +127,7 @@ if (process.env.FAKE_GH_MERGE) {
   if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged));
   if (a.startsWith("issue list --label proteus --state all --json number,state,body ")) out(s.issues || []);
   if ((m = /^pr view (\d+) --json mergeable -q \.mergeable$/.exec(a))) { process.stdout.write((s.prs.find((p) => p.number === +m[1]) || {}).mergeable || "MERGEABLE"); process.exit(0); }
-  if ((m = /^pr merge (\d+) --merge --delete-branch$/.exec(a))) {
+  if ((m = /^pr merge (\d+) --merge$/.exec(a))) {
     const p = s.prs.find((x) => x.number === +m[1]);
     const tree = git("merge-tree", "--write-tree", `refs/heads/${p.baseRefName}`, `refs/heads/${p.headRefName}`);
     if (tree.status !== 0) {

@@ -187,7 +187,7 @@ function verdict(route, name, target, ran) {
   verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
 }
 
-// 9. proteus-merge.js: the ready PR's worktree and .worktrees/_run, where it removes, checks out and runs the suite,
+// 9. proteus-merge.js: the ready PR's worktree, which it leaves, and .worktrees/_run, where it checks out and runs the suite,
 // each with core.fsmonitor in its config.worktree; the fake gh merges the PR in a local origin
 {
   const O = path.join(W, "merge-origin.git"), R = path.join(W, "merge-root");
@@ -206,14 +206,19 @@ function verdict(route, name, target, ran) {
   g(WT, "config", "--worktree", "core.fsmonitor", cmd("merge-wt"));
   g(R, "worktree", "add", "-q", "--detach", RUN, "origin/proteus/r1");
   g(RUN, "config", "--worktree", "core.fsmonitor", cmd("merge-run"));
+  // the lead on the run branch, which the script fast-forwards
+  g(R, "checkout", "-q", "-b", "proteus/r1", "origin/proteus/r1");
+  g(R, "config", "--worktree", "core.fsmonitor", cmd("merge-lead"));
   const state = path.join(W, "merge-gh.json");
   fs.writeFileSync(state, JSON.stringify({ origin: O, issues: [{ number: 1, state: "OPEN", body: "" }],
     prs: [{ number: 10, headRefName: "proteus-work/r1/1", baseRefName: "proteus/r1", body: "Closes #1", isDraft: false,
       statusCheckRollup: [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }] }] }));
   const res = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", `"${fw(process.execPath)}" -e 0`] });
-  ok("proteus-merge.js merged the PR and ran the suite in _run", res.code === 0 && res.out.trim() === "merged PR #10 for #1; suite green" && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
-  ok("proteus-merge.js: no git call ran the plant in the removed worktree", !fired("merge-wt"));
+  ok("proteus-merge.js merged the PR and ran the suite in _run", res.code === 0 && res.out.trim() === "merged PR #10 for #1; worktrees to remove: proteus-work/r1/1; suite green" && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
+  ok("proteus-merge.js: no git call ran the plant in the PR's worktree, which stays", !fired("merge-wt") && fs.existsSync(WT));
+  ok("proteus-merge.js fast-forwarded the lead's checkout on the run branch", fs.existsSync(path.join(R, "b.js")) && g(R, "rev-parse", "HEAD") === g(R, "rev-parse", "origin/proteus/r1"), res.out + res.err);
   verdict("proteus-merge.js", "merge-run", RUN, [["merge", res]]);
+  verdict("proteus-merge.js in the lead's checkout", "merge-lead", R, [["merge", res]]);
 }
 
 lib.summary();
