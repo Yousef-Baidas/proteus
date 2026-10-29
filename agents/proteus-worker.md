@@ -3,6 +3,7 @@ name: proteus-worker
 description: Proteus generic worker for any team (software, editing, 3D, writing, research, business). Spawned by the /proteus lead with a ticket, the team name, a contract, and owned paths.
 model: sonnet
 disallowedTools:
+  - Agent
   - AskUserQuestion
   - EnterPlanMode
   - ExitPlanMode

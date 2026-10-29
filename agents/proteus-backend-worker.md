@@ -3,6 +3,7 @@ name: proteus-backend-worker
 description: Proteus worker for API, data, auth, and background job tickets. Spawned by the /proteus lead with a ticket, contract, and owned paths.
 model: sonnet
 disallowedTools:
+  - Agent
   - AskUserQuestion
   - EnterPlanMode
   - ExitPlanMode

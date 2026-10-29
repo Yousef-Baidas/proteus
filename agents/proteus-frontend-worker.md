@@ -3,6 +3,7 @@ name: proteus-frontend-worker
 description: Proteus worker for UI, styling, client state, and accessibility tickets. Spawned by the /proteus lead with a ticket, contract, and owned paths.
 model: sonnet
 disallowedTools:
+  - Agent
   - AskUserQuestion
   - EnterPlanMode
   - ExitPlanMode

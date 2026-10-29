@@ -3,6 +3,7 @@ name: proteus-devops-worker
 description: Proteus worker for CI, containers, deploy, and environment tickets. Spawned by the /proteus lead with a ticket, contract, and owned paths.
 model: sonnet
 disallowedTools:
+  - Agent
   - AskUserQuestion
   - EnterPlanMode
   - ExitPlanMode

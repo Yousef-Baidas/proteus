@@ -1,6 +1,6 @@
-// Worker tool surface tests: node tests/workertools.test.js (#206). Every shipped worker agent withholds the
-// interactive and scheduling tools a ticket run never calls, through disallowedTools, and keeps no tools allowlist
-// (workers get every other tool, MCP servers included). Reads agents/ only.
+// Worker tool surface tests: node tests/workertools.test.js (#206). Every shipped worker agent withholds Agent
+// and the interactive and scheduling tools a ticket run never calls, through disallowedTools, and keeps no tools
+// allowlist (workers get every other tool, MCP servers included). Reads agents/ only.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, "..");
 const lib = require(path.join(__dirname, "lib.js"));
 const { ok } = lib;
 
-const REQUIRED = ["AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList",
+const REQUIRED = ["Agent", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "CronCreate", "CronDelete", "CronList",
   "ScheduleWakeup", "RemoteTrigger"];
 const KEPT = ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "ToolSearch", "WebFetch", "WebSearch", "Skill"];
 
@@ -34,7 +34,7 @@ for (const f of workers) {
   const text = fs.readFileSync(path.join(ROOT, "agents", f), "utf8");
   const denied = listField(text, "disallowedTools");
   const missing = REQUIRED.filter((t) => !(denied || []).includes(t));
-  ok(`worker tools: ${f} withholds the plan, question and scheduling tools`, denied && !missing.length, missing.join(" "));
+  ok(`worker tools: ${f} withholds Agent and the plan, question and scheduling tools`, denied && !missing.length, missing.join(" "));
   const kept = KEPT.filter((t) => (denied || []).includes(t));
   ok(`worker tools: ${f} keeps the tools a ticket needs, context-mode included`,
     !kept.length && !(denied || []).some((t) => t.startsWith("mcp__")), kept.join(" "));
