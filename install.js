@@ -2298,10 +2298,11 @@ function sandboxProfile(root, bin, scratch) {
         ...secrets.map(readRule),
         // the copies that run outside the sandbox, and the profile itself
         slashRule("Edit", path.join(path.dirname(path.dirname(bin)), "**")),
-        // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config)
-        ...[[root, "**", ".claude", "**"], [common, "config"], [common, "hooks", "**"], [common, "worktrees", "*", "config.worktree"],
-          [common, "worktrees", "*", "proteus-hooks", "**"], [common, "modules", "**", "config"], [common, "modules", "**", "hooks", "**"]]
-          .map((s) => slashRule("Edit", path.join(...s))),
+        // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config); the git
+        // rules exact or ending in /**, the only ones Linux honours, per worktree and submodule (proteus-worktree.js
+        // adds a new worktree's)
+        slashRule("Edit", path.join(root, "**", ".claude", "**")),
+        ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
         ...outsideEdits(keep),
       ],
     },
@@ -2315,8 +2316,9 @@ const sandboxFile = (root) => {
 };
 
 // a fresh copy of templates/hooks (proteus-worktree.js and every file it requires or copies into a worktree) in
-// bin, with sandbox-root.json naming the one repo it serves; "" or why not
-function sandboxCopy(bin, root, common) {
+// bin, with sandbox-root.json naming the one repo it serves and the profile it adds a new worktree's deny rules to;
+// "" or why not
+function sandboxCopy(bin, root, common, profile) {
   const src = path.join(HERE, "templates", "hooks");
   // every dir from the config dir down to bin is made a real directory, none a link
   try { fs.mkdirSync(CLAUDE, { recursive: true }); } catch (e) { return `cannot make ${CLAUDE} (${e.message})`; }
@@ -2329,8 +2331,17 @@ function sandboxCopy(bin, root, common) {
       const st = lstat(path.join(src, f));
       if (st && st.isFile()) fs.copyFileSync(path.join(src, f), path.join(bin, f));
     }
-    fs.writeFileSync(path.join(bin, "sandbox-root.json"), JSON.stringify({ root, common: real(common) || common }, null, 2) + "\n");
+    fs.writeFileSync(path.join(bin, "sandbox-root.json"), JSON.stringify({ root, common: real(common) || common, profile }, null, 2) + "\n");
   } catch (e) { return `cannot copy the hooks to ${bin} (${e.message})`; }
+  return "";
+}
+
+// the main worktree's config.worktree, made empty when missing so the profile's exact deny names a file that
+// exists (git reads it once proteus-worktree.js sets extensions.worktreeConfig); "" or why not
+function mainWorktreeConfig(common) {
+  const f = path.join(common, "config.worktree"), st = lstat(f);
+  if (st) return st.isFile() ? "" : `${f} is not a regular file`;
+  try { fs.writeFileSync(f, "", { flag: "wx" }); } catch (e) { return `cannot make ${f} (${e.message})`; }
   return "";
 }
 
@@ -2348,7 +2359,7 @@ function sandbox() {
   const place = realish(path.dirname(path.dirname(bin)));
   const hit = open.find((w) => inside(place, w) || inside(w, place));
   if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
-  const bad = makeScratch(scratch) || sandboxCopy(bin, root, common);
+  const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common);
   if (bad) die(`--sandbox: ${bad}`, 1);
   writeJson(file, sandboxProfile(root, bin, scratch));
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);

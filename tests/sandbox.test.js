@@ -97,16 +97,46 @@ if (WIN) {
   for (let d = scratch; ; d = path.dirname(d)) { ancestors.push(d); if (path.dirname(d) === d) break; }
   const opened = (r2) => ancestors.some((a) => r2 === `${rule("Edit", a)}/**)` || r2 === `${rule("Edit", a)})`);
   ok("profile: no Edit rule covers the repo, the scratch dir or a dir above them", !deny.some(opened), deny.filter(opened).join(" "));
-  // 7: git config and hooks, submodules' too
-  ok("profile: Edit denied for the repo's .claude dirs, git config and hooks, submodules' included",
-    [`${rule("Edit", realRepo)}/**/.claude/**)`, `${rule("Edit", path.join(realRepo, ".git", "config"))})`, `${rule("Edit", path.join(realRepo, ".git", "hooks"))}/**)`,
-      `${rule("Edit", path.join(realRepo, ".git", "modules"))}/**/config)`, `${rule("Edit", path.join(realRepo, ".git", "modules"))}/**/hooks/**)`].every((x) => deny.includes(x)), deny.slice(0, 16).join(" "));
+  // 7: git config and hooks; NF1: the main config.worktree, made so the exact rule names a file
+  const dotGit = path.join(realRepo, ".git");
+  ok("profile: Edit denied for the repo's .claude dirs, git config, config.worktree and hooks",
+    [`${rule("Edit", realRepo)}/**/.claude/**)`, `${rule("Edit", path.join(dotGit, "config"))})`, `${rule("Edit", path.join(dotGit, "config.worktree"))})`,
+      `${rule("Edit", path.join(dotGit, "hooks"))}/**)`].every((x) => deny.includes(x)), deny.slice(0, 16).join(" "));
+  ok("--sandbox makes the main config.worktree, empty, so its deny names a file", fs.readFileSync(path.join(dotGit, "config.worktree"), "utf8") === "");
+  // NF2: Linux's denyWrite honours only an exact path or a trailing /**, so no .git rule has another wildcard
+  const gitRules = (d) => d.filter((x) => x.includes("/.git/"));
+  const linuxOk = (x) => /^Edit\(.*\)$/.test(x) && !x.slice(5, -1).replace(/\/\*\*$/, "").includes("*");
+  ok("profile: every .git deny rule is exact or ends in /**", gitRules(deny).length >= 3 && gitRules(deny).every(linuxOk), gitRules(deny).filter((x) => !linuxOk(x)).join(" "));
+
+  // gitDenyRules: each worktree, each submodule git dir (nested ones and ones under a name path), no other wildcard
+  const C = require(path.join(ROOT, "templates", "hooks", "proteus-confine.js"));
+  const fakeGit = path.join(realW, "fake-git");
+  for (const d of [["worktrees", "a"], ["modules", "sub"], ["modules", "sub", "modules", "inner"], ["modules", "lib", "deep"]]) {
+    fs.mkdirSync(path.join(fakeGit, ...d), { recursive: true });
+    if (d[0] === "modules") fs.writeFileSync(path.join(fakeGit, ...d, "HEAD"), "ref: refs/heads/main\n");
+  }
+  const gr = C.gitDenyRules(fakeGit);
+  const want = [["config"], ["config.worktree"], ["hooks", "**"], ["worktrees", "a", "config.worktree"], ["worktrees", "a", "proteus-hooks", "**"],
+    ["modules", "sub", "config"], ["modules", "sub", "hooks", "**"], ["modules", "sub", "config.worktree"], ["modules", "sub", "modules", "inner", "config"],
+    ["modules", "sub", "modules", "inner", "hooks", "**"], ["modules", "lib", "deep", "config"], ["modules", "lib", "deep", "hooks", "**"]]
+    .map((s) => `${rule("Edit", path.join(fakeGit, ...s))})`);
+  ok("gitDenyRules: config, config.worktree and hooks for the git dir, each worktree and each submodule, nested too",
+    want.every((x) => gr.includes(x)) && !gr.some((x) => x.includes(path.join("modules", "lib") + "/config")), gr.join(" "));
+  ok("gitDenyRules: every rule exact or ending in /**", gr.every(linuxOk), gr.filter((x) => !linuxOk(x)).join(" "));
 
   // 3: the copy prepares only this repo's listed worktrees under .worktrees/
   const runCopy = (...a) => run(copy, "", { cwd: repo, args: a });
   g(repo, "worktree", "add", "-q", "-b", "w1", path.join(repo, ".worktrees", "w1"));
   const good = runCopy(path.join(repo, ".worktrees", "w1"), "src/**");
   ok("copy: prepares a listed worktree under .worktrees/", good.code === 0 && fs.existsSync(path.join(repo, ".worktrees", "w1", ".claude", "settings.local.json")), good.err + good.out);
+  ok("copy: sandbox-root.json names the profile", read(path.join(bin, "sandbox-root.json")).profile === file);
+  const w1Rules = [["config.worktree"], ["proteus-hooks", "**"]].map((s) => `${rule("Edit", path.join(dotGit, "worktrees", "w1", ...s))})`);
+  const after = (read(file).permissions || {}).deny || [];
+  ok("copy: preparing a new worktree adds its config.worktree and proteus-hooks denies to the profile",
+    !w1Rules.some((x) => deny.includes(x)) && w1Rules.every((x) => after.includes(x)) && deny.every((x) => after.includes(x)), after.filter((x) => x.includes("worktrees")).join(" "));
+  const again = runCopy(path.join(repo, ".worktrees", "w1"), "src/**");
+  const after2 = (read(file).permissions || {}).deny || [];
+  ok("copy: a re-run adds no rule twice", again.code === 0 && after2.length === after.length, again.err);
   const fake = path.join(TMP, "fake");
   fs.mkdirSync(fake);
   fs.writeFileSync(path.join(fake, ".git"), `gitdir: ${path.join(realRepo, ".git")}\n`);

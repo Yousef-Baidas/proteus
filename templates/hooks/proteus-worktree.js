@@ -39,9 +39,10 @@ const [wtArg, ...rest] = process.argv.slice(2);
 // <root>/.worktrees/, listed by `git worktree list`, its git dir and common dir the repo's, and nothing it writes
 // through a link. A plain run outside the sandbox that cannot write names the copy to run instead.
 const PIN = path.join(__dirname, "sandbox-root.json");
+let pin = null;
 if (fs.existsSync(PIN)) {
   let why;
-  try { why = sandboxRefusal(wtArg, JSON.parse(fs.readFileSync(PIN, "utf8"))); } catch (e) { why = `cannot read ${PIN} (${e.message})`; }
+  try { pin = JSON.parse(fs.readFileSync(PIN, "utf8")); why = sandboxRefusal(wtArg, pin); } catch (e) { why = `cannot read ${PIN} (${e.message})`; }
   if (why) {
     console.error(`proteus-worktree: refused: ${why}`);
     process.exitCode = 1;
@@ -187,6 +188,30 @@ if (work && work[1] !== "lead-docs") {
 }
 
 console.log(`worktree ${wt}: hooks + ${entries.length} owned paths${tier ? `, tier ${tier}${human ? " (human)" : ""}` : ""}`);
+if (pin) {
+  const err = guardProfile(pin);
+  if (err) {
+    console.error(`proteus-worktree: ${err}; run install.js --sandbox again outside the sandbox`);
+    process.exitCode = 1;
+  }
+}
+
+// the sandbox copy: the profile's Edit deny rules gain the git rules this worktree (and any submodule) now needs,
+// which the sandbox's denyWrite takes too; "" or why not. The profile is written only inside proteus-sandbox/,
+// never through a link
+function guardProfile(p) {
+  const C = require(path.join(__dirname, "proteus-confine.js"));
+  const home = path.dirname(path.dirname(__dirname)), file = String(p.profile || "");
+  if (!file || !C.inside(path.resolve(file), home)) return `sandbox-root.json names no profile inside ${home}`;
+  let cur;
+  try { cur = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { return `cannot read ${file} (${e.message})`; }
+  const perms = cur.permissions || (cur.permissions = {});
+  const deny = Array.isArray(perms.deny) ? perms.deny : (perms.deny = []);
+  const add = C.gitDenyRules(String(p.common)).filter((r) => !deny.includes(r));
+  if (!add.length) return "";
+  deny.push(...add);
+  return C.writeFile(file, JSON.stringify(cur, null, 2) + "\n", [home]) ? "" : `cannot add the deny rules to ${file}`;
+}
 
 // why the sandbox copy refuses arg ("" when it is a worktree of pin.root it may prepare); hoisted for the top
 function sandboxRefusal(arg, pin) {
