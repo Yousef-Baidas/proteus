@@ -4,8 +4,10 @@
   whose checks and statuses are all green, `proteus/verdict` among them, in dependency order, stopping on a
   conflict, and prints the commit to test with two commands for the lead to run sandboxed:
   `proteus-run-tree.js <sha>`, which checks that commit out in `.worktrees/_run`, a repo of its own reading the
-  project's objects, and the suite there, bare. With `--result pass|fail` it ends the batch or bisects a red
-  one, one printed step per call, to the first bad merge. It never runs the suite itself, runs no git with a
+  project's objects, and the suite there, bare. With `--result pass|fail --at <sha>` it ends the batch or
+  bisects a red one, one printed step per call, to the first bad merge; a result whose `--at` is not the commit
+  its state awaits, or with no `--at`, is refused and prints no sha, so a state an agent rewrites between calls
+  cannot collapse a bisect back to the tip. It never runs the suite itself, runs no git with a
   working tree, and removes no worktree or branch: on pass it names the merged branches gh reports merged, for
   the lead. `flow.md` step 7 uses it. Its
   git runs pinned to the project's common dir, as every hook's (#215). It checks its state file on every read,

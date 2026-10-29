@@ -219,7 +219,7 @@ function verdict(route, name, target, ran) {
   const tree = lib.run(path.join(SRC, "proteus-run-tree.js"), "", { cwd: R, args: [tip] });
   ok("proteus-run-tree.js filled _run with the tip", tree.code === 0 && fs.existsSync(path.join(RUN, "b.js")), tree.out + tree.err);
   // a red tip: --result fail with one merge names it
-  const red = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", "x", "--result", "fail"] });
+  const red = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", "x", "--result", "fail", "--at", tip] });
   ok("proteus-merge.js --result fail names the first bad merge", red.code === 1 && red.out.startsWith("run r1: suite red; first bad PR #10 for #1 "), red.out + red.err);
   ok("proteus-merge.js: no git call ran the plant in the PR's worktree, which stays", !fired("merge-wt") && fs.existsSync(WT));
   ok("proteus-merge.js left the lead's checkout where it was", g(R, "rev-parse", "HEAD") === lead && !fs.existsSync(path.join(R, "b.js")), res.out + res.err);

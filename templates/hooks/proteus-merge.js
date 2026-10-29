@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// The merge batch of flow.md step 7: node <hooks>/proteus-merge.js [run] --suite "<suite command>" [--result pass|fail]
+// The merge batch of flow.md step 7:
+// node <hooks>/proteus-merge.js [run] --suite "<suite command>" [--result pass|fail --at <sha>]
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
 // verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
@@ -9,8 +10,9 @@
 // no submodule, and runs no auto maintenance, whose worktree prune would follow a link an agent plants under
 // <common>/worktrees. It prints the commit to test and two commands for the lead to run sandboxed:
 // proteus-run-tree.js <sha>, which checks that commit out in .worktrees/_run, then the suite in _run, bare.
-// `--result pass|fail` reports that run: pass ends the batch, printing origin's tip for the lead's fast-forward only
-// when it is the commit the state names; fail on the tip starts a bisect over the batch's merges,
+// `--result pass|fail --at <sha>` reports that run on sha, refused unless sha is the commit the state names: pass ends
+// the batch, printing origin's tip for the lead's fast-forward only when it is that commit; fail on the tip starts a
+// bisect over the batch's merges,
 // each step printing the next commit and both commands again, until it names the first bad merge. The batch's state
 // between calls is <git-common-dir>/proteus/merge/<run>.json, which a sandboxed agent can write: every read checks
 // it, and the branch names the end prints come from the tracker, never from it. It removes no worktree and deletes
@@ -25,13 +27,14 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 // printed for the lead to run sandboxed, never run here
 const RUN_TREE = path.join(__dirname, "proteus-run-tree.js");
 
-const USAGE = "usage: node proteus-merge.js [run] --suite \"<suite command>\" [--result pass|fail]";
+const USAGE = "usage: node proteus-merge.js [run] --suite \"<suite command>\" [--result pass|fail --at <sha>]";
 const HELP = `${USAGE}
 Merges the ready PRs into proteus/<run> and prints the commands that test the result in .worktrees/_run:
   run       the run; defaults to the open proteus/<run> branch
   --suite   the full suite command (the gate commands in AGENTS.md ## Learned); printed, never run here
   --result  pass or fail: what the printed suite did in .worktrees/_run. Fail on the tip bisects the
             batch's merges, one printed step at a time, to the first bad one
+  --at      the full sha the suite ran on, as printed; a result for any other commit is refused
 A PR is ready when every check and status on its head is green and proteus/verdict is among them;
 it merges after the PRs of the tickets its own depends on; a conflict stops the batch. No worktree
 or branch is removed: the end names the merged branches left for the lead.
@@ -119,17 +122,20 @@ function mergeOrder(prs, open) {
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) { console.log(HELP); return 0; }
-  let arg = "", suite = "", result = "";
+  let arg = "", suite = "", result = "", at = "";
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--suite") suite = argv[++i] || "";
     else if (argv[i].startsWith("--suite=")) suite = argv[i].slice(8);
     else if (argv[i] === "--result") result = argv[++i] || "-";
     else if (argv[i].startsWith("--result=")) result = argv[i].slice(9) || "-";
+    else if (argv[i] === "--at") at = argv[++i] || "";
+    else if (argv[i].startsWith("--at=")) at = argv[i].slice(5);
     else if (!arg && !argv[i].startsWith("-")) arg = argv[i];
     else { console.error(`${USAGE}\nunknown argument ${plain(argv[i])} (--help explains them)`); return 2; }
   }
   if (!suite.trim()) { console.error(`${USAGE}\n--suite is required (--help explains it)`); return 2; }
   if (result && !["pass", "fail"].includes(result)) { console.error(`${USAGE}\n--result is pass or fail`); return 2; }
+  if (at && !result) { console.error(`${USAGE}\n--at goes with --result`); return 2; }
 
   // git runs on the project's common dir, pinned (#215), and never with a working tree (#226)
   const common = lib.repoCommon();
@@ -149,7 +155,7 @@ function main() {
 
   // the commands the lead runs from the project, sandboxed: _run filled with sha's tree, the suite there; then this
   // script's next call
-  const next = (sha) => `suite: run node ${fw(path.relative(root, RUN_TREE))} ${sha}, then in .worktrees/_run run ${suite}, both sandboxed; then node ${fw(path.relative(root, __filename))} ${run} --suite ${JSON.stringify(suite)} --result pass|fail`;
+  const next = (sha) => `suite: run node ${fw(path.relative(root, RUN_TREE))} ${sha}, then in .worktrees/_run run ${suite}, both sandboxed; then node ${fw(path.relative(root, __filename))} ${run} --suite ${JSON.stringify(suite)} --result pass|fail --at ${sha}`;
   // the merged branches whose worktree is left, each named as the tracker has it: a merged PR's head, a worker branch
   const leftFor = (st) => {
     const out = st.merged.filter((p) => p.head && st.left.includes(p.head)).flatMap((p) => {
@@ -186,6 +192,10 @@ function main() {
     try {
       const st = readState(common, run);
       if (!st) { console.error(`run ${plain(run)}: no batch awaits a result (run it without --result first)`); return 2; }
+      // the result is for the commit the lead tested, named by the lead: a state an agent rewrote between the print
+      // and the result (a bisect collapsed back to the tip, #226) names another, and is refused, printing no sha
+      if (!at) return fail("refused: --result needs --at <sha>, the commit the suite ran on, as printed");
+      if (at !== st.at) return fail("refused: --at is not the commit this batch awaits a result for (the state changed, or another step's sha); test the commit the last step printed");
       if (st.mid === null) {
         // the state is an agent's to write: the sha printed for the lead's fast-forward is origin's tip, never the state's
         if (result === "pass") {

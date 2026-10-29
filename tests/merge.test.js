@@ -74,7 +74,7 @@ function loop(s) {
     const t = tree(s.root, sha);
     if (t.code !== 0) return { steps, r: t, line: t.out.trim() };
     const pass = spawnSync(process.execPath, ["suite.js"], { cwd: RUN(s.root) }).status === 0;
-    r = s.merge("--result", pass ? "pass" : "fail");
+    r = s.merge("--result", pass ? "pass" : "fail", "--at", sha);
     steps++;
   }
   return { steps, r, line: r.out.trim() };
@@ -97,7 +97,7 @@ let s = setup("green", [
 ]);
 // the run branch's tip as origin has it
 const tipOf = (s) => g(s.W, "--git-dir", path.join(s.W, "origin.git"), "rev-parse", "refs/heads/proteus/r1");
-ok("green: one line naming the merges in dependency order, the run's tip and the two sandboxed commands, exit 0", s.r.code === 0 && s.line.startsWith("merged PR #40 for #4, PR #42 for #6, PR #41 for #5; suite: run node ") && stepSha(s.line) === tipOf(s) && s.line.endsWith(` r1 --suite ${JSON.stringify(NEVER)} --result pass|fail`), `${s.r.code} ${s.r.out} ${s.r.err}`);
+ok("green: one line naming the merges in dependency order, the run's tip and the two sandboxed commands, exit 0", s.r.code === 0 && s.line.startsWith("merged PR #40 for #4, PR #42 for #6, PR #41 for #5; suite: run node ") && stepSha(s.line) === tipOf(s) && s.line.endsWith(` r1 --suite ${JSON.stringify(NEVER)} --result pass|fail --at ${tipOf(s)}`), `${s.r.code} ${s.r.out} ${s.r.err}`);
 ok("green: origin has the three merges in that order", s.merges.slice(0, 3).join("|") === "Merge pull request #41 from o/proteus-work/r1/5|Merge pull request #42 from o/proteus-work/r1/6|Merge pull request #40 from o/proteus-work/r1/4", s.merges.join("|"));
 ok("green: the script leaves .worktrees/_run alone; the state names the tip", !fs.existsSync(RUN(s.root)) && JSON.parse(fs.readFileSync(STATE(s.root), "utf8")).at === tipOf(s));
 const again = s.merge();
@@ -206,7 +206,7 @@ for (let i = 0; i < 50; i++) {
   fs.writeFileSync(V, "# the human's login profile\n");
   fs.rmSync(STATE(s.root), { force: true });
   fs.writeFileSync(STATE(s.root), JSON.stringify(forged));
-  if (s.merge("--result", "pass").code === 0) raced++;
+  if (s.merge("--result", "pass", "--at", tip).code === 0) raced++;
 }
 rc.kill();
 ok("race: 50 forged bisect steps under a racing _run link each print a step", raced === 50, raced);
@@ -265,11 +265,11 @@ fs.writeFileSync(path.join(s.W, "gh.json"), JSON.stringify(fakeGh));
 const named = { ...good, merged: [{ n: 77, head: "proteus-work/r1/7", sha: good.head }, { n: 78, head: "proteus-work/r1/8", sha: good.head }, { n: 99, head: "proteus-work/r1/9", sha: good.head }, { n: 10, head: "proteus-work/r1/1", sha: good.head }], left: ["proteus-work/r1/7", "proteus-work/r1/8", "proteus-work/r1/9", "proteus-work/r1/1"] };
 fs.rmSync(STATE(s.root), { force: true });
 fs.writeFileSync(STATE(s.root), JSON.stringify(named));
-const pass = s.merge("--result", "pass");
+const pass = s.merge("--result", "pass", "--at", good.head);
 ok("forge: on pass only a MERGED PR's head that is a worker branch is named: not an open PR's, a non-worker head, or an unknown PR", pass.code === 0 && /^run r1: suite green at [0-9a-f]{40}; worktree and branch left for the lead: proteus-work\/r1\/1$/.test(pass.out.trim()), pass.out + pass.err);
 // control characters in what the lead typed never reach the output
 fs.writeFileSync(STATE(s.root), JSON.stringify({ ...forged, head: good.head, at: good.head, merged: forged.merged.map((p) => ({ ...p, sha: good.head })) }));
-const esc = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1", "--suite", `x ${ESC}`, "--result", "pass"] });
+const esc = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1", "--suite", `x ${ESC}`, "--result", "pass", "--at", good.head] });
 ok("forge: a control character in the suite is stripped from the output", !esc.out.includes("\u001b") && esc.out.includes("[31mINJECTED"), esc.out + esc.err);
 
 // the batch's state a link: never written through, made new (round 1 R4)
@@ -369,8 +369,28 @@ const agentHead = g(awt, "rev-parse", "HEAD");
 const fst = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
 fs.rmSync(STATE(s.root));
 fs.writeFileSync(STATE(s.root), JSON.stringify({ ...fst, head: agentHead, at: agentHead, merged: fst.merged.map((p, i) => (i === fst.merged.length - 1 ? { ...p, sha: agentHead } : p)) }));
-const fp = s.merge("--result", "pass");
+const fp = s.merge("--result", "pass", "--at", agentHead);
 ok("forgehead: a state naming a commit that is not origin's tip is refused on pass, exit 1, no sha printed, the state dropped", fp.code === 1 && !fp.out.includes(agentHead) && !/[0-9a-f]{40}/.test(fp.out) && fp.out.startsWith("run r1: refused: origin's run branch is not the commit the state names") && stateGone(s.root), `${fp.code} ${fp.out} ${fp.err}`);
+
+// #226 round 6: a forged state collapses a bisect back to the tip (mid null, at the head) after the lead tested the
+// mid commit; the result names the commit the lead tested, so it is refused and no sha printed (probe6 A)
+s = setup("collapse", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }, { t: 2, pr: 11, files: { "c.txt": "c\n" } }]);
+const redTip = stepSha(s.line);
+const bis = s.merge("--result", "fail", "--at", redTip);
+const mid = stepSha(bis.out);
+const cst = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
+const collapsed = { ...cst, mid: null, lo: undefined, hi: undefined, at: cst.head };
+fs.rmSync(STATE(s.root));
+fs.writeFileSync(STATE(s.root), JSON.stringify(collapsed));
+const cp = s.merge("--result", "pass", "--at", mid);
+ok("collapse: a bisect step reported on a state collapsed to the tip is refused, exit 1, no sha printed, the state left", bis.code === 0 && mid && mid !== redTip && cp.code === 1 && !/[0-9a-f]{40}/.test(cp.out) && cp.out.startsWith("run r1: refused: --at is not the commit this batch awaits") && fs.readFileSync(STATE(s.root), "utf8") === JSON.stringify(collapsed), `${bis.out} | ${cp.code} ${cp.out} ${cp.err}`);
+const noAt = s.merge("--result", "pass");
+ok("collapse: a result with no --at is refused, exit 1, no sha printed", noAt.code === 1 && !/[0-9a-f]{40}/.test(noAt.out) && noAt.out.startsWith("run r1: refused: --result needs --at"), `${noAt.code} ${noAt.out} ${noAt.err}`);
+
+// #226 round 6: a remote.origin.url that reads as an option never reaches git: --upload-pack would run its command
+const UPLOAD = path.join(lib.workdir("merge-upload"), "mark");
+s = setup("uploadpack", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root) => g(root, "config", "remote.origin.url", `--upload-pack=touch ${UPLOAD.split(path.sep).join("/")}`));
+ok("uploadpack: a remote.origin.url of --upload-pack=<cmd> refuses the batch, exit 1, nothing merged, the command never run", s.r.code === 1 && s.line === "run r1: cannot fetch origin/proteus/r1" && s.merges[0] === "init" && !fs.existsSync(UPLOAD), `${s.r.code} ${s.r.out} ${s.r.err} mark=${fs.existsSync(UPLOAD)}`);
 
 // #226 round 5: with no remote.origin.url in <common>/config the batch refuses; an agent's <common>/remotes/origin or
 // branches/origin is never read
