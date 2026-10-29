@@ -21,7 +21,11 @@
   The profile also denies the repo root's `.claude/hooks/` and `.claude/settings*.json` (the two settings files
   by exact path too) and `.git/proteus-lead/`, the lead's state the hooks write. `--sandbox` makes that dir
   first, mode 0700, and refuses a link or a file there. Hooks run `git diff` on a private copy of a worktree's
-  index, so swapping its dir under `.git/worktrees/` for a link cannot aim git's index rewrite elsewhere; an
-  index that is a link or not a regular file reports no changes known. A 1.x release checkout that is the repo
-  itself is no longer fetched or updated at session start, with one line saying so.
+  index, made under `.git/proteus-lead/`, so swapping its dir under `.git/worktrees/` for a link cannot aim
+  git's index rewrite elsewhere. An index that is a link, is not a regular file or is over 64 MB reports no
+  changes known. A 1.x release checkout that agents can write (the repo itself, or another place inside the
+  sandbox's write set) is never updated, moved to the plugin, synced or loaded from at session start. The
+  session-start hook runs outside the sandbox, so any of those would carry an agent's edits out of it. One line
+  says so and names `node <home>/install.js --update`, which you run from your own terminal; `--sandbox` warns
+  about such a home.
   docs/install.md has a "Sandboxed bypass" section with the residuals.
