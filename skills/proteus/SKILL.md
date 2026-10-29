@@ -57,7 +57,7 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 Each step's detail is its section in `flow.md`.
 
 0. **Bootstrap** to the `Ready` line of `bootstrap.md`: roster approved, the domain's mechanical gates installed. Not there → stop.
-1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human checks it is done, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions. Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, your preference does not.
+1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human checks it is done, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, your preference does not.
 2. **Tickets**: `/to-spec`, then `/to-tickets`, routed by `teams/ROUTING.md`, one owner per file in flight, milestones per `review.md`.
 3. **Contracts**: you decide each ticket's interface and check; a contracts worker per team commits them and shows the check red.
 4. **Dispatch** by the dependency graph on `build`, one worktree and PR per ticket into a protected `proteus/<run>`; start the stall watchdog.
