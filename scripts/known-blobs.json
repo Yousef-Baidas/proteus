@@ -710,6 +710,7 @@
       "7388b2ce82f6df77558b5bd016754940dbcac66f",
       "77898ca003ed9e65a49c73cec137b57f05a69001",
       "7cc3e6d93d180e428cd5311a170998e6e23af7ec",
+      "838167faad0a35b2ce4a68d57473cae4e7b99025",
       "909757b47ebe560532eb50abdf32b08f0c111122",
       "92c48c7cff720ea1a0f95fa3a86a436bc638f756",
       "9e3e5b94cef1d96f53a83f97a775dc4db1fe3e54",
@@ -723,7 +724,8 @@
     "templates/hooks/proteus-signoff.js": [
       "1d5a1920f954c2eeb75f2f7263cf5b4b6b37580c",
       "2e609df56dc710c35196481be324c90a191d6617",
-      "ec14d370f4b5d90f4ad67b05d77f25d827f2648d"
+      "ec14d370f4b5d90f4ad67b05d77f25d827f2648d",
+      "fbc6f1cf9cafe15c97b7c7ad8119fe09e856d4dc"
     ],
     "templates/hooks/proteus-skill-guard.js": [
       "c67a5df50947c9767397f6cd3c3123464265844d"
