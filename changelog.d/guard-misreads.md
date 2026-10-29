@@ -10,3 +10,7 @@
   HEAD, or after a `cd` the guard cannot follow, it is refused, naming `git push origin <branch>`.
 - A subagent's Monitor is no longer refused outright (#219): its command gets the checks a Bash call from that
   subagent gets and runs when they pass, so a worker can wait on a suite the harness moved to the background.
+- A subagent's Monitor only reads, since no after-call check sees what it writes: every command in it, loops
+  included, is tail, head, cat, grep, rg, wc, ls, ps, pgrep, sleep, test, `[`, true, false, echo, date or
+  `kill -0`, with no redirect to a file other than /dev/null; anything else is refused with "Monitor is
+  read-only for subagents; run writes with Bash".

@@ -27,7 +27,7 @@
 // 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, a Monitor command only where a Bash call would pass, no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
+//   no background Bash, a Monitor command only where a Bash call would pass and only reads (monitorDenial), no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
 //   through xargs, find -exec, git checkout/restore/apply/am/stash, patch, rm -r/mv/rsync of a parent). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
@@ -75,11 +75,11 @@ else lib.run((ev, ad) => {
   if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    // Monitor runs a shell command: judged as the agent's Bash call would be (#219)
+    // Monitor runs a shell command: read-only, and judged as the agent's Bash call would be (#219)
     const sev = ev.tool === "monitor" ? { ...ev, tool: "shell" } : ev;
-    const why = lib.workerDenial(sev) || unnamedSignoff(sev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(sev) || verifierGate(sev);
+    const why = (ev.tool === "monitor" && monitorDenial(ev.command)) || lib.workerDenial(sev) || unnamedSignoff(sev, ad) ||
+      (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(sev) || verifierGate(sev);
     if (why) ad.deny(why);
-    // no fingerprint for Monitor: no PostToolUse for it compares one
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
     return;
@@ -260,6 +260,29 @@ function containerDenial(ev) {
     if (!c.ladder.length) continue;
     const r = lib.rungOf(c.ladder, model, c.aliases), ok = [c.tiers.build, c.tiers.judge].map((t) => lib.rungOf(c.ladder, t.model, c.aliases));
     if (!ok.includes(r)) return `proteus-container.js run: --model "${model}" is neither the build tier's "${c.tiers.build.model}" (tickets) nor the judge tier's "${c.tiers.judge.model}" (an escalation).`;
+  }
+  return "";
+}
+
+// a subagent's Monitor (#219) gets no fingerprint (no PostToolUse runs for it), so it only reads: every simple command,
+// an if's or a while or until loop's parts included, is one of these, with no redirect to a file and no $( ) or
+// backticks as a program
+const MONITOR_MSG = "Monitor is read-only for subagents; run writes with Bash. A Monitor command runs only tail, head, cat, grep, rg, wc, ls, ps, pgrep, sleep, test, [, true, false, echo, date or kill -0, and redirects to /dev/null alone.";
+const MONITOR_READS = new Set(["tail", "head", "cat", "grep", "rg", "wc", "ls", "ps", "pgrep", "sleep", "test", "[", "true", "false", "echo", "date", "kill"]);
+const KEYWORDS = new Set(["if", "then", "else", "elif", "while", "until", "do", "!", "{", "("]);
+function monitorDenial(command) {
+  let cmds;
+  try { cmds = lib.shellCommands(command); } catch { return MONITOR_MSG; }
+  if (cmds.dynamic) return MONITOR_MSG;
+  for (const c of cmds) {
+    if ((c.redirects || []).some((t) => !/^(\/dev\/null|nul)$/i.test(t))) return MONITOR_MSG;
+    let i = 0;
+    while (i < c.length && KEYWORDS.has(c[i])) i++;
+    const w = c.slice(i);
+    if (!w.length || (w.length === 1 && /^(done|fi|\}|\))$/.test(w[0]))) continue;
+    const p = prog(w[0]);
+    if (!MONITOR_READS.has(p) || (p === "kill" && w[1] !== "-0")) return MONITOR_MSG;
+    if (p === "rg" && w.some((x) => /^--pre(=|$)/.test(x))) return MONITOR_MSG; // rg --pre runs a program on each file
   }
   return "";
 }

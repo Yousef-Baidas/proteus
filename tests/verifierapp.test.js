@@ -192,6 +192,9 @@ function tests(API) {
 
   b = [...bad((t, i) => lg(t, i, sub), names, KEYMSG), ...bad((t, i) => lg(t, i, sub), tokens, TOKMSG), ...bad(lg, names, KEYMSG), ...bad(lg, tokens, TOKMSG)];
   ok("lead guard: the same commands are refused from a subagent and from the lead", !b.length, b.join("\n"));
+  // #219: a subagent's Monitor that only reads still gets its Bash call's checks
+  r = lg("Monitor", { command: `tail -f ${JSON.stringify(slash(KEY))}` }, sub);
+  ok("lead guard: a subagent's read-only Monitor naming the key is refused as its Bash call is", r.code === 2 && KEYMSG.test(r.err), r.err);
   ok("lead guard: the lead's and a subagent's Read of the key are refused",
     [lg("Read", { file_path: KEY }), lg("Read", { file_path: KEY }, sub)].every((x) => x.code === 2 && KEYMSG.test(x.err)));
   if (POSIX) {
