@@ -42,6 +42,18 @@ for (const team of ["backend", "security"]) {
 }
 ok("conventions interview asks where the authorization module is", /^ {3}- authorization: the path of the one module/m.test(read("skills", "proteus", "references", "conventions.md")));
 
+// #195: the refactor checkpoint in flow.md step 1
+const flow = read("skills", "proteus", "references", "flow.md");
+const step1 = (/^## 1\. [\s\S]*?(?=^## 2\. )/m.exec(flow) || [""])[0];
+const checkpoint = (/^### Refactor checkpoint\n[\s\S]*/m.exec(step1) || [""])[0];
+ok("flow.md step 1 has the refactor checkpoint", checkpoint !== "", step1);
+ok("refactor checkpoint: Standard and Full only, Direct and Quick skip it", /Standard and Full only; Direct and Quick skip it/.test(checkpoint), checkpoint);
+ok("refactor checkpoint: a helper scans with the §10 skill, at most three candidates", /`helper`/.test(checkpoint) && /improve-codebase-architecture/.test(checkpoint) && /§10/.test(checkpoint) && /at most three refactor candidates/.test(checkpoint), checkpoint);
+ok("refactor checkpoint: no candidates, no question", /No candidates → no question/.test(checkpoint), checkpoint);
+ok("refactor checkpoint: one picker with refactor first, defer to debt, ignore", /one picker question with three options: \*\*refactor first\*\*[^\n]*prep milestone[^\n]*\*\*defer to debt\*\*[^\n]*debt issue[^\n]*\*\*ignore\*\*/.test(checkpoint), checkpoint);
+ok("refactor checkpoint: the answer is a run-log line", /run log as `refactor-checkpoint: <first\|defer\|ignore\|none>`/.test(checkpoint), checkpoint);
+ok("enforcement.md §10 points to the refactor checkpoint", /refactor checkpoint in `flow\.md` step 1/.test((/^## 10\. [\s\S]*?(?=^## 11\. )/m.exec(read("skills", "proteus", "references", "enforcement.md")) || [""])[0]));
+
 // the prose points to --help for the scripts' flags, so --help must explain them and exit 0
 const { spawnSync } = require("child_process");
 ok("SKILL.md points to the scripts' --help for their flags", /--help/.test(skill));

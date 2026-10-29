@@ -101,6 +101,8 @@ Required, `teams/devops/required.txt`. The scaffold or stabilise worker reads `t
 
 Required, `teams/qa/required.txt`. Per-ticket verifiers check a diff against its contract; nobody at that level sees what five merged tickets did to a module. So at every milestone the QA pass (`judge`) applies `thermo-nuclear-code-quality-review` to the milestone diff; its blockers are `WAVE-RED` tickets and the human gate stays shut until they merge. Per milestone, not per ticket: on a forty-line diff it demands rewrites the ticket never asked for and doubles the verifier bill. At close the same agent runs the scan phase of mattpocock `improve-codebase-architecture` and files at most five candidates on the last milestone's debt issue. Both are read from their `SKILL.md`; both are `disable-model-invocation`. Non-blocker findings go to the milestone's debt issue, where the human decides at close what becomes a run.
 
+The same scan also runs before the work, on the modules it touches: the refactor checkpoint in `flow.md` step 1.
+
 ## 11. Hooks
 
 `install.js --project` runs `install-lead-hooks.js`, which copies every hook to the project's hooks dir (`harnesses.md`) and registers the lead's set in `.claude/settings.local.json` (untracked, so a worker's worktree never inherits it); with `--harness codex`, `.codex/hooks/`, `.codex/hooks.json` and `.codex/rules/proteus.rules` (`harnesses.md`). The autostart re-syncs changed hooks from the Proteus checkout at every session start, so a hook fix reaches every project without reinstalling. All hooks fail open: an internal error never blocks the session.
