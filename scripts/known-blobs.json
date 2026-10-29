@@ -602,6 +602,7 @@
     "templates/hooks/proteus-merge.js": [
       "249d3993052f783984ccdde6b33c102f3462b6a9",
       "3ed6c76bac8c3ad4a106564e1792008ea4bc9bec",
+      "8fa9ceae1e1131255dd819a479d2c87d18ccc685",
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b"
     ],
     "templates/hooks/proteus-owned-check.js": [
