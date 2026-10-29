@@ -13,6 +13,10 @@ const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteu
 const HARNESS = path.join(__dirname, "proteus-harness.js");
 let adapter = null;
 const harness = () => (adapter && adapter.event ? adapter : (adapter = require(HARNESS)));
+// install.js --sandbox's copy of the hooks runs outside the sandbox (#188): pinProject fixes its project's main root
+// and common dir from sandbox-root.json, so the anchor, every state dir and the main root come from there, never
+// from a .git file, a commondir, the cwd or an event
+let pinned = null;
 
 // read the hook's stdin JSON, run main(Proteus event, adapter); any throw or rejection exits 0
 function run(main) {
@@ -31,7 +35,7 @@ function run(main) {
 }
 
 // the project dir: the event's, else the one the harness reports outside a hook
-const projectRoot = (ev) => (ev && ev.root) || harness().projectRoot({});
+const projectRoot = (ev) => (pinned && pinned.root) || (ev && ev.root) || harness().projectRoot({});
 
 // the checkout a script serves, wherever it is installed (a plugin cache too): the git root of dir (a hook's
 // cwd or root), else of the harness's project dir, else of the process cwd; else, last, the repo these
@@ -56,6 +60,7 @@ const isLead = (ev, root) => !ev.agent && !isLinked(root);
 // <git-common-dir>, absolute, from files only (never a git call, #215): a dir below a checkout root resolves
 // through that root. It follows a .git file and commondir, so it locates Proteus's state; repoCommon is what git runs on.
 function gitCommonDir(root) {
+  if (pinned) return checkoutAt(pinned.common, root) ? pinned.common : null;
   const dotgit = path.join(root, ".git");
   try {
     const st = fs.statSync(dotgit);
@@ -74,7 +79,7 @@ function gitCommonDir(root) {
 }
 
 // main checkout root: the common dir's parent when it is a .git dir (null for bare repos)
-const mainRoot = (common) => (common && path.basename(common) === ".git" ? path.dirname(common) : null);
+const mainRoot = (common) => (pinned && common === pinned.common ? pinned.root : common && path.basename(common) === ".git" ? path.dirname(common) : null);
 
 const stateDir = (common) => path.join(common, "proteus");
 // the scratch root proteus-scratch.js --path hands out; the edit guards let an agent write under it
@@ -617,6 +622,7 @@ function trustedCommon(dir) {
 // the project's common dir, from the harness's project dir (CLAUDE_PROJECT_DIR), never a shell's cwd
 const anchors = new Map();
 function anchorCommon() {
+  if (pinned) return pinned.common;
   const p = path.resolve(String(harness().projectRoot({}) || "."));
   if (!anchors.has(p)) anchors.set(p, trustedCommon(p));
   return anchors.get(p);
@@ -644,9 +650,12 @@ function repoCommon(dir) {
   const c = anchorCommon();
   return c && (!dir || checkoutAt(c, dir)) ? c : null;
 }
+// pin the project to root and common (from sandbox-root.json); a path outside its checkouts then has no common dir
+function pinProject(root, common) { pinned = { root: realOr(root), common: realOr(common) }; anchors.clear(); }
 // dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
-// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command
-const checkoutOf = (dir, root) => { const c = dir && (root ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
+// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command.
+// A pinned project ignores root
+const checkoutOf = (dir, root) => { const c = dir && (root && !pinned ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // a ref's commit from files (loose, then packed-refs), else git on the common dir (reftable)
@@ -2882,7 +2891,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,

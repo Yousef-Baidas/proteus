@@ -126,8 +126,9 @@ if (WIN) {
 
   // 3: the copy prepares only this repo's listed worktrees under .worktrees/
   const runCopy = (...a) => run(copy, "", { cwd: repo, args: a });
-  g(repo, "worktree", "add", "-q", "-b", "w1", path.join(repo, ".worktrees", "w1"));
-  const good = runCopy(path.join(repo, ".worktrees", "w1"), "src/**");
+  const w1 = path.join(repo, ".worktrees", "w1");
+  g(repo, "worktree", "add", "-q", "-b", "w1", w1);
+  const good = runCopy(w1, "src/**");
   ok("copy: prepares a listed worktree under .worktrees/", good.code === 0 && fs.existsSync(path.join(repo, ".worktrees", "w1", ".claude", "settings.local.json")), good.err + good.out);
   ok("copy: sandbox-root.json names the profile", read(path.join(bin, "sandbox-root.json")).profile === file);
   const w1Rules = [["config.worktree"], ["proteus-hooks", "**"]].map((s) => `${rule("Edit", path.join(dotGit, "worktrees", "w1", ...s))})`);
@@ -148,7 +149,7 @@ if (WIN) {
   fs.mkdirSync(planted);
   fs.writeFileSync(path.join(planted, ".git"), `gitdir: ${path.join(realRepo, ".git", "worktrees", "w1")}\n`);
   const esc3 = runCopy(planted, "src/**");
-  ok("copy: refuses a dir under .worktrees/ git does not list", esc3.code === 1 && /worktree list/.test(esc3.err) && !fs.existsSync(path.join(planted, ".claude")), esc3.err);
+  ok("copy: refuses a dir under .worktrees/ the repo does not register", esc3.code === 1 && /registers/.test(esc3.err) && !fs.existsSync(path.join(planted, ".claude")), esc3.err);
   const away = path.join(W, "work", "away");
   g(repo, "worktree", "add", "-q", "-b", "away", away);
   const esc4 = runCopy(away, "src/**");
@@ -159,6 +160,46 @@ if (WIN) {
   fs.symlinkSync(victim, path.join(w2, ".claude"));
   const esc5 = runCopy(w2, "src/**");
   ok("copy: refuses a worktree whose .claude is a link", esc5.code === 1 && /link/.test(esc5.err) && !files(victim).length, esc5.err);
+
+  // the copy's main root and state dir come from sandbox-root.json: a worktree's planted .git file and commondir,
+  // the cwd and CLAUDE_PROJECT_DIR move neither
+  const w3 = path.join(repo, ".worktrees", "w3"), evil = path.join(w3, "evil");
+  g(repo, "worktree", "add", "-q", "-b", "w3", w3);
+  ok("copy: prepares w3", runCopy(w3, "src/**").code === 0);
+  fs.mkdirSync(path.join(evil, "gd"), { recursive: true });
+  fs.mkdirSync(path.join(evil, "common", "info"), { recursive: true });
+  fs.writeFileSync(path.join(evil, "gd", "commondir"), "../common\n");
+  fs.writeFileSync(path.join(w3, ".git"), `gitdir: ${path.join(evil, "gd")}\n`);
+  fs.writeFileSync(path.join(dotGit, "worktrees", "w3", "commondir"), path.join(evil, "common") + "\n");
+  const plantEnv = { env: { CLAUDE_PROJECT_DIR: evil } };
+  const pa = run(copy, "", { cwd: w3, args: [w3, "--allow", "force-push"], ...plantEnv });
+  ok("copy: a planted .git file and commondir leave --allow's state in the repo's <common>/proteus",
+    pa.code === 0 && files(path.join(dotGit, "proteus", "allow")).some((f) => f.startsWith("w3-")) && !fs.existsSync(path.join(evil, "common", "proteus")), pa.err + pa.out);
+  const pp = run(copy, "", { cwd: w3, args: [w3, "src/**"], ...plantEnv });
+  ok("copy: ... and preparing writes the repo's info/exclude and git dir, none of the planted ones",
+    pp.code === 0 && !files(path.join(evil, "common", "info")).length && !fs.existsSync(path.join(evil, "gd", "proteus-hooks"))
+      && fs.existsSync(path.join(dotGit, "worktrees", "w3", "proteus-hooks", "pre-commit")), pp.err + pp.out);
+  const probe = `const l = require(${JSON.stringify(path.join(bin, "proteus-lib.js"))}); const p = require(${JSON.stringify(path.join(bin, "sandbox-root.json"))});
+l.pinProject(p.root, p.common); const c = l.gitCommonDir(${JSON.stringify(w3)});
+console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), project: l.projectRoot({}), git: l.repoCommon(${JSON.stringify(w3)}), out: l.gitCommonDir(${JSON.stringify(fake)}) }));`;
+  let seen = {};
+  try { seen = JSON.parse(require("child_process").execFileSync(process.execPath, ["-e", probe], { cwd: evil, env: { ...process.env, CLAUDE_PROJECT_DIR: evil }, encoding: "utf8" })); } catch {}
+  ok("pinned lib: the common dir, state dir, main root and project root are sandbox-root.json's despite the plants",
+    seen.c === dotGit && seen.state === path.join(dotGit, "proteus") && seen.main === realRepo && seen.project === realRepo && seen.git === dotGit, JSON.stringify(seen));
+  ok("pinned lib: a dir outside the pinned repo has no common dir, whatever its .git file says", seen.out === null, JSON.stringify(seen));
+
+  // a copy with no sandbox-root.json, or an unreadable one, refuses rather than falling back
+  const bare = path.join(W, "cfg2", "proteus-sandbox", "bin", "deadbeef");
+  fs.mkdirSync(bare, { recursive: true });
+  for (const f of files(bin)) if (f !== "sandbox-root.json") fs.copyFileSync(path.join(bin, f), path.join(bare, f));
+  fs.rmSync(path.join(w1, ".claude", "proteus-owned"));
+  const nopin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [path.join(repo, ".worktrees", "w1"), "src/**"] });
+  ok("copy: no sandbox-root.json refuses and writes nothing", nopin.code === 1 && /sandbox-root\.json/.test(nopin.err) && !fs.existsSync(path.join(w1, ".claude", "proteus-owned")), nopin.err + nopin.out);
+  const noallow = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "--allow", "force-push"] });
+  ok("copy: no sandbox-root.json refuses --allow too", noallow.code === 1 && /sandbox-root\.json/.test(noallow.err), noallow.err);
+  fs.writeFileSync(path.join(bare, "sandbox-root.json"), "{not json");
+  const badpin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "src/**"] });
+  ok("copy: an unreadable sandbox-root.json refuses", badpin.code === 1 && /sandbox-root\.json/.test(badpin.err) && !fs.existsSync(path.join(w1, ".claude", "proteus-owned")), badpin.err);
 
   // agentGh set: the human's gh dir still unreadable, the agents' own readable; the profile is rewritten in place
   const agent = path.join(HOME, ".config", "gh-proteus");
