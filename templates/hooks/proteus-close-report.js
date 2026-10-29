@@ -56,9 +56,7 @@ const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state",
 if (!Array.isArray(issues)) { console.error(`run ${run}: tracker unreachable (gh issue list failed)`); process.exit(1); }
 const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "all", "--json", `number,headRefName,body,reviews,comments${save ? ",statusCheckRollup" : ""}`, "--limit", "500"], root, 30000)) || [];
 const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", `number,title,createdAt${save ? ",comments" : ""}`, "--limit", "100"], root, 10000)) || [];
-if (save) {
-  try { fs.writeFileSync(save, JSON.stringify({ run, issues, prs, logs }) + "\n"); } catch (e) { console.error(`cannot write ${save}: ${e.message}`); process.exit(1); }
-}
+if (save) saveTracker(save);
 
 const tickets = lib.runTickets(issues, run, names);
 const ticketOf = (pr) => lib.prTicket(pr, run, names);
@@ -115,6 +113,11 @@ const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const c = costLine(closed);
 out.push("", `Run: ${rows.length} tickets, ${closed} closed · bounce rate ${all.bounce} (${count(rows.reduce((s, r) => s + r.bounces, 0), "bounce")}) · escalation rate ${all.escalation} (${count(rows.reduce((s, r) => s + r.escalations, 0), "escalation")}) · median wall-clock ${all.wall} · ${c}`);
 console.log(out.join("\n"));
+
+// --save: what the tracker gave, for proteus-retro.js, at the path the retro helper names (its scratch dir)
+function saveTracker(file) {
+  try { fs.writeFileSync(file, JSON.stringify({ run, issues, prs, logs }) + "\n"); } catch (e) { console.error(`cannot write ${file}: ${e.message}`); process.exit(1); }
+}
 
 // the sessions this run's lead had: journal entries (session ids of human messages) inside the run's window
 function runSessions() {
