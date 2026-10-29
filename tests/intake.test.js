@@ -46,12 +46,12 @@ const cs = issues()[5].comments;
 ok("two sources: two posts succeed, each printing the comment URL", pa.code === 0 && pb.code === 0 && /issuecomment-1/.test(pa.out) && /issuecomment-2/.test(pb.out), pa.err + pb.err);
 ok("two sources: exactly two comments on the intake issue", cs.length === 2, JSON.stringify(cs));
 const first = cs[0] && cs[0].body;
-ok("template: header, source, channel and length", /^## Intake: Sandboxes for agents\nSource: https:\/\/youtu\.be\/aaaaaaaaaaa\nChannel: Chan A · Length: 36:16\n/.test(first), first);
+ok("template: header, source, channel and length", String(first).startsWith("## Intake: Sandboxes for agents\nSource: https://youtu.be/aaaaaaaaaaa\nChannel: Chan A · Length: 36:16\n"), first);
 ok("template: summary, findings with timestamp and themes, quotes",
   /\n### Summary\n- Runs each agent in a microVM\.\n- Credentials go through a proxy\.\n- Clone mode keeps changes on a branch\.\n/.test(first) &&
   /\n### Findings\n- 02:40-03:50 \[4\] Agent runs in a container inside a microVM\.\n- 12:46 \[4,2\] Review a clone's branch/.test(first) &&
-  /\n### Quotes\n- 35:44 "I don't write any AI code unless it's inside of a sandbox"\n$/.test(first), first);
-ok("template: the second comment has its own source and no quotes section", /^## Intake: Kill your memory\nSource: https:\/\/youtube\.com\/shorts\/bbbbbbbbbbb\n/.test(cs[1].body) && !/### Quotes/.test(cs[1].body), cs[1].body);
+  String(first).endsWith("\n### Quotes\n- 35:44 \"I don't write any AI code unless it's inside of a sandbox\"\n"), first);
+ok("template: the second comment has its own source and no quotes section", cs[1].body.startsWith("## Intake: Kill your memory\nSource: https://youtube.com/shorts/bbbbbbbbbbb\n") && !/### Quotes/.test(cs[1].body), cs[1].body);
 
 // a transcript line that reads like an instruction appears only as data
 const second = cs[1].body, lines = second.split("\n");
