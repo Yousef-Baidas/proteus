@@ -501,6 +501,7 @@ const ALLOW = {
   "proteus-harness-codex.js:sandboxRoots": "the checkout's .codex/config.toml, written by install.js",
   "proteus-harness-codex.js:prepareWorker": "a worker worktree's .codex/hooks, before the worker runs",
   "proteus-harness-codex.js:exportEnv": "the checkout's .codex/config.toml, written by install.js",
+  "proteus-close-report.js:saveTracker": "--save's tracker data for proteus-retro.js, at the path the retro helper names",
   "proteus-scan.js:main": "the scan's own output dir and its temp HEAD copy, run by a gate command",
   "proteus-worktree.js:head": "a worker worktree's files, run by the lead before the worker starts",
   "proteus-worktree.js:installPreCommit": "a worker worktree's hook, run by the lead before the worker starts",

@@ -187,6 +187,24 @@ function runBranches(common) {
   return refs.filter((b) => !isWork(b) && !refs.some((a) => a !== b && b.startsWith(a + "-")));
 }
 
+// a run's tracker as the close report and the retro read it (#193): its tickets among `gh issue list` (a milestone under
+// the run; no revision, review, log, debt or question issue), a PR's ticket, its run-log issue, and a comment's verdict
+function runTickets(issues, run, names = CURRENT) {
+  const not = new Set([names.review, names.log, names.debt, names.question]);
+  return (issues || []).filter((i) => i && i.milestone && String(i.milestone.title).startsWith(run + "/") && !String(i.title || "").startsWith("Revision ") &&
+    !(i.labels || []).some((l) => not.has(l.name))).sort((a, b) => a.number - b.number);
+}
+// a PR's ticket: the number its head ends in (proteus-work/<run>/<id>, or <run>-<id> before the rename), else Closes #n
+function prTicket(pr, run, names = CURRENT) {
+  const head = String((pr && pr.headRefName) || "");
+  const pre = [`${CURRENT.work}${run}/`, `${names.branch}${run}-`].find((p) => head.startsWith(p));
+  const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec((pr && pr.body) || "");
+  return m ? +m[1] : 0;
+}
+const runLogOf = (logs, run) => (logs || []).find((l) => new RegExp(`(^|[\\s:])${run.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`).test(String((l && l.title) || "")));
+const VERDICT_WORDS = { bounce: /^\s*(\*\*)?BACK-TO-WORKER\b/, escalation: /^\s*(\*\*)?(RED|CONTRACT-WRONG)\b/ };
+const verdictIs = (kind) => (c) => VERDICT_WORDS[kind].test(String((c && c.body) || ""));
+
 function readJSON(file, dflt) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return dflt; }
 }
@@ -3338,7 +3356,7 @@ module.exports = {
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
-  CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
+  CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
