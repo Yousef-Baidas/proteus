@@ -515,7 +515,12 @@
       "dbe5b73aae9a94b9d2c480a17aeb0fc0c28624a4",
       "e7dc427ff79208729041c1c9a69683f2e66396c4"
     ],
+    "templates/hooks/proteus-intake-coverage.js": [
+      "0df9353d589cb1182716c5788279868fa26ba639",
+      "6cee88d3e4acb8a51a9ed7dad4a9cf16b47bcddc"
+    ],
     "templates/hooks/proteus-intake.js": [
+      "b88191ee085a69294e34cb230299931a7c0e8111",
       "e535047ffa36c3cc56b90df036adaa4f3650bcfb"
     ],
     "templates/hooks/proteus-journal.js": [
