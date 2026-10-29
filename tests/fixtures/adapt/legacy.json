@@ -4,8 +4,10 @@
   "doctor": { "ok": ["teams/ROUTING.md", "shipped teams fit this repo"], "absent": ["fits nothing here"] },
   "gates": null,
   "tier": [
-    { "changes": [["src/cart.js", 1]], "tier": "standard", "security": false },
-    { "changes": [["package.json", 2]], "tier": "standard", "security": true }
+    { "changes": [["src/cart.js", 1]], "tier": "standard", "security": false, "threatModel": false },
+    { "changes": [["package.json", 2]], "tier": "standard", "security": true, "threatModel": true },
+    { "changes": [["src/routes/login.js", 8]], "tier": "standard", "security": true, "threatModel": true },
+    { "changes": [["src/auth/roles.js", 8], ["src/cart.js", 3]], "tier": "full", "security": true, "threatModel": true }
   ],
   "ceremony": { "kind": "baseline", "gate": "test", "command": ["test/run.js"] },
   "gaps": {

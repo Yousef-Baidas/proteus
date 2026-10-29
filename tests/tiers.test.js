@@ -59,7 +59,7 @@ const REPO = path.join(W, "repo");
 g(W, "init", "-q", "-b", "main", REPO);
 const put = (dir, file, text) => { fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); fs.writeFileSync(path.join(dir, file), text); };
 const lines = (n) => Array.from({ length: n }, (_, i) => `line ${i}`).join("\n") + "\n";
-put(REPO, "teams/ROUTING.md", block("teams/**  direct\ndocs/**  direct  lines=5\n**/auth/**  full"));
+put(REPO, "teams/ROUTING.md", block("teams/**  direct\ndocs/**  direct  lines=5\n**/auth/**  full") + "\n```security\n**/login*.*\n```\n");
 put(REPO, "docs/a.md", "a\n"); put(REPO, "src/x.ts", "x\n");
 g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "init");
 g(REPO, "remote", "add", "origin", BARE); g(REPO, "push", "-q", "-u", "origin", "main"); g(REPO, "remote", "set-head", "origin", "main");
@@ -69,6 +69,12 @@ let r = tier(REPO, ["docs/a.md", "./docs/b.md"]);
 ok("lead: planned docs paths print direct and the rule", r.code === 0 && r.out.startsWith("direct\n  docs/a.md, docs/b.md: direct (docs/**)"), r.out + r.err);
 r = tier(path.join(REPO, "docs"), ["src/auth/x.ts", "docs/a.md"]);
 ok("lead: from a subdirectory the repo's ROUTING.md still applies; a full path wins", r.code === 0 && r.out.startsWith("full\n"), r.out + r.err);
+r = tier(REPO, ["src/login.ts"]);
+ok("lead: a security path names gate (g)", r.code === 0 && r.out.startsWith("standard\n") && r.out.endsWith("\nthreat model: gate (g) applies (security path src/login.ts (**/login*.*))\n"), r.out + r.err);
+r = tier(REPO, ["src/auth/x.ts"]);
+ok("lead: a full tier names gate (g)", r.code === 0 && r.out.endsWith("\nthreat model: gate (g) applies (tier full)\n"), r.out + r.err);
+r = tier(REPO, ["src/x.ts", "docs/a.md"]);
+ok("lead: a plain path prints no threat model line", r.code === 0 && r.out.startsWith("standard\n") && !/threat model/.test(r.out), r.out + r.err);
 ok("lead: no path is a usage error", tier(REPO, []).code === 2 && tier(REPO, ["--nope"]).code === 2);
 
 // the Direct worktree: the batch branch from main, prepared with --tier direct

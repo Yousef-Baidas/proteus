@@ -728,7 +728,8 @@
     "templates/hooks/proteus-tier.js": [
       "40a694e6265d904da1bafa982d8b449b3cbcf4c7",
       "6a461c893d24e0a8193011ca86298403661ebc9a",
-      "b13912db9982ed1bdda51de7adfec4cb27fbb011"
+      "b13912db9982ed1bdda51de7adfec4cb27fbb011",
+      "b2dbfe792cb64223e64f8129729cd6e0f2d65abb"
     ],
     "templates/hooks/proteus-verdict.js": [
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",
