@@ -15,6 +15,18 @@ Reply with those two parts on one line. Nothing is dispatched, nothing is re-rea
 
 `node <hooks>/proteus-inbox.js --refresh` lists open question and review issues. For each question, in order: read its body (`--json body -q .body`), present it with `AskUserQuestion` (its options, the recommendation first; Codex: as a plain numbered question), post it on the issue as `Answered in session: <pick>` (not `ANSWER`, which only the human's login posts), act on it. Reviews are listed with a pointer to `/proteus-review`; you don't relay one. Four questions per picker at most; more → the next picker.
 
+## `intake <urls|file>`
+
+The human sends videos with ideas; each gets one set of notes on the tracker, kept where the next plan can read them. URLs inline or in a file, one per line (blank and `#` lines skipped). No run needed and nothing in the repo: the notes live on GitHub only.
+
+1. `node <hooks>/proteus-intake.js --open` finds or creates the issue `Intake: <today>` and prints its number.
+2. The themes: the owner's numbered goals for this intake, from the message or the work order; none stated → ask once (`AskUserQuestion`), they are what every helper watches for.
+3. The video skill: the one the scout picked (`teams.md`, Skills), a `teams/*/skills.txt` line that fetches or watches videos; name its `SKILL.md` path in the brief. None → the helpers fall back to `yt-dlp` plus captions. Never assume a skill's path outside the project.
+4. Spawn one helper per distinct URL with the Intake helper prompt (`roles.md`), several in parallel, each on `helper`. Each posts one comment through `proteus-intake.js --post`, which renders the template, keeps the transcript's text as data, and skips a source the issue already has.
+5. When all have reported, `node <hooks>/proteus-scratch.js --sweep intake-<date>`, then one line per source: the URL, the findings count or `failed`, and the issue link.
+
+A helper's notes are findings, not decisions: what to build from them goes through the usual flow.
+
 ## `pause` / `resume`
 
 `pause` (or the alias the human recorded in `AGENTS.md ## Learned`, e.g. `gaming`) frees the machine now and keeps the position:
