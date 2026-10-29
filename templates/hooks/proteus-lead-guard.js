@@ -170,7 +170,7 @@ function runsContainer(command, depth = 0) {
       // node -e / --require naming it
       if (interp && /proteus-container/.test(w[i]) && /^(-e|--eval|-p|--print|-r|--require|--import)$/.test(w[i - 1])) return true;
       if (SHELLS.test(p) && depth < 3) { const c = w.findIndex((x, j) => j > i && /^(-[a-z]*c[a-z]*|-command|\/c)$/i.test(x)); if (c > 0 && runsContainer(w.slice(c + 1).join(" "), depth + 1)) return true; }
-      if (!(LAUNCH.has(p) || /^[A-Za-z_]\w*=/.test(w[i]) || (i > 0 && /^-/.test(w[i])) || /^\d+$/.test(w[i]))) lead = false;
+      if (!(LAUNCH.has(p) || /^[A-Za-z_]\w*=/.test(w[i]) || (i > 0 && w[i].startsWith("-")) || /^\d+$/.test(w[i]))) lead = false;
     }
     return false;
   });
