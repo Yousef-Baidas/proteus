@@ -699,6 +699,9 @@
       "2e609df56dc710c35196481be324c90a191d6617",
       "ec14d370f4b5d90f4ad67b05d77f25d827f2648d"
     ],
+    "templates/hooks/proteus-skill-guard.js": [
+      "c67a5df50947c9767397f6cd3c3123464265844d"
+    ],
     "templates/hooks/proteus-skillpath.js": [
       "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"
     ],
