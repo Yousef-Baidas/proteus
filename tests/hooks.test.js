@@ -269,7 +269,7 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   fs.mkdirSync(RB); g(RB, "init", "-q", "-b", "main"); fs.writeFileSync(path.join(RB, "a.txt"), "a\n"); g(RB, "add", "-A"); g(RB, "commit", "-qm", "init");
   g(RB, "branch", "proteus/rb");
   g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/1", WA, "proteus/rb"); g(RB, "worktree", "add", "-q", "-b", "proteus-work/rb/2", WB, "proteus/rb");
-  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"] });
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"] });
   const inA = path.join(WA, "src", "lighting", "a.ts"), inB = path.join(WB, "src", "lighting", "a.ts"), rec = (id) => { try { return fs.readFileSync(path.join(RB, ".git", "proteus", "agents", `agent-${id}`), "utf8").trim(); } catch { return ""; } };
   const ed = (id, file, cwd = RB) => run(LG, pre("Edit", { file_path: file }, { agent_id: id, agent_type: "proteus-worker", cwd, transcript_path: undefined }), { cwd: RB });
   r = ed("c1", inB, WA);
@@ -326,7 +326,7 @@ ok("guard sub: outside any repo allowed", run(LG, sp("Write", { file_path: path.
   const codexAd = require(path.join(SRC, "proteus-harness-codex.js"));
   ok("codex adapter: briefText is empty", codexAd.briefText({ agent: "d6", raw: { transcript_path: ST, session_id: "s1", agent_id: "d6" } }) === "");
   said("d6", job(WA));
-  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
+  for (const wt of [WA, WB]) run(hook("proteus-worktree.js"), "", { cwd: RB, args: [wt, "src/lighting/"], env: { PROTEUS_HARNESS: "codex" } }); // .codex/proteus-owned
   const cpatch = (file) => ({ command: `*** Begin Patch\n*** Update File: ${file}\n@@\n-a\n+b\n*** End Patch` });
   const cx = (id, file) => run(LG, pre("apply_patch", cpatch(file), { agent_id: id, agent_type: "proteus-worker", cwd: RB, transcript_path: ST }), { cwd: RB, env: { PROTEUS_HARNESS: "codex", PROTEUS_PROJECT_DIR: RB } });
   ok("codex guard: a subagent's first edit binds it, brief or not", cx("d6", inB).code === 0 && rec("d6") === WB);
