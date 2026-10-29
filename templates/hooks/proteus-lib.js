@@ -5,7 +5,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync, spawnSync } = require("child_process");
+const { execFile, execFileSync, spawnSync } = require("child_process");
 const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
@@ -53,7 +53,8 @@ function isLinked(root) {
 // lead = main thread of the main checkout; everything else (subagents, worker worktrees) is a worker
 const isLead = (ev, root) => !ev.agent && !isLinked(root);
 
-// <git-common-dir>, absolute. Pure fs for the usual layouts, git only as a fallback.
+// <git-common-dir>, absolute, from files only (never a git call, #215): a dir below a checkout root resolves
+// through that root. It follows a .git file and commondir, so it locates Proteus's state; repoCommon is what git runs on.
 function gitCommonDir(root) {
   const dotgit = path.join(root, ".git");
   try {
@@ -66,11 +67,10 @@ function gitCommonDir(root) {
       try { cd = fs.readFileSync(path.join(gd, "commondir"), "utf8").trim(); } catch {}
       return cd ? path.resolve(gd, cd) : gd;
     }
+    return null;
   } catch {}
-  try {
-    const out = execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000, windowsHide: true }).trim();
-    return out ? path.resolve(root, out) : null;
-  } catch { return null; }
+  const up = gitRoot(root);
+  return up && up !== path.resolve(root) ? gitCommonDir(up) : null;
 }
 
 // main checkout root: the common dir's parent when it is a .git dir (null for bare repos)
@@ -481,7 +481,7 @@ const plannedTier = (block, paths) => classifyTier(block, paths.map((p) => ({ pa
 // ceiling), else the working copy. Guest mode keeps teams/ outside git (docRoot), so it reads the guest dir's copy.
 const ROUTING_FILE = "teams/ROUTING.md";
 function routingText(root, ref) {
-  const at = ref ? git(["show", `${ref}:${ROUTING_FILE}`], root, 10000) : "";
+  const at = ref ? git(["show", `${ownRev(ref, root)}:${ROUTING_FILE}`], root, 10000) : "";
   if (at) return at;
   const dir = ref ? guestDir(root) : docRoot(root);
   try { return dir ? fs.readFileSync(path.join(dir, ROUTING_FILE), "utf8") : ""; } catch { return ""; }
@@ -544,10 +544,176 @@ function redact(text) {
 
 const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windowsHide: true, stdio: ["ignore", "pipe", "ignore"], env });
 
-// git / gh with a hard timeout; "" on any failure (not installed, no auth, no remote, offline)
-function git(args, cwd, timeout = 3000) {
-  try { return execFileSync("git", args, execOpts(cwd, timeout)).trim(); } catch { return ""; }
+// ---- git outside the sandbox (#215). The hooks run git with the human's rights, on repo state a sandboxed command
+// can write: <common>/commondir, a worktree's .git file, its gitdir's commondir and config.worktree. Each can hand git
+// a config that runs a program (core.fsmonitor, a clean filter). So every hook git call runs through gitRun: GIT_DIR
+// and GIT_COMMON_DIR pinned to one common dir, no system or global config, fsmonitor, hooks and the untracked cache
+// off. git then reads <common>/config and <common>/config.worktree only, which the sandbox profile denies. A linked
+// worktree's HEAD is read as a file under <common>/worktrees/<id>; its working tree through its index (treeChanges).
+const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
+const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false"];
+const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
+const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
+// o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)
+function gitEnv(gitDir, o = {}) {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) if (GIT_REPO_ENV.test(k) || (!o.user && GIT_USER_ENV.test(k))) delete env[k];
+  Object.assign(env, { GIT_DIR: gitDir, GIT_COMMON_DIR: gitDir });
+  if (!o.user) Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: NULL_DEVICE });
+  if (o.workTree) env.GIT_WORK_TREE = o.workTree;
+  if (o.index) env.GIT_INDEX_FILE = o.index;
+  return env;
 }
+// the human's own core.excludesFile, the one key read from the global config, so untracked files it ignores stay ignored
+let excludes;
+function userExcludes(gitDir) {
+  if (excludes !== undefined) return excludes;
+  excludes = "";
+  try { excludes = execFileSync("git", [...GIT_SAFE, "config", "--global", "--get", "core.excludesFile"], { ...execOpts(gitDir, 3000, gitEnv(gitDir, { user: true })) }).trim(); } catch {}
+  return excludes;
+}
+// [argv, options] for git in gitDir. o: cwd (default gitDir), workTree, index, user, timeout, encoding, input, stdio
+function gitCall(gitDir, args, o = {}) {
+  const pre = [...GIT_SAFE];
+  if (o.workTree && !o.user && userExcludes(gitDir)) pre.push("-c", `core.excludesFile=${userExcludes(gitDir)}`);
+  return [[...pre, ...args], { cwd: o.cwd || gitDir, encoding: "encoding" in o ? o.encoding : "utf8", timeout: o.timeout || 3000, maxBuffer: 64 << 20,
+    windowsHide: true, input: o.input, stdio: o.stdio || [o.input === undefined ? "ignore" : "pipe", "pipe", "ignore"], env: gitEnv(gitDir, o) }];
+}
+// git's stdout; throws as execFileSync does
+const gitRun = (gitDir, args, o) => execFileSync("git", ...gitCall(gitDir, args, o));
+// trimmed stdout, "" on any failure (no git dir, not installed, no remote, offline)
+function gitIn(gitDir, args, timeout = 3000, o = {}) {
+  if (!gitDir) return "";
+  try { return String(gitRun(gitDir, args, { ...o, timeout })).trim(); } catch { return ""; }
+}
+// stdout, or null when git fails
+const gitAsync = (gitDir, args, o = {}) => new Promise((resolve) => {
+  if (!gitDir) return resolve(null);
+  try { execFile("git", ...gitCall(gitDir, args, { timeout: 5000, ...o }), (err, out) => resolve(err ? null : out)); } catch { resolve(null); }
+});
+// git on dir's repo (repoCommon); "" on any failure. Revisions and refs only: no working tree, and HEAD is the main checkout's
+const git = (args, dir, timeout = 3000) => gitIn(repoCommon(dir), args, timeout);
+
+// a checkout root's main checkout, by its path alone: <main>/.worktrees/<id>, <p>/<name>-proteus/<id> (Proteus 1.1),
+// <main>/.claude/worktrees/<n> (Claude Code's), else the root itself
+function mainCandidates(root) {
+  const up = path.dirname(root), up2 = path.dirname(up), name = path.basename(up);
+  const out = [];
+  if (name === CURRENT.worktrees) out.push(up2);
+  if (name.endsWith(OLD_WORKTREES) && name.length > OLD_WORKTREES.length) out.push(path.join(up2, name.slice(0, -OLD_WORKTREES.length)));
+  if (name === "worktrees" && path.basename(up2) === ".claude") out.push(path.dirname(up2));
+  return [...out, root];
+}
+const realGitDir = (r) => { try { const p = path.join(r, ".git"); return fs.lstatSync(p).isDirectory() ? fs.realpathSync(p) : null; } catch { return null; } };
+// the common dir git runs on for the checkout holding dir: the realpath of <main>/.git, a real directory, never reached
+// through a .git file or commondir. A layout none of mainCandidates matches falls back to gitCommonDir (a residual).
+function trustedCommon(dir) {
+  const root = dir && gitRoot(path.resolve(dir));
+  if (!root) return null;
+  for (const m of mainCandidates(root)) { const c = realGitDir(m); if (c) return c; }
+  const c = gitCommonDir(root);
+  return c ? realOr(c) : null;
+}
+// the project's common dir, from the harness's project dir (CLAUDE_PROJECT_DIR), never a shell's cwd
+const anchors = new Map();
+function anchorCommon() {
+  const p = path.resolve(String(harness().projectRoot({}) || "."));
+  if (!anchors.has(p)) anchors.set(p, trustedCommon(p));
+  return anchors.get(p);
+}
+// dir's checkout of the repo whose common dir is common: { common, root, gitDir, index, headFile }, the innermost
+// registered worktree holding dir, else the main checkout; null when neither holds it
+function checkoutAt(common, dir) {
+  const at = realOr(path.resolve(dir));
+  let best = null;
+  let ids = [];
+  try { ids = fs.readdirSync(path.join(common, "worktrees")); } catch {}
+  for (const id of ids) {
+    const gd = path.join(common, "worktrees", id);
+    let wt;
+    try { wt = realOr(path.dirname(path.resolve(gd, fs.readFileSync(path.join(gd, "gitdir"), "utf8").trim()))); } catch { continue; }
+    if (relPath(wt, at) !== null && (!best || wt.length > best.root.length)) best = { root: wt, gitDir: gd };
+  }
+  const main = mainRoot(common);
+  if (!best && main && relPath(realOr(main), at) !== null) best = { root: realOr(main), gitDir: common };
+  return best && { common, ...best, index: path.join(best.gitDir, "index"), headFile: path.join(best.gitDir, "HEAD") };
+}
+// the common dir git runs on for dir: the project's when dir is in one of its checkouts, else null (no checkout).
+// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215)
+function repoCommon(dir) {
+  const c = anchorCommon();
+  return c && (!dir || checkoutAt(c, dir)) ? c : null;
+}
+// dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
+// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command
+const checkoutOf = (dir, root) => { const c = dir && (root ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
+
+const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+// a ref's commit from files (loose, then packed-refs), else git on the common dir (reftable)
+function refSha(common, ref) {
+  if (!/^refs\/[^\s\\]+$/.test(ref) || ref.split("/").some((s) => s === "." || s === "..")) return "";
+  try { const s = fs.readFileSync(path.join(common, ...ref.split("/")), "utf8").trim(); if (SHA.test(s)) return s; } catch {}
+  try {
+    const esc = ref.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const p = new RegExp(`^([0-9a-f]{40,64}) ${esc}\\r?$`, "m").exec(fs.readFileSync(path.join(common, "packed-refs"), "utf8"));
+    if (p) return p[1];
+  } catch {}
+  return gitIn(common, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
+}
+// a checkout's HEAD, read as a plain file: { ref, sha }; a link, a non-file or anything unparsed reads as {}
+function headInfo(co) {
+  try {
+    const st = co && fs.lstatSync(co.headFile);
+    if (!st || !st.isFile() || st.size > 4096) return {};
+    const t = fs.readFileSync(co.headFile, "utf8").trim();
+    const m = /^ref:\s*(refs\/\S+)$/.exec(t);
+    if (m) return { ref: m[1], sha: refSha(co.common, m[1]) };
+    return SHA.test(t) ? { sha: t } : {};
+  } catch { return {}; }
+}
+// the commit checked out in dir's checkout, "" when unknown or unborn
+const headOf = (dir, root) => headInfo(checkoutOf(dir, root)).sha || "";
+// the branch checked out in dir's checkout, "" when detached or unknown
+const branchOf = (dir, root) => { const m = /^refs\/heads\/(.+)$/.exec(headInfo(checkoutOf(dir, root)).ref || ""); return m ? m[1] : ""; };
+// rev with a leading HEAD or @ read as dir's own HEAD: git runs on the common dir, whose HEAD is the main checkout's
+function ownRev(rev, dir) {
+  const m = /^(?:HEAD|@)(?=$|[~^:])/.exec(String(rev));
+  if (!m) return rev;
+  const sha = headOf(dir);
+  return sha ? sha + String(rev).slice(m[0].length) : rev;
+}
+
+// what dir's checkout changed against its HEAD, as porcelain-like lines (" M path", "?? path"): tracked files by git
+// diff, untracked by ls-files -o, git reading the common config and the checkout's own index only. specs: pathspecs
+// relative to the checkout root; ignored: untracked ignored files too, one per file; else untracked dirs collapse.
+// null when git fails or dir is in no checkout
+function changeCalls(co, specs, ignored) {
+  const sha = headInfo(co).sha;
+  const o = { cwd: co.root, workTree: co.root, index: co.index, timeout: 10000 };
+  return [[sha ? ["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", sha, "--", ...specs] : ["ls-files", "-z", "--", ...specs], " M ", o],
+    [["ls-files", "-o", "-z", ...(ignored ? [] : ["--exclude-standard", "--directory", "--no-empty-directory"]), "--", ...specs], "?? ", o]];
+}
+const changeLines = (outs, calls) => (outs.some((x) => x === null) ? null : outs.flatMap((out, i) => String(out).split("\0").filter(Boolean).map((p) => calls[i][1] + p)));
+function treeChanges(dir, specs = [], ignored = false) {
+  const co = checkoutOf(dir);
+  if (!co) return null;
+  const calls = changeCalls(co, specs, ignored);
+  return changeLines(calls.map(([args, , o]) => { try { return String(gitRun(co.common, args, o)); } catch { return null; } }), calls);
+}
+async function treeChangesAsync(dir, specs = [], ignored = false) {
+  const co = checkoutOf(dir);
+  if (!co) return null;
+  const calls = changeCalls(co, specs, ignored);
+  return changeLines(await Promise.all(calls.map(([args, , o]) => gitAsync(co.common, args, o))), calls);
+}
+// a release home's git dir: a bare clone's own dir, else its checkout's (trustedCommon)
+function homeGitDir(home) {
+  try {
+    if (!fs.existsSync(path.join(home, ".git")) && fs.lstatSync(home).isDirectory() && fs.existsSync(path.join(home, "HEAD")) && fs.existsSync(path.join(home, "objects"))) return fs.realpathSync(home);
+  } catch {}
+  return trustedCommon(home);
+}
+const homeGit = (home, args, timeout = 3000, o = {}) => gitIn(homeGitDir(home), args, timeout, o);
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
 // The autostart (autoUpdate) and install.js --update share these.
@@ -561,7 +727,7 @@ function newerThan(a, b) {
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
   return false;
 }
-const releaseTags = (home, ...filter) => git(["-C", home, "tag", "-l", ...filter, "v*"], home).split("\n").filter((t) => RELEASE.test(t));
+const releaseTags = (home, ...filter) => homeGit(home, ["tag", "-l", ...filter, "v*"]).split("\n").filter((t) => RELEASE.test(t));
 const newest = (tags) => tags.reduce((m, t) => (newerThan(t, m) ? t : m), "");
 
 // { current, tag, ahead }: current is the newest release in HEAD's history ("" when none), tag the
@@ -569,7 +735,7 @@ const newest = (tags) => tags.reduce((m, t) => (newerThan(t, m) ? t : m), "");
 function release(home) {
   const current = newest(releaseTags(home, "--merged", "HEAD"));
   const tag = newest(releaseTags(home, "--no-merged", "HEAD").filter((t) => newerThan(t, current)));
-  const ahead = tag ? parseInt(git(["-C", home, "rev-list", "--count", `HEAD..refs/tags/${tag}`], home), 10) || 0 : 0;
+  const ahead = tag ? parseInt(homeGit(home, ["rev-list", "--count", `HEAD..refs/tags/${tag}`]), 10) || 0 : 0;
   return { current, tag, ahead };
 }
 
@@ -578,20 +744,22 @@ function release(home) {
 // plugin's release check (proteus-autostart.js) verifies tags in a bare clone, which has no checkout to move
 function verifyRelease(home, tag, ff = true) {
   const no = (error) => ({ commit: "", error });
-  const obj = RELEASE.test(tag) ? git(["-C", home, "rev-parse", "--verify", "--quiet", `refs/tags/${tag}`], home) : "";
+  const gd = homeGitDir(home);
+  const obj = RELEASE.test(tag) ? gitIn(gd, ["rev-parse", "--verify", "--quiet", `refs/tags/${tag}`]) : "";
   if (!obj) return no(`${tag} is not a release tag here`);
-  if (git(["-C", home, "cat-file", "-t", obj], home) !== "tag") return no(`${tag} is a lightweight tag, so it carries no signature`);
+  if (gitIn(gd, ["cat-file", "-t", obj]) !== "tag") return no(`${tag} is a lightweight tag, so it carries no signature`);
   // a signed tag published again under a newer name still names its own version inside
-  const header = git(["-C", home, "cat-file", "tag", obj], home).split("\n\n")[0];
+  const header = gitIn(gd, ["cat-file", "tag", obj]).split("\n\n")[0];
   if (!header.split("\n").includes(`tag ${tag}`)) return no(`${tag} points at a tag object made for another name`);
   if (ff && !releaseTags(home, "--contains", "HEAD").includes(tag)) return no(`${tag} does not contain this checkout's HEAD (local commits?), so it is no fast-forward`);
   try {
-    execFileSync("git", ["-C", home, "verify-tag", obj], { encoding: "utf8", timeout: 10000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    // the trust is the human's own config (gpg.ssh.allowedSignersFile, gpg.program), so it keeps theirs
+    gitRun(gd, ["verify-tag", obj], { user: true, timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) {
     const last = String(e.stderr || "").split("\n").map((l) => l.trim()).filter(Boolean).pop() || "git verify-tag failed";
     return no(`git verify-tag ${tag}: ${last.replace(/^error: /, "").replace(/\.$/, "").slice(0, 200)}`);
   }
-  const commit = git(["-C", home, "rev-parse", `${obj}^{commit}`], home);
+  const commit = gitIn(gd, ["rev-parse", `${obj}^{commit}`]);
   return commit ? { commit, error: "" } : no(`${tag} does not resolve to a commit`);
 }
 
@@ -599,7 +767,7 @@ function verifyRelease(home, tag, ff = true) {
 function changelog(home, commit, from, to, max = 8) {
   const out = [];
   let on = false;
-  for (const l of git(["-C", home, "show", `${commit}:CHANGELOG.md`], home).split(/\r?\n/)) {
+  for (const l of homeGit(home, ["show", `${commit}:CHANGELOG.md`]).split(/\r?\n/)) {
     if (/^#{1,2}\s/.test(l)) {
       const h = l.match(/^##\s+\[?(v?\d+\.\d+\.\d+)\]?/);
       on = !!h && newerThan(h[1], from) && !newerThan(h[1], to);
@@ -1349,7 +1517,7 @@ function pushDenial(words, cwd, extra) {
     else if (!a.startsWith("-")) pos.push(a);
   }
   const g = (...a) => git(a, dir);
-  const cur = g("symbolic-ref", "-q", "--short", "HEAD");
+  const cur = branchOf(dir);
   const remote = pos[0] || (cur && g("config", "--get", `branch.${cur}.remote`)) || "origin";
   let specs = pos.slice(1);
   if (!specs.length && !del) {
@@ -1841,16 +2009,52 @@ function restoreDenial(sub, args, dir, ev) {
   let hit = hits([...paths, ...specs]);
   if (!hit.length) return null;
   // without --, a first word naming a commit is the source and the rest are paths
-  if (sub === "checkout" && dash < 0 && pos.length && git(["rev-parse", "-q", "--verify", `${pos[0]}^{tree}`], dir)) {
+  if (sub === "checkout" && dash < 0 && pos.length && git(["rev-parse", "-q", "--verify", `${ownRev(pos[0], dir)}^{tree}`], dir)) {
     source = pos[0];
     paths = pos.slice(1);
     hit = hits([...paths, ...specs]);
     if (!hit.length) return null;
   }
   if (source === null || /^(?:HEAD|@)$/.test(source)) return null;
-  const rel = git(["diff", "--name-only", source, "--", ...hit], dir).split("\n").find((r) => r && keyIn(AGENT_NEVER, r));
+  const rel = sourceDiffers(ownRev(source, dir), hit, dir).find((r) => keyIn(AGENT_NEVER, r));
   return rel ? AGENT_MSG.write(`git ${sub} ${source}`, rel) : null;
 }
+
+// the paths under hits (absolute) that checking out source would change in dir's checkout, relative to its root:
+// each file source holds whose bytes on disk differ, and each one the index tracks that source lacks. No git diff
+// or status (#215): source's blobs are compared with the files' bytes, so a file git would call clean through a
+// line-ending or clean filter counts as changed (fail-closed). Every hit's path when git cannot read source.
+function sourceDiffers(source, hits, dir) {
+  const co = checkoutOf(dir);
+  if (!co) return [];
+  const rels = hits.map((h) => relPath(co.root, h) ?? relPath(co.root, realOr(h))).filter((r) => r !== null);
+  if (!rels.length) return [];
+  const specs = rels.map((r) => `:(literal)${r || "."}`);
+  const o = { cwd: co.root, workTree: co.root, index: co.index, timeout: 10000 };
+  let tree, tracked;
+  try {
+    tree = String(gitRun(co.common, ["ls-tree", "-r", "--full-tree", "-z", source, "--", ...specs], o));
+    tracked = String(gitRun(co.common, ["ls-files", "-z", "--", ...specs], o));
+  } catch { return rels; }
+  const out = [], inTree = new Set();
+  for (const rec of tree.split("\0")) {
+    const m = /^(\d+) (\w+) ([0-9a-f]+)\t([\s\S]+)$/.exec(rec);
+    if (!m) continue;
+    inTree.add(m[4]);
+    if (m[2] !== "blob") continue;
+    const abs = path.join(co.root, ...m[4].split("/"));
+    let bytes = null;
+    try {
+      const st = fs.lstatSync(abs);
+      if (m[1] === "120000" ? st.isSymbolicLink() : st.isFile()) bytes = m[1] === "120000" ? Buffer.from(fs.readlinkSync(abs)) : fs.readFileSync(abs);
+    } catch {}
+    if (!bytes || blobId(bytes, m[3].length) !== m[3]) out.push(m[4]);
+  }
+  for (const p of tracked.split("\0")) if (p && !inTree.has(p)) out.push(p);
+  return out;
+}
+// git's object id of a blob holding bytes: sha1, or sha256 for a 64-hex repo
+const blobId = (bytes, len) => require("crypto").createHash(len === 64 ? "sha256" : "sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 
 // git stash pop / apply: the paths the stash holds (tracked changes and untracked files)
 function stashDenial(how, args, dir) {
@@ -1966,7 +2170,7 @@ function pathspecDenial(sub, args, dir, ev) {
     const sp = specPath(p, dir, root);
     const rel = sp && sp[0] && writeRel(sp[0], sp[1], ev);
     // a bare word naming a commit (git reset HEAD~1) is no pathspec
-    if (rel && !(post.includes(p) || !git(["rev-parse", "-q", "--verify", `${p}^{commit}`], dir))) continue;
+    if (rel && !(post.includes(p) || !git(["rev-parse", "-q", "--verify", `${ownRev(p, dir)}^{commit}`], dir))) continue;
     if (rel) return AGENT_MSG.write(`git ${sub} ${p}`, rel);
   }
   return null;
@@ -2613,7 +2817,7 @@ function releaseCheck(root, notes, plugin, data) {
   if (!res && failed && prev.result) res = prev.result;
   if (!res) {
     if (!fs.existsSync(path.join(bare, "HEAD"))) return;
-    if (trust) git(["-C", bare, "config", "gpg.ssh.allowedSignersFile", signers], bare);
+    if (trust) homeGit(bare, ["config", "gpg.ssh.allowedSignersFile", signers]);
     res = verifyInstalled(bare, sha);
   }
   const keep = Object.keys(by).filter((k) => k !== sha).slice(-15);
@@ -2639,9 +2843,11 @@ function installedSha(root, plugin) {
 // fetches url's tags (and their commits) into the bare clone; "" when it worked, else git's one-line reason
 function fetchTags(bare, url) {
   try {
-    if (!fs.existsSync(path.join(bare, "HEAD"))) execFileSync("git", ["init", "--quiet", "--bare", bare], { timeout: 10000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
-    execFileSync("git", ["-C", bare, "fetch", "--quiet", "--force", "--prune", "--no-tags", url, "+refs/tags/*:refs/tags/*"],
-      { timeout: 20000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    const gd = path.resolve(bare);
+    if (!fs.existsSync(path.join(gd, "HEAD"))) gitRun(gd, ["init", "--quiet", "--bare", gd], { cwd: os.tmpdir(), timeout: 10000, stdio: ["ignore", "ignore", "pipe"] });
+    // a fetch keeps the human's global config: their credentials and proxy
+    const [args, o] = gitCall(gd, ["fetch", "--quiet", "--force", "--prune", "--no-tags", url, "+refs/tags/*:refs/tags/*"], { user: true, timeout: 20000, stdio: ["ignore", "ignore", "pipe"] });
+    execFileSync("git", args, { ...o, env: { ...o.env, GIT_TERMINAL_PROMPT: "0" } });
     return "";
   } catch (e) {
     return String(e.stderr || e.message || "").trim().split(/\r?\n/).pop().replace(/^fatal: /, "").slice(0, 200) || "git failed";
@@ -2651,7 +2857,7 @@ function fetchTags(bare, url) {
 // { tag, newest, error }: tag the release pointing at sha that verifies ("" when none), newest the newest verified
 // release (at most 10 tried), error why sha is not a verified release
 function verifyInstalled(bare, sha) {
-  const refs = git(["-C", bare, "for-each-ref", "refs/tags", "--format=%(refname:short) %(objectname) %(*objectname)"], bare)
+  const refs = homeGit(bare, ["for-each-ref", "refs/tags", "--format=%(refname:short) %(objectname) %(*objectname)"])
     .split("\n").map((l) => l.trim().split(" ")).filter(([t]) => RELEASE.test(t || ""));
   refs.sort((a, b) => (newerThan(a[0], b[0]) ? -1 : newerThan(b[0], a[0]) ? 1 : 0));
   const at = refs.filter(([, o, c]) => (c || o || "").startsWith(sha) || (sha.length === 40 && (c || o) === sha));
@@ -2676,6 +2882,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, trustedCommon, repoCommon, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
