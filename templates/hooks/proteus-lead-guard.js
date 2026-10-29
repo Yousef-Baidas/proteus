@@ -6,7 +6,8 @@
 //    owned-path records (.proteus/owned/<id>).
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
-//    floor (Sonnet by default, so Haiku) is refused.
+//    floor (Sonnet by default, so Haiku) is refused. So is a `proteus-container.js run` (the lead's shell)
+//    without --model, or with one that is not the build or judge tier's (containerDenial).
 // 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
 //    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
 //    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
@@ -85,7 +86,7 @@ else lib.run((ev, ad) => {
     const secret = lib.secretDenial(ev);
     if (secret) ad.deny(secret);
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
-    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
+    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
     if (why) ad.deny(why);
     return shellCheck("leadStart", ev);
   }
@@ -144,6 +145,31 @@ function modelDenial(c, name) {
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;
   if (r < c.floor) return `model "${name}" is under the floor (${c.floorName}); it does not produce or review work: ${use}.`;
+  return "";
+}
+
+// rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
+// (an escalation), on the ladder as an Agent call's model would be
+function containerDenial(ev) {
+  if (!/proteus-container/.test(ev.command)) return "";
+  let cmds = [];
+  try { cmds = lib.shellCommands(ev.command); } catch {}
+  for (const w of cmds) {
+    const i = w.findIndex((x) => /(^|[\\/])proteus-container\.js$/.test(x));
+    if (i < 0 || w[i + 1] !== "run") continue;
+    let model = "";
+    for (let j = i + 2; j < w.length; j++) {
+      if (w[j] === "--model") model = w[j + 1] || "";
+      else if (w[j].startsWith("--model=")) model = w[j].slice(8);
+    }
+    const c = lib.modelCaps(ev, lib.projectRoot(ev));
+    if (!model) return `proteus-container.js run needs --model <the build tier's model${c.tiers.build.model ? `, "${c.tiers.build.model}"` : ""}>.`;
+    const why = modelDenial(c, model);
+    if (why) return `proteus-container.js run: ${why}`;
+    if (!c.ladder.length) continue;
+    const r = lib.rungOf(c.ladder, model, c.aliases), ok = [c.tiers.build, c.tiers.judge].map((t) => lib.rungOf(c.ladder, t.model, c.aliases));
+    if (!ok.includes(r)) return `proteus-container.js run: --model "${model}" is neither the build tier's "${c.tiers.build.model}" (tickets) nor the judge tier's "${c.tiers.judge.model}" (an escalation).`;
+  }
   return "";
 }
 

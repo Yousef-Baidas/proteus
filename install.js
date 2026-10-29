@@ -2302,8 +2302,9 @@ function sandboxProfile(root, common, bin, scratch, guest) {
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   // the copy of proteus-worktree.js that adds a new submodule's deny rules to this profile runs outside the sandbox,
   // matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
-  const copy = path.join(bin, "proteus-worktree.js");
-  const excluded = [...new Set([`node ${copy} *`, `node ${q(copy)} *`])];
+  // and so does the copy of proteus-container.js (#80): docker or podman cannot run inside the native sandbox
+  const copy = path.join(bin, "proteus-worktree.js"), box = path.join(bin, "proteus-container.js");
+  const excluded = [...new Set([copy, box].flatMap((c) => [`node ${c} *`, `node ${q(c)} *`]))];
   const dir = (s) => s.endsWith("/");
   const bare = (s) => s.replace(/\/$/, "");
   const readRule = (s) => (s.startsWith("~/") ? `Read(${bare(s)}${dir(s) ? "/**" : ""})` : slashRule("Read", dir(s) ? path.join(bare(s), "**") : s));
@@ -2491,7 +2492,7 @@ function sandbox() {
   sandboxStatusLine(root, bin, mine);
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   log(`sandbox  -> ${file}`);
-  log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
+  log(`sandbox  -> ${bin} (proteus-worktree.js, proteus-container.js and their hooks, run outside the sandbox for this repo's worktrees only)`);
   log(`sandbox  -> ${scratch} (scratch dir sandboxed commands may write)`);
   if (guest) log(`sandbox  -> ${guest} (guest dir sandboxed commands may write)`);
   // a plugin whose files sandboxed commands can write (claude --plugin-dir <root>, a directory source in a sandboxed
@@ -2507,6 +2508,7 @@ function sandbox() {
   log("Start Claude Code in the repo root with the profile (your own settings files are untouched):");
   log(`  claude --settings ${q(file)} --permission-mode bypassPermissions`);
   log(`In that session prepare a worktree with the in-repo proteus-worktree.js <worktree> ..., then add any new submodule's deny rules with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree>`);
+  log(`With \`isolation: container\` in AGENTS.md, run container workers through: node ${q(path.join(bin, "proteus-container.js"))} run ...`);
   log("Run the review session (/proteus-review) without it. Run --sandbox again after moving the repo or updating Proteus.");
   return true;
 }

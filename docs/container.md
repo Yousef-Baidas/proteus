@@ -29,6 +29,12 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - `result.json` (Claude's JSON output) and `status.json` stay in `<git-common-dir>/proteus/scratch/container-<id>/out`. The bundles are removed.
 - Exit 0: imported, or nothing to import. Exit 1: refused or failed, with the reason on stderr. Exit 2: usage.
 
+## Using it in a run
+
+- Opt in with a line in `AGENTS.md`: `isolation: container`. The lead then runs each worker through `proteus-container.js run` instead of the Agent tool; verifiers stay Agent spawns.
+- Credential: `claude setup-token` prints a long-lived token; export it as `CLAUDE_CODE_OAUTH_TOKEN` in the shell that starts the lead.
+- At session start the autostart runs `node .claude/hooks/proteus-container.js doctor` (the `--sandbox` bin copy when there is one). `proteus-state` then shows `isolation=container`, or `isolation=container-unready` with the failed row, and the lead dispatches no worker until it passes.
+
 ## Residuals
 
 - No egress allowlist: the network is open unless `--network` is given.

@@ -211,6 +211,26 @@ const spawn = (model, tp, opts) => run(LG, pre("Agent", { ...(model && { model }
   fs.writeFileSync(path.join(MH, ".claude", "proteus.json"), JSON.stringify({ models: { ladder: ["sonnet", "opus", "fable"], floor: "sonnet", solo: [] } }));
   ok("ladder: machine config replaces ladder and solo", spawn("fable", TF, { env: lib.homeEnv(MH) }).code === 0 && /not on the ladder \(sonnet < opus < fable\)/.test(spawn("haiku", TF, { env: lib.homeEnv(MH) }).err));
 }
+// container workers (#80): the lead's proteus-container.js run carries the build tier's model, or the judge's
+{
+  const TO = withModel("claude-opus-5-5"), TF = withModel("claude-fable-5-1");
+  const box = (args, tp = TO) => run(LG, pre("Bash", { command: `node .claude/hooks/proteus-container.js ${args}`, run_in_background: true }, { transcript_path: tp }));
+  const brief = "--worktree .worktrees/7 --prompt-file brief-7.md --agent proteus-worker --ticket 7 --base proteus/r1";
+  r = box(`run ${brief}`);
+  ok("container: a run without --model refused, naming the build model", r.code === 2 && /proteus-container\.js run needs --model <the build tier's model, "sonnet">/.test(r.err), r.err);
+  r = box(`run ${brief} --model haiku`);
+  ok("container: a run under the floor refused", r.code === 2 && /under the floor \(sonnet\)/.test(r.err), r.err);
+  r = box(`run ${brief} --model fable`, TF);
+  ok("container: a solo model refused", r.code === 2 && /fable runs once per project/.test(r.err), r.err);
+  ok("container: the build model and a judge escalation allowed, --model=<id> too", box(`run ${brief} --model sonnet`).code === 0 && box(`run ${brief} --model opus`).code === 0 &&
+    run(LG, pre("Bash", { command: `cd /r && node "/x y/proteus-container.js" run --model=claude-sonnet-5-5 ${brief}` }, { transcript_path: TO })).code === 0);
+  ok("container: doctor and build need no --model", box("doctor").code === 0 && box("build").code === 0);
+  const AG = path.join(REPO, "AGENTS.md"), agBefore = fs.readFileSync(AG, "utf8");
+  fs.writeFileSync(AG, agBefore + "models: build=opus\n");
+  r = box(`run ${brief} --model sonnet`, TF);
+  ok("container: a ladder model that is neither the build nor the judge tier's refused", r.code === 2 && /--model "sonnet" is neither the build tier's "opus"/.test(r.err), r.err);
+  fs.writeFileSync(AG, agBefore);
+}
 // image reads: lead denied unless the human's latest prompt names the file
 const hu = (text, extra = {}) => JSON.stringify({ type: "user", message: { role: "user", content: text }, ...extra });
 const TIMG = tr("img.jsonl", [hu("check render_0042.png please", { origin: { kind: "human" }, promptSource: "typed" }), asst(5000),
@@ -561,6 +581,24 @@ r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { s
 ok("ladder: guard falls back to the model SessionStart saved", r.code === 2 && /above the lead \(claude-sonnet-5-5\)/.test(r.err) && run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" })).code === 0, r.err);
 ok("autostart: models= for a sonnet lead, and unknown", /models=lead:sonnet,judge:sonnet,build:sonnet,helper:sonnet/.test(run(AS, { source: "startup", cwd: REPO, model: { id: "claude-sonnet-5-5", display_name: "Sonnet 5.5" } }).out) &&
   /models=lead:unknown,judge:opus,build:sonnet,helper:sonnet/.test(run(AS, { source: "startup", cwd: REPO }).out));
+// isolation: container (#80): the state line says whether proteus-container.js doctor passes; the sandbox's bin copy runs when present
+{
+  const AG = path.join(REPO, "AGENTS.md"), agBefore = fs.readFileSync(AG, "utf8");
+  const sbin = path.join(HOME, ".claude", "proteus-sandbox", "bin", require("crypto").createHash("sha256").update(fs.realpathSync(path.join(REPO, ".git"))).digest("hex").slice(0, 8));
+  const doctor = (body) => { fs.mkdirSync(sbin, { recursive: true }); fs.writeFileSync(path.join(sbin, "proteus-container.js"), body); };
+  const state = () => { const out = run(AS, { source: "startup", cwd: REPO }).out; return { out, line: out.split("\n").find((l) => l.startsWith("proteus-state")) || "" }; };
+  doctor("process.exit(0);\n");
+  ok("autostart: no isolation= without the AGENTS.md line", !/isolation=/.test(state().line));
+  fs.writeFileSync(AG, agBefore + "isolation: container\n");
+  let st = state();
+  ok("autostart: isolation=container when the bin copy's doctor passes", / isolation=container( |$)/.test(st.line) && !/doctor fails/.test(st.out), st.line);
+  doctor("console.log(\"ok    runtime podman\\nFIX   credential: set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY\"); process.exit(1);\n");
+  st = state();
+  ok("autostart: isolation=container-unready when doctor fails, with a note naming the failed row", / isolation=container-unready( |$)/.test(st.line) &&
+    st.out.includes(`isolation: container is set, but node ${path.join(sbin, "proteus-container.js")} doctor fails: credential: set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY. No worker runs until it passes`), st.out.slice(0, 1500));
+  fs.writeFileSync(AG, agBefore);
+  fs.rmSync(sbin, { recursive: true, force: true });
+}
 r = run(AS, { source: "startup", cwd: REPO });
 ok("autostart: quiet when nothing to sync", !/synced/.test(r.out));
 r = run(AS, { source: "compact", cwd: REPO });
