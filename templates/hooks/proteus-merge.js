@@ -68,9 +68,11 @@ function main() {
   }
   if (!suite.trim()) { console.error(`${USAGE}\n--suite is required (--help explains it)`); return 2; }
 
-  const here = path.resolve(lib.projectRoot());
-  const common = lib.gitCommonDir(here);
-  const root = (common && lib.mainRoot(common)) || here;
+  // git runs on the project's common dir, pinned (#215); a working tree only through its checkout's root and index
+  const common = lib.repoCommon();
+  const root = common && lib.mainRoot(common);
+  if (!root) { console.error("not in a project checkout"); return 2; }
+  const lead = lib.checkoutOf(root);
   const runBranches = common ? lib.runBranches(common) : [];
   const run = lib.runName(arg || runBranches[0] || "");
   if (!run) { console.error(`no run named and no open ${lib.CURRENT.branch}<run> branch`); return 2; }
@@ -107,22 +109,23 @@ function main() {
   const batch = mergeOrder(ready, open);
   if (!batch.length) { console.log("merged none; suite not run"); return 0; }
 
-  const tip = () => (lib.gitTry(["fetch", "origin", base], root, 120000).ok && lib.gitTry(["rev-parse", "--verify", "-q", `origin/${base}^{commit}`], root).out) || "";
+  // fetch with the human's config (credentials, proxy), as lib's release fetch
+  const tip = () => (lib.gitTry(common, ["fetch", "origin", base], { user: true, timeout: 120000 }).ok && lib.gitTry(common, ["rev-parse", "--verify", "-q", `origin/${base}^{commit}`]).out) || "";
   const pre = tip();
   if (!pre) return fail(`cannot fetch origin/${base}`);
+  // each linked worktree's branch, its HEAD read as a file
   const worktrees = {};
-  let wt = "";
-  for (const l of lib.gitTry(["worktree", "list", "--porcelain"], root, 30000).out.split(/\r?\n/)) {
-    if (l.startsWith("worktree ")) wt = l.slice(9);
-    else if (l.startsWith("branch refs/heads/") && !lib.samePath(lib.realOr(wt), lib.realOr(root))) worktrees[l.slice(18)] = wt;
-  }
+  for (const wt of lib.registeredWorktrees(common)) { const b = lib.branchOf(wt); if (b) worktrees[b] = wt; }
 
   const merged = [];
   let stop = "";
   for (const p of batch) {
     const tree = worktrees[p.head];
     if (tree) {
-      const r = lib.gitTry(["worktree", "remove", tree], root, 60000);
+      // git's own clean check would run git status in tree, under its own config: lib.treeChanges checks instead
+      const changed = lib.treeChanges(tree);
+      const r = !changed ? { err: "cannot read its changes" } : changed.length ? { err: `uncommitted work: ${changed[0].slice(3)}` }
+        : lib.gitTry(common, ["worktree", "remove", "--force", tree], { cwd: root, workTree: root, timeout: 60000 });
       if (!r.ok) { stop = `PR #${p.n} not merged: worktree ${tree} not removed (${last(r.err)})`; break; }
     }
     const m = lib.ghTry(["pr", "merge", String(p.n), "--merge", "--delete-branch"], root, 120000);
@@ -139,15 +142,21 @@ function main() {
   if (!head) { console.log(`${line}; suite not run`); return 1; }
 
   // the lead's checkout, when it sits on the run branch, follows it (stack.md)
-  if (lib.gitTry(["rev-parse", "--abbrev-ref", "HEAD"], root).out === base) lib.gitTry(["merge", "--ff-only", `origin/${base}`], root, 60000);
+  if (lib.branchOf(root) === base) lib.gitTry(common, ["merge", "--ff-only", `origin/${base}`], { cwd: root, workTree: root, index: lead.index, timeout: 60000 });
 
   const dir = path.join(lib.worktreesDir(root), "_run");
   const log = path.join(lib.stateDir(common), "merge", `${run}.log`);
   fs.mkdirSync(path.dirname(log), { recursive: true });
   fs.writeFileSync(log, "");
-  const at = (sha) => (fs.existsSync(dir)
-    ? lib.gitTry(["checkout", "--detach", "-q", sha], dir, 120000)
-    : lib.gitTry(["worktree", "add", "--detach", dir, sha], root, 120000));
+  // _run at sha: made by worktree add, then moved by read-tree on its own index and its HEAD set by update-ref, as
+  // git on the common dir cannot check out in a linked worktree (its HEAD would be the main checkout's)
+  const at = (sha) => {
+    if (!fs.existsSync(dir)) return lib.gitTry(common, ["worktree", "add", "--detach", dir, sha], { cwd: root, timeout: 120000 });
+    const co = lib.checkoutOf(dir);
+    if (!co || co.gitDir === co.common || !lib.samePath(co.root, lib.realOr(dir))) return { ok: false, err: "not a worktree of this project" };
+    const r = lib.gitTry(common, ["read-tree", "-u", "--reset", sha], { cwd: co.root, workTree: co.root, index: co.index, timeout: 120000 });
+    return r.ok ? lib.gitTry(common, ["update-ref", "--no-deref", `worktrees/${path.basename(co.gitDir)}/HEAD`, sha]) : r;
+  };
   const passes = (sha) => {
     const c = at(sha);
     if (!c.ok) throw new Error(`.worktrees/_run cannot check out ${sha.slice(0, 12)} (${last(c.err)})`);
@@ -159,7 +168,7 @@ function main() {
   try {
     if (passes(head)) { console.log(`${line}; suite green`); return stop ? 1 : 0; }
     // bisect the batch's merges: pre passed (the last batch ended green), head failed
-    const shas = lib.gitTry(["rev-list", "--first-parent", "--reverse", `${pre}..${head}`], root, 30000).out.split(/\s+/).filter(Boolean);
+    const shas = lib.gitTry(common, ["rev-list", "--first-parent", "--reverse", `${pre}..${head}`], { timeout: 30000 }).out.split(/\s+/).filter(Boolean);
     let lo = -1, hi = shas.length - 1;
     while (hi - lo > 1) {
       const mid = (lo + hi) >> 1;

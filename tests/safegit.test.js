@@ -187,4 +187,33 @@ function verdict(route, name, target, ran) {
   verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
 }
 
+// 9. proteus-merge.js: the ready PR's worktree and .worktrees/_run, where it removes, checks out and runs the suite,
+// each with core.fsmonitor in its config.worktree; the fake gh merges the PR in a local origin
+{
+  const O = path.join(W, "merge-origin.git"), R = path.join(W, "merge-root");
+  g(W, "init", "-q", "--bare", "-b", "main", O);
+  g(W, "clone", "-q", O, R);
+  fs.writeFileSync(path.join(R, "a.js"), "a\n");
+  g(R, "add", "-A"); g(R, "commit", "-qm", "init");
+  g(R, "push", "-q", "origin", "HEAD:main", "HEAD:proteus/r1");
+  g(R, "fetch", "-q", "origin");
+  g(R, "config", "extensions.worktreeConfig", "true");
+  const WT = path.join(R, ".worktrees", "1"), RUN = path.join(R, ".worktrees", "_run");
+  g(R, "worktree", "add", "-q", "-b", "proteus-work/r1/1", WT, "origin/proteus/r1");
+  fs.writeFileSync(path.join(WT, "b.js"), "b\n");
+  g(WT, "add", "-A"); g(WT, "commit", "-qm", "ticket 1");
+  g(WT, "push", "-q", "origin", "proteus-work/r1/1");
+  g(WT, "config", "--worktree", "core.fsmonitor", cmd("merge-wt"));
+  g(R, "worktree", "add", "-q", "--detach", RUN, "origin/proteus/r1");
+  g(RUN, "config", "--worktree", "core.fsmonitor", cmd("merge-run"));
+  const state = path.join(W, "merge-gh.json");
+  fs.writeFileSync(state, JSON.stringify({ origin: O, issues: [{ number: 1, state: "OPEN", body: "" }],
+    prs: [{ number: 10, headRefName: "proteus-work/r1/1", baseRefName: "proteus/r1", body: "Closes #1", isDraft: false,
+      statusCheckRollup: [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }] }] }));
+  const res = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", `"${fw(process.execPath)}" -e 0`] });
+  ok("proteus-merge.js merged the PR and ran the suite in _run", res.code === 0 && res.out.trim() === "merged PR #10 for #1; suite green" && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
+  ok("proteus-merge.js: no git call ran the plant in the removed worktree", !fired("merge-wt"));
+  verdict("proteus-merge.js", "merge-run", RUN, [["merge", res]]);
+}
+
 lib.summary();

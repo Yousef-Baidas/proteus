@@ -4,4 +4,4 @@
   whose checks and statuses are all green, `proteus/verdict` among them, in dependency order, removing each
   worktree first and stopping on a conflict; runs the suite once in `.worktrees/_run` through the gates cache;
   bisects a red one; and prints one line with the merged PRs, the suite result and the first bad merge.
-  `flow.md` step 7 uses it.
+  `flow.md` step 7 uses it. Its git runs pinned to the project's common dir, as every hook's (#215).
