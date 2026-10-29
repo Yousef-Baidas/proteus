@@ -238,6 +238,7 @@ templates/
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
     proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
+    proteus-ready.js        the tickets ready to dispatch, and why the rest are blocked
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents

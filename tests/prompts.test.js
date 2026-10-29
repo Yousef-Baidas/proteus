@@ -46,7 +46,7 @@ ok("conventions interview asks where the authorization module is", /^ {3}- autho
 const { spawnSync } = require("child_process");
 ok("SKILL.md points to the scripts' --help for their flags", /--help/.test(skill));
 const help = (name) => spawnSync(process.execPath, [path.join(ROOT, "templates", "hooks", `proteus-${name}.js`), "--help"], { encoding: "utf8", cwd: ROOT });
-for (const [name, flags] of [["worktree", ["--tier", "--human"]], ["tier", ["--staged", "--ci"]], ["scratch", ["--path", "--sweep", "--all-done", "--stale", "--size"]], ["close-report", ["--no-cost", "--cost-json"]], ["status", ["[run]"]], ["gates-cache", ["<gate command>", "PROTEUS_GATES_CACHE"]], ["skillpath", ["<skill>", "PROTEUS_SKILL_DIRS"]], ["inbox", ["--refresh", "--count"]]]) {
+for (const [name, flags] of [["worktree", ["--tier", "--human"]], ["tier", ["--staged", "--ci"]], ["scratch", ["--path", "--sweep", "--all-done", "--stale", "--size"]], ["close-report", ["--no-cost", "--cost-json"]], ["status", ["[run]"]], ["ready", ["[run]", "speculative"]], ["gates-cache", ["<gate command>", "PROTEUS_GATES_CACHE"]], ["skillpath", ["<skill>", "PROTEUS_SKILL_DIRS"]], ["inbox", ["--refresh", "--count"]]]) {
   const r = help(name);
   ok(`proteus-${name}.js --help: exits 0 and explains ${flags.join(", ")}`, r.status === 0 && r.stdout.startsWith("usage: ") && r.stdout.split("\n").length > 2 && flags.every((f) => r.stdout.includes(f)), r.stdout + r.stderr);
 }
