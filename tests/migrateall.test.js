@@ -423,4 +423,28 @@ else {
   ok("--update: then every repo moved and the 1.x user install removed", !old(UREPO) && r.out.includes(`moved    ${UREPO}`) && /Removed the 1\.x user install/.test(r.out), r.out);
 }
 
+// ======== a 1.x guest repo moves like --plugin-setup in it (#184); one without a marker moves as before
+{
+  const G = world("guestmove");
+  G.plugins([{ scope: "user", installPath: ROOT, version: "2.0.0" }]);
+  const GHERE = G.repo("code/ghere");
+  const GUESTREPO = path.join(G.home, "code", "grepo"), GDIR = path.join(G.home, "guests", "grepo");
+  g(G.home, "init", "-q", "-b", "main", GUESTREPO);
+  fs.writeFileSync(path.join(GUESTREPO, "README.md"), "# r\n");
+  g(GUESTREPO, "add", "README.md"); g(GUESTREPO, "commit", "-q", "-m", "init");
+  g(GUESTREPO, "remote", "add", "origin", "https://github.com/other/grepo.git");
+  const r1 = G.run(GUESTREPO, ["--project", "--guest", GDIR], {}, false);
+  ok("guest fixture: 1.x --project --guest set it up", r1.code === 0 && exists(GDIR, "teams") && !exists(GUESTREPO, "teams"), both(r1).slice(-1500));
+  const PLAINR = G.repo("code/gplain");
+  G.projects(GHERE, GUESTREPO, PLAINR);
+  const r2 = G.run(GHERE, ["--plugin-setup"]);
+  const sl = (json(GUESTREPO, ".claude", "settings.local.json") || {}).statusLine || {};
+  ok("guest move: exits 0 and names the repo moved", r2.code === 0 && r2.out.includes(`moved    ${GUESTREPO}`), both(r2).slice(-2500));
+  ok("guest move: the marker is kept and teams/ stays in the guest dir, none in the checkout", exists(GDIR, "teams", "ROUTING.md") && !exists(GUESTREPO, "teams") && !!json(GUESTREPO, ".git", "proteus", "guest.json"), status(GUESTREPO));
+  ok("guest move: nothing in the checkout for git to see", status(GUESTREPO) === "", status(GUESTREPO));
+  ok("guest move: the gate is local only and the status line points at the guest dir's copy", gateIn(GUESTREPO, "settings.local.json") && !gateIn(GUESTREPO, "settings.json") && norm(sl.command || "").includes(norm(GDIR)), read(GUESTREPO, ".claude", "settings.local.json"));
+  ok("guest move: the session may write in the guest dir", ((json(GUESTREPO, ".claude", "settings.local.json").permissions || {}).additionalDirectories || []).some((d) => norm(d) === norm(GDIR)), read(GUESTREPO, ".claude", "settings.local.json"));
+  ok("guest move: a 1.x repo without a marker moves as before", !old(PLAINR) && gateIn(PLAINR, "settings.json") && exists(PLAINR, "teams") && /proteus-statusline\.js/.test((json(PLAINR, ".claude", "settings.local.json").statusLine || {}).command || ""), both(r2).slice(-1500));
+}
+
 lib.summary();
