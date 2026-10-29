@@ -111,6 +111,8 @@ ok("signoff, worker guard: bare and proteus: verifiers pass, evil: is refused",
 const BEATS = path.join(REPO, ".git", "proteus", "beats");
 const beat = (a) => { try { return JSON.parse(fs.readFileSync(path.join(BEATS, `${a}.json`), "utf8")); } catch { return null; } };
 let n = 0;
+// only an agent the lead spawned is tracked (#179): record the lead's spawn of each form first
+for (const name of ["proteus-worker", "proteus-backend-verifier", "proteus-scout"]) for (const [t] of forms(name)) run({ tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: t } });
 for (const name of ["proteus-worker", "proteus-backend-verifier"]) for (const [t, label, yes] of forms(name)) {
   const id = `b${n++}`;
   shell("ls", as(t, id));

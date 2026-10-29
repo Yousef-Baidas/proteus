@@ -534,6 +534,8 @@
       "a595d5367e50b8a10763eba3d983121d7721fdf0",
       "a7defd84a4640a15d3c62c656d2307ae4da851dc",
       "a84fe7e71d30d877be422f1c2f66530170ae6644",
+      "a8cd664c3213e6feba2629643488929ac3e6c38b",
+      "ad09178ee5e0d9b4a1bba0991fbab3354bdbc0ba",
       "b22de604f5d49141a94303d05e777933bc4482df",
       "b49f7148cbf5d4d2c0de17dc66f1d896d0151685",
       "bfb87b64d2f37b565b5ec23ad61a712c4fe13ab4",
@@ -542,6 +544,7 @@
       "c43efa0d28d022fcc95edd87dc0a0cb69382194c",
       "c45bc98c4a90d1adbcff5aff67ce25f29cad9df6",
       "c916205271730ad83fe866f07e70f24a33594300",
+      "cce9ec8d9d55c961ccf5bce7300c9edce711f091",
       "ccfdc2413c633f1ad57be848f71a023851de0d6d",
       "d09e0f24bebc16cb3a836374d3c4f0fc26df2b5d",
       "d26a80f12684d4b1827f14ce00e947468221fc80",
@@ -601,6 +604,7 @@
       "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"
     ],
     "templates/hooks/proteus-stall.js": [
+      "3cc9504a7ace1f1bfb6804a7037adbecea20d3c6",
       "5e9d65f0404f84ca96f8e1e78d35c073a7a06b9d",
       "64da85df4751f60f111f8654a2d0b526f31c3d14",
       "a94de905dc8680995d9fd71e0d355734c7768854"
@@ -625,6 +629,9 @@
     "templates/hooks/proteus-verdict.js": [
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",
       "db69a02f3bb29c8941b637ab40b6fe73d04926f1"
+    ],
+    "templates/hooks/proteus-watchdog.js": [
+      "b7bcae7d93391066a3d27082b1f6f609e8b0dc34"
     ],
     "templates/hooks/proteus-worker-guard.js": [
       "156ee044909ec961667891451b08c8116d85127d",
