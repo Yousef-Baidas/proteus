@@ -117,7 +117,11 @@ ok("guard: lead Monitor allowed", code(pre("Monitor", { command: "x" })) === 0);
 const sub = { agent_id: "a1", agent_type: "proteus-worker" };
 r = run(LG, pre("Bash", { command: "npm run render", run_in_background: true }, sub));
 ok("guard: subagent run_in_background denied", r.code === 2 && /never wait on a background notification/.test(r.err), r.err);
-ok("guard: subagent Monitor denied", code(pre("Monitor", { command: "x" }, sub)) === 2);
+// #219: a subagent's Monitor command gets a Bash call's checks, and passes where that call would
+ok("guard: subagent Monitor polling a log passes", code(pre("Monitor", { command: "timeout 170 tail --pid=4242 -f /dev/null; tail -3 /tmp/x-suite" }, sub)) === 0);
+r = run(LG, pre("Monitor", { command: "gh pr comment 3 --edit-last -b y" }, sub));
+ok("guard: subagent Monitor refused what its Bash call would be", r.code === 2 && /--edit-last/.test(r.err) && code(pre("Monitor", { command: "git push origin main" }, sub)) === 2 &&
+  code(pre("Monitor", { command: "node templates/hooks/proteus-container.js status" }, sub)) === 2, r.err);
 ok("guard: subagent --edit-last denied", code(pre("Bash", { command: "gh pr comment 3 --edit-last -b y" }, sub)) === 2);
 {
   // the flag refused only on a gh call that carries it; as data (heredoc body, a quoted argument, a comment) it passes

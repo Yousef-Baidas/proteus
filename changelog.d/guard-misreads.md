@@ -8,3 +8,5 @@
   (#221), following a `cd` on the way and read from that checkout's own HEAD, not as the upstream a worker
   branch cut from `origin/main` points at: it passes unless that branch is main or a run branch. From a detached
   HEAD, or after a `cd` the guard cannot follow, it is refused, naming `git push origin <branch>`.
+- A subagent's Monitor is no longer refused outright (#219): its command gets the checks a Bash call from that
+  subagent gets and runs when they pass, so a worker can wait on a suite the harness moved to the background.
