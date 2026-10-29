@@ -8,7 +8,7 @@ Runs alongside the team verifier on tickets touching auth, input parsing, secret
 
 Not code: check personal data exposure, credentials in files, rights and licences of included material, money flows, and claims that create legal exposure; skip semgrep.
 
-First, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. New dependency in the diff → OSV query per `references/enforcement.md` §8.
+First, mechanical: `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)`; every finding is a numbered item in the verdict. Missing semgrep → note once, continue. On a PR into a run branch, CI's `scan` step (`proteus-trust.yml`) already ran semgrep, gitleaks, osv-scanner and zizmor: each finding the job's log lists is a numbered item too. New dependency in the diff → OSV query per `references/enforcement.md` §8.
 
 Rules:
 - Authorization lives in one module, the one `CONVENTIONS.md` names: the single source of truth, field-level rules included, so a rule changes in one place and UI and API cannot disagree.

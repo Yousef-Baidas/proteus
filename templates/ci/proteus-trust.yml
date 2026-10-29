@@ -1,18 +1,23 @@
 # .github/workflows/proteus-trust.yml — written by the Proteus scaffold ticket; copy it as is.
 # The security trigger for every PR into proteus/*: proteus-security.js posts the commit status
 # proteus/security on the PR head, success when no changed path matches the ```security block
-# of teams/ROUTING.md, failure naming the paths until the security verifier signs off
-# (proteus-signoff.js --security). The ruleset on proteus/* (install.js --protect) requires
-# proteus/security, proteus/verdict (the verifier's MERGE) and gates.
-# It runs on pull_request_target, so GitHub takes this file, the checkout and the script from
+# of teams/ROUTING.md and the scanners found nothing new, failure naming the paths until the
+# security verifier signs off (proteus-signoff.js --security). The ruleset on proteus/* (install.js
+# --protect) requires proteus/security, proteus/verdict (the verifier's MERGE) and gates.
+# It runs on pull_request_target, so GitHub takes this file, the checkout and the scripts from
 # the PR's base branch, never from the PR: a worker's PR cannot change what judges it. Never
-# check out or run the PR's code in this file. The paths come from the API; the optional
-# semgrep step below reads the head's files as data and runs nothing from them.
+# run the PR's code in this file. The paths come from the API; the head is checked out under
+# head/ as data, which proteus-scan.js hands to the scanners and nothing executes:
+# semgrep (OWASP, secrets) on the changed files, gitleaks on the PR's commits, osv-scanner when
+# a lockfile changed, zizmor when a workflow changed. A scanner with nothing to scan logs a skip
+# line. No config, ignore file or inline suppression in the PR is read, and a finding the base's
+# teams/baseline.json records under `security` does not count (enforcement.md §4).
 # A run branch cut before this file existed has no copy, so its PRs get no proteus/security
 # from CI; finish such runs before the ruleset requires it (enforcement.md §1).
 # Same hardening as proteus-gates.yml: ${{ }} reaches scripts only through env:, actions are
-# pinned to a commit SHA, checkout does not persist the token, and the one write scope
-# (statuses) sits on the one job that posts.
+# pinned to a commit SHA, scanners to an image digest or a download's sha256, checkout does not
+# persist the token, and the one write scope (statuses) sits on the one job that posts; the
+# scanners run before any step holds the token.
 name: proteus-trust
 on:
   pull_request_target:
@@ -31,16 +36,40 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}   # the base the PR targets, never its head
           persist-credentials: false
-      # Optional: semgrep findings in the changed files also trigger the security verifier. To turn
-      # it on, uncomment the three steps below and add --findings "$RUNNER_TEMP/semgrep.json" to the
-      # check. The head is checked out as data under head/; nothing in it is run.
-      #   - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      #     with: { ref: "${{ github.event.pull_request.head.sha }}", path: head, persist-credentials: false }
-      #   - run: pipx install semgrep==<version>
-      #   - run: cd head && semgrep scan --config p/security-audit --metrics off --json --output "$RUNNER_TEMP/semgrep.json" || test -s "$RUNNER_TEMP/semgrep.json"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}   # data for the scanners only; nothing under head/ runs
+          path: head
+          fetch-depth: 0   # the PR's commits for gitleaks, and the base for the diff
+          persist-credentials: false
+      - name: install scanners
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          mkdir -p bin
+          # semgrep 1.182.1 as its image, pinned by digest; it sees the checkout read-only and writes only --out
+          docker pull -q semgrep/semgrep@sha256:451b3d875c00dac7ed5db5293e584a07de11449a409c10b3c2d2652f429630b6
+          cat > bin/semgrep <<'SH'
+          #!/usr/bin/env bash
+          exec docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD:$PWD:ro" -v "$RUNNER_TEMP/scan:$RUNNER_TEMP/scan" -w "$PWD" semgrep/semgrep@sha256:451b3d875c00dac7ed5db5293e584a07de11449a409c10b3c2d2652f429630b6 semgrep "$@"
+          SH
+          chmod 755 bin/semgrep
+          curl -fsSLo zizmor.tar.gz https://github.com/zizmorcore/zizmor/releases/download/v1.31.1/zizmor-x86_64-unknown-linux-gnu.tar.gz
+          echo "d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99  zizmor.tar.gz" | sha256sum -c -
+          curl -fsSLo gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          curl -fsSLo osv-scanner https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          echo "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b  osv-scanner" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz -C bin gitleaks && tar -xzf zizmor.tar.gz -C bin zizmor && install -m 755 osv-scanner bin/
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node teams/templates/hooks/proteus-scan.js --require --dir head --out "$RUNNER_TEMP/scan" --base "$BASE_SHA" --head "$HEAD_SHA"
       - name: security paths
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node teams/templates/hooks/proteus-security.js --ci "$PR_NUMBER" "$HEAD_SHA"
+        run: node teams/templates/hooks/proteus-security.js --ci "$PR_NUMBER" "$HEAD_SHA" --findings "$RUNNER_TEMP/scan"
