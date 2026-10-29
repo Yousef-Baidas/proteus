@@ -207,6 +207,7 @@
     ],
     "templates/ci/proteus-trust.yml": [
       "3dba19876d0bd621c894e1da26f42380152889e7",
+      "afece5ca13c153ca6e62683c85dfedeea3cb2d8d",
       "e1cbe45daa85d8cf4dcbe434aa41f85f7ed359f3"
     ],
     "templates/hooks/commit-msg.js": [
@@ -701,9 +702,11 @@
     ],
     "templates/hooks/proteus-scan.js": [
       "20de203c577909fa4f61fae15e0c7d75598fb49c",
-      "4d98a177191ef9a5ae651a7f452698126973f70f"
+      "4d98a177191ef9a5ae651a7f452698126973f70f",
+      "7104665ac5434bffa9d5b2cfc5a3b06041f0616a"
     ],
     "templates/hooks/proteus-scratch.js": [
+      "0f26321318f436b8fd14f18688a6f25b1ea06442",
       "157e806dcc4f73e1405b7d901578644b5274f139",
       "3611b989b27d2371e4647ff002d8a25767c3c5f3",
       "3fa1d3cf6d575f02132fd4689d2e86363c05e4a5",
@@ -715,6 +718,7 @@
       "e46aa7764db885e9050a67c9c220437f8986f0bb"
     ],
     "templates/hooks/proteus-security.js": [
+      "0a599cfa143be35446301bb3a2bfa07c7072d6ff",
       "54b55e4897468e7fe1935a8eff0bed2bfee70043",
       "b36a95997b7cd1d1604b9f6e4d29f0f600ba09b4",
       "d46aedf93c9fcd2678c5c6d6b62087c2557ae72c"

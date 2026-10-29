@@ -447,6 +447,10 @@ if (link(VICTIM, path.join(W, "probe-link"))) {
     if (control) ok("git: the hooks' pinned git runs no automatic gc through a planted worktrees link", !pinned, pinned);
     else ok("git: skipped, this git's auto gc did not prune the planted link", true);
   } else ok("git: skipped (no symlink here)", true);
+  // #235: the pin carries both keys, so neither auto maintenance nor auto gc starts whatever the repo config says
+  for (const [k, v] of [["maintenance.auto", "true"], ["gc.auto", "1"]]) g(R2, "config", k, v);
+  const pin = (k) => L.gitIn(C2, ["config", "--get", k], 5000);
+  ok("git: the hooks' pinned git sets maintenance.auto=false and gc.auto=0", pin("maintenance.auto") === "false" && pin("gc.auto") === "0", `${pin("maintenance.auto")} ${pin("gc.auto")}`);
 }
 
 // ---- static: no hook writes outside the helper. A write call (any fs form: sync, callback, promise; a method

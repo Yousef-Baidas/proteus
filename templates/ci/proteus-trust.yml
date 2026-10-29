@@ -9,15 +9,20 @@
 # run the PR's code in this file. The paths come from the API; the head is checked out under
 # head/ as data, which proteus-scan.js hands to the scanners and nothing executes:
 # semgrep (OWASP, secrets) on the changed files, gitleaks on the PR's commits, osv-scanner when
-# a lockfile changed, zizmor when a workflow changed. A scanner with nothing to scan logs a skip
-# line. No config, ignore file or inline suppression in the PR is read, and a finding the base's
+# a lockfile changed, zizmor when a workflow or composite action changed. A scanner with
+# nothing to scan logs a skip line. No config, ignore file or inline suppression in the PR is read, and a finding the base's
 # teams/baseline.json records under `security` does not count (enforcement.md §4).
 # A run branch cut before this file existed has no copy, so its PRs get no proteus/security
 # from CI; finish such runs before the ruleset requires it (enforcement.md §1).
 # Same hardening as proteus-gates.yml: ${{ }} reaches scripts only through env:, actions are
-# pinned to a commit SHA, scanners to an image digest or a download's sha256, checkout does not
-# persist the token, and the one write scope (statuses) sits on the one job that posts; the
-# scanners run before any step holds the token.
+# pinned to a commit SHA, scanners to an image digest or a download's sha256, and checkout does
+# not persist the token. Two jobs on two VMs, because steps of one job share a VM and a uid and
+# a scanner a hostile file subverts could outlive its step: `scan` reads the head with contents:
+# read and no secret, and uploads $RUNNER_TEMP/scan as an artifact; `post`, the one job with a
+# write scope (statuses), checks out the base only, never the head, and proteus-security.js
+# reads the artifact as data (size-capped JSON, nothing in it runs) before it posts.
+# The split protects the token, not the verdict: a scanner a hostile head subverts can still
+# write a clean artifact and so forge a pass.
 name: proteus-trust
 on:
   pull_request_target:
@@ -25,12 +30,10 @@ on:
 permissions:
   contents: read
 jobs:
-  security:
+  scan:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      statuses: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -67,6 +70,28 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node teams/templates/hooks/proteus-scan.js --require --dir head --out "$RUNNER_TEMP/scan" --base "$BASE_SHA" --head "$HEAD_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proteus-scan
+          path: ${{ runner.temp }}/scan
+          if-no-files-found: error
+          retention-days: 1
+  post:
+    needs: scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}   # the base only; this job never checks out the head
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: proteus-scan
+          path: ${{ runner.temp }}/scan
       - name: security paths
         env:
           GH_TOKEN: ${{ github.token }}

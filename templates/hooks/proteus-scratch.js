@@ -12,7 +12,8 @@
 // output is a stray, appended to <common>/proteus-lead/scratch-ledger.jsonl with its key (the agent's own --path,
 // the proteus/* branch of its cwd, or the one open run). Deletion happens only in --sweep, only for ledgered
 // paths and scratch dirs, each re-checked first: same inode, this user, directly in os.tmpdir(), a symlink
-// removed as a link and never followed. A git worktree goes through `git worktree remove --force` and `prune`.
+// removed as a link and never followed. A git worktree goes through `git worktree remove --force` and `prune`, the
+// prune only when every <common>/worktrees entry is a real dir with a regular gitdir file (#235).
 // What this script writes for itself (ledger, snapshots, size) is lead state, in proteus-lead through lib's
 // lead-state writers (#236). --sweep deletes under <common>/proteus/scratch and <common>/worktrees, which agents can
 // write, so it runs only from the lead's own shell, sandboxed like theirs, never from a hook (#237): a delete or
@@ -100,6 +101,7 @@ function cli([cmd, arg]) {
       const r = sweep(common, arg);
       console.log(`proteus-scratch: freed ${mb(r.bytes)} MB (${r.dirs} scratch dirs, ${r.strays} strays, ${r.worktrees} worktrees); ${mb(r.left)} MB left`);
       for (const k of r.kept) console.log(`kept ${k}`);
+      for (const b of r.skipped) console.log(`proteus-scratch: git worktree prune skipped, inspect ${b}`);
     } else if (cmd === "--size") console.log(`${mb(size(common))} MB`);
     else { console.error(USAGE + "\n(--help explains each mode)"); process.exitCode = 1; }
   } catch (e) {
@@ -116,7 +118,7 @@ function sweep(common, what) {
   const pick = (key, idle) => (what === "--all-done" ? done(key)
     : what === "--stale" ? idle > ANY_IDLE || (idle > DONE_IDLE && done(key))
     : key === what || key.startsWith(what + "-"));
-  const out = { bytes: 0, dirs: 0, strays: 0, worktrees: 0, kept: [] };
+  const out = { bytes: 0, dirs: 0, strays: 0, worktrees: 0, kept: [], skipped: [] };
   const prune = new Set();
   const tmpReal = real(os.tmpdir());
   const uid = typeof process.getuid === "function" ? process.getuid() : null;
@@ -146,7 +148,11 @@ function sweep(common, what) {
     out.bytes += res.bytes;
     out.dirs++;
   }
-  for (const common of prune) git(["worktree", "prune"], common);
+  for (const common of prune) {
+    const bad = badWorktreeEntry(common);
+    if (bad) out.skipped.push(bad);
+    else git(["worktree", "prune"], common);
+  }
   // from the lead's sandboxed shell the ledger stays: the next sweep drops the rows whose paths are gone
   if (keep.length !== rows.length) { try { writeLedger(common, file, text, keep); } catch {} }
   // a PreToolUse whose call never ran (denied, interrupted) leaves its snapshot behind
@@ -285,6 +291,20 @@ function git(args, common) {
   const main = lib.mainRoot(common);
   const tree = main && fs.existsSync(main) ? { cwd: main, workTree: main } : {};
   try { lib.gitRun(common, args, { ...tree, stdio: "ignore", timeout: 60000 }); return true; } catch { return false; }
+}
+
+// git worktree prune empties what a <common>/worktrees/<x> link with no gitdir file leads to (#235), so it runs only
+// when every entry there is a real dir holding a regular gitdir file; "<path>: <why>" for the first that is not
+function badWorktreeEntry(common) {
+  const root = path.join(common, "worktrees");
+  try { if (!fs.lstatSync(root).isDirectory()) return `${root}: a link or not a dir`; } catch { return ""; }
+  for (const name of ls(root)) {
+    const d = path.join(root, name);
+    if (!realDir(d)) return `${d}: a link or not a dir`;
+    try { if (fs.lstatSync(path.join(d, "gitdir")).isFile()) continue; } catch {}
+    return `${d}: no regular gitdir file`;
+  }
+  return "";
 }
 
 function ls(d) { try { return fs.readdirSync(d); } catch { return []; } }
