@@ -668,7 +668,8 @@
     ],
     "templates/hooks/proteus-owned-check.js": [
       "1c2de99305242c7776dd991c98e9c0fb8461350a",
-      "3abae20ae39938285ca2528548ca615e593fcd69"
+      "3abae20ae39938285ca2528548ca615e593fcd69",
+      "e6c46bfcc05d2b1f645075731213266d9ff88f2c"
     ],
     "templates/hooks/proteus-owned-paths.js": [
       "57855377f51ee4dc86adcb2dd34dc788e87d469e"
