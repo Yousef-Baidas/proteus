@@ -14,7 +14,9 @@
 // detached and runs command (an argv, no shell) there with a timeout in ms. Its stdout and stderr, at most 1 MiB each,
 // are held in memory and written to /out/check.log only after it and its process group are gone, as is
 // /out/status.json { exit, timedOut, error }; both are unlinked first, so nothing the command left there is kept.
-// Always exits 0 once /out/status.json ({ exit, error, unchanged }) is written.
+// check exits with the command's exit code, 124 when it timed out, 125 when the entry failed before running it: the
+// host's verdict is that status, never status.json (informational) or check.log (data the command can write).
+// run always exits 0 once /out/status.json ({ exit, error, unchanged }) is written.
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -107,13 +109,14 @@ async function check(run) {
     ({ exit: status.exit, timedOut: status.timedOut, log } = r);
   } catch (e) {
     status.error = String(e.message).slice(0, 2000);
+    process.stderr.write(`proteus-container-entry: ${status.error}\n`);
   }
   // fresh files: whatever the command left at these names (a link, a FIFO, a forged status) is removed first
   for (const [f, data] of [["check.log", log], ["status.json", JSON.stringify(status) + "\n"]]) {
     const p = path.join(OUT, f);
     try { fs.rmSync(p, { recursive: true, force: true }); fs.writeFileSync(p, data, { flag: "wx" }); } catch {}
   }
-  return 0;
+  return status.timedOut ? 124 : Number.isInteger(status.exit) ? status.exit : 125;
 }
 
 async function main() {

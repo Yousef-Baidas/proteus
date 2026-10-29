@@ -28,10 +28,12 @@
 // Tier: lines come first from the host, and the report posted on the ticket, gh as the agents. The last stdout line
 // is then `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1), whatever was thrown.
 // check: runs <command...> on <sha> (a commit reachable from the worktree's branch) in the same hardened container,
-// with no credential env at all and --network none unless given, and brings back only data: out/check.log (stdout
-// and stderr, at most 1 MiB each) and out/status.json { exit, timedOut }, each lstat'ed as a regular file under its
-// cap. It prints the log's path, then the last line `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. Nothing
-// is imported or pushed and no git ref is created. Exit 0 when the command exited 0, else 1; 2 usage.
+// with no credential env at all and --network none unless given. The verdict is the runtime's exit status, which is
+// the entry's, which is the command's (124 on its timeout, 125 when the entry failed first): the last line is
+// `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. out/check.log (stdout and stderr, at most 1 MiB each) is data
+// the code under test can write; its path is printed only when it lstat's as a regular file under its cap.
+// out/status.json is informational and never read. Nothing is imported or pushed and no git ref is created.
+// Exit 0 when the command exited 0, else 1; 2 usage.
 // build: builds templates/container/Dockerfile with the entrypoint. doctor: runtime, rootless, image, credential.
 // Exit 0 imported, nothing to import, published, built or doctor clean; 1 refused or failed (reason on stderr); 2 usage.
 "use strict";
@@ -48,10 +50,11 @@ const GH_ENV = ["GH_TOKEN", "GITHUB_TOKEN"];
 const FALLBACK = "run this worker without the container, in its worktree as usual (docs/container.md)";
 const REPORT_MAX = 64 << 10;
 const STATUSES = ["DONE", "BLOCKED", "RED", "NEEDS", "CONTRACT-UNCLEAR"];
-// check's caps: each of the command's streams in check.log (plus a truncation note each), and status.json
+// check's cap: each of the command's streams in check.log, plus a truncation note each
 const STREAM_MAX = 1 << 20;
 const LOG_MAX = 2 * STREAM_MAX + 4096;
-const STATUS_MAX = 64 << 10;
+// the entry's exit when the command ran past --timeout, and when the entry failed before running it
+const TIMED_OUT = 124, ENTRY_FAILED = 125;
 const USAGE = "usage: node proteus-container.js run --worktree <dir> --prompt-file <file> [options] | check --worktree <dir> --ref <sha> [options] -- <command...> | build [--image <name>] | doctor";
 const HELP = `${USAGE}
 Runs one Claude Code worker session in a container that never sees the host's .git:
@@ -394,9 +397,11 @@ function publish(o, wt, branch, s, g, owned, moved) {
   return 0;
 }
 
-// check: <command...> on --ref's commit in the container, with no credential and --network none unless given. Only
-// check.log and status.json come back, each lstat'ed as a regular file under its cap; nothing is imported and no ref
-// is made. The entry stops the command at --timeout; the host kills the container a little later.
+// check: <command...> on --ref's commit in the container, with no credential and --network none unless given. The
+// verdict is the runtime's exit status, never a file: anything the command leaves behind, even outside its process
+// group, dies with the entry (PID 1) but could have rewritten /out first. check.log is shown as data when it is a
+// regular file under its cap; nothing is imported and no ref is made. The entry stops the command at --timeout
+// (exit 124); the host kills the container a little later.
 function checkCmd(o) {
   const { co, branch } = workerCheckout(o.worktree);
   const g = (args, x = {}) => lib.gitTry(co.common, args, { timeout: 600000, ...x });
@@ -416,7 +421,7 @@ function checkCmd(o) {
     fs.chmodSync(inBundle, 0o644);
     const name = `proteus-${s.id}`;
     console.log(`check: ${rt.name} running ${o.image} on ${short} (${name}, network ${network}, timeout ${o.timeout} min)`);
-    // the container's own output is never shown: only the files below are read, as data
+    // the container's own output is shown only as a hint when the entry failed (125)
     const run = lib.spawnArgv(rt.bin, runArgs(rt, { ...o, network, name, cred: "", in: s.inDir, out: s.outDir }),
       { env: childEnv(process.env, [...GH_ENV, ...CREDS]), stdio: ["ignore", "ignore", "pipe"], timeout: ms + Math.min(60000, ms / 10 + 5000) });
     const timedOut = () => { console.log(`CHECK ${short} timed out`); return 1; };
@@ -425,16 +430,14 @@ function checkCmd(o) {
       return timedOut();
     }
     if (run.error) die(`${rt.name} did not start: ${run.error.message}`);
-    if (run.status !== 0) die(`${rt.name} run exited ${run.status}: ${plain(run.stderr || "").slice(-300)}. Is the image built (\`node ${path.basename(__filename)} doctor\`)?`);
-    const log = path.join(s.outDir, "check.log"), stat = path.join(s.outDir, "status.json");
-    if (!regular(stat, STATUS_MAX)) die(`status.json is missing, not a regular file (a link or a FIFO, say), or over ${STATUS_MAX >> 10} KiB; not read`);
-    if (!regular(log, LOG_MAX)) die(`check.log is missing, not a regular file (a link or a FIFO, say), or over ${LOG_MAX} bytes; not read`);
-    const st = lib.readJSON(stat, null);
-    if (!st || typeof st.timedOut !== "boolean" || !(st.timedOut || Number.isInteger(st.exit))) die(`status.json holds no result${st && st.error ? `: ${plain(st.error).slice(0, 300)}` : ""}`);
-    console.log(`check: log at ${log}`);
-    if (st.timedOut) return timedOut();
-    console.log(`CHECK ${short} exit ${st.exit}`);
-    return st.exit === 0 ? 0 : 1;
+    const code = run.status === null ? 128 + ((run.signal && os.constants.signals[run.signal]) || 0) : run.status;
+    if (code === ENTRY_FAILED) console.error(`proteus-container: ${rt.name} or the entry failed before the command ran: ${plain(run.stderr || "").trim().slice(-300)}. Is the image built (\`node ${path.basename(__filename)} doctor\`)?`);
+    const log = path.join(s.outDir, "check.log");
+    if (regular(log, LOG_MAX)) console.log(`check: log at ${log}`);
+    else console.error(`proteus-container: check.log is missing, not a regular file (a link or a FIFO, say), or over ${LOG_MAX} bytes; not shown`);
+    if (code === TIMED_OUT) return timedOut();
+    console.log(`CHECK ${short} exit ${code}`);
+    return code === 0 ? 0 : 1;
   } finally {
     dropBundles(s);
   }

@@ -49,7 +49,7 @@ if (path.dirname(src("/out")) !== root) process.exit(4);
 fs.mkdirSync(path.join(root, "work"), { recursive: true });
 if (process.env.FAKE_DOCKER_RM) fs.rmSync(process.env.FAKE_DOCKER_RM, { force: true });
 const pre = process.env.FAKE_DOCKER_PRELOAD ? ["--require", process.env.FAKE_DOCKER_PRELOAD] : [];
-spawnSync(process.execPath, [...pre, process.env.FAKE_DOCKER_ENTRY], { env: { ...process.env, PROTEUS_CONTAINER_TEST_ROOT: root }, stdio: "inherit" });
+const entry = spawnSync(process.execPath, [...pre, process.env.FAKE_DOCKER_ENTRY], { env: { ...process.env, PROTEUS_CONTAINER_TEST_ROOT: root }, stdio: "inherit" });
 if (process.env.FAKE_DOCKER_EXTRA) {
   const repo = path.join(root, "work", "repo");
   const git = (...a) => spawnSync("git", a, { cwd: repo, stdio: "ignore" });
@@ -66,7 +66,8 @@ if (process.env.FAKE_DOCKER_PLANT) {
   if (kind === "fifo") spawnSync("mkfifo", [p]);
   if (kind === "big") fs.writeFileSync(p, f === "status.json" ? JSON.stringify({ exit: 0, timedOut: false, pad: "x".repeat(64 << 10) }) : "x".repeat((2 << 20) + 4097));
 }
-process.exit(+(process.env.FAKE_DOCKER_EXIT || 0));
+// the runtime exits with the entry's status, as docker run and podman run do
+process.exit(+(process.env.FAKE_DOCKER_EXIT || entry.status || 0));
 `;
 
 const FAKE_CLAUDE = `
@@ -537,10 +538,12 @@ const OUT_DIR = "require('path').join(process.env.PROTEUS_CONTAINER_TEST_ROOT, '
   const log = logOf(res3);
   ok("stdout and stderr are capped at 1 MiB each in check.log", res3.code === 0 && log.split("z").length - 1 === 1 << 20 && log.split("q").length - 1 === 1 << 20 && log.length <= (2 << 20) + 4096
     && log.includes("[proteus: stdout truncated at 1 MiB]") && log.includes("[proteus: stderr truncated at 1 MiB]"), `${res3.err} ${log.length}`);
-  for (const f of ["check.log", "status.json"]) {
-    const r = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_PLANT: `${f}:big` });
-    ok(`an oversized ${f} is refused, not read`, r.code === 1 && r.err.includes(`${f} is missing, not a regular file`) && !/^CHECK/m.test(r.out), r.out + r.err);
-  }
+  const r = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_PLANT: "check.log:big" });
+  ok("an oversized check.log is not shown; the verdict stands", r.code === 0 && r.err.includes("check.log is missing, not a regular file") && !/^check: log at/m.test(r.out) && lastLine(r) === `CHECK ${t.base.slice(0, 12)} exit 0`, r.out + r.err);
+  const r2 = checkIn(t, t.base, NODE("process.exit(3)"), { FAKE_DOCKER_PLANT: "status.json:big" });
+  ok("status.json is never read: a planted one that says exit 0 changes nothing", r2.code === 1 && lastLine(r2) === `CHECK ${t.base.slice(0, 12)} exit 3`, r2.out + r2.err);
+  const r3 = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_EXIT: "125" });
+  ok("a runtime or entry failure (125) is a failed check with a hint", r3.code === 1 && lastLine(r3) === `CHECK ${t.base.slice(0, 12)} exit 125` && /failed before the command ran/.test(r3.err), r3.out + r3.err);
   // the command forges status.json and leaves check.log a link; the entry writes both fresh after it
   const forge = `const fs = require('fs'), p = require('path'), o = ${OUT_DIR}; fs.writeFileSync(p.join(o, 'status.json'), '{"exit":0,"timedOut":false}'); console.log('real');`
     + (process.platform !== "win32" ? ` fs.symlinkSync(${JSON.stringify(PROMPT)}, p.join(o, 'check.log'));` : "") + " process.exit(4);";
@@ -551,14 +554,21 @@ if (process.platform !== "win32") {
   const t = worktree();
   const host = path.join(W, "host-status.json");
   fs.writeFileSync(host, JSON.stringify({ exit: 0, timedOut: false }));
-  for (const plant of ["check.log:link", "status.json:link", "check.log:fifo", "status.json:fifo"]) {
-    const r = checkIn(t, t.base, NODE("process.exit(5)"), { FAKE_DOCKER_PLANT: plant, FAKE_DOCKER_TARGET: host });
-    ok(`a ${plant.replace(":", " that is a ")} is refused, not read`, r.code === 1 && /not a regular file/.test(r.err) && !/^CHECK/m.test(r.out), r.out + r.err);
+  for (const kind of ["link", "fifo"]) {
+    const r = checkIn(t, t.base, NODE("process.exit(5)"), { FAKE_DOCKER_PLANT: `check.log:${kind}`, FAKE_DOCKER_TARGET: host });
+    ok(`a check.log that is a ${kind} is not shown or read; the verdict stands`, r.code === 1 && /not a regular file/.test(r.err) && !/^check: log at/m.test(r.out) && lastLine(r) === `CHECK ${t.base.slice(0, 12)} exit 5`, r.out + r.err);
+    const r2 = checkIn(t, t.base, NODE("process.exit(5)"), { FAKE_DOCKER_PLANT: `status.json:${kind}`, FAKE_DOCKER_TARGET: host });
+    ok(`a status.json that is a ${kind} (to one saying exit 0) changes nothing`, r2.code === 1 && lastLine(r2) === `CHECK ${t.base.slice(0, 12)} exit 5`, r2.out + r2.err);
   }
-  // a background child keeps forging status.json after the command exits; the entry kills the group first
-  const bg = `const o = ${OUT_DIR}; require('child_process').spawn(process.execPath, ['-e', 'const f = require("path").join(' + JSON.stringify(o) + ', "status.json"), end = Date.now() + 4000; while (Date.now() < end) try { require("fs").writeFileSync(f, JSON.stringify({ exit: 0, timedOut: false })); } catch {}'], { stdio: 'ignore' }); setTimeout(() => process.exit(2), 300);`;
+  // a child left in the command's group keeps forging check.log; the entry kills the group before writing it
+  const loop = (f, body) => `'const f = require("path").join(' + JSON.stringify(o) + ', "${f}"), end = Date.now() + 4000; while (Date.now() < end) try { require("fs").writeFileSync(f, ${body}); } catch {}'`;
+  const bg = `const o = ${OUT_DIR}; require('child_process').spawn(process.execPath, ['-e', ${loop("check.log", '"FORGED"')}], { stdio: 'ignore' }); console.log('real'); setTimeout(() => process.exit(2), 300);`;
   const res = checkIn(t, t.base, NODE(bg));
-  ok("a child the command leaves behind cannot rewrite status.json", res.code === 1 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} exit 2`, res.out + res.err);
+  ok("a child left in the command's group cannot rewrite check.log", res.code === 1 && lastLine(res) === `CHECK ${t.base.slice(0, 12)} exit 2` && logOf(res).trim() === "real", res.out + res.err + logOf(res));
+  // a child that left the group (setsid) survives the kill and rewrites status.json to exit 0 after the command fails
+  const away = `const o = ${OUT_DIR}; require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 200); ' + ${loop("status.json", "JSON.stringify({ exit: 0, timedOut: false })")}], { stdio: 'ignore', detached: true }).unref(); setTimeout(() => process.exit(2), 300);`;
+  const res2 = checkIn(t, t.base, NODE(away));
+  ok("a detached child that rewrites status.json to exit 0 cannot pass a failed check", res2.code === 1 && lastLine(res2) === `CHECK ${t.base.slice(0, 12)} exit 2`, res2.out + res2.err);
 }
 {
   const t = worktree();
