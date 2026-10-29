@@ -33,6 +33,8 @@ if (CD) {
 }
 // FAKE_GH_PRS (a JSON file [{number, base, head, title, body}]): `pr list --head <b> --state open --json number -q .[].number`
 // prints that head's PR numbers; `pr create --base <b> --head <h> --title <t> --body-file -` adds one, its body from stdin
+// (FAKE_GH_PR_CREATE=fail: it fails instead)
+if (process.env.FAKE_GH_PR_CREATE === "fail" && a.startsWith("pr create ")) { process.stderr.write("gh: pull request create failed\n"); process.exit(1); }
 if (process.env.FAKE_GH_PRS) {
   const fs = require("fs"), file = process.env.FAKE_GH_PRS, prs = JSON.parse(fs.readFileSync(file, "utf8"));
   let m;

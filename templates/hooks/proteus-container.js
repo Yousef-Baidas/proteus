@@ -17,13 +17,14 @@
 // any depth only when an owned entry names that segment). A clean worktree's files follow (read-tree -m -u old new);
 // a dirty one is left, with the command that brings them along.
 // result.json and status.json stay in the scratch dir; the bundles are removed.
+// --worktree is a linked worktree, never the main checkout.
 // --model and --agent (its file from the project's .claude/agents, the user's, then the plugin's agents/, copied to
 // in/agent.md) reach claude through in/run.json; an unknown agent dies before the container starts. in/hooks holds
 // the worktree's commit checks (pre-commit, commit-msg, the scripts they call, the owned list) for the clone.
 // --ticket <n> --base <branch> publish after a good import: out/report.md (a regular UTF-8 file of at most 64 KiB whose
-// first line is `<STATUS> #<n>`, else RED), the branch pushed by its one refspec, a PR on DONE whose Owned: and Tier:
-// lines come from the list read before the run, and the report posted on the ticket. The last stdout line is then
-// `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1).
+// first line is `<STATUS> #<n>`, else RED), the branch pushed by its one refspec, a PR on DONE whose Closes, Owned: and
+// Tier: lines come first from the host, and the report posted on the ticket, gh as the agents. The last stdout line
+// is then `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1), whatever was thrown.
 // build: builds templates/container/Dockerfile with the entrypoint. doctor: runtime, rootless, image, credential.
 // Exit 0 imported, nothing to import, published, built or doctor clean; 1 refused or failed (reason on stderr); 2 usage.
 "use strict";
@@ -178,12 +179,18 @@ function prepare(common, prompt) {
   fs.chmodSync(outDir, 0o777);
   return { dir, id: path.basename(dir).slice("container-".length), inDir, outDir };
 }
-// the agent's file as the lead's Agent tool finds it: the project's .claude/agents, the user's, then the plugin's
-// agents/ beside this file's templates/ (checkout, plugin); dies when none has it
+// the plugin's agents/: beside this file's templates/ (checkout, plugin); from a copy elsewhere (install.js --sandbox's
+// bin), the proteus@proteus install's (lib.installedEntry: this project's, else the user-scope one); [] when none
+function pluginAgents(lead) {
+  if (path.basename(path.dirname(__dirname)) === "templates") return [path.join(__dirname, "..", "..", "agents")];
+  const e = lib.installedEntry(lead, process.env.CLAUDE_PLUGIN_ROOT || "");
+  return e && typeof e.installPath === "string" && e.installPath ? [path.join(path.resolve(e.installPath), "agents")] : [];
+}
+// the agent's file as the lead's Agent tool finds it: the project's .claude/agents, the user's, then the plugin's;
+// dies when none has it
 function agentFile(co, name) {
   const lead = lib.mainRoot(co.common) || co.root, n = lib.agentName(name);
-  const dirs = [path.join(lead, ".claude", "agents"), path.join(lib.claudeDir(), "agents"),
-    ...(path.basename(path.dirname(__dirname)) === "templates" ? [path.join(__dirname, "..", "..", "agents")] : [])];
+  const dirs = [path.join(lead, ".claude", "agents"), path.join(lib.claudeDir(), "agents"), ...pluginAgents(lead)];
   return dirs.map((d) => path.join(d, `${n}.md`)).find((f) => regular(f, 1 << 20)) || die(`--agent ${name}: no ${n}.md in ${dirs.join(", ")}`);
 }
 
@@ -210,6 +217,7 @@ function runCmd(o) {
   const wt = path.resolve(o.worktree);
   const co = lib.checkoutOf(wt);
   if (!co || !lib.samePath(co.root, lib.realOr(wt))) die(`${wt} is not a worktree of this project's repo (run from the project, naming the worktree's root)`);
+  if (co.gitDir === co.common) die(`${wt} is the main checkout; the runner takes a worker's linked worktree (proteus-worktree.js makes one)`);
   const branch = lib.branchOf(wt), base = lib.headOf(wt);
   if (!branch || !/^[\w][\w./-]*$/.test(branch) || !base) die(`${wt} has no branch checked out (or an unusual branch name)`);
   // read once, before the run: the import checks against this copy, whatever happens to the file meanwhile
@@ -311,34 +319,49 @@ function readReport(file, ticket) {
   return m ? { status: m[1], text: text + "\n" } : red("Its first line is not `<STATUS> #" + ticket + " ...` (" + STATUSES.join(", ") + ").", text);
 }
 
+// gh as the agents (lib.agentGhDir, as proteus-signoff.js posts), else this process's login
+const ghRead = (args, cwd) => lib.ghTry(args, cwd, 60000, lib.agentGhDir());
+function ghEnv() {
+  const env = { ...process.env, GH_PROMPT_DISABLED: "1" }, as = lib.agentGhDir();
+  if (as) env.GH_CONFIG_DIR = as;
+  return env;
+}
 // gh writes through proteus-gh.js (its backoff), the body on stdin
 function ghWrite(args, input, cwd, what) {
-  const r = lib.spawnArgv(process.execPath, [path.join(__dirname, "proteus-gh.js"), ...args], { cwd, input, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, GH_PROMPT_DISABLED: "1" }, timeout: 900000 });
+  const r = lib.spawnArgv(process.execPath, [path.join(__dirname, "proteus-gh.js"), ...args], { cwd, input, stdio: ["pipe", "pipe", "pipe"], env: ghEnv(), timeout: 900000 });
   if (r.error || r.status !== 0) die(`cannot ${what}: ${plain(r.stderr || (r.error && r.error.message) || `exit ${r.status}`).slice(0, 300)}`);
 }
 
+// a closing keyword before an issue reference (#n, owner/repo#n, a URL), as GitHub and ticketOf read one
+const CLOSING = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?=:?[ \t]+(?:(?:[\w.-]+\/[\w.-]+)?#\d|https?:\/\/))/gi;
+// the PR body: the host's Closes, Owned: and Tier: lines first (the last two from the list read before the run), and
+// the report's own such lines and closing keywords defused (CI and ticketOf read the first match, GitHub every one)
+const prBody = (n, owned, text) => `Closes #${n}\nOwned: ${owned.entries.join(" ")}\nTier: ${owned.tier}\n\n${text
+  .replace(/^(owned|tier)(?=[ \t]*:)/gim, "\\$1").replace(CLOSING, "$1\\")}`;
+
 // --ticket: the host publishes what the worker reported, since the container has no GitHub access. A moved branch is
-// pushed by its one refspec; on DONE with no open PR one is opened, its Owned: and Tier: lines built here from the
-// list read before the run and put first, and any such line in the report defused (CI reads the first match); then
-// the report is posted on the ticket.
+// pushed by its one refspec; on DONE with no open PR one is opened (prBody); then the report is posted on the ticket,
+// with a line saying so when the PR could not be opened (then RED, exit 1). gh runs as the agents (ghEnv).
 function publish(o, wt, branch, s, g, owned, moved) {
   const n = o.ticket, rep = readReport(path.join(s.outDir, "report.md"), n);
   if (moved) {
     const r = g(["push", "origin", `refs/heads/${branch}:refs/heads/${branch}`], { user: true, cwd: wt, timeout: 300000 });
     if (!r.ok) die(`cannot push ${branch}: ${plain(r.err).slice(0, 300)}`);
   }
+  let prFailed = "";
   if (rep.status === "DONE") {
-    let r = lib.ghTry(["pr", "list", "--head", branch, "--state", "open", "--json", "number", "-q", ".[].number"], wt, 60000);
+    let r = ghRead(["pr", "list", "--head", branch, "--state", "open", "--json", "number", "-q", ".[].number"], wt);
     if (!r.ok) die(`cannot list ${branch}'s open PRs: ${plain(r.err).slice(0, 300)}`);
     if (!r.out) {
-      r = lib.ghTry(["issue", "view", n, "--json", "title", "-q", ".title"], wt, 60000);
+      r = ghRead(["issue", "view", n, "--json", "title", "-q", ".title"], wt);
       const title = plain(r.out).trim().slice(0, 256);
       if (!r.ok || !title) die(`cannot read #${n}'s title: ${plain(r.err).slice(0, 300)}`);
-      const body = `Owned: ${owned.entries.join(" ")}\nTier: ${owned.tier}\n\n${rep.text.replace(/^(owned|tier)(?=[ \t]*:)/gim, "\\$1")}`;
-      ghWrite(["pr", "create", "--base", o.base, "--head", branch, "--title", title, "--body-file", "-"], body, wt, `open ${branch}'s PR`);
+      try { ghWrite(["pr", "create", "--base", o.base, "--head", branch, "--title", title, "--body-file", "-"], prBody(n, owned, rep.text), wt, `open ${branch}'s PR`); }
+      catch (e) { if (!(e instanceof Stop)) throw e; prFailed = e.message; }
     }
   }
-  ghWrite(["issue", "comment", n, "--body-file", "-"], rep.text, wt, `post the report on #${n}`);
+  ghWrite(["issue", "comment", n, "--body-file", "-"], prFailed ? `${rep.text}\nOpening the PR failed: ${prFailed}\n` : rep.text, wt, `post the report on #${n}`);
+  if (prFailed) { console.error(`proteus-container: ${prFailed}`); die("pr create failed"); }
   console.log(`${rep.status} #${n} sent`);
   return 0;
 }
@@ -388,13 +411,15 @@ function main(argv) {
     o = parse(argv);
     return o.cmd === "run" ? runCmd(o) : o.cmd === "build" ? buildCmd(o) : doctorCmd(o);
   } catch (e) {
-    if (!(e instanceof Stop)) throw e;
-    console.error(`proteus-container: ${e.message}`);
-    // the lead reads the last line as the worker's result
-    if (o.ticket) console.log(`RED #${o.ticket} container: ${plain(e.message.split("\n")[0]).slice(0, 300)}`);
-    return e.code;
+    const stop = e instanceof Stop;
+    if (!stop && !o.ticket) throw e;
+    const msg = stop ? e.message : String((e && e.message) || e);
+    console.error(`proteus-container: ${stop ? msg : String((e && e.stack) || msg)}`);
+    // the lead reads the last line as the worker's result, whatever was thrown
+    if (o.ticket) console.log(`RED #${o.ticket} container: ${plain(msg.split("\n")[0]).slice(0, 300)}`);
+    return stop ? e.code : 1;
   }
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { parse, which, findRuntime, runArgs, childEnv, credential, SPECIAL, readReport };
+module.exports = { main, parse, which, findRuntime, runArgs, childEnv, credential, SPECIAL, readReport };
