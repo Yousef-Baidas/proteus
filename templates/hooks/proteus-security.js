@@ -1,19 +1,25 @@
 #!/usr/bin/env node
 // The security trigger, judged by CI instead of the lead: does this PR need the security verifier?
-//   node teams/templates/hooks/proteus-security.js --ci <pr> <head-sha> [--findings <semgrep.json>]
+//   node teams/templates/hooks/proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>]
+//   node teams/templates/hooks/proteus-security.js --list <report or dir>
 // Run from a checkout of the PR's base (proteus-trust.yml, on pull_request_target: the base's workflow and
 // this script as the base has them, never the PR's). The globs are the ```security block of the base's
 // teams/ROUTING.md (lib.parseSecurity, matched like the tiers block); the PR's paths come from the API
-// (repos/<repo>/pulls/<pr>/files, both ends of a rename), so no PR code is checked out or run. --findings adds
-// the changed paths a semgrep JSON report (`semgrep --json`, run from the PR head's root) has a result in.
+// (repos/<repo>/pulls/<pr>/files, both ends of a rename), so no PR code is run. --findings adds the scanners'
+// findings: a SARIF report, or every .sarif and .json in a directory (proteus-scan.js's output). Every finding counts
+// except those the base's teams/baseline.json records under the gate `security` (lines mode, as
+// proteus-baseline.js normalises them); a semgrep JSON report (`semgrep --json`, from the head's root) counts only
+// its findings in a changed file.
 // It posts the commit status proteus/security on <head-sha>, which the ruleset on proteus/* requires:
 // - no changed path matches and no finding: success, "no security path touched";
 // - one does, and the head already has a proteus/security success from the security verifier's signoff
 //   (proteus-signoff.js --security): left alone;
 // - one does, and no signoff: failure, naming the first paths. The security verifier's MERGE replaces it.
-// No security block: success saying so, the pipeline as before the block existed.
-// The repo is env GITHUB_REPOSITORY, else gh's {owner}/{repo}. Exit 0 a status posted or kept, 1 gh failed or
-// the report is unreadable, 2 bad usage.
+// No security block and no --findings: success saying nothing was checked, the pipeline before either existed.
+// --list prints each finding as a line `finding <tool> <rule> <path>` and exits 1 when there is one, so the
+// baseline ratchet can record them (enforcement.md §4).
+// The repo is env GITHUB_REPOSITORY, else gh's {owner}/{repo}. Exit 0 a status posted or kept (--list: no
+// finding), 1 gh failed or a report is unreadable (--list: a finding), 2 bad usage.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -22,10 +28,56 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 const CONTEXT = "proteus/security";
 const NONE = "no security path touched";
 const NO_BLOCK = "no security block in teams/ROUTING.md; nothing checked";
-const USAGE = "usage: proteus-security.js --ci <pr> <head-sha> [--findings <semgrep.json>]";
+const USAGE = "usage: proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>] | --list <report or dir>";
 const fail = (msg) => { console.error(`proteus-security: ${msg}`); return 1; };
 
+// the findings in a report, or in every .sarif and .json of a directory: [{ tool, rule, path, changedOnly }]
+function readFindings(report) {
+  const files = fs.statSync(report).isDirectory()
+    ? fs.readdirSync(report).filter((f) => /\.(sarif|json)$/i.test(f)).sort().map((f) => path.join(report, f)) : [report];
+  const rel = (p) => {
+    let s = String(p || "");
+    try { s = decodeURI(s); } catch {}
+    return s.replace(/^file:\/\//, "").replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+  };
+  const found = [];
+  for (const f of files) {
+    const j = JSON.parse(fs.readFileSync(f, "utf8"));
+    if (j && Array.isArray(j.runs)) {
+      for (const run of j.runs) for (const r of (run && run.results) || []) {
+        const loc = ((r && r.locations) || [])[0];
+        found.push({ tool: (run.tool && run.tool.driver && run.tool.driver.name) || "sarif", rule: (r && (r.ruleId || (r.rule && r.rule.id))) || "finding",
+          path: rel(loc && loc.physicalLocation && loc.physicalLocation.artifactLocation && loc.physicalLocation.artifactLocation.uri) || "(no file)" });
+      }
+    } else if (j && Array.isArray(j.results)) {
+      for (const r of j.results) found.push({ tool: "semgrep", rule: (r && r.check_id) || "finding", path: rel(r && r.path), changedOnly: true });
+    } else throw new Error(`${path.basename(f)} is neither SARIF nor a semgrep JSON report`);
+  }
+  return found;
+}
+
+const line = (f) => `finding ${f.tool} ${f.rule} ${f.path}`;
+
+// the findings the base's teams/baseline.json does not hold under gates.security, compared as a multiset
+function unrecorded(found, cwd) {
+  const data = lib.readJSON(path.join(cwd, "teams", "baseline.json"), null);
+  const entry = data && data.gates && data.gates.security;
+  if (!entry || entry.mode === "count" || !Array.isArray(entry.findings)) return found;
+  let ignore = null;
+  try { ignore = entry.ignore ? new RegExp(entry.ignore, "g") : null; } catch {}
+  const left = new Map();
+  for (const x of entry.findings) left.set(x, (left.get(x) || 0) + 1);
+  return found.filter((f) => { const k = lib.normFinding(line(f), ignore), n = left.get(k) || 0; if (n) left.set(k, n - 1); return !n; });
+}
+
 function main(argv) {
+  if (argv[0] === "--list") {
+    if (argv.length !== 2) { console.error(USAGE); return 2; }
+    let found;
+    try { found = readFindings(argv[1]); } catch (e) { return fail(`cannot read the findings ${argv[1]}: ${e.message}`); }
+    for (const f of found) console.log(line(f));
+    return found.length ? 1 : 0;
+  }
   const at = argv.indexOf("--findings");
   const report = at >= 0 ? argv[at + 1] : null;
   const pos = at >= 0 ? [...argv.slice(0, at), ...argv.slice(at + 2)] : argv;
@@ -43,8 +95,10 @@ function main(argv) {
 
   let routing = "";
   try { routing = fs.readFileSync(path.join(cwd, "teams", "ROUTING.md"), "utf8"); } catch {}
-  const globs = lib.parseSecurity(routing);
-  if (!globs || !globs.length) return post("success", NO_BLOCK);
+  const globs = lib.parseSecurity(routing) || [];
+  let found = [];
+  if (report) { try { found = readFindings(report); } catch (e) { return fail(`cannot read the findings ${report}: ${e.message}`); } }
+  if (!globs.length && !report) return post("success", NO_BLOCK);
 
   const listed = gh(["api", "--paginate", `repos/${repo}/pulls/${pr}/files`, "--jq", ".[] | .filename, (.previous_filename // empty)"]);
   if (!listed) return fail(`cannot list PR #${pr}'s files (gh api repos/${repo}/pulls/${pr}/files); no status posted`);
@@ -55,12 +109,10 @@ function main(argv) {
     const g = globs.find((x) => lib.tierMatch(x, p));
     if (g) hits.push(`${p} (${g})`);
   }
-  if (report) {
-    let found;
-    try { found = JSON.parse(fs.readFileSync(report, "utf8")).results; } catch (e) { return fail(`cannot read the semgrep report ${report}: ${e.message}`); }
-    const flagged = new Set((Array.isArray(found) ? found : []).map((r) => String((r && r.path) || "").replace(/\\/g, "/").replace(/^\.\//, "")));
-    for (const p of changed) if (flagged.has(p) && !hits.some((h) => h.startsWith(`${p} (`))) hits.push(`${p} (semgrep finding)`);
-  }
+  const scoped = found.filter((f) => !f.changedOnly || changed.includes(f.path));
+  const fresh = unrecorded(scoped, cwd);
+  if (scoped.length) console.log(`proteus-security: ${scoped.length} finding(s), ${scoped.length - fresh.length} of them in the baseline`);
+  for (const f of fresh) if (!hits.some((h) => h.startsWith(`${f.path} (`))) hits.push(`${f.path} (${f.tool} ${f.rule})`);
   if (!hits.length) return post("success", NONE);
 
   const status = (() => { try { return JSON.parse(gh(["api", `repos/${repo}/commits/${sha}/status`])); } catch { return null; } })();

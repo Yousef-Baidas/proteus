@@ -72,8 +72,7 @@ const roots = [...new Set([root, root.split(path.sep).join("/")])];
 const norm = (line) => {
   let s = line;
   for (const p of roots) s = s.split(p).join(".");
-  if (ignore) s = s.replace(ignore, "");
-  return s.replace(/\\/g, "/").replace(/\d+/g, "#").replace(/\s+/g, " ").trim();
+  return lib.normFinding(s, ignore);
 };
 const hit = (line) => { match.lastIndex = 0; return match.test(line); };
 const found = mode === "lines" ? lines.filter(hit).map(norm).filter(Boolean).sort() : null;

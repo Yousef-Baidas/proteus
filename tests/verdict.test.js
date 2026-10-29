@@ -91,14 +91,14 @@ const REPORT = path.join(W, "semgrep.json");
 fs.writeFileSync(REPORT, JSON.stringify({ results: [{ path: "src/app/page.tsx", check_id: "x" }, { path: "./src/untouched.ts", check_id: "y" }] }));
 setPr({ files: ["src/app/page.tsx"] });
 r = sec("--findings", REPORT);
-ok("security: a semgrep finding in a changed file triggers the security verifier", secState().state === "failure" && /src\/app\/page\.tsx \(semgrep finding\)/.test(secState().description), r.out + r.err);
+ok("security: a semgrep finding in a changed file triggers the security verifier", secState().state === "failure" && /src\/app\/page\.tsx \(semgrep x\)/.test(secState().description), r.out + r.err);
 setPr({ files: ["README.md"] });
 r = sec("--findings", REPORT);
 ok("security: a finding in a file the PR does not change does not", secState().state === "success", r.out + r.err);
 fs.writeFileSync(REPORT, "{not json");
 setPr({ files: ["README.md"] });
 r = sec("--findings", REPORT);
-ok("security: an unreadable semgrep report exits 1, nothing posted", r.code === 1 && /cannot read the semgrep report/.test(r.err) && !posts().length, r.err);
+ok("security: an unreadable semgrep report exits 1, nothing posted", r.code === 1 && /cannot read the findings .*semgrep\.json/.test(r.err) && !posts().length, r.err);
 
 setPr({ files: ["src/auth/session.ts"], fail: "files" });
 r = sec();

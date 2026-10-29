@@ -1,0 +1,131 @@
+#!/usr/bin/env node
+// The security job's scanners, run by proteus-trust.yml before proteus-security.js reads their findings:
+//   node teams/templates/hooks/proteus-scan.js --dir <checkout> --out <dir> --base <sha> --head <sha> [--require]
+//   node teams/templates/hooks/proteus-scan.js --dir <checkout> --out <dir> --all
+// <checkout> is the PR head, checked out as data: the scanners read it and nothing in it runs. The changed files are
+// git diff base...head there (what the PR's files list shows), regular files only, never a symlink:
+// - semgrep, rulesets p/owasp-top-ten and p/secrets, on the changed files;
+// - gitleaks on the commits base..head, so a secret a later commit deleted is still found;
+// - osv-scanner on the changed lockfiles;
+// - zizmor, else actionlint, on the changed workflows under .github/workflows/.
+// Each writes <out>/<tool>.sarif with paths relative to <checkout>; proteus-security.js --findings <out> reads them.
+// A tool with nothing to scan logs one skip line and passes, and so does one that is not installed unless --require
+// (CI installs them all, so a missing one there is a broken install, not an absent ecosystem).
+// The PR cannot quiet a scanner: nothing it can write is read as config, ignore list or inline suppression (semgrep
+// --disable-nosem and no .semgrepignore; gitleaks's config and ignore file from <out> and --ignore-gitleaks-allow;
+// osv-scanner's and actionlint's config from <out>; zizmor --no-config --no-ignores).
+// --all scans every tracked file, lockfile and workflow instead, for the baseline's record (enforcement.md §4);
+// gitleaks, which reads a PR's commits, is skipped there.
+// Exit 0 every tool ran or was skipped, 1 a tool failed or git could not list the changes, 2 bad usage.
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const url = require("url");
+const lib = require(path.join(__dirname, "proteus-lib.js"));
+
+const USAGE = "usage: proteus-scan.js --dir <checkout> --out <dir> (--base <sha> --head <sha> | --all) [--require]";
+const LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "Cargo.lock", "go.mod",
+  "poetry.lock", "uv.lock", "Pipfile.lock", "pdm.lock", "requirements.txt", "Gemfile.lock", "composer.lock", "pubspec.lock", "mix.lock",
+  "gradle.lockfile", "packages.lock.json", "conan.lock", "renv.lock"]);
+const SHA = /^[0-9a-f]{40}$/i;
+const say = (msg) => console.log(`proteus-scan: ${msg}`);
+const fail = (msg) => { console.error(`proteus-scan: ${msg}`); return 1; };
+
+// name runs from PATH: a file there, with a PATHEXT extension on win32
+const onPath = (name) => (process.env.PATH || "").split(path.delimiter).filter(Boolean).some((d) =>
+  (process.platform === "win32" ? ["", ...(process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";")] : [""]).some((e) => {
+    try { return fs.statSync(path.join(d, name + e)).isFile(); } catch { return false; }
+  }));
+
+// a SARIF location as a path relative to the checkout: osv-scanner writes file:// URIs, others ./ or a bare path
+function relUri(dir, uri) {
+  let p = String(uri || "");
+  try { p = p.startsWith("file:") ? url.fileURLToPath(p) : decodeURI(p); } catch {}
+  if (path.isAbsolute(p)) { let real = p; try { real = fs.realpathSync(p); } catch {} const r = lib.relPath(dir, real); if (r) p = r; }
+  return p.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+}
+
+function main(argv) {
+  const opt = {};
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--all" || a === "--require") opt[a.slice(2)] = true;
+    else if (["--dir", "--out", "--base", "--head"].includes(a) && i + 1 < argv.length) opt[a.slice(2)] = argv[++i];
+    else { console.error(USAGE); return 2; }
+  }
+  if (!opt.dir || !opt.out || (opt.all ? opt.base || opt.head : !SHA.test(opt.base || "") || !SHA.test(opt.head || ""))) { console.error(USAGE); return 2; }
+  let dir = path.resolve(opt.dir);
+  try { dir = fs.realpathSync(dir); } catch {}
+  const out = path.resolve(opt.out);
+  fs.mkdirSync(out, { recursive: true });
+
+  const listed = lib.spawnArgv("git", ["-C", dir, "-c", "core.quotepath=off", ...(opt.all ? ["ls-files", "-z"] : ["diff", "--name-only", "-z", "--diff-filter=ACMR", `${opt.base}...${opt.head}`])],
+    { encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true });
+  if (listed.error || listed.status !== 0) return fail(`git cannot list the ${opt.all ? "tracked" : "changed"} files in ${dir}: ${(listed.stderr || (listed.error && listed.error.message) || "").trim()}`);
+  const regular = (p) => { try { return fs.lstatSync(path.join(dir, p)).isFile(); } catch { return false; } };
+  const files = listed.stdout.split("\0").filter(Boolean).filter(regular);
+  const what = opt.all ? "tracked" : "changed";
+
+  // the empty config and ignore files the scanners get instead of any in the checkout
+  const empty = (name, text = "") => { const f = path.join(out, name); fs.writeFileSync(f, text); return f; };
+
+  // pick: the files a tool scans (gitleaks scans the commit range instead); clean: the exits that mean nothing to check
+  const tools = [
+    { name: "semgrep", pick: files, none: `no ${what} file`,
+      args: (t, report) => ["scan", "--config", "p/owasp-top-ten", "--config", "p/secrets", "--metrics", "off", "--disable-version-check", "--disable-nosem",
+        "--x-ignore-semgrepignore-files", "--quiet", "--sarif-output", report, ...t], ok: [0, 1] },
+    { name: "gitleaks", range: !opt.all, none: "it reads a PR's commits, and --all has none",
+      args: (_, report) => ["git", ".", `--log-opts=${opt.base}..${opt.head}`, "--config", empty("gitleaks.toml", "[extend]\nuseDefault = true\n"),
+        "--gitleaks-ignore-path", empty("gitleaks.ignore"), "--ignore-gitleaks-allow", "--redact", "--no-banner", "--exit-code", "0",
+        "--report-format", "sarif", "--report-path", report], ok: [0] },
+    { name: "osv-scanner", pick: files.filter((p) => LOCKFILES.has(path.posix.basename(p))), none: `no lockfile ${what}`,
+      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--format", "sarif", "--output-file", report, ...t.flatMap((p) => ["-L", p])],
+      ok: [0, 1], clean: [128] },
+    { name: "zizmor", alt: "actionlint", pick: files.filter((p) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)), none: `no workflow ${what}`,
+      args: (t) => ["--offline", "--no-config", "--no-ignores", "--format", "sarif", ...t], stdout: true, ok: [0], clean: [3] },
+  ];
+
+  for (const t of tools) {
+    if (!t.range && !(t.pick || []).length) { say(`${t.name} skipped: ${t.none}`); continue; }
+    const name = onPath(t.name) ? t.name : t.alt && onPath(t.alt) ? t.alt : null;
+    if (!name) {
+      if (opt.require) return fail(`${t.name}${t.alt ? ` (or ${t.alt})` : ""} is not installed, and --require needs it`);
+      say(`${t.name} skipped: not installed`);
+      continue;
+    }
+    const report = path.join(out, `${name}.sarif`);
+    fs.rmSync(report, { force: true });
+    // every target as ./path, so a file named like a flag stays a path
+    const list = (t.pick || []).map((p) => `./${p}`);
+    const args = name === "actionlint" ? ["-no-color", "-config-file", empty("actionlint.yaml", "{}\n"), "-format", "{{json .}}", ...list] : t.args(list, report);
+    const r = lib.spawnArgv(name, args, { cwd: dir, encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_SCAN_TIMEOUT", 1800000) });
+    const why = `${name} exited ${r.status === null ? (r.error && r.error.message) || r.signal : r.status}`;
+    if ((t.clean || []).includes(r.status)) { say(`${name}: nothing to check in ${list.length} ${what} file(s)`); continue; }
+    if (r.error || !(name === "actionlint" ? [0, 1] : t.ok).includes(r.status)) {
+      process.stderr.write(r.stderr || "");
+      return fail(`${why}; its findings are unknown`);
+    }
+    let sarif;
+    try {
+      if (name === "actionlint") {
+        const errs = JSON.parse(r.stdout || "[]");
+        sarif = { version: "2.1.0", runs: [{ tool: { driver: { name: "actionlint" } }, results: errs.map((e) => ({ ruleId: e.kind, message: { text: e.message },
+          locations: [{ physicalLocation: { artifactLocation: { uri: e.filepath }, region: { startLine: e.line } } }] })) }] };
+      } else sarif = JSON.parse(t.stdout ? r.stdout : fs.readFileSync(report, "utf8"));
+      if (!Array.isArray(sarif.runs)) throw new Error("no runs");
+    } catch (e) { return fail(`${why} without a readable SARIF report: ${e.message}`); }
+    let n = 0;
+    for (const run of sarif.runs) for (const res of run.results || []) {
+      n++;
+      for (const loc of res.locations || []) {
+        const a = loc && loc.physicalLocation && loc.physicalLocation.artifactLocation;
+        if (a && a.uri) a.uri = relUri(dir, a.uri);
+      }
+    }
+    fs.writeFileSync(report, JSON.stringify(sarif));
+    say(`${name}: ${n} finding${n === 1 ? "" : "s"} in ${t.range ? `${opt.base.slice(0, 12)}..${opt.head.slice(0, 12)}` : `${list.length} ${what} file(s)`}`);
+  }
+  return 0;
+}
+
+process.exitCode = main(process.argv.slice(2));
