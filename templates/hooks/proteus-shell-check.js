@@ -433,8 +433,9 @@ function ownOf(ev, common, ad) {
   if (!ev.agent) return lib.gitRoot(cwd) || lib.projectRoot(ev);
   const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent) || briefBind(ev, common, ad);
   if (prepared) return prepared;
-  const at = lib.gitRoot(cwd), c = at && lib.isLinked(at) && lib.gitCommonDir(at);
-  return c && lib.realOr(c) === lib.realOr(common) ? at : "";
+  // a linked worktree the project's common dir registers (lib.checkoutOf), never one its own .git file names (#215)
+  const at = lib.gitRoot(cwd), co = at && lib.isLinked(at) && lib.checkoutOf(at);
+  return co && co.gitDir !== co.common && lib.samePath(co.root, lib.realOr(at)) && lib.samePath(co.common, lib.realOr(common)) ? at : "";
 }
 
 // the one prepared worktree an agent's brief names (lib.briefWorktree), recorded as its binding; null without one

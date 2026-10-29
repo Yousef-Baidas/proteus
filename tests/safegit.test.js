@@ -24,6 +24,9 @@ fs.writeFileSync(PLANT, `require("fs").writeFileSync(require("path").join(${JSON
 if (process.argv[3] === "filter") process.stdin.pipe(process.stdout);\n`);
 const cmd = (name, filter) => `"${fw(process.execPath)}" "${fw(PLANT)}" ${name}${filter ? " filter" : ""}`;
 const fired = (name) => fs.existsSync(path.join(MARKS, name));
+// replaces a file: Git for Windows marks a worktree's .git file hidden, and Windows refuses to open a hidden file
+// for writing ('w' asks to create it), so it goes first
+const put = (p, text) => { fs.rmSync(p, { force: true }); fs.writeFileSync(p, text); };
 
 // a repo with two prepared worker worktrees under .worktrees/, as the lead makes them
 let nrepo = 0;
@@ -106,7 +109,7 @@ function verdict(route, name, target, ran) {
   // a repo with this checkout's history, so a plain git status there gets as far as asking fsmonitor
   g(W, "clone", "-q", r.R, E);
   g(E, "config", "core.fsmonitor", cmd("wt-gitfile"));
-  fs.writeFileSync(path.join(r.WT2, ".git"), `gitdir: ${path.join(E, ".git")}\n`);
+  put(path.join(r.WT2, ".git"), `gitdir: ${path.join(E, ".git")}\n`);
   verdict("worktree .git file", "wt-gitfile", r.WT2, drive(r, r.WT2, false));
 }
 
@@ -116,7 +119,7 @@ function verdict(route, name, target, ran) {
   const id = wtId(r.common, r.WT2), from = path.join(r.common, "worktrees", id), to = `${from}-moved`;
   fs.renameSync(from, to);
   fs.writeFileSync(path.join(to, "config.worktree"), `[core]\n\tfsmonitor = ${cmd("wt-renamed").replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}\n`);
-  fs.writeFileSync(path.join(r.WT2, ".git"), `gitdir: ${to}\n`);
+  put(path.join(r.WT2, ".git"), `gitdir: ${to}\n`);
   verdict("renamed worktree gitdir", "wt-renamed", r.WT2, drive(r, r.WT2, true));
 }
 
@@ -139,6 +142,33 @@ function verdict(route, name, target, ran) {
   fs.writeFileSync(path.join(r.WT2, "src", "a.js"), "b\n");
   fs.utimesSync(path.join(r.WT2, "src", "a.js"), new Date(Date.now() + 5000), new Date(Date.now() + 5000));
   verdict("filter.clean with .gitattributes", "wt-filter", r.WT2, drive(r, r.WT2, true));
+}
+
+// 7. a repo outside the project, built where a sandboxed agent can write (its temp dir), with a clean filter in its own
+// config and two linked worktrees that look prepared. Write into y binds the agent to y; Write into z then checks y
+// for uncommitted work. y is in none of the project's checkouts, so no hook runs git there at all
+{
+  const r = repo();
+  const X = path.join(W, "agent-tmp", "x");
+  g(W, "init", "-q", "-b", "main", X);
+  fs.mkdirSync(path.join(X, "src"));
+  fs.writeFileSync(path.join(X, "src", "a.js"), "a\n");
+  fs.writeFileSync(path.join(X, ".gitattributes"), "*.js filter=plant\n");
+  g(X, "add", "-A"); g(X, "commit", "-qm", "init");
+  g(X, "config", "filter.plant.clean", cmd("outside", true));
+  const Y = path.join(X, ".worktrees", "y"), Z = path.join(X, ".worktrees", "z");
+  for (const [wt, b] of [[Y, "y"], [Z, "z"]]) {
+    g(X, "worktree", "add", "-q", "-b", b, wt, "main");
+    fs.mkdirSync(path.join(wt, ".claude"));
+    fs.writeFileSync(path.join(wt, ".claude", "proteus-owned"), "src/**\n");
+  }
+  // the same size, so git must read the file through the filter to tell whether it changed
+  fs.writeFileSync(path.join(Y, "src", "a.js"), "b\n");
+  fs.utimesSync(path.join(Y, "src", "a.js"), new Date(Date.now() + 5000), new Date(Date.now() + 5000));
+  const env = { CLAUDE_PROJECT_DIR: r.R };
+  const edit = (file) => lib.run(LG, { hook_event_name: "PreToolUse", agent_id: "q1", agent_type: "proteus-backend-worker", session_id: "s1", cwd: r.R, tool_name: "Write", tool_input: { file_path: file, content: "x\n" } }, { cwd: r.R, env });
+  const ran = [["write y", edit(path.join(Y, "src", "n.js"))], ["write z", edit(path.join(Z, "src", "n.js"))]];
+  verdict("worktrees of a repo outside the project", "outside", Y, ran);
 }
 
 lib.summary();

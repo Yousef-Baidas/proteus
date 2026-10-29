@@ -638,11 +638,11 @@ function checkoutAt(common, dir) {
   if (!best && main && relPath(realOr(main), at) !== null) best = { root: realOr(main), gitDir: common };
   return best && { common, ...best, index: path.join(best.gitDir, "index"), headFile: path.join(best.gitDir, "HEAD") };
 }
-// the common dir git runs on for dir: the project's when dir is in one of its checkouts, else dir's own repo's
+// the common dir git runs on for dir: the project's when dir is in one of its checkouts, else null (no checkout).
+// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215)
 function repoCommon(dir) {
   const c = anchorCommon();
-  if (c && (!dir || checkoutAt(c, dir))) return c;
-  return dir ? trustedCommon(dir) : null;
+  return c && (!dir || checkoutAt(c, dir)) ? c : null;
 }
 const checkoutOf = (dir) => { const c = dir && repoCommon(dir); return c ? checkoutAt(c, dir) : null; };
 
