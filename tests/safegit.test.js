@@ -171,4 +171,20 @@ function verdict(route, name, target, ran) {
   verdict("worktrees of a repo outside the project", "outside", Y, ran);
 }
 
+// 8. proteus-worktree.js handed a worktree of a repo outside the project, whose own config runs the plant: it runs
+// outside the sandbox, so it refuses that path and runs no git there
+{
+  const r = repo();
+  const X = path.join(W, "outside-prep");
+  g(W, "init", "-q", "-b", "main", X);
+  fs.writeFileSync(path.join(X, "a.js"), "a\n");
+  g(X, "add", "-A"); g(X, "commit", "-qm", "init");
+  const Y = path.join(X, ".worktrees", "y");
+  g(X, "worktree", "add", "-q", "-b", "y", Y, "main");
+  g(X, "config", "core.fsmonitor", cmd("outside-prep"));
+  const res = lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: r.R, env: { CLAUDE_PROJECT_DIR: r.R }, args: [Y, "src/**"] });
+  ok("proteus-worktree.js refuses a worktree the project does not register", res.code === 1 && res.err.includes("is not a worktree of this project") && !fs.existsSync(path.join(Y, ".claude")), res.out + res.err);
+  verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
+}
+
 lib.summary();

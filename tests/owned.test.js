@@ -22,8 +22,10 @@ fs.writeFileSync(path.join(REPO, ".git", "hooks", "commit-msg"), `#!/bin/sh\nech
 
 const WT = path.join(W, "wt");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/t1", WT);
+// the harness's project dir: proteus-worktree.js prepares only a worktree that project's repo registers (#215)
+const AT = (root) => ({ ...process.env, CLAUDE_PROJECT_DIR: root });
 const node = (script, args, opts = {}) => spawnSync(process.execPath, [script, ...args], { encoding: "utf8", ...opts });
-let r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/"]);
+let r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/"], { env: AT(REPO) });
 ok("worktree script installs the pre-commit hook", r.status === 0 && !r.stderr, r.stdout + r.stderr);
 
 const ID = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
@@ -42,7 +44,7 @@ r = commit("src/new.txt");
 ok("pre-commit: an owned path commits, and the repo's own commit-msg hook still runs", r.status === 0 && fs.existsSync(MARK), r.stderr);
 ok("pre-commit: the main checkout is untouched",
   spawnSync("git", ["config", "--get", "core.hooksPath"], { cwd: REPO, encoding: "utf8" }).stdout.trim() === "");
-r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/"]);
+r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/"], { env: AT(REPO) });
 ok("pre-commit: re-running the worktree script keeps the forwarding", r.status === 0 && !r.stderr, r.stderr);
 fs.rmSync(MARK);
 r = commit("src/second.txt");
@@ -57,7 +59,7 @@ const bare = (name, hooksSrc, env) => {
   fs.writeFileSync(path.join(repo, "a.txt"), "a\n");
   g(repo, "add", "-A"); g(repo, "commit", "-qm", "init");
   g(repo, "worktree", "add", "-q", "-b", "proteus-work/r1/t1", wt);
-  const res = node(path.join(hooksSrc(repo), "proteus-worktree.js"), [wt, "src/"], { cwd: repo, env: { ...process.env, ...env } });
+  const res = node(path.join(hooksSrc(repo), "proteus-worktree.js"), [wt, "src/"], { cwd: repo, env: { ...AT(repo), ...env } });
   const msgCommit = (file, msg) => {
     fs.mkdirSync(path.join(wt, "src"), { recursive: true });
     fs.writeFileSync(path.join(wt, "src", file), "x\n");
@@ -103,7 +105,7 @@ ok("ci: no Owned: line fails rather than passing everything", r.status === 1 && 
 ok("ci: bad usage exits 2", node(CHK, ["--nope"], { cwd: WT }).status === 2);
 
 // #96: pre-commit and CI own what is below a folder a mid-path wildcard matches, as the edit hooks do
-r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/", "packages/*/src"]);
+r = node(path.join(HOOKS, "proteus-worktree.js"), [WT, "src/", "packages/*/src"], { env: AT(REPO) });
 r = commit("packages/x/src/y.js");
 ok("pre-commit: a mid-path wildcard glob owns a file below the folder it matches", r.status === 0, r.stderr);
 r = commit("packages/x/srcx/y.js");
@@ -214,12 +216,12 @@ ok("pre-commit: a record under .proteus/owned/ is refused even when the list is 
   /owned-path record/.test(PL.ownedDenial(WT, ".proteus/owned/1")) && /owned-path record/.test(PL.ownedDenial(WT, ".PROTEUS/owned/1")) && PL.ownedDenial(WT, "src/z.txt") === "");
 fs.writeFileSync(LIST, was);
 // proteus-worktree.js names a list that differs from the branch's record, which CI checks against
-r = node(path.join(HOOKS, "proteus-worktree.js"), [path.join(W, "rec9"), "src/"], { cwd: RREPO });
+r = node(path.join(HOOKS, "proteus-worktree.js"), [path.join(W, "rec9"), "src/"], { cwd: RREPO, env: AT(RREPO) });
 ok("worktree script: a ticket with no record on its branch is warned about", r.status === 0 && /\.proteus\/owned\/9 is not on this branch/.test(r.stderr), r.stderr);
 const W8 = branchWt("rec8", "proteus-work/r1/8", "proteus/r1");
-r = node(path.join(HOOKS, "proteus-worktree.js"), [W8, "src/"], { cwd: RREPO });
+r = node(path.join(HOOKS, "proteus-worktree.js"), [W8, "src/"], { cwd: RREPO, env: AT(RREPO) });
 ok("worktree script: paths that differ from the record are warned about", r.status === 0 && /differ from \.proteus\/owned\/8 \(docs\/\)/.test(r.stderr), r.stderr);
-r = node(path.join(HOOKS, "proteus-worktree.js"), [W8, "docs/"], { cwd: RREPO });
+r = node(path.join(HOOKS, "proteus-worktree.js"), [W8, "docs/"], { cwd: RREPO, env: AT(RREPO) });
 ok("worktree script: the record's own paths raise no warning", r.status === 0 && !r.stderr, r.stderr);
 
 // the shipped CI template: every placeholder fails, the job id stays gates, the owned step is wired
