@@ -1,11 +1,14 @@
 // Merge-batch tests: node tests/merge.test.js. proteus-merge.js against a real origin repo and worker worktrees,
-// with the fake gh (FAKE_GH_MERGE) merging PRs there as merge commits.
+// with the fake gh (FAKE_GH_MERGE) merging PRs there as merge commits. The script only prints the suite command;
+// the test plays the lead: it runs suite.js in .worktrees/_run and reports with --result. The --suite it hands the
+// script marks a file if anything ever runs it (#226).
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "lib.js"));
 const { ok, run, g } = lib;
-const { mergeOrder } = require(path.join(__dirname, "..", "templates", "hooks", "proteus-merge.js"));
+const { spawnSync } = require("child_process");
+const { mergeOrder, writeState } = require(path.join(__dirname, "..", "templates", "hooks", "proteus-merge.js"));
 const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-merge.js");
 
 const GREEN = [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }, { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" }];
@@ -38,10 +41,27 @@ function setup(name, tickets, plant) {
     prs: tickets.map((k) => ({ number: k.pr, headRefName: `proteus-work/r1/${k.t}`, baseRefName: "proteus/r1", body: `Closes #${k.t}`, isDraft: false, statusCheckRollup: k.checks || GREEN })),
   }));
   if (plant) plant(root, W, path.join(root, ".git"));
-  const r = run(SCRIPT, "", { cwd: root, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", "node suite.js"] });
+  const merge = (...more) => run(SCRIPT, "", { cwd: root, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", NEVER, ...more] });
+  const r = merge();
   const merges = g(root, "--git-dir", origin, "log", "--first-parent", "--format=%s", "proteus/r1").split("\n");
-  return { r, root, W, merges, line: r.out.trim() };
+  return { r, root, W, merges, merge, line: r.out.trim() };
 }
+// the suite command handed to the script: run by anything, it marks NEVER_RAN
+const NW = lib.workdir("merge-never"), NEVER_RAN = path.join(NW, "ran");
+fs.writeFileSync(path.join(NW, "never.js"), `require("fs").writeFileSync(${JSON.stringify(NEVER_RAN)}, "ran\\n");\n`);
+const NEVER = `node "${path.join(NW, "never.js").split(path.sep).join("/")}"`;
+const RUN = (root) => path.join(root, ".worktrees", "_run");
+// the lead's side of the loop: while the script prints a step, run suite.js in _run and report it. { steps, r, line }
+function loop(s) {
+  let r = s.r, steps = 0;
+  while (r.out.includes("suite: in .worktrees/_run run ") && steps < 10) {
+    const pass = spawnSync(process.execPath, ["suite.js"], { cwd: RUN(s.root) }).status === 0;
+    r = s.merge("--result", pass ? "pass" : "fail");
+    steps++;
+  }
+  return { steps, r, line: r.out.trim() };
+}
+const stateGone = (root) => !fs.existsSync(path.join(root, ".git", "proteus", "merge", "r1.json"));
 const gone = (root, t) => !fs.existsSync(path.join(root, ".worktrees", String(t)));
 
 // order: depends-on first, ticket numbers otherwise; an open depends-on outside the batch leaves the PR out
@@ -56,11 +76,17 @@ let s = setup("green", [
   { t: 7, pr: 43, files: { "e.txt": "e\n" }, checks: [{ __typename: "StatusContext", context: "proteus/verdict", state: "FAILURE" }] },
   { t: 8, pr: 44, files: { "f.txt": "f\n" }, checks: [GREEN[0], { __typename: "CheckRun", name: "gates", status: "IN_PROGRESS", conclusion: "" }] },
 ]);
-ok("green: one line naming the merges in dependency order and their worktrees, suite green, exit 0", s.r.code === 0 && s.line === "merged PR #40 for #4, PR #42 for #6, PR #41 for #5; worktrees to remove: proteus-work/r1/4, proteus-work/r1/6, proteus-work/r1/5; suite green", `${s.r.code} ${s.r.out} ${s.r.err}`);
+ok("green: one line naming the merges in dependency order and the suite command for _run, exit 0", s.r.code === 0 && s.line.startsWith("merged PR #40 for #4, PR #42 for #6, PR #41 for #5; suite: in .worktrees/_run run node ") && s.line.endsWith(` r1 --suite ${JSON.stringify(NEVER)} --result pass|fail`), `${s.r.code} ${s.r.out} ${s.r.err}`);
 ok("green: origin has the three merges in that order", s.merges.slice(0, 3).join("|") === "Merge pull request #41 from o/proteus-work/r1/5|Merge pull request #42 from o/proteus-work/r1/6|Merge pull request #40 from o/proteus-work/r1/4", s.merges.join("|"));
+ok("green: _run is at the run's head", fs.existsSync(path.join(RUN(s.root), "d.txt")) && fs.existsSync(path.join(RUN(s.root), "c.txt")));
+const again = s.merge();
+ok("green: a second batch is refused while one awaits --result", again.code === 1 && again.out.includes("a batch awaits --result pass|fail"), again.out + again.err);
+let l = loop(s);
+ok("green: --result pass ends the batch, naming the worktrees and branches left, exit 0", l.steps === 1 && l.r.code === 0 && /^run r1: suite green at [0-9a-f]{12}; worktree and branch left for the lead: proteus-work\/r1\/4, proteus-work\/r1\/6, proteus-work\/r1\/5$/.test(l.line) && stateGone(s.root), `${l.r.code} ${l.r.out} ${l.r.err}`);
 ok("green: no worktree removed, the lead removes the merged ones (#226)", [4, 5, 6, 7, 8].every((t) => !gone(s.root, t)));
 ok("green: the main checkout's index untouched by the run's checkouts", g(s.root, "status", "--porcelain", "-uno") === "", g(s.root, "status", "--porcelain", "-uno"));
-ok("green: the suite ran in .worktrees/_run at the run's head", fs.existsSync(path.join(s.root, ".worktrees", "_run", "d.txt")) && fs.existsSync(path.join(s.root, ".worktrees", "_run", "c.txt")));
+const none = s.merge("--result", "pass");
+ok("green: --result with no batch waiting is a usage error", none.code === 2, none.out + none.err);
 
 // red batch: the second of four merges breaks the suite; bisect names it
 s = setup("red", [
@@ -69,9 +95,10 @@ s = setup("red", [
   { t: 3, pr: 22, files: { "c.txt": "c\n" } },
   { t: 4, pr: 23, files: { "d.txt": "d\n" } },
 ]);
-ok("red: exit 1, all four merged, suite red, first bad merge is PR #21", s.r.code === 1 && /^merged PR #20 for #1, PR #21 for #2, PR #22 for #3, PR #23 for #4; worktrees to remove: [^;]+; suite red; first bad PR #21 for #2 \([0-9a-f]{12}\); log .+r1\.log$/.test(s.line), `${s.r.code} ${s.r.out} ${s.r.err}`);
-ok("red: one line only", s.r.out.trim().split("\n").length === 1, s.r.out);
-ok("red: _run is back at the run's head", fs.existsSync(path.join(s.root, ".worktrees", "_run", "d.txt")));
+l = loop(s);
+ok("red: tip, then two bisect steps; exit 1, first bad merge is PR #21", s.r.code === 0 && l.steps === 3 && l.r.code === 1 && /^run r1: suite red; first bad PR #21 for #2 \([0-9a-f]{12}\); worktree and branch left for the lead: proteus-work\/r1\/1, proteus-work\/r1\/2, proteus-work\/r1\/3, proteus-work\/r1\/4$/.test(l.line) && stateGone(s.root), `${s.r.out} ${l.steps} ${l.r.code} ${l.r.out} ${l.r.err}`);
+ok("red: one line only", l.r.out.trim().split("\n").length === 1, l.r.out);
+ok("red: _run is back at the run's head", fs.existsSync(path.join(RUN(s.root), "d.txt")) && fs.existsSync(path.join(RUN(s.root), "bad")));
 ok("red: the main checkout's index untouched by the bisect", g(s.root, "status", "--porcelain", "-uno") === "", g(s.root, "status", "--porcelain", "-uno"));
 
 // conflict: two tickets edit the same line; the first merges, the second stops the batch, the suite still runs
@@ -80,7 +107,8 @@ s = setup("conflict", [
   { t: 2, pr: 11, files: { "a.txt": "three\n" } },
   { t: 3, pr: 12, files: { "c.txt": "c\n" } },
 ]);
-ok("conflict: exit 1, the batch stops at the conflicting PR, the suite runs on what merged", s.r.code === 1 && s.line === "merged PR #10 for #1; conflict PR #11 for #2; worktrees to remove: proteus-work/r1/1; suite green", `${s.r.code} ${s.r.out} ${s.r.err}`);
+l = loop(s);
+ok("conflict: exit 1, the batch stops at the conflicting PR, the suite runs on what merged", s.r.code === 1 && s.line.startsWith("merged PR #10 for #1; conflict PR #11 for #2; suite: ") && l.r.code === 0 && l.line.startsWith("run r1: suite green at "), `${s.r.code} ${s.r.out} ${l.r.out} ${l.r.err}`);
 ok("conflict: nothing after the conflict merged", s.merges[0] === "Merge pull request #10 from o/proteus-work/r1/1" && !gone(s.root, 3), s.merges.join("|"));
 
 // nothing ready: nothing merges, nothing runs
@@ -135,26 +163,31 @@ s = setup("runowner", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, c
 ok("runowner: a .worktrees/_run no admin dir registers is refused, exit 1, nothing merged", s.r.code === 1 && /^run r1: refused: .*_run is not a worktree of this project/.test(s.line) && s.merges[0] === "init", `${s.r.code} ${s.r.out} ${s.r.err}`);
 ok("runowner: the unregistered _run is unchanged", listing(T) === "victim.txt", listing(T));
 
-// the suite log a link: never written through, the log made new
+// the batch's state a link: never written through, made new
 let V;
-s = setup("loglink", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+s = setup("statelink", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
   V = path.join(W, "victim"); fs.writeFileSync(V, "victim\n");
   fs.mkdirSync(path.join(common, "proteus", "merge"), { recursive: true });
-  fs.symlinkSync(V, path.join(common, "proteus", "merge", "r1.log"));
+  fs.symlinkSync(V, path.join(common, "proteus", "merge", "r1.json"));
 });
-const LOG = (root) => path.join(root, ".git", "proteus", "merge", "r1.log");
-ok("loglink: the suite runs, green", s.r.code === 0 && s.line.endsWith("; suite green"), `${s.r.code} ${s.r.out} ${s.r.err}`);
-ok("loglink: the link's target is unchanged and the log is a new file", fs.readFileSync(V, "utf8") === "victim\n" && fs.lstatSync(LOG(s.root)).isFile() && /^== [0-9a-f]{40} ==/.test(fs.readFileSync(LOG(s.root), "utf8")));
+const STATE = (root) => path.join(root, ".git", "proteus", "merge", "r1.json");
+ok("statelink: a state that is a link refuses the batch, exit 1, nothing merged", s.r.code === 1 && s.line.includes("refused:") && s.line.includes("is not a regular file") && s.merges[0] === "init", `${s.r.code} ${s.r.out} ${s.r.err}`);
+ok("statelink: the link's target is unchanged", fs.readFileSync(V, "utf8") === "victim\n");
+writeState(path.join(s.root, ".git"), "r1", { mid: null });
+ok("statelink: writing the state replaces the link with a new file, the target unchanged", fs.readFileSync(V, "utf8") === "victim\n" && fs.lstatSync(STATE(s.root)).isFile() && JSON.parse(fs.readFileSync(STATE(s.root), "utf8")).mid === null);
 // merge/ a link to a dir outside: refused, nothing written there
-s = setup("logdir", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+s = setup("statedir", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
   T = path.join(W, "outside"); fs.mkdirSync(T);
   fs.mkdirSync(path.join(common, "proteus"), { recursive: true });
   dirLink(T, path.join(common, "proteus", "merge"));
 });
-ok("logdir: a linked merge/ is refused, exit 1, nothing written through it", s.r.code === 1 && /; suite not run: .*merge is not a real directory/.test(s.line) && listing(T) === "", `${s.r.code} ${s.r.out} ${s.r.err} ${listing(T)}`);
+ok("statedir: a linked merge/ is refused, exit 1, nothing written through it", s.r.code === 1 && /; suite not run: .*merge is not a real directory/.test(s.line) && listing(T) === "", `${s.r.code} ${s.r.out} ${s.r.err} ${listing(T)}`);
+
+// across every batch above: the script never ran the suite command it was handed, nor anything in _run
+ok("never: proteus-merge.js ran no suite (#226)", !fs.existsSync(NEVER_RAN));
 
 const h = run(SCRIPT, "", { args: ["--help"] });
-ok("--help explains --suite", h.code === 0 && /--suite/.test(h.out));
+ok("--help explains --suite and --result", h.code === 0 && /--suite/.test(h.out) && /--result/.test(h.out));
 ok("no --suite is a usage error", run(SCRIPT, "", { args: ["r1"] }).code === 2);
 
 lib.summary();

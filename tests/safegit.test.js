@@ -187,7 +187,7 @@ function verdict(route, name, target, ran) {
   verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
 }
 
-// 9. proteus-merge.js: the ready PR's worktree, which it leaves, and .worktrees/_run, where it checks out and runs the suite,
+// 9. proteus-merge.js: the ready PR's worktree, which it leaves, and .worktrees/_run, which it moves for the lead's suite,
 // each with core.fsmonitor in its config.worktree; the fake gh merges the PR in a local origin
 {
   const O = path.join(W, "merge-origin.git"), R = path.join(W, "merge-root");
@@ -214,11 +214,14 @@ function verdict(route, name, target, ran) {
     prs: [{ number: 10, headRefName: "proteus-work/r1/1", baseRefName: "proteus/r1", body: "Closes #1", isDraft: false,
       statusCheckRollup: [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }] }] }));
   const res = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", `"${fw(process.execPath)}" -e 0`] });
-  ok("proteus-merge.js merged the PR and ran the suite in _run", res.code === 0 && res.out.trim() === "merged PR #10 for #1; worktrees to remove: proteus-work/r1/1; suite green" && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
+  ok("proteus-merge.js merged the PR and moved _run to it", res.code === 0 && res.out.startsWith("merged PR #10 for #1; suite: in .worktrees/_run run ") && fs.existsSync(path.join(RUN, "b.js")), res.out + res.err);
+  // a red tip: --result fail with one merge names it and moves _run back, read-tree again on _run's own index
+  const red = lib.run(path.join(SRC, "proteus-merge.js"), "", { cwd: R, env: { FAKE_GH_MERGE: state }, args: ["r1", "--suite", "x", "--result", "fail"] });
+  ok("proteus-merge.js --result fail names the first bad merge", red.code === 1 && red.out.startsWith("run r1: suite red; first bad PR #10 for #1 "), red.out + red.err);
   ok("proteus-merge.js: no git call ran the plant in the PR's worktree, which stays", !fired("merge-wt") && fs.existsSync(WT));
   ok("proteus-merge.js fast-forwarded the lead's checkout on the run branch", fs.existsSync(path.join(R, "b.js")) && g(R, "rev-parse", "HEAD") === g(R, "rev-parse", "origin/proteus/r1"), res.out + res.err);
-  verdict("proteus-merge.js", "merge-run", RUN, [["merge", res]]);
-  verdict("proteus-merge.js in the lead's checkout", "merge-lead", R, [["merge", res]]);
+  verdict("proteus-merge.js", "merge-run", RUN, [["merge", res], ["result", red]]);
+  verdict("proteus-merge.js in the lead's checkout", "merge-lead", R, [["merge", res], ["result", red]]);
 }
 
 lib.summary();

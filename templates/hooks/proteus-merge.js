@@ -1,35 +1,37 @@
 #!/usr/bin/env node
-// The merge batch of flow.md step 7: node <hooks>/proteus-merge.js [run] --suite "<suite command>"
+// The merge batch of flow.md step 7: node <hooks>/proteus-merge.js [run] --suite "<suite command>" [--result pass|fail]
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
 // verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
-// conflict or any other failed merge stops the batch. It removes no worktree: the merged branches that have one are
-// named for the lead to remove. Then the suite once in .worktrees/_run through proteus-gates-cache.js, and on red
-// a bisect over the batch's merges (first parent) for the first bad one. What merged before a stop is still tested.
-// Prints one line: the merged PRs with their tickets, the stop if any, the worktrees to remove, the suite result,
-// the first bad merge.
-// The suite's output goes to <git-common-dir>/proteus/merge/<run>.log. Opening tickets, routing a conflict and
-// stopping agents stay the lead's. Exit 0 when green or nothing to merge; 1 on a stop, a red suite, or a git or
-// tracker failure; 2 on usage or no run.
+// conflict or any other failed merge stops the batch. Then it moves .worktrees/_run to the merged tip and prints the
+// suite command for the lead to run there, sandboxed, through proteus-gates-cache.js: this script never runs
+// anything from _run or a PR (#226). `--result pass|fail` reports that run: pass ends the batch; fail on the tip
+// starts a bisect over the batch's merges (first parent), each step moving _run and printing the command again,
+// until it names the first bad merge and moves _run back to the tip. The batch's state between calls is
+// <git-common-dir>/proteus/merge/<run>.json. It removes no worktree and deletes no branch: the end names the merged
+// branches whose worktree and branch are left for the lead. Opening tickets, routing a conflict and stopping agents
+// stay the lead's. Exit 0 when a step is printed, green, or nothing to merge; 1 on a stop, a red end, a refusal, or
+// a git or tracker failure; 2 on usage or no run.
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
+// printed for the lead to run in _run, never run here
 const CACHE = path.join(__dirname, "proteus-gates-cache.js");
-const USAGE = "usage: node proteus-merge.js [run] --suite \"<suite command>\"";
+
+const USAGE = "usage: node proteus-merge.js [run] --suite \"<suite command>\" [--result pass|fail]";
 const HELP = `${USAGE}
-Merges the ready PRs into proteus/<run>, runs the suite once, and bisects a red one:
+Merges the ready PRs into proteus/<run> and prints the suite command for .worktrees/_run:
   run       the run; defaults to the open proteus/<run> branch
-  --suite   the full suite command (the gate commands in AGENTS.md ## Learned), run through
-            proteus-gates-cache.js in .worktrees/_run, made on first use
+  --suite   the full suite command (the gate commands in AGENTS.md ## Learned); printed, never run here
+  --result  pass or fail: what the printed command did in .worktrees/_run. Fail on the tip bisects the
+            batch's merges, one printed step at a time, to the first bad one
 A PR is ready when every check and status on its head is green and proteus/verdict is among them;
-it merges after the PRs of the tickets its own depends on; a conflict stops the batch. No worktree is
-removed. Prints one line: merged PRs (with tickets), the stop if any, the merged branches whose
-worktrees are left to remove, the suite result, and the first bad merge on red.
-Suite output: <git-common-dir>/proteus/merge/<run>.log.
-Exit 0 green or nothing to merge; 1 on a stop, a red suite or a failure; 2 on usage.`;
+it merges after the PRs of the tickets its own depends on; a conflict stops the batch. No worktree
+or branch is removed: the end names the merged branches left for the lead.
+State between calls: <git-common-dir>/proteus/merge/<run>.json.
+Exit 0 a step printed, green or nothing to merge; 1 on a stop, a red end or a failure; 2 on usage.`;
 
 const last = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop() || "";
 // a statusCheckRollup entry: a commit status (StatusContext) or a check run
@@ -60,16 +62,29 @@ function runCheckout(common, root) {
   return { dir, gitDir: path.join(common, "worktrees", own[0]) };
 }
 
-// the suite log <common>/proteus/merge/<run>.log, made new: merge/ a real directory, an old log unlinked, the file
-// opened exclusive (wx), so neither a link at the log nor one at merge/ is written through (#226). Its fd
-function openLog(common, log) {
-  const dir = path.dirname(log);
+// the batch's state <common>/proteus/merge/<run>.json, never through a link (#226): merge/ a real directory, an old
+// file unlinked and the new one opened exclusive (wx); read only as a regular file (O_NOFOLLOW)
+const stateFile = (common, run) => path.join(lib.stateDir(common), "merge", `${run}.json`);
+function writeState(common, run, state) {
+  const dir = path.dirname(stateFile(common, run));
   fs.mkdirSync(lib.stateDir(common), { recursive: true });
   try { fs.mkdirSync(dir); } catch (e) { if (e.code !== "EEXIST") throw e; }
   if (!fs.lstatSync(dir).isDirectory()) throw new Error(`${dir} is not a real directory (a link or a file)`);
-  try { fs.unlinkSync(log); } catch (e) { if (e.code !== "ENOENT") throw e; }
-  return fs.openSync(log, "wx");
+  const file = stateFile(common, run);
+  try { fs.unlinkSync(file); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  const fd = fs.openSync(file, "wx");
+  try { fs.writeSync(fd, JSON.stringify(state)); } finally { fs.closeSync(fd); }
 }
+// null when there is none; throws on a link at merge/ or at the file, or anything unreadable
+function readState(common, run) {
+  const file = stateFile(common, run);
+  let st;
+  try { st = fs.lstatSync(file); } catch (e) { if (e.code === "ENOENT") return null; throw e; }
+  if (!fs.lstatSync(path.dirname(file)).isDirectory() || !st.isFile()) throw new Error(`${file} is not a regular file`);
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  try { return JSON.parse(fs.readFileSync(fd, "utf8")); } finally { fs.closeSync(fd); }
+}
+const dropState = (common, run) => { try { fs.unlinkSync(stateFile(common, run)); } catch {} };
 
 // prs: [{ n, ticket, deps: [ticket] }], open: tickets still open. The merge order: a PR after those whose ticket it
 // depends on, else by ticket then PR number; one whose depends-on ticket is open outside the batch (or in a cycle)
@@ -95,14 +110,17 @@ function mergeOrder(prs, open) {
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) { console.log(HELP); return 0; }
-  let arg = "", suite = "";
+  let arg = "", suite = "", result = "";
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--suite") suite = argv[++i] || "";
     else if (argv[i].startsWith("--suite=")) suite = argv[i].slice(8);
+    else if (argv[i] === "--result") result = argv[++i] || "-";
+    else if (argv[i].startsWith("--result=")) result = argv[i].slice(9) || "-";
     else if (!arg && !argv[i].startsWith("-")) arg = argv[i];
     else { console.error(`${USAGE}\nunknown argument ${argv[i]} (--help explains them)`); return 2; }
   }
   if (!suite.trim()) { console.error(`${USAGE}\n--suite is required (--help explains it)`); return 2; }
+  if (result && !["pass", "fail"].includes(result)) { console.error(`${USAGE}\n--result is pass or fail`); return 2; }
 
   // git runs on the project's common dir, pinned (#215); a working tree only through its checkout's root and index
   const common = lib.repoCommon();
@@ -116,6 +134,58 @@ function main() {
   const base = `${names.branch}${run}`;
   const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
   const fail = (why) => { console.log(`run ${run}: ${why}`); return 1; };
+  const name = (p) => `PR #${p.n}${p.ticket ? ` for #${p.ticket}` : ""}`;
+  const fw = (p) => p.split(path.sep).join("/");
+
+  // _run at sha: made by worktree add, then moved by read-tree on its own index and its HEAD set by update-ref, as
+  // git on the common dir cannot check out in a linked worktree (its HEAD would be the main checkout's). Throws on
+  // a _run that fails runCheckout
+  const at = (sha) => {
+    const co = runCheckout(common, root);
+    const r = !co.gitDir ? lib.gitTry(common, ["worktree", "add", "--detach", co.dir, sha], { cwd: root, timeout: 120000 })
+      : lib.gitTry(common, ["read-tree", "-u", "--reset", sha], { cwd: co.dir, workTree: co.dir, index: path.join(co.gitDir, "index"), timeout: 120000 });
+    const h = r.ok && co.gitDir ? lib.gitTry(common, ["update-ref", "--no-deref", `worktrees/${path.basename(co.gitDir)}/HEAD`, sha]) : r;
+    if (!h.ok) throw new Error(`.worktrees/_run cannot check out ${sha.slice(0, 12)} (${last(h.err)})`);
+  };
+  // the command the lead runs in _run, sandboxed, then this script's next call
+  const runDir = path.join(lib.worktreesDir(root), "_run");
+  const next = `suite: in .worktrees/_run run node ${fw(path.relative(runDir, CACHE))} ${JSON.stringify(suite)}, then node ${fw(path.relative(root, __filename))} ${run} --suite ${JSON.stringify(suite)} --result pass|fail`;
+  const leftFor = (left) => (left.length ? `; worktree and branch left for the lead: ${left.join(", ")}` : "");
+  const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+  // --result: the lead's run of the printed command on the commit _run holds; the tip's, then each bisect step's
+  if (result) {
+    try {
+      const st = readState(common, run);
+      if (!st) { console.error(`run ${run}: no batch awaits a result (run it without --result first)`); return 2; }
+      if (!SHA.test(st.pre) || !SHA.test(st.head) || !Array.isArray(st.merged) || !Array.isArray(st.left)) return fail(`refused: ${stateFile(common, run)} is not a batch's state`);
+      if (st.mid === null) {
+        if (result === "pass") { dropState(common, run); console.log(`run ${run}: suite green at ${st.head.slice(0, 12)}${leftFor(st.left)}`); return 0; }
+        // bisect the batch's merges: pre passed (the last batch ended green), head failed
+        st.shas = lib.gitTry(common, ["rev-list", "--first-parent", "--reverse", `${st.pre}..${st.head}`], { timeout: 30000 }).out.split(/\s+/).filter(Boolean);
+        st.lo = -1;
+        st.hi = st.shas.length - 1;
+      } else if (result === "pass") st.lo = st.mid;
+      else st.hi = st.mid;
+      if (!Array.isArray(st.shas) || !st.shas.every((x) => SHA.test(x))) return fail(`refused: ${stateFile(common, run)} is not a batch's state`);
+      if (st.hi - st.lo > 1) {
+        st.mid = (st.lo + st.hi) >> 1;
+        at(st.shas[st.mid]);
+        writeState(common, run, st);
+        console.log(`run ${run}: bisecting, ${st.hi - st.lo - 1} merge(s) left to test; ${next}`);
+        return 0;
+      }
+      const bad = st.shas[st.hi] || st.head;
+      const p = st.merged.find((x) => x.sha === bad);
+      at(st.head);
+      dropState(common, run);
+      console.log(`run ${run}: suite red; first bad ${p ? name(p) : "merge"} (${bad.slice(0, 12)})${leftFor(st.left)}`);
+      return 1;
+    } catch (e) {
+      return fail(`refused: ${e.message}`);
+    }
+  }
+  try { if (readState(common, run)) return fail(`a batch awaits --result pass|fail (${stateFile(common, run)})`); } catch (e) { return fail(`refused: ${e.message}`); }
 
   const prs = parse(lib.gh(["pr", "list", "--base", base, "--state", "open", "--json", "number,headRefName,body,isDraft,statusCheckRollup", "--limit", "200"], root, 30000));
   if (!Array.isArray(prs)) return fail("tracker unreachable (gh pr list failed)");
@@ -150,8 +220,7 @@ function main() {
   const pre = tip();
   if (!pre) return fail(`cannot fetch origin/${base}`);
   // _run checked before anything merges: a link or a stranger's admin dir there refuses the batch
-  let runDir;
-  try { runDir = runCheckout(common, root).dir; } catch (e) { return fail(`refused: ${e.message}`); }
+  try { runCheckout(common, root); } catch (e) { return fail(`refused: ${e.message}`); }
   // each linked worktree's branch, its HEAD read as a file
   const worktrees = {};
   for (const wt of lib.registeredWorktrees(common)) { const b = lib.branchOf(wt); if (b) worktrees[b] = wt; }
@@ -168,53 +237,24 @@ function main() {
     }
     merged.push({ ...p, sha: tip() });
   }
-  const name = (p) => `PR #${p.n}${p.ticket ? ` for #${p.ticket}` : ""}`;
   const head = merged.length ? tip() : "";
   const left = merged.flatMap((p) => (worktrees[p.head] ? [p.head] : []));
-  let line = `merged ${merged.length ? merged.map(name).join(", ") : "none"}${stop ? `; ${stop}` : ""}${left.length ? `; worktrees to remove: ${left.join(", ")}` : ""}`;
+  const line = `merged ${merged.length ? merged.map(name).join(", ") : "none"}${stop ? `; ${stop}` : ""}`;
   if (!head) { console.log(`${line}; suite not run`); return 1; }
 
   // the lead's checkout, when it sits on the run branch, follows it (stack.md)
   if (lib.branchOf(root) === base) lib.gitTry(common, ["merge", "--ff-only", `origin/${base}`], { cwd: root, workTree: root, index: lead.index, timeout: 60000 });
 
-  const log = path.join(lib.stateDir(common), "merge", `${run}.log`);
-  // _run at sha: made by worktree add, then moved by read-tree on its own index and its HEAD set by update-ref, as
-  // git on the common dir cannot check out in a linked worktree (its HEAD would be the main checkout's)
-  const at = (sha) => {
-    const co = runCheckout(common, root);
-    if (!co.gitDir) return lib.gitTry(common, ["worktree", "add", "--detach", co.dir, sha], { cwd: root, timeout: 120000 });
-    const r = lib.gitTry(common, ["read-tree", "-u", "--reset", sha], { cwd: co.dir, workTree: co.dir, index: path.join(co.gitDir, "index"), timeout: 120000 });
-    return r.ok ? lib.gitTry(common, ["update-ref", "--no-deref", `worktrees/${path.basename(co.gitDir)}/HEAD`, sha]) : r;
-  };
-  let fd = -1;
-  const passes = (sha) => {
-    const c = at(sha);
-    if (!c.ok) throw new Error(`.worktrees/_run cannot check out ${sha.slice(0, 12)} (${last(c.err)})`);
-    fs.writeSync(fd, `== ${sha} ==\n`);
-    return spawnSync(process.execPath, [CACHE, suite], { cwd: runDir, stdio: ["ignore", fd, fd], windowsHide: true }).status === 0;
-  };
   try {
-    fd = openLog(common, log);
-    if (passes(head)) { console.log(`${line}; suite green`); return stop ? 1 : 0; }
-    // bisect the batch's merges: pre passed (the last batch ended green), head failed
-    const shas = lib.gitTry(common, ["rev-list", "--first-parent", "--reverse", `${pre}..${head}`], { timeout: 30000 }).out.split(/\s+/).filter(Boolean);
-    let lo = -1, hi = shas.length - 1;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (passes(shas[mid])) lo = mid; else hi = mid;
-    }
-    const bad = shas[hi] || head;
-    const p = merged.find((x) => x.sha === bad);
-    line += `; suite red; first bad ${p ? name(p) : "merge"} (${bad.slice(0, 12)}); log ${log}`;
     at(head);
+    writeState(common, run, { pre, head, merged: merged.map((p) => ({ n: p.n, ticket: p.ticket, head: p.head, sha: p.sha })), left, mid: null });
   } catch (e) {
-    line += `; suite not run: ${e.message}`;
-  } finally {
-    if (fd >= 0) fs.closeSync(fd);
+    console.log(`${line}; suite not run: ${e.message}${leftFor(left)}`);
+    return 1;
   }
-  console.log(line);
-  return 1;
+  console.log(`${line}; ${next}`);
+  return stop ? 1 : 0;
 }
 
-module.exports = { mergeOrder, green };
+module.exports = { mergeOrder, green, writeState };
 if (require.main === module) process.exitCode = main();
