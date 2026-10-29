@@ -22,8 +22,9 @@
 // branch is not its work), and the call is answered with a block naming the paths: the agent must put them back.
 // Every later shell call of that agent re-checks them and blocks again while any differs from its state before,
 // and proteus-signoff.js re-checks them itself (openFor), so it refuses MERGE on that branch only while one still
-// does, whether or not the agent has ended. Records are never deleted; deleting one is itself a change this check
-// catches.
+// does, whether or not the agent has ended. A call whose snapshot went missing leaves only that on the record; once
+// its agent has ended, the signoff snapshots the agent's worktree again and compares it with its branch's commit
+// (#229). Records are never deleted; deleting one is itself a change this check catches.
 // The lead's own shell calls are windows in <state>/lead-flight.json (leadStart from the lead guard, closed here on
 // the lead's PostToolUse). What changed while a lead call overlapped an agent's call cannot be pinned on either:
 // it becomes a notice in <state>/unattributed/<seq>.json, shown to the lead after its call, instead of a block and
@@ -729,8 +730,33 @@ async function check(ev, ad) {
   else ad.postBlock(ev, msg);
 }
 
+// an agent has ended: no call of its in flight, and its beat is gone (a stop that reported) or stamped ended
+function ended(common, rec) {
+  if (flights(common, "").some((m) => m.key === rec.key)) return false;
+  const b = lib.readJSON(path.join(lib.beatsDir(common), `${String(rec.agent || "").replace(/[^\w.-]/g, "_")}.json`), null);
+  return !b || !!b.ended;
+}
+
+// a missing snapshot says nothing of what the call changed, so the agent's worktree is snapshotted again
+// (fingerprint) and compared with its branch's commit (#229): { gone } when the worktree is, else the guarded paths
+// that differ (dirty, untracked or ignored), [] when it matches. Its .git file is not in any commit, so not compared
+async function resnap(common, rec) {
+  const wt = rec.worktree ? lib.realOr(rec.worktree) : "";
+  const fp = fingerprint(common);
+  if (!wt || !fp.roots.includes(wt) || !fs.existsSync(wt)) return { gone: true };
+  if (branchName(wt) !== rec.branch) return { paths: [`${slash(wt)} (HEAD is not on ${rec.branch})`] };
+  const specs = targets(common).out.filter(([abs, r]) => r === wt && path.basename(abs) !== ".git").map(([abs]) => `:(literal)${slash(path.relative(wt, abs))}`);
+  const lines = await lib.treeChangesAsync(wt, specs, true);
+  if (lines === null) return { paths: [`${slash(wt)} (its tree could not be read)`] };
+  const walked = new Set(Object.keys(fp.entries).filter((abs) => rootOf(abs, fp.roots) === wt).map((abs) => slash(path.relative(wt, abs))));
+  const gone = (rel) => { try { fs.lstatSync(path.join(wt, rel)); return false; } catch { return true; } };
+  // what the walk skips (agent memory, a nested checkout) is not guarded, unless a tracked file there was deleted
+  return { paths: [...new Set(lines.map((l) => l.slice(3)))].flatMap((rel) => (walked.has(rel) || gone(rel) ? [slash(path.join(wt, rel))] : [])) };
+}
+
 // open records for a branch: each re-checked, so a record edited to open:false with its paths still changed counts,
-// and one whose agent has ended stops counting once its paths are back or explained (#182)
+// and one whose agent has ended stops counting once its paths are back or explained (#182), or, with only a missing
+// snapshot on it, once its worktree matches its branch's commit (#229)
 async function openFor(common, branch) {
   const dir = tamperDir(common), out = [];
   let names = [];
@@ -739,8 +765,12 @@ async function openFor(common, branch) {
     const rec = lib.readJSON(path.join(dir, n), null);
     if (!rec || rec.branch !== branch) continue;
     const left = await unrestored({ items: (rec.items || []).filter((i) => i.kind !== "snapshot") }, common);
-    const snaps = rec.open ? (rec.items || []).filter((i) => i.kind === "snapshot") : [];
-    if (left.length || snaps.length) out.push({ ...rec, left: [...left, ...snaps] });
+    let snaps = rec.open ? (rec.items || []).filter((i) => i.kind === "snapshot") : [];
+    if (snaps.length && !left.length && ended(common, rec)) {
+      const re = await resnap(common, rec);
+      snaps = re.gone ? [{ kind: "snapshot", gone: true, worktree: rec.worktree || "" }] : re.paths.map((p) => ({ kind: "snapshot", path: p }));
+    }
+    if (left.length || snaps.length) out.push({ ...rec, file: path.join(dir, n), left: [...left, ...snaps] });
   }
   return out;
 }

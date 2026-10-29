@@ -101,7 +101,8 @@ function securityMirror(pr, head, repo, run) {
 // a MERGE is refused while the PR's head branch has a guard-violation record (proteus-shell-check.js) whose
 // paths still differ from their state before, re-checked here (openFor) rather than taken from the record's
 // open flag, so a record whose agent has ended stops counting once its paths are back or explained (#182): the PR
-// asks for review, not the worktree that holds the change
+// asks for review, not the worktree that holds the change. A record with only a missing snapshot on it clears once
+// its agent has ended and its worktree matches the branch's commit; with that worktree gone, only the human clears it
 async function tampered(cwd, pr, run) {
   const common = lib.gitCommonDir(lib.gitRoot(cwd) || cwd);
   if (!common) return "";
@@ -115,7 +116,11 @@ async function tampered(cwd, pr, run) {
   if (!branch) return `proteus-signoff: gh pr view ${pr} failed to name the head branch, and the guard has violation records to check it against; nothing posted. Retry.`;
   const open = await check.openFor(common, branch);
   if (!open.length) return "";
-  const paths = open.flatMap((r) => r.left.map((i) => i.path || i.worktree || "the guard's snapshot")).map((p) => String(p).split(path.sep).join("/"));
+  const slash = (p) => String(p).split(path.sep).join("/");
+  // a record with only a missing snapshot, whose ended agent's worktree is gone: nothing is left to re-check (#229)
+  const lost = open.filter((r) => r.left.some((i) => i.gone));
+  if (lost.length) return `proteus-signoff: ${branch} has an open guard-violation record of an ended agent whose shell call lost the guard's snapshot, and its worktree ${lost.map((r) => slash(r.worktree || "(none)")).join(", ")} is gone, so the guard cannot compare it with the branch's commit; no MERGE is posted. Raise it to the lead for the human, who clears it: read the PR's diff (gh pr diff ${pr}) and check the hooks, gates and CLI settings in every checkout, then delete ${lost.map((r) => slash(r.file)).join(" and ")} and sign off again.`;
+  const paths = open.flatMap((r) => r.left.map((i) => i.path || i.worktree || "the guard's snapshot")).map(slash);
   return `proteus-signoff: ${branch} has an open guard-violation record (a shell call changed ${paths.slice(0, 6).join(", ")}${paths.length > 6 ? ", ..." : ""}, which hold Proteus's hooks, gates, git internals or another worktree); no MERGE is posted while they differ from their state before. Send the ticket BACK-TO-WORKER to restore them, or raise it to the lead.`;
 }
 
