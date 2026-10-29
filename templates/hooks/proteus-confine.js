@@ -149,7 +149,7 @@ function readText(p) {
 // with next(p's text), renamed over p. A link at p is replaced, never followed. next returning null leaves p as it
 // was; mode defaults to p's own. True when p was replaced; throws, the lock removed, on any failure (#212 B1)
 function replaceFile(p, next, mode) {
-  const lock = p + ".lock", st = lstat(p);
+  const lock = p + ".lock", st = lstat(p), drop = () => remove(lock, [real(path.dirname(p))], "file");
   const fd = fs.openSync(lock, "wx", mode || (st && st.isFile() ? st.mode & 0o777 : 0o644));
   try {
     let data;
@@ -157,10 +157,10 @@ function replaceFile(p, next, mode) {
       data = next(readText(p));
       if (data !== null) { fs.writeFileSync(fd, data); if (mode) fs.fchmodSync(fd, mode); }
     } finally { fs.closeSync(fd); }
-    if (data === null) { fs.unlinkSync(lock); return false; }
+    if (data === null) { drop(); return false; }
     fs.renameSync(lock, p);
     return true;
-  } catch (e) { try { fs.unlinkSync(lock); } catch {} throw e; }
+  } catch (e) { drop(); throw e; }
 }
 
 // point link at the directory target; a link already there goes through remove(link), which refuses by
