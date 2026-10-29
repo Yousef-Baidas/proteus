@@ -13,6 +13,10 @@ const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteu
 const HARNESS = path.join(__dirname, "proteus-harness.js");
 let adapter = null;
 const harness = () => (adapter && adapter.event ? adapter : (adapter = require(HARNESS)));
+// install.js --sandbox's copy of the hooks runs outside the sandbox (#188): pinProject fixes its project's main root
+// and common dir from sandbox-root.json, so the anchor, every state dir and the main root come from there, never
+// from a .git file, a commondir, the cwd or an event
+let pinned = null;
 
 // read the hook's stdin JSON, run main(Proteus event, adapter); any throw or rejection exits 0
 function run(main) {
@@ -31,7 +35,7 @@ function run(main) {
 }
 
 // the project dir: the event's, else the one the harness reports outside a hook
-const projectRoot = (ev) => (ev && ev.root) || harness().projectRoot({});
+const projectRoot = (ev) => (pinned && pinned.root) || (ev && ev.root) || harness().projectRoot({});
 
 // the checkout a script serves, wherever it is installed (a plugin cache too): the git root of dir (a hook's
 // cwd or root), else of the harness's project dir, else of the process cwd; else, last, the repo these
@@ -56,6 +60,7 @@ const isLead = (ev, root) => !ev.agent && !isLinked(root);
 // <git-common-dir>, absolute, from files only (never a git call, #215): a dir below a checkout root resolves
 // through that root. It follows a .git file and commondir, so it locates Proteus's state; repoCommon is what git runs on.
 function gitCommonDir(root) {
+  if (pinned) return checkoutAt(pinned.common, root) ? pinned.common : null;
   const dotgit = path.join(root, ".git");
   try {
     const st = fs.statSync(dotgit);
@@ -74,7 +79,7 @@ function gitCommonDir(root) {
 }
 
 // main checkout root: the common dir's parent when it is a .git dir (null for bare repos)
-const mainRoot = (common) => (common && path.basename(common) === ".git" ? path.dirname(common) : null);
+const mainRoot = (common) => (pinned && common === pinned.common ? pinned.root : common && path.basename(common) === ".git" ? path.dirname(common) : null);
 
 const stateDir = (common) => path.join(common, "proteus");
 // the scratch root proteus-scratch.js --path hands out; the edit guards let an agent write under it
@@ -764,6 +769,7 @@ function trustedCommon(dir) {
 // the project's common dir, from the harness's project dir (CLAUDE_PROJECT_DIR), never a shell's cwd
 const anchors = new Map();
 function anchorCommon() {
+  if (pinned) return pinned.common;
   const p = path.resolve(String(harness().projectRoot({}) || "."));
   if (!anchors.has(p)) anchors.set(p, trustedCommon(p));
   return anchors.get(p);
@@ -794,9 +800,12 @@ function repoCommon(dir) {
   try { fs.lstatSync(path.join(c, "commondir")); return null; } catch {}
   return !dir || checkoutAt(c, dir) ? c : null;
 }
+// pin the project to root and common (from sandbox-root.json); a path outside its checkouts then has no common dir
+function pinProject(root, common) { pinned = { root: realOr(root), common: realOr(common) }; anchors.clear(); }
 // dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
-// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command
-const checkoutOf = (dir, root) => { const c = dir && (root ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
+// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command.
+// A pinned project ignores root
+const checkoutOf = (dir, root) => { const c = dir && (root && !pinned ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // a ref's commit from files (loose, then packed-refs), else git on the common dir (reftable)
@@ -844,17 +853,53 @@ function changeCalls(co, specs, ignored) {
     [["ls-files", "-o", "-z", ...(ignored ? [] : ["--exclude-standard", "--directory", "--no-empty-directory"]), "--", ...specs], "?? ", o]];
 }
 const changeLines = (outs, calls) => (outs.some((x) => x === null) ? null : outs.flatMap((out, i) => String(out).split("\0").filter(Boolean).map((p) => calls[i][1] + p)));
-function treeChanges(dir, specs = [], ignored = false) {
-  const co = checkoutOf(dir);
+// co with its index swapped for a private copy, and done() to delete the copy; null when co is, or its index is a
+// link, not a regular file or over INDEX_CAP. git diff rewrites a stat-dirty index (a lock, then a rename, both by
+// path), and GIT_OPTIONAL_LOCKS=0 does not stop it, so run on <common>/worktrees/<id>/index it writes wherever an
+// agent swaps that dir for a link (#212). The copy is a 'wx' file in a fresh mkdtemp dir under <common>/proteus-lead,
+// which the sandbox profile denies (a temp dir agents can write would let them swap that dir too); its source is
+// lstat'd and opened without following a link. A checkout with no index yet gets a name in that dir with nothing there
+const INDEX_CAP = 64 << 20;
+function privateIndex(co) {
   if (!co) return null;
-  const calls = changeCalls(co, specs, ignored);
-  return changeLines(calls.map(([args, , o]) => { try { return String(gitRun(co.common, args, o)); } catch { return null; } }), calls);
+  let st = null;
+  try { st = fs.lstatSync(co.index); } catch (e) { if (e.code !== "ENOENT") return null; }
+  if (st && (!st.isFile() || st.size > INDEX_CAP)) return null;
+  let dir;
+  try { dir = fs.mkdtempSync(path.join(leadDir(co.common), "index-")); } catch { return null; }
+  const done = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+  const index = path.join(dir, "index");
+  if (st) {
+    try {
+      const { fd, st: open } = openRegular(co.index);
+      try {
+        if (open.size > INDEX_CAP) throw new Error("index too large");
+        // the size fstat saw, no more: an index that grows meanwhile is refused, not read past the cap
+        const buf = Buffer.alloc(open.size);
+        let n = 0, got;
+        while (n < buf.length && (got = fs.readSync(fd, buf, n, buf.length - n, null)) > 0) n += got;
+        if (fs.readSync(fd, Buffer.alloc(1), 0, 1, null)) throw new Error("index grew while read");
+        fs.writeFileSync(index, buf.subarray(0, n), { flag: "wx", mode: 0o600 });
+      } finally { fs.closeSync(fd); }
+    } catch { done(); return null; }
+  }
+  return { co: { ...co, index }, done };
+}
+function treeChanges(dir, specs = [], ignored = false) {
+  const p = privateIndex(checkoutOf(dir));
+  if (!p) return null;
+  try {
+    const calls = changeCalls(p.co, specs, ignored);
+    return changeLines(calls.map(([args, , o]) => { try { return String(gitRun(p.co.common, args, o)); } catch { return null; } }), calls);
+  } finally { p.done(); }
 }
 async function treeChangesAsync(dir, specs = [], ignored = false) {
-  const co = checkoutOf(dir);
-  if (!co) return null;
-  const calls = changeCalls(co, specs, ignored);
-  return changeLines(await Promise.all(calls.map(([args, , o]) => gitAsync(co.common, args, o))), calls);
+  const p = privateIndex(checkoutOf(dir));
+  if (!p) return null;
+  try {
+    const calls = changeCalls(p.co, specs, ignored);
+    return changeLines(await Promise.all(calls.map(([args, , o]) => gitAsync(p.co.common, args, o))), calls);
+  } finally { p.done(); }
 }
 // a release home's git dir: a bare clone's own dir, else its checkout's (trustedCommon)
 function homeGitDir(home) {
@@ -864,6 +909,54 @@ function homeGitDir(home) {
   return trustedCommon(home);
 }
 const homeGit = (home, args, timeout = 3000, o = {}) => gitIn(homeGitDir(home), args, timeout, o);
+// the scratch root install.js --sandbox makes writable: <tmpdir>/proteus-<uid>
+function sandboxScratch() {
+  const who = typeof process.getuid === "function" ? String(process.getuid()) : os.userInfo().username.replace(/[^\w.-]/g, "_");
+  return path.join(os.tmpdir(), `proteus-${who}`);
+}
+// the path the OS resolves p to (realpathSync.native: every link followed, and on macOS and Windows the case the disk
+// stores), else p resolved
+const realNative = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+// target is place or inside it; on macOS and Windows, whose file systems ignore case by default, compared case- and
+// Unicode-folded (NFC, lower case), as samePath does. platform is for tests
+function within(place, target, platform = process.platform) {
+  const p = platform === "win32" ? path.win32 : path.posix, fold = platform === "win32" || platform === "darwin";
+  const key = (x) => { const r = p.resolve(String(x)); return fold ? r.normalize("NFC").toLowerCase() : r; };
+  const rel = p.relative(key(place), key(target));
+  return rel === "" || (rel !== ".." && !rel.startsWith(".." + p.sep) && !p.isAbsolute(rel));
+}
+// every path a Proteus sandbox profile lets sandboxed commands write: allowWrite of each
+// <claudeDir>/proteus-sandbox/*.json, which install.js --sandbox writes and every profile denies to agents. A profile
+// is read as a regular file, never through a link; one that cannot be read or parsed throws, so a caller fails closed
+function profileWrites() {
+  const dir = path.join(claudeDir(), "proteus-sandbox");
+  let names;
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) throw new Error(`${dir} is not a directory`);
+    names = fs.readdirSync(dir);
+  } catch (e) { if (e.code === "ENOENT") return []; throw e; }
+  const out = [];
+  for (const n of names.filter((x) => x.endsWith(".json")).sort()) {
+    const j = JSON.parse(readUntrusted(path.join(dir, n)));
+    const w = j && j.sandbox && j.sandbox.filesystem && j.sandbox.filesystem.allowWrite;
+    if (!Array.isArray(w)) continue;
+    for (const x of w) if (typeof x === "string" && x) out.push(x.startsWith("~/") ? path.join(os.homedir(), x.slice(2)) : x);
+  }
+  return out.filter((x) => path.isAbsolute(x));
+}
+// a release home agents can write (#212 B6, B7): the home as named or its realpath (o.real, else realNative of it) is
+// inside the project root, <common>, a registered worktree, a guest dir, a path any Proteus sandbox profile makes
+// writable (profileWrites: another sandboxed repo, the scratch root that profile names) or o.places, or its git dir is
+// <common>. The autostart then fetches, merges, copies, spawns and requires nothing from it, and install.js --sandbox
+// refuses. Throws when a profile cannot be read; callers treat that as writable
+function homeWritable(home, root, common, o = {}) {
+  if (!home) return false;
+  const lex = path.resolve(String(home)), h = o.real || realNative(lex);
+  if (common && samePath(homeGitDir(h), realNative(common))) return true;
+  const places = [root, root && guestDir(root), ...profileWrites(), ...(o.places || [])];
+  if (common) places.push(common, scratchDir(common), defaultGuestDir(common), ...registeredWorktrees(common));
+  return places.some((p) => p && [path.resolve(p), realNative(path.resolve(p))].some((at) => within(at, lex) || within(at, h)));
+}
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
 // The autostart (autoUpdate) and install.js --update share these.
@@ -3053,7 +3146,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, profileWrites, homeWritable,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,

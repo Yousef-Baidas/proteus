@@ -463,6 +463,7 @@ const ALLOW = {
   "proteus-lib.js:addAllow": "--allow, a lead CLI run from the lead's own (sandboxed) shell, writes <common>/proteus/allow",
   "proteus-lib.js:forget": "watchdog --forget, a lead CLI run from the lead's own (sandboxed) shell, writes <common>/proteus/forgotten.json",
   "proteus-lib.js:syncText": "the session-start sync writes the checkout's .claude, not <common>",
+  "proteus-lib.js:privateIndex": "treeChanges' index copy: 'wx' into its own fresh mkdtemp dir under <common>/proteus-lead (denied), removed after",
   "proteus-lib.js:releaseCheck": "the release check's cache lives in the plugin data dir under the user's home, not <common>",
   "proteus-autostart.js:patchConfig": "~/.claude/proteus.json, the user's own config, not <common>",
   "proteus-autostart.js:pluginMove": "proteus-update.log beside ~/.claude/proteus.json, the user's own config dir, not <common>",

@@ -318,6 +318,7 @@
       "292c0de089dcc47cd1a414237d616daafc4cfade",
       "320185d9ca4970659d43eac05375c9bca2c2256e",
       "338e4d57ef29db86aabaa72b61c588042e33d98b",
+      "3f268b5869b81ad951576fcf87c436aed6165429",
       "4b51672624780e3ca69359bbf1a5880ec3116075",
       "566821842f68a502153d5f22a13b560937b947bc",
       "684b1aed3271745a57bdf1b5296faa63fed5f7ca",
@@ -330,6 +331,7 @@
       "9356518ce5ebf552340e6e2726abf3dc6a1f2e7d",
       "99434cd646c1b21cfe4963db66a532ac3674fd5c",
       "a747692f0df14c0664ae938816f8f4c974a1377b",
+      "a774ab8eaf13730ee0a6ff8791296fb71a61ca97",
       "b16995e05b57af09c2fdc9cb51c8913e3749e66a",
       "b1843bbe6f9d48ac0607be87484ff52f6f428f50",
       "ba5c859d838a9c20174a8ff4d88b54a2ef14e5e2",
@@ -344,7 +346,9 @@
       "dcc5c31581926a201b9549997f71e31e4cd1444d",
       "dcc6bda825ecb7d52aa81e44b4e5b304a516b821",
       "dea8941e1c82dfc66851d428070c3e8fb596fe42",
-      "fa0e7f9744feda5b4e8a2bead783d90217b9ee20"
+      "f9c545e6338f2c3044031a18ff857e22ab9c4cd3",
+      "fa0e7f9744feda5b4e8a2bead783d90217b9ee20",
+      "fefd768b1ceb87cb79b057a51bc67da9797f501e"
     ],
     "templates/hooks/proteus-baseline.js": [
       "04316325a0db5b71a0a50fb68247598b8691d959",
@@ -358,8 +362,14 @@
       "ff7ef568ac97e03f09dd9f90bf6a3cc80375af2c"
     ],
     "templates/hooks/proteus-confine.js": [
+      "01a9f8d84f34fcfe4a8455e090d17262afa78822",
       "62b8ba083e1f3db000633f432be23ef93570a170",
+      "662b9a317601aab61e5807dd4ff1a78a684c57e5",
+      "728702be6e50141d9ed396a7a29bd9903849b936",
+      "af50936ed8de46e950920090a4dde1de6c15a434",
       "af563f04a6079bacd2175b4ebd33b7883bc60e1f",
+      "c11653a8d28431974cc1eb6ed3cb8c167667f6d5",
+      "eef919332eb9c1ec202977e336286a18ec3d6ef9",
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
     "templates/hooks/proteus-gates-cache.js": [
@@ -526,14 +536,19 @@
     ],
     "templates/hooks/proteus-lib.js": [
       "036f5601fa8828a3f2bf4df43fc3fab35d872632",
+      "0461db01e1d197f3a4752da269c0a6818cde9db6",
       "0465a135f1b7f89fcced70b7c97daa7ee56d9fda",
       "05cbce28c77463e2e1b16d497b527b62e8874262",
       "0f0d9007badacdfdd2afe8ec58b51b35e5839221",
+      "1362c493f0095bc89114a99491810343fd238c52",
+      "14436f213c41a4f0fd02de012879605dbb29a95f",
+      "19661de36f71b1d0ecb64ac855a83a7af15df936",
       "1b6d57c19ead814ea68ff3e208a427b182a9bff4",
       "1d767da6bbd7b5769ef533a68df74effad098125",
       "23b5e77f167fc4cc6076b638c1e24e34c66e04f8",
       "26499a988f5e4949432a9f455746973121698c91",
       "285d025638de31807005185efe33e93ea0640f97",
+      "2b61926a40d94784dbb9d14fa360ba71e30069da",
       "2be489b65243f77f4da6df8438b1e20a58d3637d",
       "30fbb98f511dcf65bb844eda422af9fd0021a4e8",
       "3162c6d97a09c9ac58f38a058e7e1542be8f8d5c",
@@ -555,6 +570,7 @@
       "63f3f5c916f52bd0536f8cc4f660ffe3cc88760c",
       "642d8a455f1b3c7c98eca45ca5daa6c565051e32",
       "643e4e35b6a55aba0308ed5ee038c3fef406d682",
+      "64ebccf5b74ef01c6670f4c695f2e91d2cdeda7d",
       "6934fed870e15f7834ede7e43e32e5c519fb53eb",
       "6adaabf9223ca85e4eff1246bb47b6105dff43aa",
       "6c5b1d75b9d13be5df220ec346791f71c99b0110",
@@ -606,6 +622,7 @@
       "e8d7b49e45a94e19532f1f289fe6df353335c771",
       "ed057ccefeee9308b69928d3b6cfb27b8a65ec56",
       "eecf0a1087de0fb67fde9f62b711f873833c8b93",
+      "efb2de8b1523b191ba29ee9e190e6deba0eac361",
       "f184e60cc673f8fc29bdebb037ae6c9a6bdd3de1",
       "f4b1ac1050c761af488a19168ba25d0bc98b5f86",
       "fabdc8b2a8326ee4a64c04edae8c4609f5533997",
@@ -682,6 +699,9 @@
       "2e609df56dc710c35196481be324c90a191d6617",
       "ec14d370f4b5d90f4ad67b05d77f25d827f2648d"
     ],
+    "templates/hooks/proteus-skill-guard.js": [
+      "c67a5df50947c9767397f6cd3c3123464265844d"
+    ],
     "templates/hooks/proteus-skillpath.js": [
       "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"
     ],
@@ -735,13 +755,19 @@
       "03c56971d56274280e4125571f7e74f6c5a2ee48",
       "0a052d7b36fd035ce16880416e7853947050a4f1",
       "1b6d6eebb8caf858f47d84f617ac15bbf70c99e5",
+      "3c888adc93bfe907cb5e5bd93c327e2ba3acfe65",
+      "4ff9f669b7a2276051a1523d7dfeca2a9378a52d",
       "531d77a807769d88a1bda70697673d11c02f2148",
+      "5467253993b0ad4ceb362325cf2624dc07b2f71d",
+      "5ca45d2ead444b6089deab96d7ee9e29b30e47df",
       "6137fdf998ab3ca1058f7c0ff3ca9d41b643b82e",
       "9645b5d835332c74cf76ff128756950e37606f8c",
       "b1971a9cec288d9891026f69a8631276d3c7274c",
       "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
       "b28ed0fc1caa033b02c01c3dbfce6eae6e0770eb",
+      "bcfac5f7775e7d6e8dde0e8da63e0506169d1984",
       "c422f2229e8f5da06ef3dac9cfa56425caa29b31",
+      "c4c7c2fc3944b7df0a59fcd83f4e57a85caf984d",
       "c5a59d465fd5ea7ff156a24a59473bc4efccef77",
       "e5194759c4140be6b9dbf7abd1ff41b0f70f87dc"
     ],

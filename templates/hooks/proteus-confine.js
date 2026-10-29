@@ -33,6 +33,31 @@ const realish = (p) => { const a = path.resolve(p), r = real(a); if (r) return r
 const userHome = () => { try { return realish(os.userInfo().homedir); } catch { return null; } };
 // Claude Code's config dir: $CLAUDE_CONFIG_DIR, else ~/.claude (here: install.js, link-skills.js and the hooks all load this file)
 const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
+// install.js --sandbox (#188): a repo's key (its git common dir, hashed) and the dir its copy of
+// proteus-worktree.js and the hooks beside it go in. That copy runs outside the sandbox, so it sits outside every
+// path the sandbox lets agents write, and the in-repo proteus-worktree.js names it once a worktree is prepared.
+const sandboxKey = (common) => require("crypto").createHash("sha256").update(real(common) || path.resolve(common)).digest("hex").slice(0, 8);
+const sandboxBin = (common) => path.join(claudeDir(), "proteus-sandbox", "bin", sandboxKey(common));
+// Edit deny rules for what git in a git dir would run outside the sandbox: its config, config.worktree and hooks; and for
+// proteus-lead/, the state the hooks write outside the sandbox (install.js --sandbox makes it first). The same for
+// every submodule git dir under modules/ (a dir holding HEAD, nested ones too). A worktree's own config.worktree and
+// proteus-hooks/ are not denied: renaming worktrees/<id> defeats such a rule (#212 r5), and the hooks' pinned git
+// reads neither. On Linux and WSL2 the sandbox's denyWrite honours an exact path or a trailing /** only, so every
+// rule is one of those, listed per submodule as they are now; links are not followed
+function gitDenyRules(gitdir) {
+  const rule = (...s) => `Edit(/${path.join(gitdir, ...s).split(path.sep).join("/")})`;
+  const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
+  const rules = [rule("config"), rule("config.worktree"), rule("hooks", "**"), rule("proteus-lead", "**")];
+  const modules = (d) => {
+    for (const n of dirs(d)) {
+      const sub = path.join(d, n);
+      if (lstat(path.join(sub, "HEAD"))) rules.push(...gitDenyRules(sub));
+      else modules(sub);
+    }
+  };
+  modules(path.join(gitdir, "modules"));
+  return rules;
+}
 // the plugin's own folder when these hooks run as a Claude Code plugin's (it sets CLAUDE_PLUGIN_ROOT), else ""
 const pluginRoot = () => (process.env.CLAUDE_PLUGIN_ROOT ? path.resolve(process.env.CLAUDE_PLUGIN_ROOT) : "");
 
@@ -128,4 +153,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, gitDenyRules, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };

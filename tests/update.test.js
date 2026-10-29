@@ -158,4 +158,33 @@ if (process.platform === "win32" && signer && fs.existsSync(ps)) {
     t.r.status !== 0 && /signing key not found/.test(t.r.stdout + t.r.stderr) && !fs.existsSync(t.signers), `${t.r.stdout}${t.r.stderr}`.slice(0, 1500));
 }
 
+// a 1.x home self-hosted in the project (#212): its git dir is the project's common dir, which sandboxed agents write.
+// A FETCH_HEAD there planted as a link to a victim file, a fetch due, and the home already behind a newer release
+// it fetched before (trusted and signed where ssh-keygen can sign): the autostart runs no git that writes there (the
+// fetch wrote FETCH_HEAD through the link), merges nothing, says so in one line, and nothing moves
+{
+  const SELF = path.join(W, "selfhost"), VICTIM = path.join(W, "fh-victim"), VTEXT = "victim\n";
+  g(W, "clone", "-q", BARE, SELF);
+  fs.mkdirSync(path.join(SELF, ".claude", "skills", "proteus"), { recursive: true });
+  fs.writeFileSync(path.join(SELF, ".claude", "skills", "proteus", "SKILL.md"), "---\nname: proteus\n---\nSKILL BODY\n");
+  g(SELF, "reset", "-q", "--hard", "v1.0.0");
+  if (signer) g(SELF, "config", "gpg.ssh.allowedSignersFile", signer.allowed);
+  const behind = lib.g(SELF, "tag", "--list", "v*", "--no-merged", "HEAD").split("\n").filter(Boolean);
+  ok("self-hosted home: already behind a release it fetched before", behind.length > 0, behind.join(" "));
+  fs.writeFileSync(VICTIM, VTEXT);
+  let planted = false;
+  try { fs.rmSync(path.join(SELF, ".git", "FETCH_HEAD"), { force: true }); fs.symlinkSync(VICTIM, path.join(SELF, ".git", "FETCH_HEAD")); planted = true; } catch {}
+  if (planted) {
+    const was = g(SELF, "rev-parse", "HEAD");
+    fs.writeFileSync(CFG, JSON.stringify({ home: SELF, autoUpdate: true, lastFetch: 0, toured: "" }));
+    const rs = lib.run(path.join(SRC, "proteus-autostart.js"), { hook_event_name: "SessionStart", source: "startup", session_id: "u2", cwd: SELF }, { cwd: SELF });
+    // the fetch, when one runs, is detached: give it time to land
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    const notes = rs.out.split("\n").filter((l) => /^proteus: .* is a place agents can write, so this session does not update it/.test(l) && l.includes(SELF));
+    ok("self-hosted home: one line says the update is skipped and why", notes.length === 1, rs.out.slice(0, 1500));
+    ok("self-hosted home: nothing written through a FETCH_HEAD link (no fetch ran)", fs.readFileSync(VICTIM, "utf8") === VTEXT && fs.lstatSync(path.join(SELF, ".git", "FETCH_HEAD")).isSymbolicLink(), fs.readFileSync(VICTIM, "utf8").slice(0, 300));
+    ok("self-hosted home: no merge, HEAD where it was", g(SELF, "rev-parse", "HEAD") === was);
+  } else ok("self-hosted home: skipped (no symlink here)", true);
+}
+
 lib.summary();

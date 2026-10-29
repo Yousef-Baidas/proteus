@@ -20,6 +20,7 @@ const os = require("os");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
+const C = require(path.join(__dirname, "proteus-confine.js"));
 
 const HELP = `usage: node proteus-worktree.js <worktree> [--tier ${lib.TIERS.join("|")} [--human]] <owned path or glob>...
 Prepares a worktree made with \`git worktree add\` for one worker, before dispatch:
@@ -35,6 +36,42 @@ Re-run on the same worktree with every path so far to extend a Direct batch; the
 Exit 1 on bad usage or when <worktree> is not a git worktree.`;
 if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); return; }
 const [wtArg, ...rest] = process.argv.slice(2);
+// The copy install.js --sandbox makes (#188) in <config>/proteus-sandbox/bin/<hash>/ runs outside the sandbox on
+// whatever arguments an agent passes. sandbox-root.json beside it pins the repo it serves: lib.pinProject takes the
+// main root and common dir from it, never from the cwd, the worktree's .git file or a commondir, and the copy refuses
+// without it. It takes only a worktree that common dir registers, under <root>/.worktrees/. While a session runs the
+// copy creates, renames, writes and deletes nothing in a dir the profile lets sandboxed commands write, which is all
+// of <common> but the files it denies (#212 r5: a lock or a parent dir there can be swapped mid-run). So
+// install.js --sandbox sets extensions.worktreeConfig before the session; the in-repo script, sandboxed, writes the
+// rest (the worktree's .claude, its hooks and config.worktree, info/exclude, --allow's state); and the copy only
+// checks that setting and adds a new submodule's deny rules to the profile, under proteus-sandbox/.
+const PIN = path.join(__dirname, "sandbox-root.json");
+const COPY = path.basename(path.dirname(__dirname)) === "bin" && path.basename(path.dirname(path.dirname(__dirname))) === "proteus-sandbox";
+if (COPY || fs.existsSync(PIN)) {
+  let why, pin;
+  try { pin = JSON.parse(fs.readFileSync(PIN, "utf8")); why = sandboxRefusal(wtArg, pin); } catch (e) { why = `cannot read ${PIN} (${e.message}); run install.js --sandbox again outside the sandbox`; }
+  if (!why && rest[0] === "--allow") why = "--allow is the in-repo proteus-worktree.js's (its state sits in <common>/proteus, which sandboxed commands write)";
+  const common = !why && C.real(pin.common);
+  if (!why && !worktreeConfigOn(common)) why = `extensions.worktreeConfig is not set in ${path.join(common, "config")}; run install.js --sandbox again outside the sandbox`;
+  if (why) {
+    console.error(`proteus-worktree: refused: ${why}`);
+    process.exitCode = 1;
+    return;
+  }
+  const err = guardProfile(pin);
+  if (err) {
+    console.error(`proteus-worktree: ${err}; run install.js --sandbox again outside the sandbox`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`worktree ${C.real(path.resolve(wtArg))}: the profile's deny rules are current; the in-repo proteus-worktree.js prepares the worktree`);
+  return;
+}
+process.on("uncaughtException", (e) => {
+  if (["EPERM", "EACCES", "EROFS"].includes(e && e.code)) console.error(`proteus-worktree: ${e.message} (in a sandboxed session, a path the profile denies)`);
+  else console.error(e && e.stack ? e.stack : String(e));
+  process.exitCode = 1;
+});
 // --allow <what>: the lead's one-off authorisation for this worktree's worker, consumed by the first use the
 // guard lets through (lib.workerDenial); the owned-path list is left as it is
 if (rest[0] === "--allow") {
@@ -110,18 +147,16 @@ if (tier) {
 fs.mkdirSync(path.dirname(lib.ownedFile(wt)), { recursive: true });
 fs.writeFileSync(lib.ownedFile(wt), head.join("\n") + "\n");
 
+// the project's common dir (co.common), never the one the worktree's .git file names
 try {
-  const common = lib.gitCommonDir(wt);
-  if (common) {
-    const file = path.join(common, "info", "exclude");
-    let cur = "";
-    try { cur = fs.readFileSync(file, "utf8"); } catch {}
-    const have = new Set(cur.split(/\r?\n/));
-    const add = [...EXCLUDE, lib.WORKTREES_EXCLUDE].filter((l) => !have.has(l));
-    if (add.length) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + "# proteus: machine-local worker files and worktrees\n" + add.join("\n") + "\n");
-    }
+  const file = path.join(co.common, "info", "exclude");
+  let cur = "";
+  try { cur = fs.readFileSync(file, "utf8"); } catch {}
+  const have = new Set(cur.split(/\r?\n/));
+  const add = [...EXCLUDE, lib.WORKTREES_EXCLUDE].filter((l) => !have.has(l));
+  if (add.length) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + "# proteus: machine-local worker files and worktrees\n" + add.join("\n") + "\n");
   }
 } catch {}
 
@@ -133,7 +168,8 @@ try {
 // CI runs on every commit of the PR, so a worker learns of a bad message before it pushes (#28).
 // A failure is only warned about: CI's check of the PR is the backstop, and `git commit --no-verify` skips this.
 // git runs through lib's wrapper on the common dir (#215): the worktree's gitdir comes from <common>/worktrees/<id>,
-// never its .git file, and its config.worktree is written by path, never read.
+// never its .git file, and its config.worktree is written by path, never read. In a sandboxed session <common>/config
+// is denied: install.js --sandbox set extensions.worktreeConfig there before it
 function installPreCommit() {
   const git = (...a) => { try { return String(lib.gitRun(co.common, a, { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 })).trim(); } catch { return null; } };
   const slash = (p) => p.replace(/\\/g, "/");
@@ -155,12 +191,13 @@ function installPreCommit() {
   for (const f of have) write(f, `exec ${sq(path.join(orig, f))} "$@"\n`);
   // beside this script (Claude Code's hooks dir), else the lead's teams/templates/hooks (Codex skips the file;
   // the lead's checkout is the worktree's main one); either way proteus-lib.js and package.json sit next to it
-  const lead = lib.mainRoot(lib.gitCommonDir(wt)) || lib.repoRoot();
+  const lead = lib.mainRoot(co.common) || lib.repoRoot();
   const msgCheck = [__dirname, ...(lead ? [path.join(lib.docRoot(lead), "teams", "templates", "hooks")] : [])]
     .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
   if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
   write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged ${sq(path.join(__dirname, "proteus-worktree.js"))} || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
-  if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--file", path.join(co.gitDir, "config.worktree"), "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
+  if (!worktreeConfigOn(co.common) && git("config", "extensions.worktreeConfig", "true") === null) return `extensions.worktreeConfig is not set in ${path.join(co.common, "config")}; in a sandboxed session run install.js --sandbox again outside the sandbox`;
+  if (git("config", "--file", path.join(co.gitDir, "config.worktree"), "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";
 }
 const hookErr = installPreCommit();
@@ -183,3 +220,44 @@ if (work && work[1] !== "lead-docs") {
 }
 
 console.log(`worktree ${wt}: hooks + ${entries.length} owned paths${tier ? `, tier ${tier}${human ? " (human)" : ""}` : ""}`);
+// install.js --sandbox made a copy for this repo: it adds a new submodule's deny rules to the profile
+const copy = path.join(C.sandboxBin(co.common), "proteus-worktree.js");
+if (fs.existsSync(copy)) console.log(`proteus-worktree: then run the copy for the profile's deny rules: node ${copy} ${co.root}`);
+
+// whether extensions.worktreeConfig is on in <common>/config (read, never written); hoisted for the copy
+function worktreeConfigOn(common) {
+  try { return String(lib.gitRun(common, ["config", "--file", path.join(common, "config"), "--bool", "--get", "extensions.worktreeConfig"], { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 })).trim() === "true"; } catch { return false; }
+}
+
+// the sandbox copy: the profile's Edit deny rules gain the git rules a submodule git dir made since needs, which the
+// sandbox's denyWrite takes too; "" or why not. The profile is written only inside proteus-sandbox/, which no
+// sandboxed command writes, never through a link
+function guardProfile(p) {
+  const home = path.dirname(path.dirname(__dirname)), file = String(p.profile || "");
+  if (!file || !C.inside(path.resolve(file), home)) return `sandbox-root.json names no profile inside ${home}`;
+  let cur;
+  try { cur = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { return `cannot read ${file} (${e.message})`; }
+  const perms = cur.permissions || (cur.permissions = {});
+  const deny = Array.isArray(perms.deny) ? perms.deny : (perms.deny = []);
+  const add = C.gitDenyRules(String(p.common)).filter((r) => !deny.includes(r));
+  if (!add.length) return "";
+  deny.push(...add);
+  return C.writeFile(file, JSON.stringify(cur, null, 2) + "\n", [home]) ? "" : `cannot add the deny rules to ${file}`;
+}
+
+// why the sandbox copy refuses arg ("" when it is a worktree of pin.root it may prepare), after pinning the project
+// to pin; hoisted for the top. No git runs here: the registered worktrees are read under the pinned common dir
+function sandboxRefusal(arg, p) {
+  const under = (child, parent) => C.inside(child, parent) && !C.samePath(child, parent);
+  const named = (k) => (p && typeof p[k] === "string" && path.isAbsolute(p[k]) ? C.real(p[k]) : null);
+  const root = named("root"), common = named("common");
+  if (!root || !common) return `${PIN} names no repo that exists; run install.js --sandbox again outside the sandbox`;
+  lib.pinProject(root, common);
+  if (!C.samePath(lib.mainRoot(common) || "", root)) return `${PIN}: ${root} is not the main checkout of ${common}`;
+  const nest = path.join(root, ".worktrees");
+  const wt = arg ? C.real(path.resolve(arg)) : null;
+  if (!wt || !under(wt, nest)) return `${arg || "(no worktree)"} is not a checkout under ${nest}`;
+  const co = lib.checkoutOf(wt);
+  if (!co || co.gitDir === common || !C.samePath(co.root, wt)) return `${wt} is not a worktree ${common} registers`;
+  return "";
+}
