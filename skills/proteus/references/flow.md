@@ -49,7 +49,7 @@ Per ticket, write into the issue body the interface (code: exported signatures i
 
 ## 4. Dispatch
 
-A ticket is ready once every ticket in its `depends-on` has merged and no ticket in flight owns one of its paths; each merge batch can make tickets ready, so run steps 3 and 4 for them at once. Protect `proteus/<run>` (`enforcement.md` §1) so nothing merges without green CI. One PR per ticket into `proteus/<run>`, from the worktree made at step 3. Spawn `proteus-<team>-worker` if the repo defines one, else `proteus-worker` with the team named, the spawn's `model` set to `build` (prompt text does not change it). Before each spawn, the pre-dispatch check in `roles.md`. Start the stall watchdog now (`operations.md`). The scaffold and stabilise tickets follow `enforcement.md`.
+`node <hooks>/proteus-ready.js <run>` lists the ready tickets and why the rest wait; after each merge batch, run steps 3 and 4 for the new ones at once. Protect `proteus/<run>` (`enforcement.md` §1) so nothing merges without green CI. One PR per ticket into `proteus/<run>`, from the worktree made at step 3. Spawn `proteus-<team>-worker` if the repo defines one, else `proteus-worker` with the team named, the spawn's `model` set to `build` (prompt text does not change it). Before each spawn, the pre-dispatch check in `roles.md`. Start the stall watchdog now (`operations.md`). The scaffold and stabilise tickets follow `enforcement.md`.
 
 ## 5. Escalate
 
