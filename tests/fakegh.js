@@ -32,12 +32,20 @@ if (CD) {
   if (/^api user --jq \.login$/.test(a)) { process.stdout.write(fs.readFileSync(hosts, "utf8") + "\n"); process.exit(0); }
 }
 // FAKE_GH_ISSUES (a JSON file {<n>: {title, labels: [name], comments: [{author: {login}, body}]}}) answers an issue's title,
-// labels and comments; `issue comment <n> --body-file -` appends stdin as a comment by the current login and prints its URL
+// labels and comments; `issue comment <n> --body-file -` appends stdin as a comment by the current login and prints its URL;
+// `issue list --state all --search <q> in:title` matches titles containing <q>, `issue create --title` adds the next number
 if (process.env.FAKE_GH_ISSUES) {
   const fs = require("fs"), path = require("path"), file = process.env.FAKE_GH_ISSUES;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
   const say = (t) => { process.stdout.write(t + "\n"); process.exit(0); };
   let m;
+  if ((m = /^issue list --state all --search (.+) in:title --json number,title$/.exec(a))) out(Object.keys(s).filter((n) => (s[n].title || "").includes(m[1])).map((n) => ({ number: +n, title: s[n].title })));
+  if ((m = /^issue create --title (.+) --body-file -$/.exec(a))) {
+    const n = Math.max(0, ...Object.keys(s).map(Number)) + 1;
+    s[n] = { title: m[1], body: fs.readFileSync(0, "utf8"), comments: [] };
+    fs.writeFileSync(file, JSON.stringify(s));
+    say(`https://github.com/o/r/issues/${n}`);
+  }
   if ((m = /^issue view (\d+) --json title -q \.title$/.exec(a)) && s[m[1]]) say(s[m[1]].title || "");
   if ((m = /^issue view (\d+) --json labels -q \.labels\[\]\.name$/.exec(a)) && s[m[1]]) say((s[m[1]].labels || []).join("\n"));
   if ((m = /^issue view (\d+) --json comments$/.exec(a)) && s[m[1]]) out({ comments: s[m[1]].comments || [] });
