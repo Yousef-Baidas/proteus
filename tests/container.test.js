@@ -16,6 +16,17 @@ const BIN = lib.BIN;
 const LOG = path.join(W, "docker.log");
 const MARK = path.join(W, "planted-fired");
 const SECRET = "sk-oauth-secret-value-9f3c";
+// a throw is one more failure, never a missing summary line
+process.on("uncaughtException", (e) => { ok("no uncaught throw", false, e && e.stack); lib.summary(); });
+const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return ""; } };
+
+// win32: the fake claude is a copy of node.exe, which reads the entry's leading -p and --permission-mode as its own
+// options and exits 9 before fake-cli-shim.js loads; this preload, which the fake docker loads into the entry there,
+// runs the fake's script with node instead, as the image's claude would run
+const CLAUDE_PRELOAD = path.join(W, "claude-preload.js");
+fs.writeFileSync(CLAUDE_PRELOAD, `const cp = require("child_process"), spawnSync = cp.spawnSync;
+cp.spawnSync = (cmd, args, o) => (cmd === "claude" ? spawnSync(process.execPath, [${JSON.stringify(lib.fakeScript(BIN, "claude"))}, ...args], o) : spawnSync(cmd, args, o));
+`);
 
 const FAKE_DOCKER = `
 const fs = require("fs"), path = require("path"), { spawnSync } = require("child_process");
@@ -34,7 +45,8 @@ const root = path.dirname(src("/in"));
 if (path.dirname(src("/out")) !== root) process.exit(4);
 fs.mkdirSync(path.join(root, "work"), { recursive: true });
 if (process.env.FAKE_DOCKER_RM) fs.rmSync(process.env.FAKE_DOCKER_RM, { force: true });
-spawnSync(process.execPath, [process.env.FAKE_DOCKER_ENTRY], { env: { ...process.env, PROTEUS_CONTAINER_TEST_ROOT: root }, stdio: "inherit" });
+const pre = process.env.FAKE_DOCKER_PRELOAD ? ["--require", process.env.FAKE_DOCKER_PRELOAD] : [];
+spawnSync(process.execPath, [...pre, process.env.FAKE_DOCKER_ENTRY], { env: { ...process.env, PROTEUS_CONTAINER_TEST_ROOT: root }, stdio: "inherit" });
 if (process.env.FAKE_DOCKER_EXTRA) {
   const repo = path.join(root, "work", "repo");
   const git = (...a) => spawnSync("git", a, { cwd: repo, stdio: "ignore" });
@@ -98,7 +110,9 @@ function worktree(owned = "src/\n") {
 const calls = () => { try { return fs.readFileSync(LOG, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
 function run(args, env = {}) {
   fs.rmSync(LOG, { force: true });
-  return lib.run(SCRIPT, "", { cwd: R, args, env: { FAKE_DOCKER_LOG: LOG, FAKE_DOCKER_ENTRY: path.join(SRC, "proteus-container-entry.js"), FAKE_MARK: MARK, CLAUDE_CODE_OAUTH_TOKEN: SECRET, ...env } });
+  const base = { FAKE_DOCKER_LOG: LOG, FAKE_DOCKER_ENTRY: path.join(SRC, "proteus-container-entry.js"), FAKE_MARK: MARK, CLAUDE_CODE_OAUTH_TOKEN: SECRET };
+  if (process.platform === "win32") base.FAKE_DOCKER_PRELOAD = CLAUDE_PRELOAD;
+  return lib.run(SCRIPT, "", { cwd: R, args, env: { ...base, ...env } });
 }
 const runIn = (t, env, extra = []) => run(["run", "--worktree", t.wt, "--prompt-file", PROMPT, "--runtime", "docker", ...extra], env);
 const tip = (t) => g(R, "rev-parse", t.branch);
@@ -112,11 +126,12 @@ const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out)
   const res = runIn(t, { GH_TOKEN: "ghp_x", GITHUB_TOKEN: "ghp_y" });
   ok("run imports the worker's commit and exits 0", res.code === 0, res.out + res.err);
   ok("the branch moved to a child of its old tip", tip(t) !== t.base && g(R, "rev-parse", `${t.branch}~1`) === t.base, res.out);
-  ok("a clean worktree's files follow the branch", fs.readFileSync(path.join(t.wt, "src", "a.js"), "utf8") === "a\n" && g(t.wt, "status", "--porcelain") === "", g(t.wt, "status", "--porcelain"));
+  ok("a clean worktree's files follow the branch", read(path.join(t.wt, "src", "a.js")) === "a\n" && g(t.wt, "status", "--porcelain") === "", g(t.wt, "status", "--porcelain"));
   ok("the temporary ref is gone after the import", !refs().includes("refs/proteus-container/"), refs());
   const out = outDir(res);
-  const result = JSON.parse(fs.readFileSync(path.join(out, "result.json"), "utf8"));
-  ok("claude ran with -p, bypassPermissions and json output, the prompt on stdin", result.args.join(" ") === "-p --permission-mode bypassPermissions --output-format json" && result.prompt === "do the ticket\n", JSON.stringify(result));
+  let result = {};
+  try { result = JSON.parse(read(path.join(out, "result.json"))); } catch {}
+  ok("claude ran with -p, bypassPermissions and json output, the prompt on stdin", (result.args || []).join(" ") === "-p --permission-mode bypassPermissions --output-format json" && result.prompt === "do the ticket\n", JSON.stringify(result));
   ok("result.json and status.json stay; both bundles are removed", fs.existsSync(path.join(out, "status.json")) && !fs.existsSync(path.join(out, "out.bundle")) && !fs.existsSync(path.join(path.dirname(out), "in", "in.bundle")), out);
   ok("the scratch dir sits under <common>/proteus/scratch", lib.W && out.startsWith(scratch + path.sep), out);
   if (process.platform !== "win32") ok("the scratch dir is private (0700)", (fs.statSync(path.dirname(out)).mode & 0o777) === 0o700);
