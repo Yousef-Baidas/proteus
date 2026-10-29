@@ -42,9 +42,10 @@ const COMMON = plib.gitCommonDir(REPO);
 // ---- lib.sandboxState: the platform, then the first settings file that sets sandbox.enabled
 {
   const on = { sandbox: { enabled: true } }, off = { sandbox: { enabled: false } };
-  const st = (platform, settings, env = withTools) => plib.sandboxState(REPO, { platform, settings, env });
+  // which is injected: the host's PATH and path syntax (drive colons on Windows) never decide a Linux case
+  const st = (platform, settings, tools = ["bwrap", "socat"]) => plib.sandboxState(REPO, { platform, settings, which: (n) => tools.includes(n) });
   ok("state: native Windows is unavailable, whatever the settings say", st("win32", [on]) === "unavailable");
-  ok("state: Linux without bwrap or socat is unavailable", st("linux", [on], { PATH: path.join(W, "nothing") }) === "unavailable");
+  ok("state: Linux without bwrap or socat is unavailable", st("linux", [on], []) === "unavailable" && st("linux", [on], ["bwrap"]) === "unavailable" && st("linux", [on], ["socat"]) === "unavailable");
   ok("state: Linux with bwrap and socat and the sandbox enabled is on", st("linux", [on]) === "on");
   ok("state: macOS with the sandbox enabled is on", st("darwin", [{}, on]) === "on");
   ok("state: no setting, or enabled false, is off", st("darwin", [{}, {}]) === "off" && st("linux", [off]) === "off");
@@ -140,16 +141,26 @@ const LAUNCH = /claude --settings \S+ --permission-mode bypassPermissions/;
   ok("bypass: the worker guard still refuses a worker's background shell", r.code === 2 && /proteus:/.test(r.err), r.err);
 }
 
-// ---- --doctor: bwrap and socat on Linux, no rows elsewhere
+// ---- --doctor: bwrap and socat on Linux (a WARN when missing only once this repo has a profile), no rows elsewhere
 {
-  const doc = (env) => lib.run(INSTALL, "", { cwd: W, args: ["--doctor"], env }).out;
+  const doc = (env, cwd = W) => lib.run(INSTALL, "", { cwd, args: ["--doctor"], env }).out;
   let out = doc(withTools);
   if (PLAT === "linux") {
     ok("doctor: Linux with bwrap and socat shows ok rows", /^ok\s+bwrap \(sandboxed bypass\)$/m.test(out) && /^ok\s+socat \(sandboxed bypass\)$/m.test(out), out);
-    const env = { PATH: [lib.BIN, path.dirname(process.execPath)].join(path.delimiter) };
+    // git alone, linked in: the profile is looked up through the repo, and /usr/bin may hold a real bwrap
+    const GIT = path.join(W, "git-only");
+    fs.mkdirSync(GIT);
+    fs.symlinkSync(plib.which("git"), path.join(GIT, "git"));
+    const env = { PATH: [lib.BIN, GIT, path.dirname(process.execPath)].join(path.delimiter) };
     if (!plib.which("bwrap", env)) {
-      out = doc(env);
-      ok("doctor: Linux without bwrap warns with the install command", /^WARN\s+bwrap not found: .*--sandbox.* — .*bubblewrap/m.test(out), out);
+      out = doc(env, REPO);
+      ok("doctor: Linux without bwrap and no sandbox profile shows an ok row, no WARN", /^ok\s+bwrap not found \(needed only by the sandbox profile, --sandbox\)$/m.test(out) && !/^WARN\s+bwrap/m.test(out), out);
+      const dir = path.join(lib.HOME, ".claude", "proteus-sandbox");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `repo-${sandboxKey(COMMON)}.json`), "{}\n");
+      out = doc(env, REPO);
+      fs.rmSync(dir, { recursive: true, force: true });
+      ok("doctor: Linux without bwrap and with this repo's profile warns with the install command", /^WARN\s+bwrap not found: .*--sandbox.* — .*bubblewrap/m.test(out), out);
     }
   } else ok("doctor: no bwrap or socat row off Linux", !/bwrap|socat/.test(out), out);
 }

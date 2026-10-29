@@ -1839,9 +1839,11 @@ async function doctor(fix) {
   });
   check(() => has("git") ? ["ok", "git"]
     : ["FIX", "git not found", WIN ? "winget install Git.Git" : "brew install git | sudo pacman -S git | sudo apt install git"]);
-  // the sandbox profile (--sandbox) needs both on Linux; without them a bypassPermissions session cannot dispatch (#189)
+  // the sandbox profile (--sandbox) needs both on Linux; without them a bypassPermissions session cannot dispatch (#189).
+  // Missing, they warn only once this repo has a profile; elsewhere they are optional
   if (process.platform === "linux") for (const [bin, pkg] of [["bwrap", "bubblewrap"], ["socat", "socat"]]) {
     check(() => hl().which(bin) ? ["ok", `${bin} (sandboxed bypass)`]
+      : !(top.ok && repoProfile(root)) ? ["ok", `${bin} not found (needed only by the sandbox profile, --sandbox)`]
       : ["WARN", `${bin} not found: the sandbox profile (--sandbox) cannot run, so a bypassPermissions session cannot dispatch`, `sudo pacman -S ${pkg} | sudo apt install ${pkg} | sudo dnf install ${pkg}`]);
   }
   let ghAuthed = false;

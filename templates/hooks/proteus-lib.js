@@ -1005,11 +1005,12 @@ const safeJSON = (s) => { try { return JSON.parse(s); } catch { return null; } }
 // on: the settings Claude Code merges (--settings, then the repo's local and project files, then the user's; the
 // first to set sandbox.enabled wins) turn the sandbox on, on a platform that has one (macOS; Linux with bwrap and
 // socat on PATH). unavailable: native Windows, or Linux without bwrap or socat. off: anything else.
-// o.platform, o.env and o.settings (the parsed files, in that order) are for tests
+// o.platform, o.env, o.which (name -> truthy when on PATH) and o.settings (the parsed files, in that order) are for tests
 function sandboxState(root, o = {}) {
   const platform = o.platform || process.platform, env = o.env || process.env;
+  const has = o.which || ((name) => which(name, env, platform));
   if (platform === "win32") return "unavailable";
-  if (platform === "linux" && !(which("bwrap", env, platform) && which("socat", env, platform))) return "unavailable";
+  if (platform === "linux" && !(has("bwrap") && has("socat"))) return "unavailable";
   if (platform !== "linux" && platform !== "darwin") return "off";
   const files = o.settings || [...launchSettings(platform, process.ppid, root),
     ...[path.join(root, ".claude", "settings.local.json"), path.join(root, ".claude", "settings.json"), path.join(claudeDir(), "settings.json")].map((f) => readJSON(f, {}))];
