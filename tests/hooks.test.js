@@ -721,7 +721,7 @@ ok("scratch sweep: unlocked worktree removed on the next sweep", !has(t("hs-wtlo
 ok("scratch sweep: bad arg → usage", run(SC, "", { args: ["--sweep", "--everything"], env: TENV }).code === 1);
 r = run(SC, "", { args: ["--size"], env: TENV });
 ok("scratch --size", r.code === 0 && /^\d+\.\d MB$/.test(r.out.trim()), r.out + r.err);
-// ---- autostart: aged safety sweep in the background, scratch= on the state line
+// ---- autostart: names the stale sweep (never runs it, #237), scratch= on the state line; the lead's --sweep --stale
 const HOURS = (h) => Date.now() - h * 3600e3;
 const aged = (name, key, h, dir = false) => {
   const p = t(name); if (dir) fs.mkdirSync(p); else fs.writeFileSync(p, "x");
@@ -733,13 +733,11 @@ for (const [k, h] of [["bl1077-7", 80], ["bl1077-6", 80], ["bl1077-8", 2]]) { co
 fs.writeFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), JSON.stringify({ at: "x", bytes: 2048 * 1048576 }));
 r = run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "s1", cwd: REPO }, { env: TENV });
 ok("autostart: scratch= on the state line over 1 GB", /proteus-state .* scratch=2048MB /.test(r.out), r.out.split("\n")[3]);
-const asMs = r.ms;
-for (let i = 0; i < 100 && has(t("hs-old-done")); i++) spawnSync("sleep", ["0.05"]);
-spawnSync("sleep", ["0.3"]);
-ok("autostart: aged sweep deletes done-72h and any-7d only", !has(t("hs-old-done")) && !has(t("hs-ancient")) && has(t("hs-old-open")) && has(t("hs-fresh-done")) &&
+ok("autostart: names the stale sweep for the lead's shell, deletes nothing", /scratch may be stale.*--sweep --stale/.test(r.out) && has(t("hs-old-done")) && has(path.join(SCR, "bl1077-7")), r.out);
+r = run(SC, "", { args: ["--sweep", "--stale"], env: TENV });
+ok("scratch sweep --stale: deletes done-72h and any-7d only", !has(t("hs-old-done")) && !has(t("hs-ancient")) && has(t("hs-old-open")) && has(t("hs-fresh-done")) &&
   !has(path.join(SCR, "bl1077-7")) && has(path.join(SCR, "bl1077-6")) && has(path.join(SCR, "bl1077-8")), fs.readdirSync(TMPD).join(",") + " | " + fs.readdirSync(SCR).join(","));
-ok("autostart: sweep runs detached (start not slowed)", asMs < 3000, asMs);
-ok("autostart: size cache rewritten, under 1 GB drops scratch=", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), "utf8")).bytes < 1048576 &&
+ok("scratch sweep --stale: size cache rewritten, under 1 GB drops scratch=", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), "utf8")).bytes < 1048576 &&
   !/scratch=/.test(run(AS, { source: "resume", cwd: REPO }, { env: TENV }).out));
 // fail open
 ok("scratch: garbage stdin exit 0", run(SC, "not json", { env: TENV }).code === 0);
