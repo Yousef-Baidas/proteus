@@ -84,7 +84,7 @@ function main(args) {
   let notes, draft;
   try { notes = fs.readFileSync(args[0], "utf8"); draft = fs.readFileSync(args[1], "utf8"); } catch (e) { console.error(`proteus-intake-coverage: ${e.message}`); return 2; }
   const { ids, old } = parseNotes(notes);
-  if (old.length) { console.error(`proteus-intake-coverage: note predates finding ids; re-post it: ${old.join(", ")}`); return 2; }
+  if (old.length) { console.error(`proteus-intake-coverage: note predates finding ids; delete that note comment and run --post again: ${old.join(", ")}`); return 2; }
   const bad = check(notes, draft);
   if (bad.length) { console.error(`proteus-intake-coverage: ${bad.length} problem(s):\n  ${bad.join("\n  ")}`); return 1; }
   console.log(`intake coverage: ${ids.length} findings, each mapped once`);

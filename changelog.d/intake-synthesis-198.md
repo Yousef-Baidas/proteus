@@ -11,4 +11,5 @@
 ### Changed
 
 - An intake note's finding lines now start with an id `<h>-F<k>` (6 hex of sha256 of the source URL, then the
-  finding's position), which the coverage table cites. A note posted before this change has to be re-posted.
+  finding's position), which the coverage table cites. A note posted before this change has to be
+  deleted and posted again with `--post`.

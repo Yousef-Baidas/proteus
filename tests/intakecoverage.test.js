@@ -69,6 +69,6 @@ ok("candidate and rejected <reason> are outcomes", r.code === 0, r.err);
 
 const pre = NOTES.replace(`- ${b1} 00:05`, "- 00:05");
 r = cover(pre, draft(EXACT));
-ok("a note posted before finding ids: exit 2, re-post it, naming the source", r.code === 2 && /note predates finding ids; re-post it/.test(r.err) && r.err.includes(B), r.err);
+ok("a note posted before finding ids: exit 2, delete it and --post again, naming the source", r.code === 2 && /note predates finding ids; delete that note comment and run --post again: /.test(r.err) && r.err.includes(B), r.err);
 
 lib.summary();

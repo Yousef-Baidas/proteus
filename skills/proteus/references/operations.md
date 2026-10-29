@@ -29,7 +29,7 @@ The human sends videos with ideas; each gets one set of notes on the tracker, ke
 8. File each drafted issue with `node <hooks>/proteus-gh.js issue create --label intake` (create the label once if missing): its title, then problem, change, acceptance, refs, supporting notes (the finding ids), estimate and dependencies, with draft numbers replaced by the filed issue numbers. Then post one dispatch-order comment on the intake issue: the filed issues in dependency order, which can run in parallel, and the coverage table's `candidate` rows left for the owner.
 9. `node <hooks>/proteus-scratch.js --sweep intake-<date>`.
 
-Each finding in a note has an id `<h>-F<k>`: `<h>` is the first 6 hex of sha256 of its source URL, `<k>` its position in that note. The coverage table cites these ids.
+Each finding in a note has an id `<h>-F<k>`: `<h>` is the first 6 hex of sha256 of its source URL, `<k>` its position in that note. The coverage table cites these ids. A note posted before ids existed fails the check with "note predates finding ids; delete that note comment and run --post again": delete that comment, `proteus-intake.js --post` the source again, re-run the drafter.
 
 | Coverage outcome | Meaning |
 |------------------|---------|
