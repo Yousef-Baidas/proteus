@@ -1,10 +1,29 @@
 // Runs every tests/*.test.js in turn and totals their "N passed, M failed" lines.
 // Exits 1 if any file exits non-zero, crashes, prints no summary line, or none are found; else 0.
 // A file that fails to finish cleanly is named and counted in the last line, whose "failed" total includes it.
+// Exits 1 too if the run changed the checkout (#218): its git status or a tracked file's blob hash, listed by path;
+// outside a git repo that check is skipped.
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
+
+const git = (args, cwd) => { const r = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true, timeout: 60000, maxBuffer: 256 * 1024 * 1024 }); return r.status === 0 ? r.stdout : null; };
+const TOP = (git(["rev-parse", "--show-toplevel"], __dirname) || "").trim();
+
+// path -> status code plus blob hash, for every tracked file and every path git status names
+function snapshot() {
+  const snap = new Map();
+  for (const e of (git(["status", "--porcelain", "-z", "--untracked-files=all"], TOP) || "").split("\0")) if (e.length > 3) snap.set(e.slice(3), e.slice(0, 2));
+  for (const p of (git(["ls-files", "-z"], TOP) || "").split("\0").filter(Boolean)) {
+    let h = "missing";
+    try { const b = fs.readFileSync(path.join(TOP, p)); h = crypto.createHash("sha1").update(`blob ${b.length}\0`).update(b).digest("hex"); } catch {}
+    snap.set(p, `${snap.get(p) || ""} ${h}`);
+  }
+  return snap;
+}
+const before = TOP ? snapshot() : null;
 
 const files = fs.readdirSync(__dirname).filter((f) => f.endsWith(".test.js")).sort();
 console.log(`${__dirname}: ${files.length} test files`);
@@ -27,5 +46,11 @@ for (const f of files) {
   }
   process.stdout.write(out);
 }
+let dirty = false;
+if (before) {
+  const after = snapshot();
+  const changed = [...new Set([...before.keys(), ...after.keys()])].filter((p) => before.get(p) !== after.get(p)).sort();
+  if (changed.length) { dirty = true; fail++; console.log(`FAIL the run changed the checkout ${TOP}:\n${changed.map((p) => `  ${p}`).join("\n")}`); }
+}
 console.log(`\n${pass} passed, ${fail} failed across ${files.length} files${bad ? ` (${bad} did not finish cleanly)` : ""}`);
-process.exitCode = bad || !files.length ? 1 : 0;
+process.exitCode = bad || dirty || !files.length ? 1 : 0;
