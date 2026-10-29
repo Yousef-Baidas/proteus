@@ -71,7 +71,7 @@ function check(notes, draft) {
     const rs = byId.get(id) || [];
     if (!rs.length) bad.push(`${id}: unmapped`);
     else if (rs.length > 1) bad.push(`${id}: mapped ${rs.length} times (${rs.map((r) => r.outcome).join("; ")})`);
-    const cited = [...drafts].filter(([, s]) => s.has(id)).map(([k]) => k);
+    const cited = [...drafts].flatMap(([k, s]) => (s.has(id) ? [k] : []));
     const want = rs.length === 1 && rs[0].issue !== null ? rs[0].issue : null;
     for (const k of cited) if (k !== want) bad.push(`${id}: cited by draft ${k} but its row is ${rs.length === 1 ? `"${rs[0].outcome}"` : "not one row"}`);
   }
