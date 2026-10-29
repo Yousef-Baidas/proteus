@@ -375,10 +375,14 @@
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
     "templates/hooks/proteus-container-entry.js": [
+      "17dc580735358ec6ecb42bc154246d0b8b4ba82c",
+      "2339d91ca486053967f4c1da0294df3314b37e8c",
       "59d0adb626417fecc991881bc40a56ea3458c0f1",
       "5ee7e5d8b012ecdeee454ac10ff8b8c950153b5a"
     ],
     "templates/hooks/proteus-container.js": [
+      "2646a843c22bdfa0d4876278b4ffa15330f6195c",
+      "2d679659f6ceec20acf86e25c0e25e8090f0d434",
       "41eeb50c78d1dc30ec8397788477ee88b02ce170",
       "9b3bbab126c41a32af03a7ba61ab15d854fd152e",
       "c026581da368f5b7d82303f068cd160db94656b1"

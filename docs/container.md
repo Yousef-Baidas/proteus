@@ -41,6 +41,7 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - Without a runtime, run the worker without the container, in its worktree as usual.
 - `result.json` (Claude's JSON output) and `status.json` stay in `<git-common-dir>/proteus/scratch/container-<id>/out`. The bundles are removed.
 - Exit 0: imported, or nothing to import (and published, with `--ticket`). Exit 1: refused or failed, with the reason on stderr. Exit 2: usage.
+- `check --worktree <wt> --ref <sha> -- <command...>` runs a command on a commit reachable from the worktree's branch, checked out detached, in the same hardened container with no credential env and `--network none` unless `--network` is given. The verdict is the runtime's exit status: the entry, as PID 1, exits with the command's code (124 on its timeout, 125 when it failed first), and the runtime kills whatever the command left running. The last line is `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. `check.log` (stdout and stderr, 1 MiB each) is data the code under test can write; its path is printed only when it is a regular file under its cap. `status.json` is informational and never read. Nothing is imported and no ref is made. Exit 0 when the command exited 0, else 1; 2 usage.
 
 ## Using it in a run
 
@@ -54,4 +55,5 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - Docker rootful means a container escape is root on the host. Prefer podman or rootless Docker; `doctor` warns.
 - The credential is visible to the agent inside the container.
 - A bundle-size or pack bomb is bounded only by the timeout.
+- `check.log` is the command's to write: a child that left its process group (`setsid`) can rewrite it before the container exits. It never decides the verdict.
 - A sandboxed subagent could write a script that requires the runner. The native sandbox still holds that script: `excludedCommands` matches only the runner's own command line, so the script runs sandboxed.

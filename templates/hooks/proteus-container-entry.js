@@ -10,11 +10,18 @@
 // the clone's core.hooksPath (read-only), with its owned list copied to .claude/proteus-owned and git-excluded there.
 // PROTEUS_CONTAINER_TEST_ROOT maps /in, /out and /work to <root>/in, <root>/out and <root>/work, for tests only: the
 // runner passes no env into the container but the credential's name.
-// Always exits 0 once /out/status.json ({ exit, error, unchanged }) is written.
+// run.json { mode: "check", ref, command, timeout } (proteus-container.js check): clones the same way, checks out ref
+// detached and runs command (an argv, no shell) there with a timeout in ms. Its stdout and stderr, at most 1 MiB each,
+// are held in memory and written to /out/check.log only after it and its process group are gone, as is
+// /out/status.json { exit, timedOut, error }; both are unlinked first, so nothing the command left there is kept.
+// check exits with the command's exit code, 124 when it timed out, 125 when the entry failed before running it: the
+// host's verdict is that status, never status.json (informational) or check.log (data the command can write).
+// run always exits 0 once /out/status.json ({ exit, error, unchanged }) is written.
 "use strict";
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const ROOT = process.env.PROTEUS_CONTAINER_TEST_ROOT;
 const at = (d) => (ROOT ? path.join(ROOT, d) : `/${d}`);
@@ -22,6 +29,7 @@ const IN = at("in"), OUT = at("out"), WORK = at("work"), REPO = path.join(WORK, 
 // the worker owns the clone's config and hooks; this script's own git calls run neither
 const SAFE = ["-c", `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`, "-c", "core.fsmonitor=false"];
 const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return null; } };
+const STREAM_MAX = 1 << 20;
 
 function git(args, cwd = REPO) {
   const r = spawnSync("git", [...SAFE, ...args], { cwd, encoding: "utf8", windowsHide: true, timeout: 600000, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "pipe"] });
@@ -43,14 +51,81 @@ function agentOf(text) {
   return { body: m[2].trim(), tools: tools.flatMap((t) => t.trim().replace(/^(["'])(.*)\1$/, "$2") || []) };
 }
 
-function main() {
+// /in/in.bundle's one branch cloned into REPO: { base, branch }
+function cloneIn() {
+  const bundle = path.join(IN, "in.bundle");
+  const heads = git(["bundle", "list-heads", bundle], WORK).split("\n").map((l) => /^([0-9a-f]{40,64}) refs\/heads\/(\S+)$/.exec(l.trim())).filter(Boolean);
+  if (heads.length !== 1) throw new Error(`in.bundle holds ${heads.length} branches, not one`);
+  const [, base, branch] = heads[0];
+  git(["clone", "-q", "--branch", branch, bundle, REPO], WORK);
+  return { base, branch };
+}
+
+// argv in REPO, killed with its process group at ms: { exit, timedOut, log }, each stream capped at STREAM_MAX
+function capped(argv, ms) {
+  return new Promise((resolve) => {
+    const parts = [], used = { stdout: 0, stderr: 0 };
+    let timedOut = false, exit = null, done = false;
+    const take = (name) => (b) => {
+      if (used[name] >= STREAM_MAX) return;
+      const part = b.subarray(0, STREAM_MAX - used[name]);
+      parts.push(part);
+      used[name] += part.length;
+      if (used[name] >= STREAM_MAX) parts.push(Buffer.from(`\n[proteus: ${name} truncated at 1 MiB]\n`));
+    };
+    const c = spawn(argv[0], argv.slice(1), { cwd: REPO, detached: true, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    // the whole group: a background child must not outlive the command and write to /out after us
+    const kill = () => { try { process.kill(-c.pid, "SIGKILL"); } catch {} try { c.kill("SIGKILL"); } catch {} };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve({ exit, timedOut, log: Buffer.concat(parts) });
+    };
+    const timer = setTimeout(() => { timedOut = true; kill(); }, ms);
+    c.stdout.on("data", take("stdout"));
+    c.stderr.on("data", take("stderr"));
+    c.on("error", (e) => { exit = 127; parts.push(Buffer.from(`[proteus: ${argv[0]}: ${e.message}]\n`)); finish(); });
+    c.on("exit", (code, signal) => {
+      exit = code !== null ? code : 128 + ((signal && os.constants.signals[signal]) || 0);
+      kill();
+      // a child that left the group can hold the pipes open; stop waiting for them
+      setTimeout(() => { c.stdout.destroy(); c.stderr.destroy(); finish(); }, 5000).unref();
+    });
+    c.on("close", finish);
+  });
+}
+
+async function check(run) {
+  const status = { exit: null, timedOut: false, error: null };
+  let log = Buffer.alloc(0);
+  try {
+    cloneIn();
+    if (!/^[0-9a-f]{40,64}$/.test(String(run.ref))) throw new Error("run.json has no ref");
+    git(["checkout", "-q", "--detach", run.ref]);
+    const argv = run.command;
+    if (!Array.isArray(argv) || !argv.length || !argv.every((a) => typeof a === "string")) throw new Error("run.json has no command");
+    const r = await capped(argv, +run.timeout > 0 ? +run.timeout : 3600000);
+    ({ exit: status.exit, timedOut: status.timedOut, log } = r);
+  } catch (e) {
+    status.error = String(e.message).slice(0, 2000);
+    process.stderr.write(`proteus-container-entry: ${status.error}\n`);
+  }
+  // fresh files: whatever the command left at these names (a link, a FIFO, a forged status) is removed first
+  for (const [f, data] of [["check.log", log], ["status.json", JSON.stringify(status) + "\n"]]) {
+    const p = path.join(OUT, f);
+    try { fs.rmSync(p, { recursive: true, force: true }); fs.writeFileSync(p, data, { flag: "wx" }); } catch {}
+  }
+  return status.timedOut ? 124 : Number.isInteger(status.exit) ? status.exit : 125;
+}
+
+async function main() {
+  let run = {};
+  try { run = JSON.parse(read(path.join(IN, "run.json")) || "{}") || {}; } catch {}
+  if (run.mode === "check") return check(run);
   const status = { exit: null, error: null, unchanged: false };
   try {
-    const bundle = path.join(IN, "in.bundle");
-    const heads = git(["bundle", "list-heads", bundle], WORK).split("\n").map((l) => /^([0-9a-f]{40,64}) refs\/heads\/(\S+)$/.exec(l.trim())).filter(Boolean);
-    if (heads.length !== 1) throw new Error(`in.bundle holds ${heads.length} branches, not one`);
-    const [, base, branch] = heads[0];
-    git(["clone", "-q", "--branch", branch, bundle, REPO], WORK);
+    const { base, branch } = cloneIn();
     try { git(["config", "user.email"]); } catch { git(["config", "user.name", "Proteus worker"]); git(["config", "user.email", "proteus-worker@localhost"]); }
 
     const hooks = path.join(IN, "hooks"), owned = read(path.join(hooks, "proteus-owned"));
@@ -62,8 +137,6 @@ function main() {
       git(["config", "core.hooksPath", hooks.replace(/\\/g, "/")]);
     }
 
-    let run = {};
-    try { run = JSON.parse(read(path.join(IN, "run.json")) || "{}") || {}; } catch {}
     const args = ["-p", "--permission-mode", "bypassPermissions", "--output-format", "json"], sys = [], env = { ...process.env };
     if (typeof run.model === "string" && run.model) args.push("--model", run.model);
     const agent = read(path.join(IN, "agent.md")), a = agent === null ? null : agentOf(agent);
@@ -92,4 +165,4 @@ function main() {
   return 0;
 }
 
-if (require.main === module) process.exitCode = main();
+if (require.main === module) main().then((code) => { process.exitCode = code; });
