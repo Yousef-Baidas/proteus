@@ -2266,16 +2266,27 @@ function makeScratch(dir) {
   return "";
 }
 
-function sandboxProfile(root, common, bin, scratch) {
+// the guest dir --sandbox makes writable, "" outside guest mode: only the fixed ~/.proteus/guest/<repo>-<hash>
+// (lib.defaultGuestDir of the common dir), never a dir guest.json names, since that file sits in <common>/proteus,
+// where sandboxed commands write (#212 B2). A guest.json naming another dir is warned about and left out
+function sandboxGuest(root, common) {
+  const lib = hl(), named = lib.guestDir(root);
+  if (!named) return "";
+  const fixed = lib.defaultGuestDir(common);
+  if (samePath(named, fixed)) return fixed;
+  warn(`warning: ${lib.guestFile(common)} names the guest dir ${named}, not ${fixed}; the profile leaves it out of the writable paths, since sandboxed commands can write that file`);
+  return "";
+}
+
+function sandboxProfile(root, common, bin, scratch, guest) {
   const lib = hl();
-  const guest = lib.guestDir(root);
   const writable = [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
   const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
   // the human's gh config dir, always (agents read theirs, agentGh), and the credentials Claude Code itself keeps
   const human = lib.humanGhDir();
   const own = path.join(CLAUDE, ".credentials.json");
   const secrets = [...new Set([...SANDBOX_SECRETS, ...(human ? [path.resolve(human) + "/"] : []), own])];
-  const domains = [...SANDBOX_GITHUB, ...registries(learnedText(lib.docRoot(root)))];
+  const domains = [...SANDBOX_GITHUB, ...registries(learnedText(guest || root))];
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   // the lead script whose writes the sandbox always refuses (.claude settings and hooks, .git/config) runs outside
   // it, matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
@@ -2358,24 +2369,25 @@ function sandbox() {
   const file = sandboxFile(root, common), bin = C.sandboxBin(common), scratch = sandboxScratch();
   // the copies run outside the sandbox: refused when an agent could write them (Claude Code's config dir inside the
   // repo, the temp dir or the guest dir)
-  const guest = lib.guestDir(root);
+  const guest = sandboxGuest(root, common);
   const open = [root, common, scratch, ...(guest ? [guest] : [])].map((p) => realish(p));
   const place = realish(path.dirname(path.dirname(bin)));
   const hit = open.find((w) => inside(place, w) || inside(w, place));
   if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
   const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common);
   if (bad) die(`--sandbox: ${bad}`, 1);
-  writeJson(file, sandboxProfile(root, common, bin, scratch));
+  writeJson(file, sandboxProfile(root, common, bin, scratch, guest));
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   log(`sandbox  -> ${file}`);
   log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
   log(`sandbox  -> ${scratch} (scratch dir sandboxed commands may write)`);
+  if (guest) log(`sandbox  -> ${guest} (guest dir sandboxed commands may write)`);
   if (!agentGh()) warn("warning: no agent identity (--agent-login): the profile hides your gh config from shell commands, so gh has no login inside the sandbox");
   log("Before launching, run the project setup outside the sandbox if this repo needs it (it writes .claude/hooks/, which the sandbox refuses):");
   log(`  node ${q(path.join(HERE, "install.js"))} --project`);
   log("Start Claude Code in the repo root with the profile (your own settings files are untouched):");
   log(`  claude --settings ${q(file)} --permission-mode bypassPermissions`);
-  log(`In that session prepare worktrees with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree> ...`);
+  log(`In that session prepare a worktree with the in-repo proteus-worktree.js <worktree> ..., then its git half with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree>`);
   log("Run the review session (/proteus-review) without it. Run --sandbox again after moving the repo or updating Proteus.");
   return true;
 }
