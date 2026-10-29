@@ -42,7 +42,7 @@ Worker traffic scrolls chat away, so a question lives in a picker (`AskUserQuest
 
 ## Commands
 
-Handled first, whenever typed: `status`, `questions` or `inbox`, `pause` (or its `## Learned` alias), `resume`, `revision` (`operations.md`); "remember this", "never again", a fix after a failed attempt or a correction, or "Improve proteus: …" (`lessons.md`); `tour`, `tour off` (`tour.md`).
+Handled first, whenever typed: `status`, `questions` or `inbox`, `pause` (or its `## Learned` alias), `resume`, `revision`, `intake <urls|file>` (`operations.md`); "remember this", "never again", a fix after a failed attempt or a correction, or "Improve proteus: …" (`lessons.md`); `tour`, `tour off` (`tour.md`).
 
 ## Surviving compaction
 
