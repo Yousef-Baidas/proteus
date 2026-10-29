@@ -16,6 +16,10 @@
 // (default 1440). --forget drops agents the lead stopped itself, for good: a later stop of one does not bring it
 // back (--forget all: of any agent spawned before it). Beats a day old are removed. No model,
 // no network, no git process.
+// The beats are lead state in <git-common-dir>/proteus-lead, written by the hooks. This script runs from the
+// lead's shell, which a sandbox profile keeps out of proteus-lead (#236): the forgotten list (lib.forget) goes to
+// <git-common-dir>/proteus instead, a forgotten agent's beat is skipped, and a STALL flag or a beat removal that
+// cannot be written is left out (a stalled agent is then named on every check, not once per grace period).
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -43,8 +47,10 @@ const fileOf = (agent) => path.join(dir, `${String(agent).replace(/[^\w.-]/g, "_
 const beats = () => {
   let names = [];
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch {}
-  return names.map((f) => ({ file: path.join(dir, f), rec: lib.readJSON(path.join(dir, f), null) })).filter((b) => b.rec && b.rec.agent);
+  return names.map((f) => ({ file: path.join(dir, f), rec: lib.readJSON(path.join(dir, f), null) }))
+    .filter((b) => b.rec && b.rec.agent && !lib.forgotten(common, b.rec.agent, b.rec.spawn || b.rec.first));
 };
+const drop = (file) => { try { lib.leadRemove(common, file); } catch {} };
 
 if (opt.forget) {
   if (!opt.forget.length) { console.error(USAGE); process.exit(2); }
@@ -53,7 +59,7 @@ if (opt.forget) {
   // remembered, so a stop hook that fires after this does not track the agent again (#179)
   lib.forget(common, gone.map((g) => g.agent), all);
   const files = gone.map((g) => g.file);
-  for (const f of files) fs.rmSync(f, { force: true });
+  for (const f of files) drop(f);
   console.log(`watchdog: forgot ${files.length} agent${files.length === 1 ? "" : "s"}`);
   return;
 }
@@ -69,7 +75,7 @@ function check(now) {
   for (const { file, rec } of beats()) {
     const last = ms(rec.last);
     const ended = ms(rec.ended);
-    if (now - Math.max(last, ended) > DAY) { fs.rmSync(file, { force: true }); continue; }
+    if (now - Math.max(last, ended) > DAY) { drop(file); continue; }
     active++;
     newest = Math.max(newest, last);
     let why = "";
@@ -79,7 +85,7 @@ function check(now) {
     const flagged = ms(rec.flagged);
     if (flagged && now - flagged < opt.grace * MIN) continue;
     out.push(`${flagged ? "STALL-AGAIN" : "STALL"} ${rec.agent} ${rec.type || "agent"} ${why}, cwd ${rec.cwd || "?"}`);
-    try { lib.writeJSON(file, { ...rec, flagged: new Date(now).toISOString() }); } catch {}
+    try { lib.leadJSON(common, file, { ...rec, flagged: new Date(now).toISOString() }); } catch {}
   }
   return { out, active, newest };
 }

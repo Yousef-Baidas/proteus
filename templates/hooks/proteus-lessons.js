@@ -6,7 +6,7 @@
 // before a shell call → command; before an edit or read → path; after a shell call → output;
 // prompt submit → prompt. A trigger with nested repetition (ReDoS) is skipped with a note on stderr, and input
 // is cut at 20 KB. A hit injects the lesson as additionalContext, once per session
-// (per subagent) per lesson, at most 2 per event; each hit is one line appended to <common>/proteus/lesson-hits.jsonl
+// (per subagent) per lesson, at most 2 per event; each hit is one line appended to <common>/proteus-lead/lesson-hits.jsonl
 // ({file, at}; append-only, so concurrent sessions never lose a count; sum per file when reading).
 "use strict";
 const fs = require("fs");
@@ -39,10 +39,10 @@ lib.run((ev, ad) => {
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).sort(); } catch { return; }
   if (!names.length) return;
 
-  const store = lib.stateDir(common);
+  const store = lib.leadPath(common);
   const scope = lib.isLead(ev, root) ? "lead" : "worker";
   const hits = [];
-  for (const l of load(dir, names, store)) {
+  for (const l of load(dir, names, common)) {
     if (!l.on.includes(kind) || (l.scope !== "all" && l.scope !== scope)) continue;
     let re;
     try { re = new RegExp(l.trigger, kind === "path" ? "im" : "i"); } catch { continue; } // a bad regex skips its lesson only; one path per line
@@ -54,11 +54,10 @@ lib.run((ev, ad) => {
   const fresh = hits.filter((l) => !seen.has(l.file)).slice(0, MAX_PER_EVENT);
   if (!fresh.length) return;
 
-  if (!seen.size) prune(path.dirname(seenFile));
-  fs.mkdirSync(path.dirname(seenFile), { recursive: true });
-  fs.appendFileSync(seenFile, fresh.map((l) => l.file + "\n").join(""));
+  if (!seen.size) prune(common, path.dirname(seenFile));
+  lib.leadAppend(common, seenFile, fresh.map((l) => l.file + "\n").join(""));
   const now = new Date().toISOString();
-  fs.appendFileSync(path.join(store, "lesson-hits.jsonl"), fresh.map((l) => JSON.stringify({ file: l.file, at: now }) + "\n").join(""));
+  lib.leadAppend(common, path.join(store, "lesson-hits.jsonl"), fresh.map((l) => JSON.stringify({ file: l.file, at: now }) + "\n").join(""));
 
   ad.context(ev, fresh.map((l) => {
     const body = l.body.length > MAX_CHARS ? l.body.slice(0, MAX_CHARS) + " …" : l.body;
@@ -73,10 +72,10 @@ function capped(s) {
   return s.length > OUTPUT_CAP ? s.slice(0, OUTPUT_CAP / 2) + "\n" + s.slice(-OUTPUT_CAP / 2) : s;
 }
 
-// parsed lessons, cached in <common>/proteus/lessons-cache.json keyed by the files' mtimes and sizes
-function load(dir, names, store) {
+// parsed lessons, cached in <common>/proteus-lead/lessons-cache.json keyed by the files' mtimes and sizes
+function load(dir, names, common) {
   const key = names.map((f) => { try { const st = fs.statSync(path.join(dir, f)); return `${f}:${st.mtimeMs}:${st.size}`; } catch { return f; } }).join("|");
-  const cacheFile = path.join(store, "lessons-cache.json");
+  const cacheFile = lib.leadPath(common, "lessons-cache.json");
   const cache = lib.readJSON(cacheFile, null);
   if (cache && cache.key === key && Array.isArray(cache.lessons)) return cache.lessons;
   const lessons = [];
@@ -88,7 +87,7 @@ function load(dir, names, store) {
       lessons.push(l);
     } catch {}
   }
-  lib.writeJSON(cacheFile, { key, lessons });
+  try { lib.leadJSON(common, cacheFile, { key, lessons }); } catch {}
   return lessons;
 }
 
@@ -148,9 +147,9 @@ function parse(file, src) {
 }
 
 // seen-sets older than a week belong to dead sessions
-function prune(d) {
+function prune(common, d) {
   try {
     const cutoff = Date.now() - 7 * 864e5;
-    for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p); }
+    for (const f of fs.readdirSync(d)) { const p = path.join(d, f); if (fs.statSync(p).mtimeMs < cutoff) lib.leadRemove(common, p); }
   } catch {}
 }

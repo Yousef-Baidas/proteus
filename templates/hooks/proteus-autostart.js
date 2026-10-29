@@ -230,10 +230,9 @@ function sync(ad, home, root, notes) {
     const s = path.join(hooksSrc, f);
     if (fs.statSync(s).isFile() && lib.syncFile(s, path.join(ad.hooksDir(root), f))) hooks++;
   }
-  // a new hook file may need a new registration
+  // a new hook file may need a new registration; the CommonJS marker (#77) this sync can bring is excluded from
+  // git by install.js --project, not here: this hook runs unsandboxed and writes nothing in the git dir (#236)
   if (hooks) ad.registerLead(root);
-  // the CommonJS marker (#77) can arrive by this sync before install.js --project excludes it
-  if (hooks) safe(() => excludeMarker(ad, root));
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
 }
 
@@ -242,7 +241,7 @@ function sync(ad, home, root, notes) {
 function agentPatches(ad, home, root, notes) {
   const mod = [path.join(home, "templates", "hooks", "proteus-agent-patch.js"), path.join(__dirname, "proteus-agent-patch.js")].find((p) => fs.existsSync(p));
   if (!mod) return;
-  const r = require(mod).apply(root, home, ad);
+  const r = require(mod).apply(root, home, ad, undefined, true);
   const cmd = `node "${path.join(home, "install.js")}" --project`;
   if (r.error) notes.push(`proteus: ${r.error}; generated agents left as they were. Tell the human; once fixed, ${cmd}`);
   else if (r.written.length + r.removed.length) notes.push(`proteus: ${[...r.written.map((p) => `${p} regenerated`), ...r.removed.map((p) => `${p} removed`)].join(", ")} (${r.file}); agent types load at session start, so the change applies from the next session`);
@@ -256,27 +255,14 @@ function pluginPatches(root, notes) {
   if (fs.existsSync(path.join(root, ".claude", "proteus-agents.json"))) notes.push("proteus: .claude/proteus-agents.json is not applied under the plugin; its agents run as shipped");
 }
 
-// keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does
-function excludeMarker(ad, root) {
-  const line = path.relative(root, path.join(ad.hooksDir(root), "package.json")).split(path.sep).join("/");
-  const common = lib.gitCommonDir(root);
-  if (!common || !fs.existsSync(path.join(root, line))) return;
-  const file = path.join(common, "info", "exclude");
-  let cur = "";
-  try { cur = fs.readFileSync(file, "utf8"); } catch {}
-  if (cur.split(/\r?\n/).includes(line)) return;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n");
-}
-
 // A public repo publishes the run log, briefs, contracts, evidence and questions: said once per repo,
-// recorded in <common>/proteus/visibility.json. Until then gh is asked at most once a day (3 s
+// recorded in <common>/proteus-lead/visibility.json. Until then gh is asked at most once a day (3 s
 // timeout; any failure, no remote or offline, just waits for the next day).
 const DAY = 24 * 3600e3;
 function publicNote(root, notes) {
   const common = lib.gitCommonDir(root);
   if (!common) return;
-  const file = path.join(lib.stateDir(common), "visibility.json");
+  const file = lib.leadPath(common, "visibility.json");
   const seen = lib.readJSON(file, null) || {};
   if (seen.warned) return;
   let vis = typeof seen.visibility === "string" ? seen.visibility : "";
@@ -284,17 +270,17 @@ function publicNote(root, notes) {
   if (Date.now() - at >= DAY) {
     vis = lib.gh(["repo", "view", "--json", "visibility", "-q", ".visibility"], root, 3000).toUpperCase();
     at = Date.now();
-    lib.writeJSON(file, { at, visibility: vis });
+    lib.leadJSON(common, file, { at, visibility: vis });
   }
   if (vis !== "PUBLIC") return;
   notes.push("proteus: this repo is public on GitHub. The run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone. Tell the human once, in your first reply, so nothing private goes into a work order, an answer or an evidence file. (Shown once per repo.)");
-  lib.writeJSON(file, { at, visibility: vis, warned: new Date().toISOString() });
+  lib.leadJSON(common, file, { at, visibility: vis, warned: new Date().toISOString() });
 }
 
 // only when the run has scratch state; the sweep caches the size the next state line reads
 function scratchSweep(root) {
-  const store = lib.stateDir(lib.gitCommonDir(root));
-  if (!fs.existsSync(path.join(store, "scratch-ledger.jsonl")) && !fs.existsSync(path.join(store, "scratch"))) return;
+  const common = lib.gitCommonDir(root);
+  if (!fs.existsSync(lib.leadPath(common, "scratch-ledger.jsonl")) && !fs.existsSync(lib.scratchDir(common))) return;
   const c = spawn(process.execPath, [path.join(__dirname, "proteus-scratch.js"), "--sweep", "--stale"], { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
   c.on("error", () => {});
   c.unref();
@@ -376,7 +362,7 @@ const regularFile = (f) => { try { return fs.lstatSync(path.dirname(f)).isDirect
 function humanSaid(root) {
   const common = lib.gitCommonDir(root);
   if (!common) return "";
-  const f = path.join(lib.stateDir(common), "journal.jsonl");
+  const f = lib.leadPath(common, "journal.jsonl");
   const lines = regularFile(f) ? [...new Set(lib.tailLines(f, 512 * 1024, true))].slice(-10) : [];
   const said = lines.flatMap((l) => {
     // redacted again on the way out: a journal written before redaction existed may hold secrets
@@ -415,7 +401,7 @@ function localState(ad, root, runs, home, pending, drift) {
   }).filter(Boolean);
   const lessons = ls(path.join("docs", "lessons")).filter((f) => f.endsWith(".md")).length;
   const common = lib.gitCommonDir(root);
-  const scratch = common ? Math.round(((lib.readJSON(path.join(lib.stateDir(common), "scratch-size.json"), {}) || {}).bytes || 0) / 1048576) : 0;
+  const scratch = common ? Math.round(((lib.readJSON(lib.leadPath(common, "scratch-size.json"), {}) || {}).bytes || 0) / 1048576) : 0;
   const yn = (b) => (b ? "yes" : "NO");
   return (
     "proteus-state (local files only; tracker not queried): " +

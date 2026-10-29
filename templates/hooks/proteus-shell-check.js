@@ -32,6 +32,9 @@
 // The session-start sync is a lead window too (leadRun, from proteus-autostart.js). An agent's calls end with it:
 // its SubagentStop (closeAgent, from proteus-stall.js) drops their markers and snapshots, and a call silent for
 // the watchdog's idle window counts as no longer in flight.
+// <state> is <git-common-dir>/proteus-lead (lib.leadPath, #236): every file this check writes or removes is there,
+// through lib's lead-state writers. Notices an older version wrote to <git-common-dir>/proteus/unattributed are
+// read as untrusted and never written: that they were shown or cleared is a mark in <state>.
 //   node <hooks>/proteus-shell-check.js --list | --clear <seq>|all   (the lead reads and clears the notices)
 // Accepted residuals: see enforcement.md (layer 2).
 "use strict";
@@ -59,11 +62,13 @@ const BRANCH_KEY = /^branch\.(.+)\.(remote|merge|description|pushremote)$/;
 // and the tracking keys of a work branch or one checked out in a prepared worktree, whoever's push -u set them (#182)
 const TRACK_KEY = /^branch\.(.+)\.(?:remote|merge)$/;
 
-const flightDir = (common) => path.join(lib.stateDir(common), "guard-flight");
-const tamperDir = (common) => path.join(lib.stateDir(common), "tamper");
-const noticeDir = (common) => path.join(lib.stateDir(common), "unattributed");
-const leadFile = (common) => path.join(lib.stateDir(common), "lead-flight.json");
-const snapDir = (common) => path.join(lib.stateDir(common), "scratch-snap");
+const flightDir = (common) => lib.leadPath(common, "guard-flight");
+const tamperDir = (common) => lib.leadPath(common, "tamper");
+const noticeDir = (common) => lib.leadPath(common, "unattributed");
+// notices from before #236, in the agent-writable state dir: read only
+const oldNoticeDir = (common) => path.join(lib.stateDir(common), "unattributed");
+const leadFile = (common) => lib.leadPath(common, "lead-flight.json");
+const snapDir = (common) => lib.leadPath(common, "scratch-snap");
 const snapFile = (common, id) => path.join(snapDir(common), `${id}.guard`);
 const callId = (ev) => String(ev.toolUseId || `${ev.session}-${ev.agent || "worker"}`).replace(/[^\w.-]/g, "_");
 const whoKey = (ev) => (ev.agent ? `agent-${ev.agent}` : `session-${ev.session || "unknown"}`).replace(/[^\w.-]/g, "_");
@@ -84,7 +89,7 @@ function targets(common) {
     }
   }
   const c = lib.realOr(common);
-  for (const d of ["hooks", "info", "config", "config.worktree", path.join("proteus", "tamper"), path.join("proteus", "unattributed"), path.join("proteus", "allow")]) out.push([path.join(c, d), "common"]);
+  for (const d of ["hooks", "info", "config", "config.worktree", path.join(lib.LEAD, "tamper"), path.join(lib.LEAD, "unattributed"), path.join("proteus", "unattributed"), path.join("proteus", "allow")]) out.push([path.join(c, d), "common"]);
   try { for (const n of fs.readdirSync(path.join(c, "worktrees"))) out.push([path.join(c, "worktrees", n, "config.worktree"), "common"]); } catch {}
   const home = os.homedir();
   const codex = process.env.CODEX_HOME || path.join(home, ".codex");
@@ -186,7 +191,7 @@ function walk(abs, out, cache, dirty, top = true) {
 }
 
 function fingerprint(common) {
-  const cacheFile = path.join(lib.stateDir(common), "guard-hash.json");
+  const cacheFile = lib.leadPath(common, "guard-hash.json");
   const cache = lib.readJSON(cacheFile, {}) || {};
   const dirty = { n: 0 };
   const { roots, out } = targets(common);
@@ -195,7 +200,7 @@ function fingerprint(common) {
   if (dirty.n) {
     // drop paths no longer present, so the cache stays the size of the fingerprint
     for (const k of Object.keys(cache)) if (!entries.has(k)) delete cache[k];
-    try { lib.writeJSON(cacheFile, cache); } catch {}
+    try { lib.leadJSON(common, cacheFile, cache); } catch {}
   }
   return { roots, entries: Object.fromEntries(entries) };
 }
@@ -240,7 +245,7 @@ function flights(common, except) {
   for (const n of names) {
     const f = path.join(dir, n);
     const m = lib.readJSON(f, null);
-    if (!m || now - m.at > STALE) { try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) fs.unlinkSync(f); } catch {} continue; }
+    if (!m || now - m.at > STALE) { try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) lib.leadRemove(common, f); } catch {} continue; }
     if (n !== `${except}.json`) out.push(m);
   }
   return out;
@@ -248,7 +253,7 @@ function flights(common, except) {
 
 // prepared worktree (real path) -> the agents bound to it
 function boundAgents(common) {
-  const dir = path.join(lib.stateDir(common), "agents"), out = new Map();
+  const dir = lib.leadPath(common, "agents"), out = new Map();
   let names = [];
   try { names = fs.readdirSync(dir); } catch { return out; }
   for (const n of names) {
@@ -296,7 +301,7 @@ function openWindow(common, id, cause) {
   const w = { seq: lf.seq, id, start: now, end: null };
   if (cause) w.cause = cause;
   lf.windows = [...lf.windows.filter((x) => (x.end ?? x.start + LEAD_MAX) > now - FLIGHT_MAX), w];
-  lib.writeJSON(leadFile(common), lf);
+  lib.leadJSON(common, leadFile(common), lf);
   return w;
 }
 
@@ -329,7 +334,7 @@ function closeAgent(ev) {
     try { names = fs.readdirSync(dir).filter((n) => n.endsWith(ext)); } catch {}
     for (const n of names) {
       const f = path.join(dir, n), m = lib.readJSON(f, null);
-      if (m && m.key === key) try { fs.unlinkSync(f); } catch {}
+      if (m && m.key === key) try { lib.leadRemove(common, f); } catch {}
     }
   }
 }
@@ -347,14 +352,29 @@ function addNotice(common, w, entry) {
   if (had) Object.assign(had, { start: Math.min(had.start, entry.start), end: entry.end ?? had.end, paths: [...new Set([...had.paths, ...entry.paths])] });
   else n.agents.push(entry);
   n.shown = false;
-  lib.writeJSON(f, n);
+  lib.leadJSON(common, f, n);
 }
 
+// [file, notice, mark]: mark is null for the lead's own notices, and for an old one (oldNoticeDir) the name its
+// shown and cleared marks have in <state>: its file name and content hash, so a rewritten one shows again
 function notices(common) {
-  let names = [];
-  try { names = fs.readdirSync(noticeDir(common)).filter((n) => /^\d+\.json$/.test(n)); } catch {}
-  return names.map((n) => [path.join(noticeDir(common), n), lib.readJSON(path.join(noticeDir(common), n), null)]).filter(([, n]) => n && Array.isArray(n.agents));
+  const ls = (d) => { try { return fs.readdirSync(d).filter((n) => /^\d+\.json$/.test(n)); } catch { return []; } };
+  const own = ls(noticeDir(common)).map((n) => [path.join(noticeDir(common), n), lib.readJSON(path.join(noticeDir(common), n), null), null]);
+  const old = ls(oldNoticeDir(common)).flatMap((n) => {
+    let text;
+    try { text = lib.readUntrusted(path.join(oldNoticeDir(common), n), 256 * 1024); } catch { return []; }
+    const mark = `${n.replace(/\.json$/, "")}-${crypto.createHash("sha256").update(text).digest("hex").slice(0, 16)}`;
+    if (fs.existsSync(lib.leadPath(common, "unattributed-cleared", mark))) return [];
+    let v = null;
+    try { v = JSON.parse(text); } catch {}
+    if (!v || typeof v !== "object" || !Array.isArray(v.agents) || !v.lead || typeof v.lead !== "object") return [];
+    const shown = fs.existsSync(lib.leadPath(common, "unattributed-shown", mark));
+    return [[path.join(oldNoticeDir(common), n), { ...v, agents: v.agents.filter((a) => a && typeof a === "object" && Array.isArray(a.paths)), shown }, mark]];
+  });
+  return [...own, ...old].filter(([, n]) => n && Array.isArray(n.agents));
 }
+// p is under a notice dir: the hooks' own writes there are not an agent's change
+const inNotices = (common, p) => !!p && [noticeDir(common), oldNoticeDir(common)].some((d) => under(p, lib.realOr(d)));
 
 const iso = (t) => (t ? new Date(t).toISOString() : "still running");
 // each path once, with the agents whose calls overlapped, up to NOTICE_CAP characters
@@ -382,16 +402,16 @@ async function leadEnd(common, w) {
   const now = Date.now();
   const lf = readLead(common);
   for (const x of lf.windows) if (x.id === w.id) x.end = now;
-  lib.writeJSON(leadFile(common), lf);
+  lib.leadJSON(common, leadFile(common), lf);
   w = { ...w, end: now };
-  for (const [f, n] of notices(common)) if (n.seq === w.seq) { n.lead.end = now; lib.writeJSON(f, n); }
+  for (const [f, n, mark] of notices(common)) if (!mark && n.seq === w.seq) { n.lead.end = now; lib.leadJSON(common, f, n); }
   let snaps = [];
   try { snaps = fs.readdirSync(snapDir(common)).filter((n) => n.endsWith(".guard")).map((n) => path.join(snapDir(common), n)); } catch {}
   // a call that never got its PostToolUse or its agent's stop (killed, crashed) is no longer in flight
   snaps = snaps.flatMap((f) => {
     const snap = lib.readJSON(f, null);
     if (snap && snap.entries && now - snap.at <= STALE) return [[f, snap]];
-    try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) fs.unlinkSync(f); } catch {}
+    try { if (now - fs.statSync(f).mtimeMs > FLIGHT_MAX) lib.leadRemove(common, f); } catch {}
     return [];
   });
   if (snaps.length) {
@@ -399,7 +419,7 @@ async function leadEnd(common, w) {
     const heads = Object.fromEntries(fp.roots.map((r) => [r, headOf(r, common)]));
     const st = new Map();
     for (const [f, snap] of snaps) {
-      const items = (await diffSnap(snap, fp, common, fl, agents)).filter((i) => !(i.path && under(i.path, lib.realOr(noticeDir(common)))));
+      const items = (await diffSnap(snap, fp, common, fl, agents)).filter((i) => !inNotices(common, i.path));
       if (items.length) addNotice(common, w, { key: snap.key, agent: snap.agent, branch: snap.branch || "", start: snap.base || snap.at, end: null, paths: items.map(shown) });
       const siblings = {};
       for (const r of Object.keys(snap.siblings || {})) {
@@ -407,12 +427,15 @@ async function leadEnd(common, w) {
         if (st.get(r)) siblings[r] = st.get(r);
       }
       // the agent's call may have ended meanwhile; its snapshot is not brought back
-      if (fs.existsSync(f)) lib.writeJSON(f, { ...snap, roots: fp.roots, entries: fp.entries, heads, siblings, base: now });
+      if (fs.existsSync(f)) lib.leadJSON(common, f, { ...snap, roots: fp.roots, entries: fp.entries, heads, siblings, base: now });
     }
   }
   rebaseRecords(common, w);
   const fresh = notices(common).filter(([, n]) => !n.shown);
-  for (const [f, n] of fresh) lib.writeJSON(f, { ...n, shown: true });
+  for (const [f, n, mark] of fresh) {
+    if (mark) lib.leadCreate(common, lib.leadPath(common, "unattributed-shown", mark), "");
+    else lib.leadJSON(common, f, { ...n, shown: true });
+  }
   return fresh.map(([, n]) => NOTICE_MSG(n)).join("\n");
 }
 
@@ -438,7 +461,7 @@ function rebaseRecords(common, w) {
       const cur = entryNow(it.path);
       if (cur !== (it.before ?? null) && "after" in it && cur !== it.after) { it.before = cur; it.after = cur; it.rebased = w.seq; changed = true; }
     }
-    if (changed) lib.writeJSON(f, rec);
+    if (changed) lib.leadJSON(common, f, rec);
   }
 }
 
@@ -464,11 +487,7 @@ function briefBind(ev, common, ad) {
   try { brief = String((ad && ad.briefText(ev)) || ""); } catch {}
   const named = lib.briefWorktree(brief, common);
   if (!named) return null;
-  const file = lib.bindFile(common, ev.agent);
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, named + "\n", { flag: "wx" }); // exclusive, as the lead guard's first-edit binding
-  } catch {}
+  try { lib.leadCreate(common, lib.bindFile(common, ev.agent), named + "\n"); } catch {} // exclusive, as the lead guard's first-edit binding
   return lib.bound(common, ev.agent) || named;
 }
 
@@ -478,14 +497,14 @@ async function snapshot(ev, ad) {
   const id = callId(ev), at = Date.now();
   const mine = ownOf(ev, common, ad), own = lib.realOr(mine || lib.projectRoot(ev));
   const marker = { id, key: whoKey(ev), agent: ev.agent || "", own, at };
-  lib.writeJSON(path.join(flightDir(common), `${id}.json`), marker);
+  lib.leadJSON(common, path.join(flightDir(common), `${id}.json`), marker);
   const fl = flights(common, id), agents = boundAgents(common);
   const fp = fingerprint(common);
   const heads = Object.fromEntries(fp.roots.map((r) => [r, headOf(r, common)]));
   const sibs = fp.roots.filter((r) => r !== own && lib.isLinked(r) && fs.existsSync(lib.ownedFile(r)) && !busy(r, at, fl, agents, common));
   const st = await Promise.all(sibs.map(porcelain));
   const siblings = Object.fromEntries(sibs.flatMap((r, i) => (st[i] ? [[r, st[i]]] : [])));
-  lib.writeJSON(snapFile(common, id), { ...marker, branch: mine ? branchName(own) : "", roots: fp.roots, entries: fp.entries, heads, siblings });
+  lib.leadJSON(common, snapFile(common, id), { ...marker, branch: mine ? branchName(own) : "", roots: fp.roots, entries: fp.entries, heads, siblings });
 }
 
 // ---- after the call
@@ -549,7 +568,7 @@ async function diffSnap(snap, fp, common, fl, agents, putBack = new Map(), putKe
   const roots = new Set(fp.roots);
   const registered = new Set(lib.registeredWorktrees(common));
   const c = lib.realOr(common);
-  const keep = [path.join(c, "proteus", "tamper"), path.join(c, "proteus", "unattributed")];
+  const keep = [path.join(c, lib.LEAD, "tamper"), path.join(c, lib.LEAD, "unattributed"), path.join(c, "proteus", "unattributed")];
   const okBranches = new Set([snap.branch, snap.own && branchName(snap.own)].filter(Boolean)), track = trackable(common);
   for (const r of fp.roots) if (r !== snap.own && busy(r, base, fl, agents, common)) { const b = branchName(r); if (b) okBranches.add(b); }
   const byRoot = new Map();
@@ -649,14 +668,14 @@ async function check(ev, ad) {
     if (mine) id = mine.id;
   }
   const snap = lib.readJSON(snapFile(common, id), null);
-  try { fs.unlinkSync(snapFile(common, id)); } catch {}
-  try { fs.unlinkSync(path.join(flightDir(common), `${id}.json`)); } catch {}
+  try { lib.leadRemove(common, snapFile(common, id)); } catch {}
+  try { lib.leadRemove(common, path.join(flightDir(common), `${id}.json`)); } catch {}
   const recFile = path.join(tamperDir(common), `${key}.json`);
   const rec = lib.readJSON(recFile, null);
   let items = [];
   if (!snap) {
     // the guards snapshot every subagent shell call they let through; a missing one was removed during the call
-    if (ev.agent && fs.existsSync(path.join(lib.stateDir(common), "guard-flight"))) items.push({ kind: "snapshot" });
+    if (ev.agent && fs.existsSync(flightDir(common))) items.push({ kind: "snapshot" });
   } else {
     const recItems = ((rec && rec.items) || []).filter((i) => i.kind === "path");
     const putBack = new Map(recItems.filter((i) => !i.keys).map((i) => [i.path, i.before ?? null]));
@@ -666,7 +685,7 @@ async function check(ev, ad) {
     const from = snap.base || snap.at, to = Date.now();
     const over = items.length ? overlapping(readLead(common), from, to) : [];
     if (over.length) {
-      const paths = items.filter((i) => !(i.path && under(i.path, lib.realOr(noticeDir(common))))).map(shown);
+      const paths = items.filter((i) => !inNotices(common, i.path)).map(shown);
       if (paths.length) addNotice(common, over[over.length - 1], { key, agent: ev.agent || "", branch: snap.branch || "", start: from, end: to, paths });
       items = [];
     }
@@ -685,14 +704,14 @@ async function check(ev, ad) {
     }
   }
   if (!fresh.length && !left.length) {
-    if (rec && rec.open) lib.writeJSON(recFile, { ...rec, open: false, items: [], closed: new Date().toISOString(), history: [...(rec.history || []), ...(rec.items || [])].slice(-200) });
+    if (rec && rec.open) lib.leadJSON(common, recFile, { ...rec, open: false, items: [], closed: new Date().toISOString(), history: [...(rec.history || []), ...(rec.items || [])].slice(-200) });
     return;
   }
   const o = snap ? "" : ownOf(ev, common, ad), mine = snap ? snap.branch || "" : o ? branchName(o) : "";
   const own = (snap && snap.own) || (rec && rec.worktree) || o;
   const add = fresh.filter((i) => !(i.path && byPath.has(i.path)));
   const all = [...left, ...add].map((i) => withAfter(i.kind === "snapshot" ? { ...i, reported: true } : i));
-  lib.writeJSON(recFile, {
+  lib.leadJSON(common, recFile, {
     key, agent: ev.agent || "", session: ev.session || "", worktree: own, branch: mine,
     open: true, at: (rec && rec.open && rec.at) || new Date().toISOString(), items: all, history: (rec && rec.history) || [],
   });
@@ -731,7 +750,13 @@ function cli(argv) {
     return 0;
   }
   const gone = all.filter(([, n]) => arg === "all" || String(n.seq) === arg);
-  for (const [f] of gone) fs.unlinkSync(f);
+  // an old notice is never removed (#236): a cleared mark hides it
+  try {
+    for (const [f, , mark] of gone) {
+      if (mark) lib.leadCreate(common, lib.leadPath(common, "unattributed-cleared", mark), "");
+      else lib.leadRemove(common, f);
+    }
+  } catch (e) { console.error(`proteus-shell-check: ${e.message}`); return 1; }
   console.log(`proteus-shell-check: cleared ${gone.length} notice${gone.length === 1 ? "" : "s"}`);
   return gone.length || arg === "all" ? 0 : 1;
 }

@@ -9,10 +9,14 @@
 // <key> is a ticket's <run>-<id> (its branch proteus-work/<run>/<id>) or a run's <run>.
 // As a hook (lead's session, before and after every shell call, failed or not): the first snapshots the
 // top-level names of os.tmpdir(); after the call a new name owned by this user and named in the command or its
-// output is a stray, appended to <common>/proteus/scratch-ledger.jsonl with its key (the agent's own --path,
+// output is a stray, appended to <common>/proteus-lead/scratch-ledger.jsonl with its key (the agent's own --path,
 // the proteus/* branch of its cwd, or the one open run). Deletion happens only in --sweep, only for ledgered
 // paths and scratch dirs, each re-checked first: same inode, this user, directly in os.tmpdir(), a symlink
 // removed as a link and never followed. A git worktree goes through `git worktree remove --force` and `prune`.
+// What this script writes for itself (ledger, snapshots, size) is lead state, in proteus-lead through lib's
+// lead-state writers (#236). A scratch dir the autostart's --stale sweep (outside any sandbox) deletes is first
+// moved into proteus-lead/trash and deleted there only if it is the entry it checked; the lead's own --sweep runs in
+// its shell, sandboxed or not, and deletes in place when proteus-lead is not writable from there.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -43,19 +47,17 @@ function hook(ev) {
   if (ev.tool !== "shell") return;
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common) return;
-  const store = lib.stateDir(common);
   const id = String(ev.toolUseId || `${ev.session}-${ev.agent || "lead"}`).replace(/[^\w.-]/g, "_");
-  const snap = path.join(store, "scratch-snap", id);
+  const snap = lib.leadPath(common, "scratch-snap", id);
   const tmp = os.tmpdir();
   if (ev.kind === "pre-tool") {
     const names = fs.readdirSync(tmp);
-    fs.mkdirSync(path.dirname(snap), { recursive: true });
-    fs.writeFileSync(snap, JSON.stringify({ tmp, names }));
+    lib.leadWrite(common, snap, JSON.stringify({ tmp, names }));
     return;
   }
   if (ev.kind !== "post-tool" && ev.kind !== "tool-failed") return;
   const before = lib.readJSON(snap, null);
-  try { fs.unlinkSync(snap); } catch {}
+  try { lib.leadRemove(common, snap); } catch {}
   const cmd = ev.command;
   const who = ev.agent ? `${ev.agentType || "agent"}:${ev.agent}` : "lead";
   const file = ledgerFile(common);
@@ -81,8 +83,7 @@ function hook(ev) {
     }
   }
   if (!rows.length) return;
-  fs.mkdirSync(store, { recursive: true });
-  fs.appendFileSync(file, rows.map((r) => JSON.stringify(r) + "\n").join(""));
+  lib.leadAppend(common, file, rows.map((r) => JSON.stringify(r) + "\n").join(""));
 }
 
 function cli([cmd, arg]) {
@@ -108,7 +109,6 @@ function cli([cmd, arg]) {
 }
 
 function sweep(common, what) {
-  const store = lib.stateDir(common);
   const file = ledgerFile(common);
   const { text, rows } = readLedger(file);
   const now = Date.now();
@@ -135,22 +135,23 @@ function sweep(common, what) {
     out.strays++;
     if (res.worktree) out.worktrees++;
   }
-  const root = path.join(store, "scratch");
+  const root = lib.scratchDir(common);
   for (const name of realDir(root) ? ls(root) : []) {
     const d = path.join(root, name);
     let st;
     try { st = fs.lstatSync(d); } catch { continue; }
     if (!pick(name, now - st.mtimeMs)) continue;
-    const res = removeScratch(d, st, prune);
+    const res = removeScratch(d, st, prune, common, what === "--stale");
     if (res.keep) { out.kept.push(`${d}: ${res.keep}`); continue; }
     out.bytes += res.bytes;
     out.dirs++;
   }
   for (const common of prune) git(["worktree", "prune"], common);
-  if (keep.length !== rows.length) writeLedger(file, text, keep);
+  // from the lead's sandboxed shell the ledger stays: the next sweep drops the rows whose paths are gone
+  if (keep.length !== rows.length) { try { writeLedger(common, file, text, keep); } catch {} }
   // a PreToolUse whose call never ran (denied, interrupted) leaves its snapshot behind
-  const snaps = path.join(store, "scratch-snap");
-  for (const f of ls(snaps)) { try { const p = path.join(snaps, f); if (now - fs.statSync(p).mtimeMs > 3600e3) fs.unlinkSync(p); } catch {} }
+  const snaps = lib.leadPath(common, "scratch-snap");
+  for (const f of ls(snaps)) { try { const p = path.join(snaps, f); if (now - fs.statSync(p).mtimeMs > 3600e3) lib.leadRemove(common, p); } catch {} }
   out.left = size(common, keep);
   return out;
 }
@@ -177,18 +178,28 @@ function removeStray(r, tmpReal, uid, prune) {
   } catch (e) { return { keep: e.code || e.message }; }
 }
 
-// a scratch dir: its worktrees (top level) go through git first, then the dir
-function removeScratch(d, st, prune) {
+// a scratch dir: its worktrees (top level) go through git first, then the dir. It is moved into proteus-lead/trash
+// and deleted there, unless what arrived is not the entry st describes (a parent swapped for a link meanwhile).
+// When proteus-lead cannot be written (the lead's sandboxed shell), a --stale sweep keeps it and any other deletes in place.
+function removeScratch(d, st, prune, common, stale) {
   try {
-    if (st.isSymbolicLink()) { fs.unlinkSync(d); return { bytes: 0 }; }
-    if (!st.isDirectory()) return { keep: "not a directory" };
-    const bytes = du(d);
-    for (const f of ls(d)) {
+    const link = st.isSymbolicLink();
+    if (!link && !st.isDirectory()) return { keep: "not a directory" };
+    const bytes = link ? 0 : du(d);
+    for (const f of link ? [] : ls(d)) {
       const c = path.join(d, f);
       const gd = gitdirOf(c);
       if (gd && fs.existsSync(gd) && !removeWorktree(c, prune)) return { keep: `git worktree remove ${f} failed (locked?)` };
     }
-    fs.rmSync(d, { recursive: true, force: true });
+    let at;
+    try { at = lib.leadTrash(common, d); } catch (e) {
+      if (stale || e.code === "ENOENT") return { keep: `${e.code || e.message}, not moved to proteus-lead/trash` };
+      if (link) fs.unlinkSync(d); else fs.rmSync(d, { recursive: true, force: true }); // rm never follows a symlink inside the tree
+      return { bytes };
+    }
+    const now = fs.lstatSync(at);
+    if (now.dev !== st.dev || now.ino !== st.ino) return { keep: `replaced while it was swept; moved to ${at}, not deleted` };
+    lib.leadRemove(common, at, true);
     return { bytes };
   } catch (e) { return { keep: e.code || e.message }; }
 }
@@ -247,10 +258,10 @@ function named(text, name) {
 
 // bytes in scratch dirs and in the ledgered strays still present; cached for the autostart's state line
 function size(common, rows) {
-  const root = path.join(lib.stateDir(common), "scratch");
+  const root = lib.scratchDir(common);
   let n = realDir(root) ? du(root) : 0;
   for (const r of rows || readLedger(ledgerFile(common)).rows) if (typeof r.path === "string") n += du(r.path);
-  try { lib.writeJSON(path.join(lib.stateDir(common), "scratch-size.json"), { at: new Date().toISOString(), bytes: n }); } catch {}
+  try { lib.leadJSON(common, lib.leadPath(common, "scratch-size.json"), { at: new Date().toISOString(), bytes: n }); } catch {}
   return n;
 }
 
@@ -263,7 +274,7 @@ function du(p) {
   return n;
 }
 
-function ledgerFile(common) { return path.join(lib.stateDir(common), "scratch-ledger.jsonl"); }
+function ledgerFile(common) { return lib.leadPath(common, "scratch-ledger.jsonl"); }
 
 function readLedger(file) {
   let text = "";
@@ -273,13 +284,10 @@ function readLedger(file) {
 }
 
 // rewrite with the kept rows plus whatever a hook appended while the sweep ran
-function writeLedger(file, old, rows) {
+function writeLedger(common, file, old, rows) {
   let now = "";
   try { now = fs.readFileSync(file, "utf8"); } catch {}
-  const body = rows.map((r) => JSON.stringify(r) + "\n").join("") + (now.startsWith(old) ? now.slice(old.length) : "");
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, body);
-  try { fs.renameSync(tmp, file); } catch { fs.writeFileSync(file, body); try { fs.unlinkSync(tmp); } catch {} }
+  lib.leadWrite(common, file, rows.map((r) => JSON.stringify(r) + "\n").join("") + (now.startsWith(old) ? now.slice(old.length) : ""));
 }
 
 // git on a common dir through lib's wrapper (#215), in its main checkout when it has one; true when it worked

@@ -15,7 +15,7 @@ const REPO = path.join(W, "repo");
 fs.mkdirSync(path.join(REPO, ".claude", "skills", "proteus"), { recursive: true });
 fs.writeFileSync(path.join(REPO, ".claude", "skills", "proteus", "SKILL.md"), "---\nname: proteus\n---\nSKILL BODY\n");
 g(W, "init", "-q", "-b", "main", REPO);
-const SEEN = path.join(REPO, ".git", "proteus", "visibility.json");
+const SEEN = path.join(REPO, ".git", "proteus-lead", "visibility.json");
 const LOG = path.join(W, "gh.log");
 const asked = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, "utf8") : "").split("\n").filter((l) => l.startsWith("repo view --json visibility")).length;
 const start = (vis, source = "startup") => lib.run(path.join(SRC, "proteus-autostart.js"), { hook_event_name: "SessionStart", source, session_id: "s1", cwd: REPO }, { cwd: REPO, env: vis === "fail" ? { FAKE_GH_LOG: LOG, FAKE_GH: "fail" } : { FAKE_GH_LOG: LOG, FAKE_GH_VISIBILITY: vis } });
@@ -25,7 +25,7 @@ const age = (ms) => { const s = JSON.parse(fs.readFileSync(SEEN, "utf8")); s.at 
 // private: no note, one gh call, cached for a day
 let r = start("PRIVATE");
 ok("private: no note, the hook exits 0", r.code === 0 && !noted(r) && /SKILL BODY/.test(r.out), r.err);
-ok("private: visibility cached in .git/proteus/visibility.json", JSON.parse(fs.readFileSync(SEEN, "utf8")).visibility === "PRIVATE" && asked() === 1);
+ok("private: visibility cached in .git/proteus-lead/visibility.json", JSON.parse(fs.readFileSync(SEEN, "utf8")).visibility === "PRIVATE" && asked() === 1);
 r = start("PUBLIC");
 ok("cache: within a day gh is not asked again", !noted(r) && asked() === 1, String(asked()));
 
