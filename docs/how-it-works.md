@@ -244,6 +244,7 @@ templates/
     proteus-run-tree.js     checks a commit out in .worktrees/_run for the suite, run sandboxed
     proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-intake-coverage.js  the intake draft's coverage table maps every finding exactly once
+    proteus-goal.js         one goal-loop round: runs the frozen scorecard, prints NEXT or STOP
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents

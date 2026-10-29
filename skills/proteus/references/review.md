@@ -49,6 +49,8 @@ Only the literal word confirms. Then, per gate:
 4. Unattended mode does not: auto-accept a test piece, merge into `main`, approve a new dependency, install a skill, rewrite `CONVENTIONS.md`, escalate past two `judge` fails (park as `CONTRACT-WRONG`, continue with independent tickets).
 5. Hard stop: token budget or milestone count if given; otherwise at 5 open `needs-human` issues. `PushNotification` on stop.
 
+Goal mode (`operations.md`, Goal loop): the review issue shows the score trend as a table (round, score, ticket), one row per `goal-round:` line. `CHANGES` or `ACCEPT` from the human stops the loop; the lead deletes the schedule.
+
 ## What the human owns
 
 Merging `proteus/<run>` into `main`; `CONVENTIONS.md` and its taste docs; the team roster and skills lists; every `NEEDS <dependency>`; every debt line at close; every review verdict, eventually, even the auto-accepted ones.
