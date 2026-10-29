@@ -26,6 +26,8 @@
 // 6. Nobody reads, edits or names the verifier App's key, or sets GH_TOKEN / GITHUB_TOKEN in a shell (lib.secretDenial).
 // 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
+// 8. Under bypassPermissions, a worker or verifier spawn and a `proteus-container.js run` need sandbox=on, as the autostart
+//    recorded it for this session (bypassDenial); the refusal names the sandbox profile's launch command.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
 //   no background Bash, a Monitor command only where a Bash call would pass and only reads (monitorDenial), no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
@@ -42,7 +44,7 @@
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
 //   included, except what lib.leadEditDenial always refuses (.claude, .codex, gates, CI, links, outside the repo).
-// Linked worktrees skip rules 1-3 and 7. PROTEUS=0 sessions (the human's review session) get rule 4's verdict checks
+// Linked worktrees skip rules 1-3, 7 and 8's spawn check. PROTEUS=0 sessions (the human's review session) get rule 4's verdict checks
 // and nothing else.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
 "use strict";
@@ -107,6 +109,8 @@ else lib.run((ev, ad) => {
     const ctx = ad.contextTokens(ev);
     if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more. Finish the step, log the position on the run log, /handoff, and let a fresh lead dispatch; workers in flight keep running.`);
     if (lib.isPipelineAgent(ev.spawnType)) {
+      const unsafe = bypassDenial(ev, `a ${ev.spawnType} spawn`);
+      if (unsafe) ad.deny(unsafe);
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
     }
@@ -239,6 +243,17 @@ function verifierGate(ev) {
   return runsGate(ev.command, learnedGates(root)) ? GATE_MSG : "";
 }
 
+// rule 8 (#189): under bypassPermissions nothing prompts, so only the sandbox holds an agent's shell. A worker or
+// verifier spawn, or a container run, needs the sandbox state the autostart stored for this session to be on; a
+// missing state is not on
+function bypassDenial(ev, what) {
+  if (ev.permissionMode !== "bypassPermissions") return "";
+  const root = lib.projectRoot(ev), state = lib.sandboxSeen(root, ev.session);
+  if (state === "on") return "";
+  const why = state === "unavailable" ? (process.platform === "win32" ? "native Windows has no sandbox; run Claude Code in WSL2" : "this machine has no sandbox: install bubblewrap (bwrap) and socat") : state === "off" ? "the sandbox is off" : "no sandbox state was recorded for this session";
+  return `${what} under bypassPermissions needs the sandbox, and ${why}. Run node install.js --sandbox in the repo, then start the session with ${lib.sandboxLaunch(root)} (docs/install.md, Sandboxed bypass); or start it without bypassPermissions.`;
+}
+
 // rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
 // (an escalation), on the ladder as an Agent call's model would be
 function containerDenial(ev) {
@@ -248,6 +263,8 @@ function containerDenial(ev) {
   for (const w of cmds) {
     const i = w.findIndex((x) => /(^|[\\/])proteus-container\.js$/.test(x));
     if (i < 0 || w[i + 1] !== "run") continue;
+    const unsafe = bypassDenial(ev, "proteus-container.js run");
+    if (unsafe) return unsafe;
     let model = "";
     for (let j = i + 2; j < w.length; j++) {
       if (w[j] === "--model") model = w[j + 1] || "";
