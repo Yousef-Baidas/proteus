@@ -380,16 +380,17 @@ console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), 
 
   // a copy with no sandbox-root.json, or an unreadable one, refuses rather than falling back
   const bare = path.join(W, "cfg2", "proteus-sandbox", "bin", "deadbeef");
+  const cfg2Env = { CLAUDE_CONFIG_DIR: path.join(W, "cfg2") }; // the copies sit in its config dir's bin (#234)
   fs.mkdirSync(bare, { recursive: true });
   for (const f of files(bin)) if (f !== "sandbox-root.json") fs.copyFileSync(path.join(bin, f), path.join(bare, f));
   const w1Hooks = path.join(dotGit, "worktrees", "w1", "proteus-hooks");
   fs.rmSync(w1Hooks, { recursive: true, force: true });
-  const nopin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [path.join(repo, ".worktrees", "w1"), "src/**"] });
+  const nopin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [path.join(repo, ".worktrees", "w1"), "src/**"], env: cfg2Env });
   ok("copy: no sandbox-root.json refuses and writes nothing", nopin.code === 1 && /sandbox-root\.json/.test(nopin.err) && !fs.existsSync(w1Hooks), nopin.err + nopin.out);
-  const noallow = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "--allow", "force-push"] });
+  const noallow = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "--allow", "force-push"], env: cfg2Env });
   ok("copy: no sandbox-root.json refuses --allow too", noallow.code === 1 && /sandbox-root\.json/.test(noallow.err), noallow.err);
   fs.writeFileSync(path.join(bare, "sandbox-root.json"), "{not json");
-  const badpin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "src/**"] });
+  const badpin = run(path.join(bare, "proteus-worktree.js"), "", { cwd: repo, args: [w1, "src/**"], env: cfg2Env });
   ok("copy: an unreadable sandbox-root.json refuses", badpin.code === 1 && /sandbox-root\.json/.test(badpin.err) && !fs.existsSync(w1Hooks), badpin.err);
 
   // #212 B8: a Proteus statusLine whose script sandboxed commands can write (--project's teams/ copy) is pointed at the

@@ -2080,7 +2080,7 @@ async function doctor(fix) {
           const left = cx().skipHooks.filter((f) => lstat(path.join(root, hd, "hooks", f)));
           return left.length ? ["FIX", `Claude-only files in .codex/hooks: ${left.join(", ")}`, `${self} --project`] : ["ok", "no Claude-only files in .codex/hooks"];
         }, () => registerHooks(root));
-        check(() => readText(path.join(root, ".codex", "rules", "proteus.rules")) === cx().RULES ? ["ok", ".codex/rules/proteus.rules"]
+        check(() => readText(path.join(root, ".codex", "rules", "proteus.rules")) === cx().rules(root) ? ["ok", ".codex/rules/proteus.rules"]
           : ["FIX", ".codex/rules/proteus.rules missing or stale", `${self} --project`], () => registerHooks(root));
         check(() => {
           const w = cx().sandboxRoots(root, false);

@@ -925,6 +925,31 @@ function within(place, target, platform = process.platform) {
   const rel = p.relative(key(place), key(target));
   return rel === "" || (rel !== ".." && !rel.startsWith(".." + p.sep) && !p.isAbsolute(rel));
 }
+// #234: where a script a Codex prefix rule runs outside the sandbox may sit: the hooks dir of the main checkout of the
+// repo holding it; the plugin's folder (CLAUDE_PLUGIN_ROOT) and a Proteus source tree's hooks (<tree>/templates/hooks
+// beside <tree>/.claude-plugin); and the copies install.js --sandbox keeps under <claudeDir>/proteus-sandbox/bin,
+// which every profile denies to agents. A copy anywhere else, a worker's nested .codex/hooks, is not the lead's script
+function homeDirs(file) {
+  const dir = path.dirname(file), tree = path.resolve(dir, "..", "..");
+  const main = mainRoot(gitCommonDir(dir));
+  return [
+    ...(main ? [harness().hooksDir(main)] : []),
+    ...(pluginRoot() ? [pluginRoot()] : []),
+    ...(fs.existsSync(path.join(tree, ".claude-plugin", "plugin.json")) ? [path.join(tree, "templates", "hooks")] : []),
+    path.join(claudeDir(), "proteus-sandbox", "bin"),
+  ];
+}
+// here is under one of dirs (all real paths); platform is for tests
+const homeAllows = (here, dirs, platform = process.platform) => dirs.some((d) => within(d, here, platform));
+// called first by each such script: unless its real path is under homeDirs, one line on stderr and exit 2
+function homeOnly(file) {
+  const here = realNative(file);
+  let dirs = [];
+  try { dirs = homeDirs(here).map(realNative); } catch {}
+  if (homeAllows(here, dirs)) return;
+  process.stderr.write(`proteus: ${path.basename(file)} runs only from the main checkout's hooks dir or the plugin's, not ${here}\n`);
+  process.exit(2);
+}
 // every path a Proteus sandbox profile lets sandboxed commands write: allowWrite of each
 // <claudeDir>/proteus-sandbox/*.json, which install.js --sandbox writes and every profile denies to agents. A profile
 // is read as a regular file, never through a link; one that cannot be read or parsed throws, so a caller fails closed
@@ -3259,7 +3284,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, profileWrites, homeWritable,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,

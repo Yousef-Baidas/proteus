@@ -365,6 +365,7 @@
       "fded8f31fe51f9d80ab76f4043d6c7c0d7beb90a"
     ],
     "templates/hooks/proteus-close-report.js": [
+      "6a04590bcc97b3b611589fd7dad7e0c5686ed17f",
       "8e5803ddd9287d0c82b6e7d70836cc92fc61d15b",
       "a67a84cae6127627a55281ef4924152886563348",
       "ff7ef568ac97e03f09dd9f90bf6a3cc80375af2c"
@@ -448,6 +449,7 @@
       "57bb909eb8a587b853c1f80b38a6386de92f0499",
       "5b07471b0302c3e9f7974800274c07de7a858de5",
       "5db388f6871f5f994e1b7fe52e8f688eff98f79e",
+      "63784cd819a48022d5fc20e35b23f962a9eff6a6",
       "64d1c70dd3fec6de54cea490b364d10b4aaf79fd",
       "64ed8260b0218c9103968fb8e754c7fcf9f0f7ce",
       "653303a989fe3408b2fc42ca1ddf3a983f3742c3",
@@ -498,8 +500,12 @@
     "templates/hooks/proteus-inbox.js": [
       "5a2dba547365cebfb6c0ac835bfc98503265201a",
       "715615fc7794130a7a59694636ca9952825f7ca5",
+      "888aef6b500400169952d596b441f63a689f3af1",
       "dbe5b73aae9a94b9d2c480a17aeb0fc0c28624a4",
       "e7dc427ff79208729041c1c9a69683f2e66396c4"
+    ],
+    "templates/hooks/proteus-intake.js": [
+      "e535047ffa36c3cc56b90df036adaa4f3650bcfb"
     ],
     "templates/hooks/proteus-journal.js": [
       "2dc6c6177581ed4956836aa35702cdd2268f2174",
@@ -612,6 +618,7 @@
       "764d887fbf379603c56b40ad237fb96eefdee56a",
       "7cf3c4a89345a1d9d0c5e51ceed238603b256ea4",
       "7f4d92f0b09068740f13cf6545ee8bc56da143a0",
+      "886a4b33883db9d54ff6068adf380aa35eb7350d",
       "8e9de778dbd8d06ee520385c2ac883cd892f4632",
       "8f3a5dce2dfce647d7001f5ff7a78ea5ea09ac22",
       "8f51aa17fbadfb84fabf0f315c83d2ed2d9e144a",
@@ -674,6 +681,7 @@
       "2b1faa5e7a36ea536db4d61619f78e594d8c65f5",
       "33b609db87f00ade92e2f0af9f5c998eff2f190d",
       "3ed6c76bac8c3ad4a106564e1792008ea4bc9bec",
+      "48656c77ad2f94c5ab95d4e948d4e863a18c3879",
       "8fa9ceae1e1131255dd819a479d2c87d18ccc685",
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b"
     ],
@@ -689,6 +697,9 @@
       "1288afea33ed9084b24e59ee7cdbfc2c3564b2ee",
       "229b380ad327f38b30ff77d25152847faf792102",
       "54a3ca9cc24b0833155a8a1a8ddb47431cbaba0a"
+    ],
+    "templates/hooks/proteus-ready.js": [
+      "d4eacb2eaa10b229075761dd6e6334752ce336b2"
     ],
     "templates/hooks/proteus-run-tree.js": [
       "16df50fe90c15d2524b78986feba601f173fc783",
@@ -746,7 +757,8 @@
       "c67a5df50947c9767397f6cd3c3123464265844d"
     ],
     "templates/hooks/proteus-skillpath.js": [
-      "a5752917d77cfc15a1676e7202f4ceedefc3c3ab"
+      "a5752917d77cfc15a1676e7202f4ceedefc3c3ab",
+      "ecf41949b35d6e13bc48256f2391113873df5381"
     ],
     "templates/hooks/proteus-stall.js": [
       "3cc9504a7ace1f1bfb6804a7037adbecea20d3c6",
@@ -760,7 +772,8 @@
       "30115c78f3cecb801454d5fbd8fd6e09ff143207",
       "9f02a72212fe56e5061c1f1f4254d4bfeebfb47b",
       "dddb8da6c956d191f12d3e925f7d49c757e0d43d",
-      "e7b78a7dfb2e8ce44135ff55bb69cec43c69a893"
+      "e7b78a7dfb2e8ce44135ff55bb69cec43c69a893",
+      "f90d0d371d8246fb966d4e2e59420546196e6f22"
     ],
     "templates/hooks/proteus-statusline.js": [
       "6a20127652838a9e3a46153fcb6055af13d2d467",
@@ -780,11 +793,13 @@
     ],
     "templates/hooks/proteus-verdict.js": [
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",
+      "d933e1c90cdadc199825184be5f268c77e4b2f75",
       "db69a02f3bb29c8941b637ab40b6fe73d04926f1"
     ],
     "templates/hooks/proteus-watchdog.js": [
       "484da3b2a9fc7bc36ec50397f757ec6091f365f0",
-      "b7bcae7d93391066a3d27082b1f6f609e8b0dc34"
+      "b7bcae7d93391066a3d27082b1f6f609e8b0dc34",
+      "e73af240861d0543ca655407bf409b5eb70e25cb"
     ],
     "templates/hooks/proteus-worker-guard.js": [
       "156ee044909ec961667891451b08c8116d85127d",
@@ -804,6 +819,7 @@
       "5467253993b0ad4ceb362325cf2624dc07b2f71d",
       "5ca45d2ead444b6089deab96d7ee9e29b30e47df",
       "6137fdf998ab3ca1058f7c0ff3ca9d41b643b82e",
+      "6fcb615a3826f17c4d7cab6c4b97991f7a4f63ef",
       "9645b5d835332c74cf76ff128756950e37606f8c",
       "b1971a9cec288d9891026f69a8631276d3c7274c",
       "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
