@@ -103,6 +103,16 @@ Required, `teams/qa/required.txt`. Per-ticket verifiers check a diff against its
 
 The same scan also runs before the work, on the modules it touches: the refactor checkpoint in `flow.md` step 1.
 
+## 10b. Security pass per milestone and audit at close
+
+A security verifier sees one ticket's diff, so an access path built across three tickets passes each review on its own, and nobody audits the whole repo before the human merges into `main`.
+
+- Milestone mode: the QA milestone pass (§10) also spawns `proteus-security-verifier` on `judge` with the word `milestone` and the milestone diff, `git diff <merge-base>..proteus/<run>`. It checks the flows across tickets: authorization on every new route or handler, every input that reaches file, network, database or shell I/O, and each of the milestone's gate (g) abuse cases (`flow.md` step 1).
+- Close mode: at close the same agent runs with the word `close` over the whole repo at the tip of `proteus/<run>`, applying the audit skill the scout picked for `teams/security` (a line of `teams/security/skills.txt`), read from its `SKILL.md`.
+- Blockers become `WAVE-RED` tickets exactly as §10's do: numbered, mapped to the ticket that introduced them, fixed by tickets, never by the verifier. Non-blockers go to the milestone's debt issue.
+- The human gate does not open over a security blocker. Like §10, the lead's instructions hold the gate (`flow.md` step 7, `review.md`); no hook enforces it yet.
+- No path the run touched matches the `security` block of `teams/ROUTING.md` → both modes are skipped, and the lead writes `security-pass: skipped (no security path)` on the run log.
+
 ## 11. Hooks
 
 `install.js --project` runs `install-lead-hooks.js`, which copies every hook to the project's hooks dir (`harnesses.md`) and registers the lead's set in `.claude/settings.local.json` (untracked, so a worker's worktree never inherits it); with `--harness codex`, `.codex/hooks/`, `.codex/hooks.json` and `.codex/rules/proteus.rules` (`harnesses.md`). The autostart re-syncs changed hooks from the Proteus checkout at every session start, so a hook fix reaches every project without reinstalling. All hooks fail open: an internal error never blocks the session.

@@ -164,6 +164,7 @@
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
+      "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
@@ -172,6 +173,7 @@
       "b28d8cecf81a5e282749c4056984369ff1f6bce4",
       "c09e510f67331a68839864016cbc4b6adad002bd",
       "d432d7062346b0941a3fc9bacdabb0a1ef093894",
+      "dec4b449bbe28a8101b30ab3193c86a914d5e241",
       "e3877bb6e4d285d205c43d0b7d7951e84df7d767"
     ],
     "agents/proteus-verifier.md": [
