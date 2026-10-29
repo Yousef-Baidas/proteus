@@ -1029,8 +1029,12 @@ function gh(args, cwd, timeout = 6000, configDir = "", token = "") {
   if (token) env.GH_TOKEN = token;
   try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
-// gh as { ok, out, err }, this process's login
-const ghTry = (args, cwd, timeout = 6000) => attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, ghEnv()), stdio: ["ignore", "pipe", "pipe"] }));
+// gh as { ok, out, err }; configDir as gh() takes it, else this process's login
+function ghTry(args, cwd, timeout = 6000, configDir = "") {
+  const env = ghEnv();
+  if (configDir) env.GH_CONFIG_DIR = configDir;
+  return attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"] }));
+}
 
 const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); return Number.isFinite(n) && n > 0 ? n : dflt; };
 
@@ -3092,13 +3096,17 @@ function releaseCheck(root, notes, plugin, data) {
   notes.push(`proteus: WARNING: the installed plugin commit ${sha.slice(0, 12)} is not a verified Proteus release (${res.error}). ${pin}. Tell the human once; nothing is blocked.`);
 }
 
-// the gitCommitSha of the proteus@proteus install this hook runs from: the entry whose installPath is the
-// plugin root, else this project's, else the user-scope one; "" when none
-function installedSha(root, plugin) {
+// the proteus@proteus install (installed_plugins.json) this hook runs from: the entry whose installPath is the
+// plugin root, else this project's, else the user-scope one; null when none
+function installedEntry(root, plugin) {
   const j = readJSON(path.join(claudeDir(), "plugins", "installed_plugins.json"), {}) || {};
   const all = (j.plugins && Array.isArray(j.plugins["proteus@proteus"]) ? j.plugins["proteus@proteus"] : []).filter((e) => e && typeof e === "object");
-  const same = (a, b) => typeof a === "string" && typeof b === "string" && samePath(a, b);
-  const e = all.find((x) => same(x.installPath, plugin)) || all.find((x) => same(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0];
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && !!a && !!b && samePath(a, b);
+  return all.find((x) => same(x.installPath, plugin)) || all.find((x) => same(x.projectPath, root)) || all.find((x) => x.scope === "user") || all[0] || null;
+}
+// its gitCommitSha; "" when none
+function installedSha(root, plugin) {
+  const e = installedEntry(root, plugin);
   const sha = e && typeof e.gitCommitSha === "string" ? e.gitCommitSha.trim().toLowerCase() : "";
   return /^[0-9a-f]{7,64}$/.test(sha) ? sha : "";
 }
@@ -3145,7 +3153,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, profileWrites, homeWritable,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,

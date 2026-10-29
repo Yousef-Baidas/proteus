@@ -27,7 +27,7 @@
 // 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no proteus-container.js (runsContainer), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
+//   no background Bash, no Monitor, no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
 //   through xargs, find -exec, git checkout/restore/apply/am/stash, patch, rm -r/mv/rsync of a parent). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
@@ -74,7 +74,7 @@ else lib.run((ev, ad) => {
   if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || (ev.tool === "shell" && runsContainer(ev.command) && CONTAINER_MSG);
+    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(ev);
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
@@ -86,7 +86,7 @@ else lib.run((ev, ad) => {
     const secret = lib.secretDenial(ev);
     if (secret) ad.deny(secret);
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
-    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
+    const why = noRunner(ev) || lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
     if (why) ad.deny(why);
     return shellCheck("leadStart", ev);
   }
@@ -175,6 +175,9 @@ function runsContainer(command, depth = 0) {
     return false;
   });
 }
+
+// a subagent's or a teammate's shell (a teammate is a session of its own, so it reaches the lead's branch)
+const noRunner = (ev) => (ev.agent || ev.teammate) && ev.tool === "shell" && runsContainer(ev.command) ? CONTAINER_MSG : "";
 
 // rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
 // (an escalation), on the ladder as an Agent call's model would be

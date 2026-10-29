@@ -17,11 +17,12 @@ Inside, the worker can run with `bypassPermissions`: nothing it writes outside t
 ## Model, agent and publish
 
 - `--model <id>` is passed as `claude -p --model <id>`.
-- `--agent <name>` reads `<name>.md` from the project's `.claude/agents`, then `~/.claude/agents`, then the plugin's `agents`. Its body is passed with `--append-system-prompt`, its `disallowedTools` with `--disallowedTools`; its `model:` is ignored. An unknown name dies before the container starts.
+- `--agent <name>` reads `<name>.md` from the project's `.claude/agents`, then `~/.claude/agents`, then the plugin's `agents` (from the `--sandbox` bin copy, the installed plugin's, per `installed_plugins.json`). Its body is passed with `--append-system-prompt`, its `disallowedTools` with `--disallowedTools`; its `model:` is ignored. An unknown name dies before the container starts.
 - `--ticket <n> --base <branch>` (with `--model`) turns on publish. The session gets `PROTEUS_REPORT=/out/report.md` and a line telling the worker to write its report there, first line `<STATUS> #<n> ...`, since it has no GitHub access.
 - After a clean import the host reads the report: a regular file, not a link, at most 64 KiB, UTF-8. A report that fails, or whose first line is not `DONE`, `BLOCKED`, `RED`, `NEEDS` or `CONTRACT-UNCLEAR` `#<n>`, is replaced by `RED #<n> container: no valid report` and a quoted excerpt.
-- New commits are pushed with `git push origin refs/heads/<branch>:refs/heads/<branch>`. On `DONE` with no open PR for the branch, it opens one into `--base`, titled from the ticket. The body's `Owned:` and `Tier:` lines come from the owned list read before the run, never from the report; the report's own such lines are escaped. The report is posted on the ticket through `proteus-gh.js`.
-- The last stdout line is `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1).
+- New commits are pushed with `git push origin refs/heads/<branch>:refs/heads/<branch>`. On `DONE` with no open PR for the branch, it opens one into `--base`, titled from the ticket. The body starts with `Closes #<n>`, then `Owned:` and `Tier:` lines from the owned list read before the run, never from the report; the report's own such lines and closing keywords are escaped. The report is posted on the ticket through `proteus-gh.js`. If opening the PR fails, the report is still posted, with a line saying so, and the run ends `RED #<n> container: pr create failed`.
+- gh runs as the agents' login (`agentGh` in `proteus.json`, as `proteus-signoff.js` posts), else as the shell's.
+- The last stdout line is `<STATUS> #<n> sent` (exit 0) or `RED #<n> container: <reason>` (exit 1), whatever failed.
 
 ## Setup
 
@@ -31,6 +32,8 @@ node .claude/hooks/proteus-container.js doctor     # runtime, rootless, image, c
 export CLAUDE_CODE_OAUTH_TOKEN=...                 # or ANTHROPIC_API_KEY
 node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-file <file>
 ```
+
+- `--worktree` must be a linked worktree; the main checkout is refused.
 
 - The runtime is podman when found (rootless), else docker; `--runtime` picks one.
 - Options: `--model`, `--agent`, `--ticket` with `--base`, `--image`, `--memory 4g`, `--cpus 2`, `--pids 512`, `--network <name>`, `--timeout <min>` (default 60; the container is killed then).
@@ -51,3 +54,4 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - Docker rootful means a container escape is root on the host. Prefer podman or rootless Docker; `doctor` warns.
 - The credential is visible to the agent inside the container.
 - A bundle-size or pack bomb is bounded only by the timeout.
+- A sandboxed subagent could write a script that requires the runner. The native sandbox still holds that script: `excludedCommands` matches only the runner's own command line, so the script runs sandboxed.

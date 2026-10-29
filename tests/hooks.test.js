@@ -183,6 +183,11 @@ ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm t
   const through = [...runs.filter((c) => run(LG, pre("Bash", { command: c }, sub)).code !== 2),
     ...runs.filter((c) => { const x = run(LG, pre("Bash", { command: c }, ver)); return !(x.code === 2 && /proteus-container\.js is the lead's/.test(x.err)); })];
   ok("guard: a subagent runs no proteus-container.js, any copy or subcommand, through a shell or an interpreter too", !through.length, through.join("\n"));
+  // a teammate is a session of its own (no agent_id), so it meets the lead's branch: refused there all the same
+  const tm = { teammate_name: "w1", team_name: "t" };
+  const mate = runs.filter((c) => { const x = run(LG, pre("Bash", { command: c }, tm)); return !(x.code === 2 && /proteus-container\.js is the lead's/.test(x.err)); });
+  ok("guard: a teammate runs no proteus-container.js either", !mate.length, mate.join("\n"));
+  ok("guard: a teammate may still name the runner's file", code(pre("Bash", { command: "git add templates/hooks/proteus-container.js" }, tm)) === 0);
   ok("guard: a subagent may still name the runner's file (git add, tests, grep)", ["git add templates/hooks/proteus-container.js", "node tests/container.test.js", "rg -n proteus-container templates"].every((c) => code(pre("Bash", { command: c }, sub)) === 0 && code(pre("Bash", { command: c }, ver)) === 0));
 }
 r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
