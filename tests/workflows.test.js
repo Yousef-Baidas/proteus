@@ -121,10 +121,10 @@ ok("trust: three scripts, install, scan and the base's proteus-security.js with 
   && /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/.test(trust) && /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(trust), tText.join(" | "));
 ok("trust: no script enters or runs anything under head/; the scan reads it with --dir head",
   tText.map((t) => t.replace(/--dir head /, "").replace(/--head "\$HEAD_SHA"|\$HEAD_SHA/g, "")).every((t) => !/\bhead\b/.test(t)) && /--dir head /.test(tText[1]), tText.join(" | "));
-ok("trust: every scanner pinned: pipx installs name an exact version, every download is checked against a sha256",
-  (tText[0].match(/pipx install /g) || []).length === 2 && tText[0].split("\n").filter((l) => /pipx install /.test(l)).every((l) => /pipx install [\w-]+==\d+\.\d+\.\d+$/.test(l.trim()))
-  && (tText[0].match(/\bcurl /g) || []).length === 2 && (tText[0].match(/ {2}[\w.-]+" \| sha256sum -c -$/gm) || []).length === 2
-  && (tText[0].match(/echo "[0-9a-f]{64} {2}/g) || []).length === 2 && !/curl [^\n]*\|/.test(tText[0]), tText[0]);
+ok("trust: every scanner pinned: no package-manager install, every image by digest, every download checked against a sha256",
+  !/\b(pipx|pip|npm|uv|brew) install\b/.test(tText[0]) && (tText[0].match(/semgrep\/semgrep@sha256:[0-9a-f]{64}\b/g) || []).length === 2 && !/semgrep\/semgrep(:|\s)/.test(tText[0])
+  && (tText[0].match(/\bcurl /g) || []).length === 3 && (tText[0].match(/ {2}[\w.-]+" \| sha256sum -c -$/gm) || []).length === 3
+  && (tText[0].match(/echo "[0-9a-f]{64} {2}/g) || []).length === 3 && !/curl [^\n]*\|/.test(tText[0]), tText[0]);
 ok("trust: the token reaches only the last step, after the scanners ran",
   (trust.match(/github\.token/g) || []).length === 1 && /GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*proteus-security\.js/.test(trust)
   && trust.indexOf("github.token") > trust.indexOf("proteus-scan.js"));
