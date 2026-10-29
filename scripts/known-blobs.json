@@ -334,6 +334,7 @@
       "d66ca6898bc17254019d3f58adae8e0df3baa340",
       "dae99afc80bf65ad5b8067b754e74b4362adc9b9",
       "db490bd484438480072933d0fc61811113e7e2be",
+      "dcc5c31581926a201b9549997f71e31e4cd1444d",
       "dcc6bda825ecb7d52aa81e44b4e5b304a516b821",
       "dea8941e1c82dfc66851d428070c3e8fb596fe42",
       "fa0e7f9744feda5b4e8a2bead783d90217b9ee20"
@@ -352,6 +353,7 @@
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
     ],
     "templates/hooks/proteus-gates-cache.js": [
+      "2381dd4c00d385148521efe32a0be9e13dc43d19",
       "9305ad7457d16e30c359da90c8be2b0332681ebb",
       "9c8481535010e2146a3c6ce92b887a02b21c0188"
     ],
@@ -423,6 +425,7 @@
       "d9da67a3c1fd802fbdd66f3704b699c113eb23f9",
       "e1a9e83d6e529598281c2d843bd311480c8b7491",
       "e5c05a87769caf4d7048585151c2f271b2109da8",
+      "e8befa8213e5179098a276e638afd26fdf761b36",
       "e8f8c778c271ae663ed147a54788f0e3a449431a",
       "e9f9a329f9684032448686343eea3d09bf010259",
       "ea59916d5d9354d6fcf69530868baa9dfbee0bb1",
@@ -458,6 +461,7 @@
       "99a92f7be5dba9fbc80199b3289a86d66a2dfa2e"
     ],
     "templates/hooks/proteus-lead-guard.js": [
+      "03a73cbe39301c55e4aa568f8d549f90913e11c8",
       "07f485754b3bd39c579ace0926e4a066429c50e0",
       "1c7e2b186cd0fff7dae9a0ec6a2c29803dfa88cc",
       "24e8cee1a844d2816b51b36c3909f395faad68fe",
@@ -507,6 +511,7 @@
       "0465a135f1b7f89fcced70b7c97daa7ee56d9fda",
       "05cbce28c77463e2e1b16d497b527b62e8874262",
       "0f0d9007badacdfdd2afe8ec58b51b35e5839221",
+      "1b6d57c19ead814ea68ff3e208a427b182a9bff4",
       "23b5e77f167fc4cc6076b638c1e24e34c66e04f8",
       "26499a988f5e4949432a9f455746973121698c91",
       "285d025638de31807005185efe33e93ea0640f97",
@@ -576,6 +581,9 @@
       "fdb60f0d64607237a8933ab101f9dd8feb55aee1",
       "fe82ff905885ab20089c487abec470298fdce3ee"
     ],
+    "templates/hooks/proteus-merge.js": [
+      "a0b6ec3f711eb01516e0ea867a744daffbd6846b"
+    ],
     "templates/hooks/proteus-owned-check.js": [
       "1c2de99305242c7776dd991c98e9c0fb8461350a",
       "3abae20ae39938285ca2528548ca615e593fcd69"
@@ -594,13 +602,15 @@
       "576e258415bdcc779720ceb3ab161b88386069f9",
       "6264a13e472f129b40f2f233eba8fd5581683b20",
       "b9b6b85579928c5a8450522376ac0ec21a07e100",
-      "c164087b9bb85495d72ae7ae35eb052c039df9c3"
+      "c164087b9bb85495d72ae7ae35eb052c039df9c3",
+      "e46aa7764db885e9050a67c9c220437f8986f0bb"
     ],
     "templates/hooks/proteus-shell-check.js": [
       "237f44636a2b419442e5716bc0c3a29db3dd5b0e",
       "3deb1bd9d4d8a15153cbec938b0fd403692860ed",
       "3f57e951f3e571bfb3856043110d97d1f159079e",
       "42a47093f91705d6c6ab34c37ade1707c900efec",
+      "7388b2ce82f6df77558b5bd016754940dbcac66f",
       "77898ca003ed9e65a49c73cec137b57f05a69001",
       "909757b47ebe560532eb50abdf32b08f0c111122",
       "9e3e5b94cef1d96f53a83f97a775dc4db1fe3e54",
@@ -635,6 +645,9 @@
       "7d064927c41472a79883195909739d0b58649be5",
       "b1a1118a552a52002d644638ceb954033dcb0169"
     ],
+    "templates/hooks/proteus-teamfit.js": [
+      "7faaa4dbf5d322c756603f89ec72e39789438517"
+    ],
     "templates/hooks/proteus-tier.js": [
       "40a694e6265d904da1bafa982d8b449b3cbcf4c7",
       "6a461c893d24e0a8193011ca86298403661ebc9a",
@@ -664,7 +677,8 @@
       "b1971a9cec288d9891026f69a8631276d3c7274c",
       "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
       "b28ed0fc1caa033b02c01c3dbfce6eae6e0770eb",
-      "c422f2229e8f5da06ef3dac9cfa56425caa29b31"
+      "c422f2229e8f5da06ef3dac9cfa56425caa29b31",
+      "e5194759c4140be6b9dbf7abd1ff41b0f70f87dc"
     ],
     "templates/hooks/settings.local.json": [
       "7161b4435ed0e31c560a8dc25f5a63c5513878f7"
