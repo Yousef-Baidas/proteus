@@ -327,6 +327,7 @@
     ],
     "templates/hooks/proteus-confine.js": [
       "62b8ba083e1f3db000633f432be23ef93570a170",
+      "af50936ed8de46e950920090a4dde1de6c15a434",
       "af563f04a6079bacd2175b4ebd33b7883bc60e1f",
       "eef919332eb9c1ec202977e336286a18ec3d6ef9",
       "f3c42e13cba90dbb8ebb417a6060ef350d6db2d3"
@@ -620,7 +621,8 @@
       "b1971a9cec288d9891026f69a8631276d3c7274c",
       "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
       "b28ed0fc1caa033b02c01c3dbfce6eae6e0770eb",
-      "c422f2229e8f5da06ef3dac9cfa56425caa29b31"
+      "c422f2229e8f5da06ef3dac9cfa56425caa29b31",
+      "c4c7c2fc3944b7df0a59fcd83f4e57a85caf984d"
     ],
     "templates/hooks/settings.local.json": [
       "7161b4435ed0e31c560a8dc25f5a63c5513878f7"
