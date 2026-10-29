@@ -548,6 +548,13 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 function git(args, cwd, timeout = 3000) {
   try { return execFileSync("git", args, execOpts(cwd, timeout)).trim(); } catch { return ""; }
 }
+// git / gh as { ok, out, err }, for a caller that must tell a failure from empty output or read why it failed
+function attempt(bin, args, cwd, timeout, env) {
+  try { return { ok: true, out: execFileSync(bin, args, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"] }).trim(), err: "" }; }
+  catch (e) { return { ok: false, out: String(e.stdout || "").trim(), err: String(e.stderr || e.message || "").trim() }; }
+}
+const gitTry = (args, cwd, timeout = 3000) => attempt("git", args, cwd, timeout);
+const ghTry = (args, cwd, timeout = 6000) => attempt("gh", args, cwd, timeout, { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" });
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
 // The autostart (autoUpdate) and install.js --update share these.
@@ -2675,7 +2682,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh, gitTry, ghTry,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
