@@ -9,7 +9,7 @@ What `proteus-state` reports present is not redone or re-asked: `/setup-matt-poc
 - **Pending review**: `gh issue list --label proteus-review --label needs-human --state open --json number,title -q …` (a question issue parks only its own tickets). Any open and the run attended → wait at step 7½, dispatching only speculative tickets (`review.md`).
 - **Resume position**, from the tracker, first match wins: open PR into `proteus/<run>` with no verdict → step 6; with `MERGE` → step 7; open `proteus` issue with a `RED`/`NEEDS` comment → step 5; open `proteus` issue, no PR → step 4; the milestone's issues all closed, no review issue → step 7 QA then 7½; every milestone closed → step 8. Read the run-log tail the autostart printed before deciding. Resume an open run rather than start a second beside it.
 - **Baseline on `main`**: `gh run list --branch main --limit 1 --json conclusion -q '.[0].conclusion'`; no CI → the gate command from `## Learned` with `>/dev/null 2>&1; echo $?`. Red → the stabilise ticket first (`bootstrap.md`), no feature dispatch. A gate run through the baseline ratchet counts as green while it reports no new findings (`enforcement.md` §12).
-- **State notes**: `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`); it does not block. `proteus-update` present → tell the human once. `scratch=` present → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once that it is optional and `install.js --doctor --fix` installs it. `skills-unlinked` not `none` → run that command (or ask the human to) before spawning an agent of a listed team, which would otherwise run without its skills. Any `NO` → step 0 for the missing pieces only.
+- **State notes**: `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`); it does not block. `proteus-update` present → tell the human once. `scratch=` present → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once that it is optional and `install.js --doctor --fix` installs it. `skills-unlinked` not `none` → run that command (or ask the human to) before spawning an agent of a listed team, which would otherwise run without its skills. `sandbox=` not `on` while the session runs `bypassPermissions` → the guard refuses worker and verifier spawns; tell the human once to relaunch with the sandbox profile (`install.js --sandbox`). Any `NO` → step 0 for the missing pieces only.
 - **No `models=` line** (no hooks yet): `judge` is your rung (the one under it on a once-per-project model like fable), `build` and `helper` one rung down, on haiku < sonnet < opus < fable; never under sonnet.
 
 ## Asking the human
@@ -41,9 +41,20 @@ Grill with `/grill-with-docs` when `CONTEXT.md` exists, `/grilling` on a blank r
 
 Gate item (g), the threat model: the assets at stake, the trust boundaries the work crosses, and two to five abuse cases, each an observable outcome ("a user without the project role gets 403 on `PATCH /projects/:id`"). It applies when `proteus-tier.js <planned paths>` ends with a `threat model` line (a path matches the `security` block of `teams/ROUTING.md`, or the tier is Full); go by that line, not by globs read by eye. Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket that touches one gets a failing check for it in its contract (step 3).
 
+### Refactor checkpoint
+
+Standard and Full only; Direct and Quick skip it. The cheapest moment to clean an area up is before anything is built on it.
+
+- A `helper` runs the scan phase of mattpocock `improve-codebase-architecture` (the skill `enforcement.md` §10 runs at close, read from its `SKILL.md`) over the modules the work order touches, and reports at most three refactor candidates, each with its cost to the planned work.
+- No candidates → no question; log `refactor-checkpoint: none`.
+- Candidates → one picker question with three options: **refactor first** (the candidates become a prep milestone ahead of the work), **defer to debt** (filed on the first milestone's debt issue, the way §10 files its scan), **ignore**.
+- Log the answer on the run log as `refactor-checkpoint: <first|defer|ignore|none>`.
+
 ## 2. Tickets
 
 Read `teams.md` again. `/to-spec`, then `/to-tickets`; every ticket becomes a tracker issue, every milestone a tracker milestone. Route each ticket by `teams/ROUTING.md` (no row → ask the human, then add the row via a ticket); owned paths inside that team's `Owns`; one owner per file among the tickets in flight; hotspot files (routes, registries, config, shared scene or project files) in a ticket that runs first; tags `difficulty:standard|hard` and `profile:<team>`. Two teams in one ticket → two tickets with a contract between them. A ticket whose outcome rests on facts outside the repo gets `needs-research` (its worker runs `/research` first). Milestones per `review.md`, one user-visible result each, acceptance checks frozen from gate item (b).
+
+Script first (`roles.md`): the trigger is a procedure's second occurrence in the run, by you or a worker. Open the program ticket then, route it like any other, and log it on the run log as `script-ticket: <procedure> #<n>`, the ticket's number; later briefs call the program.
 
 ## 3. Contracts
 

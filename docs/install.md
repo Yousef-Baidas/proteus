@@ -160,6 +160,8 @@ claude --settings ~/.claude/proteus-sandbox/<repo>-<hash>.json --permission-mode
 
 It prints the exact commands. Set up `--agent-login` first: the profile hides your own gh config from shell commands, so without an agent identity `gh` has no login inside the sandbox. Your own `settings.json` and `settings.local.json` under `~/.claude` are never touched. In the repo, `--sandbox` changes only a Proteus `statusLine` (see below). Run `--sandbox` again after you move the repo, update Proteus, or change `AGENTS.md ## Learned`, rather than editing the file. Native Windows has no sandbox, so the flag refuses there; use WSL2.
 
+At session start `proteus-state` shows `sandbox=on`, `off` or `unavailable` (native Windows, or Linux without `bwrap` or `socat`, which `--doctor` checks); under `bypassPermissions` the lead guard refuses worker and verifier spawns and `proteus-container.js run` unless it is `on`, and names the launch command above (#189).
+
 The file sets:
 
 - `sandbox.enabled`, `failIfUnavailable` (no sandbox means no session) and `allowUnsandboxedCommands: false`, so a failed command is never retried outside the sandbox. Because these come from `--settings`, a repo's own settings cannot loosen the sandbox.

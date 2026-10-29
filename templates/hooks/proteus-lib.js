@@ -982,6 +982,89 @@ function homeWritable(home, root, common, o = {}) {
   if (common) places.push(common, scratchDir(common), defaultGuestDir(common), ...registeredWorktrees(common));
   return places.some((p) => p && [path.resolve(p), realNative(path.resolve(p))].some((at) => within(at, lex) || within(at, h)));
 }
+// ---- the session's sandbox (#189): sandbox=on|off|unavailable on the autostart's state line, and the lead guard's
+// gate on bypassPermissions dispatch. The autostart stores it per session in proteus-lead/sandbox.json (leadWrite),
+// which no agent can write, so the guard reads a state the session cannot forge.
+// name's executable on env's PATH (PATHEXT on win32), else null
+function which(name, env = process.env, platform = process.platform) {
+  const win = platform === "win32";
+  const dirs = String(env.PATH || env.Path || "").split(win ? ";" : ":").filter(Boolean);
+  const exts = win ? String(env.PATHEXT || ".EXE;.CMD;.BAT").split(";").filter(Boolean) : [""];
+  for (const d of dirs) for (const x of exts) {
+    const p = path.join(d, name + x);
+    try { if (fs.statSync(p).isFile() && (win || (fs.accessSync(p, fs.constants.X_OK), true))) return p; } catch {}
+  }
+  return null;
+}
+// a process's argv, parent pid and cwd, {} when unknown: /proc on Linux, ps on macOS (no cwd, and argv split at
+// spaces); other platforms have no Claude Code sandbox
+function procInfo(pid, platform = process.platform) {
+  try {
+    if (platform === "linux") {
+      const argv = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean);
+      const ppid = +(/^PPid:\s*(\d+)/m.exec(fs.readFileSync(`/proc/${pid}/status`, "utf8")) || [])[1] || 0;
+      let cwd = "";
+      try { cwd = fs.readlinkSync(`/proc/${pid}/cwd`); } catch {}
+      return { argv, ppid, cwd };
+    }
+    if (platform === "darwin") {
+      const m = /^\s*(\d+)\s+(.*)$/.exec(execFileSync("ps", ["-o", "ppid=,args=", "-p", String(pid)], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }).trim());
+      return m ? { argv: m[2].split(/\s+/), ppid: +m[1], cwd: "" } : {};
+    }
+  } catch {}
+  return {};
+}
+// the settings `claude --settings <file or json>` was launched with, parsed: the nearest ancestor of this process
+// that names --settings, up to 8 levels. The sandbox profile reaches Claude Code only this way (install.js --sandbox)
+function launchSettings(platform = process.platform, start = process.ppid, root = process.cwd()) {
+  for (let pid = start, i = 0; pid > 1 && i < 8; i++) {
+    const p = procInfo(pid, platform);
+    if (!p.argv) return [];
+    const vals = p.argv.flatMap((a, j) => (a === "--settings" && j + 1 < p.argv.length ? [p.argv[j + 1]] : a.startsWith("--settings=") ? [a.slice(11)] : []));
+    if (vals.length) return vals.map((v) => (/^\s*\{/.test(v) ? safeJSON(v) : readJSON(path.resolve(p.cwd || root, v), null)) || {});
+    pid = p.ppid;
+  }
+  return [];
+}
+const safeJSON = (s) => { try { return JSON.parse(s); } catch { return null; } };
+// on: the settings Claude Code merges (--settings, then the repo's local and project files, then the user's; the
+// first to set sandbox.enabled wins) turn the sandbox on, on a platform that has one (macOS; Linux with bwrap and
+// socat on PATH). unavailable: native Windows, or Linux without bwrap or socat. off: anything else.
+// o.platform, o.env, o.which (name -> truthy when on PATH) and o.settings (the parsed files, in that order) are for tests
+function sandboxState(root, o = {}) {
+  const platform = o.platform || process.platform, env = o.env || process.env;
+  const has = o.which || ((name) => which(name, env, platform));
+  if (platform === "win32") return "unavailable";
+  if (platform === "linux" && !(has("bwrap") && has("socat"))) return "unavailable";
+  if (platform !== "linux" && platform !== "darwin") return "off";
+  const files = o.settings || [...launchSettings(platform, process.ppid, root),
+    ...[path.join(root, ".claude", "settings.local.json"), path.join(root, ".claude", "settings.json"), path.join(claudeDir(), "settings.json")].map((f) => readJSON(f, {}))];
+  const on = files.map((s) => s && s.sandbox && typeof s.sandbox === "object" ? s.sandbox.enabled : undefined).find((v) => typeof v === "boolean");
+  return on === true ? "on" : "off";
+}
+const SANDBOX_FILE = "sandbox.json";
+// record session's state (the newest 20 sessions are kept); throws as leadWrite does
+function saveSandbox(common, session, state) {
+  const f = leadPath(common, SANDBOX_FILE);
+  const all = Object.entries(readJSON(f, {}) || {}).filter(([k]) => k !== session).slice(-19);
+  leadJSON(common, f, Object.fromEntries([...all, [session, { state, at: new Date().toISOString() }]]));
+}
+// session's recorded state, "" when none was recorded
+function sandboxSeen(root, session) {
+  const common = gitCommonDir(root);
+  const e = common && session ? (readJSON(leadPath(common, SANDBOX_FILE), {}) || {})[session] : null;
+  return e && typeof e.state === "string" ? e.state : "";
+}
+// the launch command a refusal names: the repo's profile when install.js --sandbox wrote one, else its pattern
+function sandboxLaunch(root) {
+  const common = gitCommonDir(root), dir = path.join(claudeDir(), "proteus-sandbox");
+  const key = common ? require(path.join(__dirname, "proteus-confine.js")).sandboxKey(common) : "";
+  let file = "";
+  try { file = key ? fs.readdirSync(dir).find((n) => n.endsWith(`-${key}.json`)) || "" : ""; } catch {}
+  const profile = file ? path.join(dir, file) : path.join(dir, "<repo>-<hash>.json");
+  return `claude --settings ${/\s/.test(profile) ? `"${profile}"` : profile} --permission-mode bypassPermissions`;
+}
+
 // Releases: the Proteus checkout moves only forward, and only to a vX.Y.Z tag that `git verify-tag`
 // accepts against the user's own trust (a gpg keyring, or gpg.ssh.allowedSignersFile for SSH signatures).
 // The autostart (autoUpdate) and install.js --update share these.
@@ -3202,6 +3285,7 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
+  which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
