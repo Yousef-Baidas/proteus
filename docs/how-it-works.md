@@ -84,6 +84,7 @@ The status line at the bottom of the terminal shows `proteus: 2 questions · 1 r
 ## Commands mid-run
 
 - `questions` / `inbox` — every open question as a picker, in order.
+- `intake <urls|file>` — one helper per video posts structured notes on the issue `Intake: <date>`.
 - `status` — one line: milestone, tickets closed/total, open PRs and verdicts, running workers, ETA from this run's median ticket time.
 - `pause` (or your own alias, e.g. `gaming`) — stops every worker and heavy job (renders, encodes, test farms), logs the position; `resume` picks up on the same worktrees.
 - `revision` — fast review rounds for small taste tweaks: one standing worker commits each tweak as a script in the repo, you approve each by eye, one verifier checks the whole round and that a clean rebuild reproduces it. Nothing lives outside git.
@@ -125,7 +126,7 @@ Bootstrap refuses to start a ticket without `CONVENTIONS.md` at the repo root. F
 
 ## Human in the loop
 
-Agents verify tickets; you verify milestones. At `/to-tickets` the lead groups tickets into milestones, one user-visible feature each; a single-task run is one milestone. When a milestone merges and QA is green, the lead spawns `proteus-guide`, which opens a `Review: <run>/<milestone>` issue with a brief under 60 lines: what changed, exact steps to verify it in under ten minutes, the three to five places an AI most plausibly got wrong, convention deviations, and what verifiers deferred to the milestone's debt issue, and what evidence it captured (gate output, renders or stills, Playwright screenshots or recordings, CLI transcripts). Then the lead sends a notification and polls the issue for a verdict comment. It does not talk you through the review; it has no diff and every relayed line costs it twice.
+Agents verify tickets; you verify milestones. At `/to-tickets` the lead groups tickets into milestones, one user-visible feature each; a single-task run is one milestone. When a milestone merges and QA is green, the lead spawns `proteus-guide`, which opens a `Review: <run>/<milestone>` issue with a brief under 60 lines: what changed, exact steps to verify it in under ten minutes, the three to five places an AI most plausibly got wrong, convention deviations, what verifiers deferred to the milestone's debt issue, a quality ledger of at most eight linked numbers from CI, the tracker and git (gates green, mutation survivors, deep-review blockers raised and fixed, security findings, bounces and escalations, baseline movement, open debt), and what evidence it captured (gate output, renders or stills, Playwright screenshots or recordings, CLI transcripts). Then the lead sends a notification and polls the issue for a verdict comment. It does not talk you through the review; it has no diff and every relayed line costs it twice.
 
 You review through whichever channel fits:
 
@@ -140,7 +141,7 @@ Only comments from your GitHub login count: on a public repo a stranger's `ACCEP
 
 ### Overnight
 
-Say you are going to sleep, away, or not to wait. The lead prints one warning, what you lose and what stays protected, and continues only on the literal reply `UNATTENDED` (optionally `until 09:00` or `for 3 milestones`). Then at each gate the guide runs the acceptance checks fixed from your answers before work started, plus its own steps, and captures evidence; a fresh grader on a different model judges it and writes `AUTO-ACCEPT` or, on any failed check or step it could not execute, `AUTO-HOLD`, which stops the run and pings you. Every auto-accepted milestone keeps its `needs-human` label; when you are back, `/proteus-review` walks you through them with the evidence and your retroactive `CHANGES` become tickets. Unattended never merges into `main`, approves a dependency, installs a skill, or edits `CONVENTIONS.md`, and it stops on its own at five unreviewed milestones. See `references/review.md`.
+Say you are going to sleep, away, or not to wait. The lead prints one warning, what you lose and what stays protected, and continues only on the literal reply `UNATTENDED` (optionally `until 09:00` or `for 3 milestones`). Then at each gate the guide runs the acceptance checks fixed from your answers before work started, plus its own steps, and captures evidence; a fresh grader on a different model judges it and writes `AUTO-ACCEPT` or, on any failed check, step it could not execute, or red quality number, `AUTO-HOLD`, which stops the run and pings you. Every auto-accepted milestone keeps its `needs-human` label; when you are back, `/proteus-review` walks you through them with the evidence and your retroactive `CHANGES` become tickets. Unattended never merges into `main`, approves a dependency, installs a skill, or edits `CONVENTIONS.md`, and it stops on its own at five unreviewed milestones. See `references/review.md`.
 
 ## No state in the repo
 
@@ -193,7 +194,7 @@ skills/proteus/
   references/conventions.md  CONVENTIONS.md interview, taste beyond code
   references/roles.md        worker / contracts / verifier / guide / QA / scout prompts, pre-dispatch check
   references/review.md       milestones, debt, the human review gate
-  references/operations.md   status, questions, pause/resume, stall check, revision mode
+  references/operations.md   status, questions, pause/resume, intake, stall check, revision mode
   references/lessons.md      trigger-based lessons and upstream proposals
   references/docs-diet.md    root-doc budget and where everything else goes
   references/tracker.md      where state lives: GitHub operations table, Jira slot
@@ -238,6 +239,8 @@ templates/
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
     proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
+    proteus-ready.js        the tickets ready to dispatch, and why the rest are blocked
+    proteus-intake.js       the intake issue; renders and posts one note per video
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents

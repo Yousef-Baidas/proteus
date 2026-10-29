@@ -1371,7 +1371,10 @@ function moveRepo(root, ctx) {
   const wasQuiet = quiet;
   refusing = true; quiet = true;
   try {
-    rep = setupRepo(root, { shared: !own.owned, local: e.scope === "local", install: true });
+    // a repo already in guest mode stays there: the marker alone decides (no gh probe), and the result is --plugin-setup's
+    const guest = withProject(root, () => GUEST);
+    rep = setupRepo(root, { shared: !own.owned && !guest, local: e.scope === "local", install: true, guest });
+    if (guest) allowGuest(root, guest);
     setupReleaseCheck(root);
     register(root);
   } catch (err) {

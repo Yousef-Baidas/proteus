@@ -32,7 +32,8 @@
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
 //   its cwd's, else the one its brief names, else the one its first edit bound it to, until it commits there); an edit in this repo's main checkout
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
-//   scout's teams/*/skills.txt, and scratch under <git-common-dir>/proteus/scratch/, lib.inScratch). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+//   scout's teams/*/skills.txt, scratch under <git-common-dir>/proteus/scratch/, lib.inScratch, and a
+//   `memory: local` agent's own .claude/agent-memory-local/<type>/, lib.ownMemory). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 //   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
 //   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
@@ -75,7 +76,7 @@ else lib.run((ev, ad) => {
     const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
-    if (ev.tool === "shell") return shellCheck("snapshot", ev);
+    if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
     return;
   }
   // the lead's own shell stays cheap: regexes, a file read only for a gh comment naming a body file, git calls only for a push
@@ -170,10 +171,10 @@ function unnamedSignoff(ev, ad) {
 // a subagent's edit: owned paths in any checkout that lists them; the main checkout is off limits during a run
 // proteus-shell-check.js before a call it lets through: a subagent's fingerprint (snapshot), the lead's window
 // (leadStart); a hook copy without it (an old install) skips it
-async function shellCheck(fn, ev) {
+async function shellCheck(fn, ev, ad) {
   let check;
   try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
-  try { if (typeof check[fn] === "function") await check[fn](ev); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
+  try { if (typeof check[fn] === "function") await check[fn](ev, ad); } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus shell-check: ${e.stack}\n`); }
 }
 
 function subagentEdit(ev, ad) {
@@ -191,6 +192,7 @@ function subagentPath(ev, target, briefOf) {
   const abs = path.resolve(cwd, String(target));
   const guest = guestPath(ev, abs);
   if (guest !== null) return guest;
+  if (lib.ownMemory(ev, abs)) return ""; // its own .claude/agent-memory-local/<type>/ in the lead's checkout (#181)
   const wt = lib.gitRoot(path.dirname(abs));
   if (!wt) return "";
   const common = lib.gitCommonDir(wt);
@@ -258,7 +260,7 @@ function bindingDenial(ev, cwd, wt, common, abs, briefOf = () => "") {
   } catch {}
   const own = bound(common, ev.agent);
   if (!own || same(own, wt)) return "";
-  if (fs.existsSync(own) && lib.git(["status", "--porcelain"], own)) return deny(own, " (uncommitted work there)");
+  if (fs.existsSync(own) && (lib.treeChanges(own) || []).length) return deny(own, " (uncommitted work there)");
   try { fs.writeFileSync(file, wt + "\n"); } catch {}
   return "";
 }

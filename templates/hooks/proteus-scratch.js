@@ -17,7 +17,6 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const DONE_IDLE = 72 * 3600e3;
@@ -147,7 +146,7 @@ function sweep(common, what) {
     out.bytes += res.bytes;
     out.dirs++;
   }
-  for (const cwd of prune) git(["worktree", "prune"], cwd);
+  for (const common of prune) git(["worktree", "prune"], common);
   if (keep.length !== rows.length) writeLedger(file, text, keep);
   // a PreToolUse whose call never ran (denied, interrupted) leaves its snapshot behind
   const snaps = path.join(store, "scratch-snap");
@@ -194,12 +193,13 @@ function removeScratch(d, st, prune) {
   } catch (e) { return { keep: e.code || e.message }; }
 }
 
+// p's repo from <common>/worktrees/<id>/gitdir, never from p's own .git file, which the call that made p could
+// write (#215); --force skips the status check git would otherwise run in p
 function removeWorktree(p, prune) {
-  const common = lib.gitCommonDir(p);
-  const cwd = common && (lib.mainRoot(common) || common);
-  if (!cwd || !fs.existsSync(cwd)) return false;
-  if (!git(["worktree", "remove", "--force", p], cwd)) return false;
-  prune.add(cwd);
+  const co = lib.checkoutOf(p);
+  if (!co || co.gitDir === co.common || !lib.samePath(co.root, real(p))) return false;
+  if (!git(["worktree", "remove", "--force", p], co.common)) return false;
+  prune.add(co.common);
   return true;
 }
 
@@ -226,14 +226,8 @@ function keyOf(ev, who, rows, common) {
   return runs.length === 1 ? runs[0] : "";
 }
 
-function branchOf(dir) {
-  const wt = lib.gitRoot(dir);
-  if (!wt) return "";
-  try {
-    const gd = gitdirOf(wt) || path.join(wt, ".git");
-    return (/^ref: refs\/heads\/(\S+)/m.exec(fs.readFileSync(path.join(gd, "HEAD"), "utf8")) || [])[1] || "";
-  } catch { return ""; }
-}
+// the branch dir's checkout has out, from <common>/worktrees/<id>/HEAD (lib.branchOf, #215)
+const branchOf = (dir) => lib.branchOf(dir);
 
 // the gitdir a linked worktree's .git file points at; null for anything else
 function gitdirOf(p) {
@@ -288,8 +282,11 @@ function writeLedger(file, old, rows) {
   try { fs.renameSync(tmp, file); } catch { fs.writeFileSync(file, body); try { fs.unlinkSync(tmp); } catch {} }
 }
 
-function git(args, cwd) {
-  try { execFileSync("git", args, { cwd, stdio: "ignore", timeout: 60000, windowsHide: true }); return true; } catch { return false; }
+// git on a common dir through lib's wrapper (#215), in its main checkout when it has one; true when it worked
+function git(args, common) {
+  const main = lib.mainRoot(common);
+  const tree = main && fs.existsSync(main) ? { cwd: main, workTree: main } : {};
+  try { lib.gitRun(common, args, { ...tree, stdio: "ignore", timeout: 60000 }); return true; } catch { return false; }
 }
 
 function ls(d) { try { return fs.readdirSync(d); } catch { return []; } }

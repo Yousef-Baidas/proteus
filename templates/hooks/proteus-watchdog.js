@@ -3,7 +3,8 @@
 //   node <hooks>/proteus-watchdog.js [--wait] [--idle <min>] [--ended <min>] [--grace <min>] [--every <s>] [--max <min>]
 //   node <hooks>/proteus-watchdog.js --forget <agent>... | --forget all
 // It reads the beat files (lib.beat: the lead's guard stamps a worker's or verifier's file on each of its
-// tool calls, proteus-stall.js marks a stop without a report and removes the file on a report) and
+// tool calls, proteus-stall.js marks a stop without a report and removes the file on a report; only agents
+// the lead spawned itself are tracked, and a stop that hands a final message back to the lead is a report) and
 // prints only what needs the lead:
 //   STALL <agent> <type> no tool call for <m>m, cwd <dir>         idle --idle minutes (default 40)
 //   STALL <agent> <type> stopped <m>m ago without a report, ...   --ended minutes after the stop (default 10)
@@ -12,7 +13,8 @@
 // worktree. A tool call by the agent clears the flag. One-shot by default: exit 1 with the lines, else 0
 // and one `ok` line. --wait checks every --every seconds (default 60), prints nothing until something is
 // stalled, then exits, so a background run wakes the lead only then; it gives up after --max minutes
-// (default 1440). --forget drops agents the lead stopped itself. Beats a day old are removed. No model,
+// (default 1440). --forget drops agents the lead stopped itself, for good: a later stop of one does not bring it
+// back (--forget all: of any agent spawned before it). Beats a day old are removed. No model,
 // no network, no git process.
 "use strict";
 const fs = require("fs");
@@ -46,7 +48,11 @@ const beats = () => {
 
 if (opt.forget) {
   if (!opt.forget.length) { console.error(USAGE); process.exit(2); }
-  const files = opt.forget.includes("all") ? beats().map((b) => b.file) : opt.forget.map(fileOf);
+  const all = opt.forget.includes("all");
+  const gone = all ? beats().map((b) => ({ file: b.file, agent: b.rec.agent })) : opt.forget.map((a) => ({ file: fileOf(a), agent: a }));
+  // remembered, so a stop hook that fires after this does not track the agent again (#179)
+  lib.forget(common, gone.map((g) => g.agent), all);
+  const files = gone.map((g) => g.file);
   for (const f of files) fs.rmSync(f, { force: true });
   console.log(`watchdog: forgot ${files.length} agent${files.length === 1 ? "" : "s"}`);
   return;

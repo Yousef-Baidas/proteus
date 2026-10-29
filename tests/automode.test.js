@@ -73,7 +73,7 @@ for (const l of [...workerRules, ...verifierRules]) {
 }
 const at = (s) => worker.indexOf(s);
 ok("brief: the worker brief runs shared to specific, report last (prompt cache)",
-  at("Gates:") === 0 && at("Gates:") < at("Team <team>") && at("Team <team>") < at("Ticket #<n>") && at("Ticket #<n>") < at("You own:") && /\nDone → [^\n]*\n$/.test(worker), worker);
+  at("Hooks:") === 0 && at("Hooks:") < at("Gates:") && at("Gates:") < at("Team <team>") && at("Team <team>") < at("Ticket #<n>") && at("Ticket #<n>") < at("You own:") && /\nDone → [^\n]*\n$/.test(worker), worker);
 ok("roles.md: the prompt-cache ordering rule is kept", /Order a brief from shared to specific/.test(roles) && /A prompt cache reuses only an identical prefix/.test(roles));
 const lead = read("skills", "proteus", "SKILL.md"), ops = read("skills", "proteus", "references", "operations.md");
 ok("SKILL.md: the lead's denial rule (one line to the human, no re-spawn)", /\*\*Auto mode denial\*\*/.test(lead) && /reason tag/.test(lead) && /don't re-spawn/.test(lead));

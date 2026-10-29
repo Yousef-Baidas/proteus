@@ -10,12 +10,13 @@
 // plus a commit-msg hook running commit-msg.js when the repo has none of its own.
 // --tier records the work's declared tier (SKILL.md rule 3) and the worktree's base commit as a comment line in
 // the list, which the same pre-commit hook checks with proteus-tier.js --staged; --human marks a human's quick:.
-// A re-run keeps the first base, so a Direct batch is measured as a whole.
+// A re-run keeps the first base, so a Direct batch is measured as a whole. A --tier below what the owned paths
+// need by the tiers block (proteus-tier.js's rules) is raised to it, with one line saying so.
 // On a worker branch proteus-work/<run>/<id>, the paths are compared with the lead's record .proteus/owned/<id>
 // that the branch carries from the run branch, which CI checks the PR against; a difference is warned about.
 "use strict";
 const fs = require("fs");
-const { execFileSync } = require("child_process");
+const os = require("os");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
@@ -26,7 +27,7 @@ Prepares a worktree made with \`git worktree add\` for one worker, before dispat
   <owned path>...   the ticket's owned paths and globs, the check's files among them; the pre-commit
                     hook refuses a staged path outside them
   --tier <tier>     the tier proteus-tier.js classified; the pre-commit hook fails a change that outgrows
-                    it and names the tier it needs
+                    it and names the tier it needs. Below what the owned paths need, it is raised to that
   --human           with --tier quick: the human's quick: prefix (covers Standard work, never Full)
   <worktree> --allow force-push
                     alone: lets the worker force-push once (the guard consumes the entry)
@@ -97,6 +98,14 @@ if (!fs.existsSync(path.join(wt, ".git"))) {
   process.exitCode = 1;
   return;
 }
+// the project's own worktree, registered under its common dir (#215): git runs outside the sandbox, so a path on the
+// command line never picks the repo; one the project's checkouts do not hold gets no git at all
+const co = lib.checkoutOf(wt);
+if (!co || co.gitDir === co.common || !lib.samePath(co.root, lib.realOr(wt))) {
+  console.error(`proteus-worktree: ${wt} is not a worktree of this project (${lib.projectRoot({})}); make it with \`git worktree add\` in the project and run this from there`);
+  process.exitCode = 1;
+  return;
+}
 
 const EXCLUDE = ad.prepareWorker(wt, __dirname);
 let head = entries;
@@ -104,11 +113,22 @@ if (tier) {
   let prev = null;
   try { prev = lib.TIER_LINE.exec(fs.readFileSync(lib.ownedFile(wt), "utf8")); } catch {}
   let base = prev ? prev[3] : "";
-  try { base = base || execFileSync("git", ["-C", wt, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch {}
+  base = base || lib.headOf(wt);
   if (!base) {
     console.error(`proteus-worktree: ${wt} has no commit to measure the tier from`);
     process.exitCode = 1;
     return;
+  }
+  // the tier the owned paths need, by the rules the pre-commit check reads (#177): --tier may raise it, never lower it
+  const rules = lib.parseTiers(lib.routingText(wt, base));
+  if (rules && rules.errors.length) console.error(`proteus-worktree: ${lib.ROUTING_FILE}: ${rules.errors.join("; ")}; the tier is not checked against the paths`);
+  else {
+    const need = lib.plannedTier(rules, entries);
+    if (lib.tierOverrun({ tier, human }, need)) {
+      console.log(`proteus-worktree: --tier ${tier}${human ? " --human" : ""} is below what these paths need; prepared at ${need.tier} (${need.why.join("; ")})`);
+      tier = need.tier;
+      human = false;
+    }
   }
   head = [`# tier ${tier}${human ? " human" : ""} ${base}`, ...entries];
 }
@@ -137,16 +157,17 @@ try {
 // A repo with no commit-msg hook (no lefthook yet, or a guest repo) gets one running commit-msg.js, the check
 // CI runs on every commit of the PR, so a worker learns of a bad message before it pushes (#28).
 // A failure is only warned about: CI's check of the PR is the backstop, and `git commit --no-verify` skips this.
+// git runs through lib's wrapper on the common dir (#215): the worktree's gitdir comes from <common>/worktrees/<id>,
+// never its .git file, and its config.worktree is written by path, never read.
 function installPreCommit() {
-  const git = (...a) => { try { return execFileSync("git", ["-C", wt, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); } catch { return null; } };
+  const git = (...a) => { try { return String(lib.gitRun(co.common, a, { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 })).trim(); } catch { return null; } };
   const slash = (p) => p.replace(/\\/g, "/");
   const sq = (s) => `'${slash(s).replace(/'/g, "'\\''")}'`;
-  const gitdir = git("rev-parse", "--absolute-git-dir");
-  if (!gitdir) return "no git dir";
-  const dir = path.join(gitdir, "proteus-hooks");
+  const dir = path.join(co.gitDir, "proteus-hooks");
   const kept = path.join(dir, "orig-hooks-path");
-  let orig = git("rev-parse", "--path-format=absolute", "--git-path", "hooks");
-  if (orig === null) return "git too old for --path-format";
+  // the repo's own hooks path (the common config.worktree, then config), relative to the checkout as git reads it
+  const set = ["config.worktree", "config"].map((f) => git("config", "--file", path.join(co.common, f), "--get", "core.hooksPath")).find(Boolean);
+  let orig = set ? path.resolve(co.root, set.replace(/^~(?=$|[\\/])/, os.homedir())) : path.join(co.common, "hooks");
   // a re-run sees our own dir as the hooks path: the hooks to forward to are the ones saved the first time
   if (path.resolve(orig) === path.resolve(dir)) orig = fs.readFileSync(kept, "utf8");
   fs.mkdirSync(dir, { recursive: true });
@@ -163,8 +184,8 @@ function installPreCommit() {
   const msgCheck = [__dirname, ...(lead ? [path.join(lib.docRoot(lead), "teams", "templates", "hooks")] : [])]
     .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
   if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
-  write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
-  if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--worktree", "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
+  write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged ${sq(path.join(__dirname, "proteus-worktree.js"))} || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
+  if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--file", path.join(co.gitDir, "config.worktree"), "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";
 }
 const hookErr = installPreCommit();
@@ -172,8 +193,7 @@ if (hookErr) console.error(`proteus-worktree: pre-commit owned-path check not in
 
 // a worker branch proteus-work/<run>/<id> cut from a run branch carrying the lead's record .proteus/owned/<id>:
 // CI checks the PR against that record, so a list that differs from it is named now, not at the PR
-let branch = "";
-try { branch = execFileSync("git", ["-C", wt, "symbolic-ref", "-q", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 10000 }).trim(); } catch {}
+const branch = lib.branchOf(wt);
 const work = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/.exec(branch);
 if (work && work[1] !== "lead-docs") {
   const rec = path.join(wt, ...lib.OWNED_RECORDS.split("/"), work[1]);

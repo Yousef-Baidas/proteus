@@ -9,17 +9,21 @@
 // records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, the plugin's own folder (CLAUDE_PLUGIN_ROOT), and the verifier App's key. Each file is its
 // mode and a content hash (cached by size, mtime and inode in <state>/guard-hash.json, so a call hashes only what
 // changed); settings JSON is compared without its `permissions`. A git config file (.git/config, config.worktree)
-// is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream).
-// It also keeps `git status --porcelain` of every other prepared worktree whose agent is idle.
+// is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream)
+// and the tracking keys anyone's push -u sets (TRACK_KEY). A path in the git dir of a worktree removed or pruned
+// since went with that worktree.
+// It also keeps the changed paths (lib.treeChanges) of every other prepared worktree whose agent is idle.
 // After the call (PostToolUse, this script as a hook) it compares. A guarded path that changed counts unless git
 // explains it: in a checkout, the path is clean now, was tracked before if it existed, and any commit HEAD moved
 // over that touches it is already on a protected remote branch (main, master, a run branch). A change in
 // another checkout whose own agent is running, or ran a call meanwhile, is left to that agent. A new or further
 // change in an idle sibling worktree counts too. Anything that counts is recorded in <state>/tamper/<agent>.json
-// with each path's state before, and the call is answered with a block naming the paths: the agent must put them
-// back. Every later shell call of that agent re-checks them and blocks again while any differs from its state
-// before, and proteus-signoff.js refuses MERGE on the agent's branch while one does. Records are never deleted;
-// deleting one is itself a change this check catches.
+// with each path's state before and the branch of the agent's own worktree ("" without one: the main checkout's
+// branch is not its work), and the call is answered with a block naming the paths: the agent must put them back.
+// Every later shell call of that agent re-checks them and blocks again while any differs from its state before,
+// and proteus-signoff.js re-checks them itself (openFor), so it refuses MERGE on that branch only while one still
+// does, whether or not the agent has ended. Records are never deleted; deleting one is itself a change this check
+// catches.
 // The lead's own shell calls are windows in <state>/lead-flight.json (leadStart from the lead guard, closed here on
 // the lead's PostToolUse). What changed while a lead call overlapped an agent's call cannot be pinned on either:
 // it becomes a notice in <state>/unattributed/<seq>.json, shown to the lead after its call, instead of a block and
@@ -35,7 +39,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
-const { execFile } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const MAX_ENTRIES = 8000;
@@ -53,6 +56,8 @@ const PROTECTED = ["main", "master", ...lib.SCHEMES.map((s) => `${s.branch}*`)].
 const ALLOWED_KEY = /^(?:user\.|color\.|core\.autocrlf$|core\.filemode$|extensions\.worktreeconfig$)/;
 // and its own branch's upstream (git push -u, branch --set-upstream-to)
 const BRANCH_KEY = /^branch\.(.+)\.(remote|merge|description|pushremote)$/;
+// and the tracking keys of a work branch or one checked out in a prepared worktree, whoever's push -u set them (#182)
+const TRACK_KEY = /^branch\.(.+)\.(?:remote|merge)$/;
 
 const flightDir = (common) => path.join(lib.stateDir(common), "guard-flight");
 const tamperDir = (common) => path.join(lib.stateDir(common), "tamper");
@@ -208,33 +213,22 @@ function rootOf(abs, roots) {
   return best;
 }
 
-// a checkout's git dir: .git, or where a linked worktree's .git file points
-function gitDirOf(root) {
-  const gd = path.join(root, ".git");
-  if (fs.statSync(gd).isFile()) return path.resolve(root, /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(gd, "utf8"))[1]);
-  return gd;
-}
+// HEAD's commit and branch for a checkout, read from <common>/worktrees/<id>/HEAD, never through its .git file (#215)
+const headOf = (root) => lib.headOf(root);
+const branchName = (root) => lib.branchOf(root);
 
-// HEAD's commit for a checkout, read from files (no git call): HEAD, a loose ref or packed-refs
-function headOf(root, common) {
-  try {
-    const gd = gitDirOf(root);
-    const head = fs.readFileSync(path.join(gd, "HEAD"), "utf8").trim();
-    const m = /^ref:\s*(.+)$/.exec(head);
-    if (!m) return head;
-    for (const d of [gd, common]) { try { return fs.readFileSync(path.join(d, m[1]), "utf8").trim(); } catch {} }
-    const packed = fs.readFileSync(path.join(common, "packed-refs"), "utf8");
-    const p = new RegExp(`^([0-9a-f]{40}) ${m[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m").exec(packed);
-    return p ? p[1] : "";
-  } catch { return ""; }
+// the branches whose tracking keys anyone may change: every work branch and the ones prepared worktrees have out
+function trackable(common) {
+  const prepared = new Set(lib.registeredWorktrees(common).filter((r) => fs.existsSync(lib.ownedFile(r))).map(branchName).filter(Boolean));
+  return (br) => br.startsWith(lib.CURRENT.work) || prepared.has(br);
 }
+const tracked = (k, cfg, track) => { const m = TRACK_KEY.exec(k); return !!(m && track && track(m[1]) && upstreamOk(cfg, m[1])); };
 
-// the branch a checkout has checked out, "" when detached or unknown
-function branchName(root) {
-  try {
-    const m = /^ref:\s*refs\/heads\/(.+?)\s*$/.exec(fs.readFileSync(path.join(gitDirOf(root), "HEAD"), "utf8"));
-    return m ? m[1] : "";
-  } catch { return ""; }
+// a path in the git dir of a worktree since removed or pruned (<common>/worktrees/<name>/ is gone with it)
+function goneAdmin(abs, c) {
+  const rel = path.relative(path.join(c, "worktrees"), abs);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return false;
+  return !fs.existsSync(path.join(c, "worktrees", rel.split(path.sep)[0]));
 }
 
 // ---- who is working where
@@ -276,24 +270,16 @@ function busy(wt, since, fl, agents, common) {
   return false;
 }
 
-const gitAsync = (args, cwd) => new Promise((resolve) => {
-  execFile("git", args, { cwd, encoding: "utf8", timeout: 5000, maxBuffer: 16 << 20, windowsHide: true }, (err, out) => resolve(err ? null : out));
-});
-// a worktree's porcelain lines, each with the size and mtime of the file now, so a further edit to a dirty file shows
+// a worktree's changed paths (lib.treeChanges: no git status, #215), each with the size and mtime of the file now,
+// so a further edit to a dirty file shows
 async function porcelain(wt) {
-  const out = await gitAsync(["--no-optional-locks", "status", "--porcelain=v1", "-z", "-unormal"], wt);
+  const out = await lib.treeChangesAsync(wt);
   if (out === null) return null;
-  const lines = [];
-  const parts = out.split("\0");
-  for (let i = 0; i < parts.length; i++) {
-    const l = parts[i];
-    if (!l) continue;
-    if (/^[RC]/.test(l)) i++; // a rename's source follows
+  return out.map((l) => {
     let s = "-";
     try { const st = fs.lstatSync(path.join(wt, l.slice(3))); s = `${st.size}:${Math.round(st.mtimeMs)}`; } catch {}
-    lines.push(`${l} ${s}`);
-  }
-  return lines.sort();
+    return `${l} ${s}`;
+  }).sort();
 }
 
 // ---- the lead's own calls
@@ -458,22 +444,39 @@ function rebaseRecords(common, w) {
 
 // ---- before the call
 
-// own: the agent's worktree (its cwd's prepared worktree, else its binding, else the linked worktree of this repo
-// its cwd is in, one a brief named without preparing it (#172); a worker session's own checkout)
-function ownOf(ev, common) {
+// own: the agent's worktree (its cwd's prepared worktree, else its binding, else the one prepared worktree its
+// brief names, bound then as a first edit binds (#178: a subagent's shell cwd resets to the main checkout, so a
+// build worker whose first call is `npm install` has neither), else the linked worktree of this repo its cwd is
+// in, one a brief named without preparing it (#172); a worker session's own checkout)
+function ownOf(ev, common, ad) {
   const cwd = lib.shellCwd(ev);
   if (!ev.agent) return lib.gitRoot(cwd) || lib.projectRoot(ev);
-  const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent);
+  const prepared = lib.cwdWorktree(cwd, common) || lib.bound(common, ev.agent) || briefBind(ev, common, ad);
   if (prepared) return prepared;
-  const at = lib.gitRoot(cwd), c = at && lib.isLinked(at) && lib.gitCommonDir(at);
-  return c && lib.realOr(c) === lib.realOr(common) ? at : "";
+  // a linked worktree the project's common dir registers (lib.checkoutOf), never one its own .git file names (#215)
+  const at = lib.gitRoot(cwd), co = at && lib.isLinked(at) && lib.checkoutOf(at);
+  return co && co.gitDir !== co.common && lib.samePath(co.root, lib.realOr(at)) && lib.samePath(co.common, lib.realOr(common)) ? at : "";
 }
 
-async function snapshot(ev) {
+// the one prepared worktree an agent's brief names (lib.briefWorktree), recorded as its binding; null without one
+function briefBind(ev, common, ad) {
+  let brief = "";
+  try { brief = String((ad && ad.briefText(ev)) || ""); } catch {}
+  const named = lib.briefWorktree(brief, common);
+  if (!named) return null;
+  const file = lib.bindFile(common, ev.agent);
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, named + "\n", { flag: "wx" }); // exclusive, as the lead guard's first-edit binding
+  } catch {}
+  return lib.bound(common, ev.agent) || named;
+}
+
+async function snapshot(ev, ad) {
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common || ev.tool !== "shell") return;
   const id = callId(ev), at = Date.now();
-  const own = lib.realOr(ownOf(ev, common) || lib.projectRoot(ev));
+  const mine = ownOf(ev, common, ad), own = lib.realOr(mine || lib.projectRoot(ev));
   const marker = { id, key: whoKey(ev), agent: ev.agent || "", own, at };
   lib.writeJSON(path.join(flightDir(common), `${id}.json`), marker);
   const fl = flights(common, id), agents = boundAgents(common);
@@ -482,7 +485,7 @@ async function snapshot(ev) {
   const sibs = fp.roots.filter((r) => r !== own && lib.isLinked(r) && fs.existsSync(lib.ownedFile(r)) && !busy(r, at, fl, agents, common));
   const st = await Promise.all(sibs.map(porcelain));
   const siblings = Object.fromEntries(sibs.flatMap((r, i) => (st[i] ? [[r, st[i]]] : [])));
-  lib.writeJSON(snapFile(common, id), { ...marker, branch: branchName(own), roots: fp.roots, entries: fp.entries, heads, siblings });
+  lib.writeJSON(snapFile(common, id), { ...marker, branch: mine ? branchName(own) : "", roots: fp.roots, entries: fp.entries, heads, siblings });
 }
 
 // ---- after the call
@@ -492,14 +495,8 @@ function explained(root, rels, before, oldHead, newHead) {
   const ok = new Set();
   if (!rels.length) return ok;
   const specs = rels.map((r) => `:(literal)${r}`);
-  const st = lib.git(["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored=matching", "-uall", "--", ...specs], root, 10000);
-  const dirtyNow = new Set();
-  const parts = st.split("\0");
-  for (let i = 0; i < parts.length; i++) {
-    if (!parts[i]) continue;
-    dirtyNow.add(parts[i].slice(3).replace(/\/$/, ""));
-    if (/^[RC]/.test(parts[i])) dirtyNow.add(parts[++i]);
-  }
+  // tracked changes against HEAD, and every untracked file, ignored ones too (no git status: #215)
+  const dirtyNow = new Set((lib.treeChanges(root, specs, true) || []).map((l) => l.slice(3).replace(/\/$/, "")));
   const isDirty = (r) => [...dirtyNow].some((d) => r === d || r.startsWith(d + "/"));
   const inOld = oldHead ? new Set(lib.git(["ls-tree", "-r", "--name-only", "-z", oldHead, "--", ...specs], root, 10000).split("\0").filter(Boolean)) : new Set();
   for (const r of rels) {
@@ -525,7 +522,7 @@ function changes(before, now) {
 
 // the config keys that changed from entry a to entry b and count: key -> value before (null: unset); null when
 // either side is not a parsed config (the whole file counts). okBranches: whose upstream keys may change
-function configDiff(a, b, okBranches) {
+function configDiff(a, b, okBranches, track) {
   if ((a && !a.startsWith("c:")) || (b && !b.startsWith("c:"))) return null;
   const x = configMap(a), y = configMap(b), out = {};
   for (const k of new Set([...x.keys(), ...y.keys()])) {
@@ -533,6 +530,7 @@ function configDiff(a, b, okBranches) {
     if (was === is) continue;
     const m = BRANCH_KEY.exec(k);
     if (m && okBranches.has(m[1]) && upstreamOk(y, m[1])) continue;
+    if (tracked(k, y, track)) continue;
     out[k] = was;
   }
   return out;
@@ -552,13 +550,14 @@ async function diffSnap(snap, fp, common, fl, agents, putBack = new Map(), putKe
   const registered = new Set(lib.registeredWorktrees(common));
   const c = lib.realOr(common);
   const keep = [path.join(c, "proteus", "tamper"), path.join(c, "proteus", "unattributed")];
-  const okBranches = new Set([snap.branch, snap.own && branchName(snap.own)].filter(Boolean));
+  const okBranches = new Set([snap.branch, snap.own && branchName(snap.own)].filter(Boolean)), track = trackable(common);
   for (const r of fp.roots) if (r !== snap.own && busy(r, base, fl, agents, common)) { const b = branchName(r); if (b) okBranches.add(b); }
   const byRoot = new Map();
   for (const [abs, before] of changes(snap.entries, fp.entries)) {
     const top = rootOf(abs, [...snap.roots, ...fp.roots]); // the innermost: worktrees sit inside the main checkout
     // a worktree the lead added during the call, or removed with git worktree remove, is the lead's
     if (top && (!snap.roots.includes(top) || (!roots.has(top) && !registered.has(top)))) continue;
+    if (goneAdmin(abs, c)) continue; // ...and so is what went with its git dir
     if (keep.some((d) => under(abs, d))) {
       // the hooks write records and notices; only a deleted one counts, and it stays on the record until the lead clears it
       if (!fp.entries[abs]) items.push({ kind: "path", path: abs, before, record: true });
@@ -567,7 +566,7 @@ async function diffSnap(snap, fp, common, fl, agents, putBack = new Map(), putKe
     if (putBack.get(abs) === (fp.entries[abs] ?? null)) continue; // an earlier change being undone
     const now = fp.entries[abs] ?? null;
     if ((before && before.startsWith("c:")) || (now && now.startsWith("c:"))) {
-      const keys = configDiff(before, now, okBranches);
+      const keys = configDiff(before, now, okBranches, track);
       // a key on the record set back to its state before is an earlier change being undone
       const back = putKeys.get(abs), cur = configMap(now);
       if (keys && back) for (const k of Object.keys(keys)) if (k in back && (cur.get(k) ?? null) === back[k]) delete keys[k];
@@ -599,8 +598,10 @@ async function diffSnap(snap, fp, common, fl, agents, putBack = new Map(), putKe
   return items;
 }
 
-// a record's items that still differ from their state before
-async function unrestored(rec) {
+// a record's items that still differ from their state before, less what is explained now (TRACK_KEY, goneAdmin):
+// a config item keeps only its keys that still count
+async function unrestored(rec, common) {
+  const c = lib.realOr(common), track = trackable(common);
   const left = [];
   for (const it of rec.items || []) {
     if (it.kind === "sibling") {
@@ -609,9 +610,11 @@ async function unrestored(rec) {
     } else if (it.kind === "snapshot") {
       if (!it.reported) left.push(it);
     } else if (it.record) left.push(it); // a deleted record stays: what it held is gone
+    else if (goneAdmin(it.path, c)) continue;
     else if (it.keys) {
       const now = configMap(entryNow(it.path));
-      if (Object.entries(it.keys).some(([k, v]) => (now.get(k) ?? null) !== v)) left.push(it);
+      const keys = Object.entries(it.keys).filter(([k, v]) => (now.get(k) ?? null) !== v && !tracked(k, now, track));
+      if (keys.length) left.push(keys.length === Object.keys(it.keys).length ? it : { ...it, keys: Object.fromEntries(keys) });
     } else if (entryNow(it.path) !== (it.before ?? null)) left.push(it);
   }
   return left;
@@ -629,10 +632,6 @@ const shown = (it) => (it.kind === "sibling" ? `${slash(it.worktree)} (${it.line
     : it.record ? `${slash(it.path)} (deleted; only the lead clears it)`
       : it.keys ? `${slash(it.path)} (${Object.keys(it.keys).join(", ")})` : slash(it.path));
 const MSG = (items, again) => `proteus: ${again ? "paths the guard protects still differ from their state before your earlier shell call" : "this shell call changed paths the guard protects"}: ${items.map(shown).slice(0, 12).join("; ")}${items.length > 12 ? `; and ${items.length - 12} more` : ""}. They hold Proteus's hooks, gates, git internals, CLI settings or another worker's worktree, and are never a worker's. Put each back as it was now (\`git checkout -- <path>\` for a tracked file; recreate or delete what the call added or removed; \`git config --unset <key>\` for a config key), then go on with the ticket. Until they match, a verifier cannot sign off MERGE on your branch. If you need one changed, comment "NEEDS <path>: <why>" on the issue and stop.`;
-
-function branchOf(wt) {
-  return lib.git(["rev-parse", "--abbrev-ref", "HEAD"], wt) || "";
-}
 
 async function check(ev, ad) {
   if (ev.tool !== "shell") return;
@@ -674,7 +673,7 @@ async function check(ev, ad) {
   }
   // earlier items still not put back, then this call's (a path already on the record keeps its first state before;
   // a config key joins the record's item for that file)
-  const left = rec ? await unrestored(rec) : [];
+  const left = rec ? await unrestored(rec, common) : [];
   const byPath = new Map(left.filter((i) => i.path).map((i) => [i.path, i]));
   const fresh = [];
   for (const i of items) {
@@ -689,11 +688,12 @@ async function check(ev, ad) {
     if (rec && rec.open) lib.writeJSON(recFile, { ...rec, open: false, items: [], closed: new Date().toISOString(), history: [...(rec.history || []), ...(rec.items || [])].slice(-200) });
     return;
   }
-  const own = (snap && snap.own) || (rec && rec.worktree) || ownOf(ev, common);
+  const o = snap ? "" : ownOf(ev, common, ad), mine = snap ? snap.branch || "" : o ? branchName(o) : "";
+  const own = (snap && snap.own) || (rec && rec.worktree) || o;
   const add = fresh.filter((i) => !(i.path && byPath.has(i.path)));
   const all = [...left, ...add].map((i) => withAfter(i.kind === "snapshot" ? { ...i, reported: true } : i));
   lib.writeJSON(recFile, {
-    key, agent: ev.agent || "", session: ev.session || "", worktree: own, branch: (rec && rec.branch) || (own ? branchOf(own) : ""),
+    key, agent: ev.agent || "", session: ev.session || "", worktree: own, branch: mine,
     open: true, at: (rec && rec.open && rec.at) || new Date().toISOString(), items: all, history: (rec && rec.history) || [],
   });
   const msg = MSG(fresh.length ? fresh : left, !fresh.length);
@@ -701,7 +701,8 @@ async function check(ev, ad) {
   else ad.postBlock(ev, msg);
 }
 
-// open records for a branch: each re-checked, so a record edited to open:false with its paths still changed counts
+// open records for a branch: each re-checked, so a record edited to open:false with its paths still changed counts,
+// and one whose agent has ended stops counting once its paths are back or explained (#182)
 async function openFor(common, branch) {
   const dir = tamperDir(common), out = [];
   let names = [];
@@ -709,8 +710,9 @@ async function openFor(common, branch) {
   for (const n of names) {
     const rec = lib.readJSON(path.join(dir, n), null);
     if (!rec || rec.branch !== branch) continue;
-    const left = await unrestored({ items: (rec.items || []).filter((i) => i.kind !== "snapshot") });
-    if (left.length || (rec.open && (rec.items || []).some((i) => i.kind === "snapshot"))) out.push({ ...rec, left: left.length ? left : rec.items });
+    const left = await unrestored({ items: (rec.items || []).filter((i) => i.kind !== "snapshot") }, common);
+    const snaps = rec.open ? (rec.items || []).filter((i) => i.kind === "snapshot") : [];
+    if (left.length || snaps.length) out.push({ ...rec, left: [...left, ...snaps] });
   }
   return out;
 }

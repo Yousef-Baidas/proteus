@@ -5,8 +5,10 @@
 // Lead's session: SubagentStop + TeammateIdle. Worker worktrees: Stop.
 // Never loops: stop_hook_active → pass; the same message is never blocked twice.
 // Final reports (DONE, VERDICT, RED, NEEDS, WAVE-…, MERGE, BACK-TO-WORKER, CONTRACT-WRONG) never block.
-// A subagent's stop also updates its beat for proteus-watchdog.js: a report removes it, a stop that
-// passes without one marks it ended, a blocked stop counts as activity. A subagent's stop that passes also ends
+// A subagent's stop also updates its beat for proteus-watchdog.js: a stop that passes hands the agent's final
+// message back to the lead as the result of its spawn, so one with any text is a report and removes the beat
+// (#179; no hook field names the hand-back, the passing stop with a final message is it); a stop that passes
+// with no text marks it ended, a blocked stop counts as activity. A subagent's stop that passes also ends
 // its shell calls for proteus-shell-check.js (closeAgent).
 "use strict";
 const crypto = require("crypto");
@@ -21,11 +23,12 @@ const BACKGROUND = /\b(background(ed)?|job|render(ing)?|process|build|task|pid|n
 
 lib.run((ev, ad) => {
   const text = String(ad.lastAssistantText(ev) || "");
-  if (FINAL.test(text)) { lib.beat(ev, "done"); return closeFlights(ev); }
-  if (ev.stopActive || !text.trim()) { lib.beat(ev, "ended"); return closeFlights(ev); }
+  // the stop passes: its final message, if any, is what the lead gets back
+  const pass = () => { lib.beat(ev, text.trim() ? "done" : "ended"); return closeFlights(ev); };
+  if (FINAL.test(text) || ev.stopActive || !text.trim()) return pass();
   const end = text.slice(-800); // the waiting sentence sits at the end of the message
   const waiting = WAITING_ON.test(end) || (WAIT_VERB.test(end) && (BACKGROUND.test(end) || ev.busy));
-  if (!waiting || seenBefore(ev, text)) { lib.beat(ev, "ended"); return closeFlights(ev); }
+  if (!waiting || seenBefore(ev, text)) return pass();
 
   lib.beat(ev, "tool");
   ad.keepGoing(ev, REASON);
