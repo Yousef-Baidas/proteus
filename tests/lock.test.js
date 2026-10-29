@@ -64,7 +64,7 @@ fs.writeFileSync(path.join(SK, "beta", "SKILL.md"), "beta v1\n");
 ok("cache: an update back to the pinned copy clears the drift at the next spawn", spawn("proteus-worker").code === 0);
 fs.writeFileSync(path.join(SK, "beta", "SKILL.md"), "beta v3\n");
 const cache = hl.readJSON(hl.driftFile(path.join(REPO, ".git")), null);
-ok("cache: a clean result is cached per lock in .git/proteus/skills-drift.json", cache && Array.isArray(cache.drift) && !cache.drift.length && typeof cache.lock === "string", JSON.stringify(cache));
+ok("cache: a clean result is cached per lock in .git/proteus-lead/skills-drift.json", cache && Array.isArray(cache.drift) && !cache.drift.length && typeof cache.lock === "string", JSON.stringify(cache));
 ok("cache: the clean result stands until the lock changes or a session starts", spawn("proteus-worker").code === 0);
 start();
 ok("cache: the next session start re-hashes and the guard refuses", spawn("proteus-worker").code === 2);

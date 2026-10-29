@@ -44,11 +44,11 @@ function closeFlights(ev) {
 function seenBefore(ev, text) {
   const common = lib.gitCommonDir(lib.projectRoot(ev));
   if (!common) return false;
-  const file = path.join(lib.stateDir(common), "stall-blocked.json");
+  const file = lib.leadPath(common, "stall-blocked.json");
   const key = crypto.createHash("sha1").update(`${ev.agent || ev.teammate || ev.session}\n${text}`).digest("hex");
   const seen = lib.readJSON(file, []);
   const list = Array.isArray(seen) ? seen : [];
   if (list.includes(key)) return true;
-  lib.writeJSON(file, list.concat(key).slice(-100));
+  lib.leadJSON(common, file, list.concat(key).slice(-100));
   return false;
 }

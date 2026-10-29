@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The human's inbox: open needs-human issues, split into questions (proteus-question) and
-// reviews (proteus-review), cached in <git-common-dir>/proteus/inbox.json.
+// reviews (proteus-review), cached in <git-common-dir>/proteus-lead/inbox.json.
 //   node .claude/hooks/proteus-inbox.js            one line per item, from the cache
 //   node .claude/hooks/proteus-inbox.js --refresh  query gh, rewrite the cache, then print
 //   node .claude/hooks/proteus-inbox.js --count    "<questions> <reviews>"
@@ -13,7 +13,7 @@ const args = process.argv.slice(2);
 if (args[0] === "--help" || args[0] === "-h") {
   console.log(`usage: node proteus-inbox.js [--refresh | --count]
 The human's inbox: open needs-human issues, split into questions (proteus-question) and reviews
-(proteus-review), cached in <git-common-dir>/proteus/inbox.json.
+(proteus-review), cached in <git-common-dir>/proteus-lead/inbox.json.
   (no flag)   one line per item, from the cache
   --refresh   query gh, rewrite the cache, then print
   --count     "<questions> <reviews>"

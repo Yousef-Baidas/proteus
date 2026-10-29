@@ -7,8 +7,8 @@
 // checks the checkout for a newer release tag (background fetch at most daily; with autoUpdate, a fast-forward
 // to that tag once its signature verifies; the pending release feeds the status line), offers the tour while it is pending (tour=…), and after
 // a compaction (or a startup with an open run) re-injects the run-log tail and, after a
-// compaction, the human's last ten messages from the journal. Starts the scratch safety sweep
-// (proteus-scratch.js --sweep --stale) detached, so it never slows the start.
+// compaction, the human's last ten messages from the journal. Says when scratch may be stale, for the lead to run
+// proteus-scratch.js --sweep --stale from its own shell: this hook runs unsandboxed, so it deletes nothing (#237).
 // Under the plugin (CLAUDE_PLUGIN_ROOT) the plugin manager owns updates, so the checkout update is off; instead
 // releaseCheck says, in one line, when the installed commit is not a release tag the user's trusted key signed.
 // On a public GitHub repo, notes once per repo that everything Proteus posts there is public.
@@ -67,7 +67,7 @@ lib.run(async (ev, ad) => {
   if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
   const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown");
   if (tour) notes.push(tourOffer(tour));
-  safe(() => scratchSweep(root));
+  safe(() => scratchNote(root, notes));
 
   if (src === "resume" || src === "fork") {
     // a resumed session still has the skill in its transcript; only the state line is new
@@ -230,10 +230,9 @@ function sync(ad, home, root, notes) {
     const s = path.join(hooksSrc, f);
     if (fs.statSync(s).isFile() && lib.syncFile(s, path.join(ad.hooksDir(root), f))) hooks++;
   }
-  // a new hook file may need a new registration
+  // a new hook file may need a new registration; the CommonJS marker (#77) this sync can bring is excluded from
+  // git by install.js --project, not here: this hook runs unsandboxed and writes nothing in the git dir (#236)
   if (hooks) ad.registerLead(root);
-  // the CommonJS marker (#77) can arrive by this sync before install.js --project excludes it
-  if (hooks) safe(() => excludeMarker(ad, root));
   if (n + hooks) notes.push(`proteus: synced ${n + hooks} files from ${home}`);
 }
 
@@ -242,7 +241,7 @@ function sync(ad, home, root, notes) {
 function agentPatches(ad, home, root, notes) {
   const mod = [path.join(home, "templates", "hooks", "proteus-agent-patch.js"), path.join(__dirname, "proteus-agent-patch.js")].find((p) => fs.existsSync(p));
   if (!mod) return;
-  const r = require(mod).apply(root, home, ad);
+  const r = require(mod).apply(root, home, ad, undefined, true);
   const cmd = `node "${path.join(home, "install.js")}" --project`;
   if (r.error) notes.push(`proteus: ${r.error}; generated agents left as they were. Tell the human; once fixed, ${cmd}`);
   else if (r.written.length + r.removed.length) notes.push(`proteus: ${[...r.written.map((p) => `${p} regenerated`), ...r.removed.map((p) => `${p} removed`)].join(", ")} (${r.file}); agent types load at session start, so the change applies from the next session`);
@@ -256,27 +255,14 @@ function pluginPatches(root, notes) {
   if (fs.existsSync(path.join(root, ".claude", "proteus-agents.json"))) notes.push("proteus: .claude/proteus-agents.json is not applied under the plugin; its agents run as shipped");
 }
 
-// keeps <hooks dir>/package.json out of `git add`, as install.js's exclude list does
-function excludeMarker(ad, root) {
-  const line = path.relative(root, path.join(ad.hooksDir(root), "package.json")).split(path.sep).join("/");
-  const common = lib.gitCommonDir(root);
-  if (!common || !fs.existsSync(path.join(root, line))) return;
-  const file = path.join(common, "info", "exclude");
-  let cur = "";
-  try { cur = fs.readFileSync(file, "utf8"); } catch {}
-  if (cur.split(/\r?\n/).includes(line)) return;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, (cur && !cur.endsWith("\n") ? "\n" : "") + line + "\n");
-}
-
 // A public repo publishes the run log, briefs, contracts, evidence and questions: said once per repo,
-// recorded in <common>/proteus/visibility.json. Until then gh is asked at most once a day (3 s
+// recorded in <common>/proteus-lead/visibility.json. Until then gh is asked at most once a day (3 s
 // timeout; any failure, no remote or offline, just waits for the next day).
 const DAY = 24 * 3600e3;
 function publicNote(root, notes) {
   const common = lib.gitCommonDir(root);
   if (!common) return;
-  const file = path.join(lib.stateDir(common), "visibility.json");
+  const file = lib.leadPath(common, "visibility.json");
   const seen = lib.readJSON(file, null) || {};
   if (seen.warned) return;
   let vis = typeof seen.visibility === "string" ? seen.visibility : "";
@@ -284,20 +270,29 @@ function publicNote(root, notes) {
   if (Date.now() - at >= DAY) {
     vis = lib.gh(["repo", "view", "--json", "visibility", "-q", ".visibility"], root, 3000).toUpperCase();
     at = Date.now();
-    lib.writeJSON(file, { at, visibility: vis });
+    lib.leadJSON(common, file, { at, visibility: vis });
   }
   if (vis !== "PUBLIC") return;
   notes.push("proteus: this repo is public on GitHub. The run log, issues, contracts, review briefs, evidence branches and questions Proteus posts are readable by anyone. Tell the human once, in your first reply, so nothing private goes into a work order, an answer or an evidence file. (Shown once per repo.)");
-  lib.writeJSON(file, { at, visibility: vis, warned: new Date().toISOString() });
+  lib.leadJSON(common, file, { at, visibility: vis, warned: new Date().toISOString() });
 }
 
-// only when the run has scratch state; the sweep caches the size the next state line reads
-function scratchSweep(root) {
-  const store = lib.stateDir(lib.gitCommonDir(root));
-  if (!fs.existsSync(path.join(store, "scratch-ledger.jsonl")) && !fs.existsSync(path.join(store, "scratch"))) return;
-  const c = spawn(process.execPath, [path.join(__dirname, "proteus-scratch.js"), "--sweep", "--stale"], { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
-  c.on("error", () => {});
-  c.unref();
+// one line when a scratch dir or a ledgered stray has been idle 72h, the --stale sweep's shortest wait. The sweep
+// itself deletes under <common>/proteus/scratch and <common>/worktrees, which agents can write, so only the lead's
+// sandboxed shell runs it (#237); this only lstat's. The sweep caches the size the next state line reads.
+const SCRATCH_IDLE = 72 * 3600e3;
+function scratchNote(root, notes) {
+  const common = lib.gitCommonDir(root);
+  if (!common) return;
+  const old = (t) => Date.now() - t > SCRATCH_IDLE;
+  const dir = lib.scratchDir(common);
+  let stale = false;
+  try {
+    const st = fs.lstatSync(dir);
+    if (st.isDirectory() && !st.isSymbolicLink()) stale = fs.readdirSync(dir).some((n) => { try { return old(fs.lstatSync(path.join(dir, n)).mtimeMs); } catch { return false; } });
+  } catch {}
+  if (!stale) stale = lib.tailLines(lib.leadPath(common, "scratch-ledger.jsonl"), 1 << 20, true).some((l) => { try { const r = JSON.parse(l); return typeof r.path === "string" && old(+r.at || 0); } catch { return false; } });
+  if (stale) notes.push(`proteus: scratch may be stale (idle 72h or more); free it from your shell: node "${path.join(__dirname, "proteus-scratch.js")}" --sweep --stale`);
 }
 
 // Codex: worker worktrees live in .worktrees/, inside the project, so writable_roots needs no entry for them. A
@@ -376,7 +371,7 @@ const regularFile = (f) => { try { return fs.lstatSync(path.dirname(f)).isDirect
 function humanSaid(root) {
   const common = lib.gitCommonDir(root);
   if (!common) return "";
-  const f = path.join(lib.stateDir(common), "journal.jsonl");
+  const f = lib.leadPath(common, "journal.jsonl");
   const lines = regularFile(f) ? [...new Set(lib.tailLines(f, 512 * 1024, true))].slice(-10) : [];
   const said = lines.flatMap((l) => {
     // redacted again on the way out: a journal written before redaction existed may hold secrets
@@ -415,7 +410,7 @@ function localState(ad, root, runs, home, pending, drift) {
   }).filter(Boolean);
   const lessons = ls(path.join("docs", "lessons")).filter((f) => f.endsWith(".md")).length;
   const common = lib.gitCommonDir(root);
-  const scratch = common ? Math.round(((lib.readJSON(path.join(lib.stateDir(common), "scratch-size.json"), {}) || {}).bytes || 0) / 1048576) : 0;
+  const scratch = common ? Math.round(((lib.readJSON(lib.leadPath(common, "scratch-size.json"), {}) || {}).bytes || 0) / 1048576) : 0;
   const yn = (b) => (b ? "yes" : "NO");
   return (
     "proteus-state (local files only; tracker not queried): " +
