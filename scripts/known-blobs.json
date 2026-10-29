@@ -380,6 +380,7 @@
     ],
     "templates/hooks/proteus-harness-codex.js": [
       "03c8298ffab58579b3588436b17187999951b724",
+      "09b40de5cd0cd36c7c9f5b98419bb80fde1f3d41",
       "0be7e321a3902f6a6070475e4ec7fc58b6625621",
       "0cb1845cd2e3aa84e5cd88014ba1c1fab059d983",
       "0e6d208d155f31bf21b87487783cddfb74f89668",
@@ -499,6 +500,7 @@
       "0465a135f1b7f89fcced70b7c97daa7ee56d9fda",
       "05cbce28c77463e2e1b16d497b527b62e8874262",
       "0f0d9007badacdfdd2afe8ec58b51b35e5839221",
+      "1d767da6bbd7b5769ef533a68df74effad098125",
       "23b5e77f167fc4cc6076b638c1e24e34c66e04f8",
       "26499a988f5e4949432a9f455746973121698c91",
       "285d025638de31807005185efe33e93ea0640f97",
@@ -626,7 +628,8 @@
       "b1a1118a552a52002d644638ceb954033dcb0169"
     ],
     "templates/hooks/proteus-teamfit.js": [
-      "7faaa4dbf5d322c756603f89ec72e39789438517"
+      "7faaa4dbf5d322c756603f89ec72e39789438517",
+      "c3650e17586726b0cffdfcbbf10d37f4c30609aa"
     ],
     "templates/hooks/proteus-tier.js": [
       "40a694e6265d904da1bafa982d8b449b3cbcf4c7",
@@ -655,6 +658,7 @@
       "b1e25d4c45e1432a206ef5461a39129f7a3b9175",
       "b28ed0fc1caa033b02c01c3dbfce6eae6e0770eb",
       "c422f2229e8f5da06ef3dac9cfa56425caa29b31",
+      "c5a59d465fd5ea7ff156a24a59473bc4efccef77",
       "e5194759c4140be6b9dbf7abd1ff41b0f70f87dc"
     ],
     "templates/hooks/settings.local.json": [

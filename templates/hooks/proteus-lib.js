@@ -644,7 +644,9 @@ function repoCommon(dir) {
   const c = anchorCommon();
   return c && (!dir || checkoutAt(c, dir)) ? c : null;
 }
-const checkoutOf = (dir) => { const c = dir && repoCommon(dir); return c ? checkoutAt(c, dir) : null; };
+// dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
+// whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command
+const checkoutOf = (dir, root) => { const c = dir && (root ? trustedCommon(root) : repoCommon(dir)); return c ? checkoutAt(c, dir) : null; };
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // a ref's commit from files (loose, then packed-refs), else git on the common dir (reftable)
@@ -670,9 +672,9 @@ function headInfo(co) {
   } catch { return {}; }
 }
 // the commit checked out in dir's checkout, "" when unknown or unborn
-const headOf = (dir) => headInfo(checkoutOf(dir)).sha || "";
+const headOf = (dir, root) => headInfo(checkoutOf(dir, root)).sha || "";
 // the branch checked out in dir's checkout, "" when detached or unknown
-const branchOf = (dir) => { const m = /^refs\/heads\/(.+)$/.exec(headInfo(checkoutOf(dir)).ref || ""); return m ? m[1] : ""; };
+const branchOf = (dir, root) => { const m = /^refs\/heads\/(.+)$/.exec(headInfo(checkoutOf(dir, root)).ref || ""); return m ? m[1] : ""; };
 // rev with a leading HEAD or @ read as dir's own HEAD: git runs on the common dir, whose HEAD is the main checkout's
 function ownRev(rev, dir) {
   const m = /^(?:HEAD|@)(?=$|[~^:])/.exec(String(rev));

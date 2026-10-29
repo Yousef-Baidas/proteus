@@ -145,7 +145,7 @@ function evidence(root, opt = {}) {
   const specs = [...new Set(Object.values(KINDS).flat())].map((g) => `:(glob,icase)${g}`)
     .concat(EXCLUDE.map((g) => `:(glob,icase,exclude)${g}`));
   // git through lib's wrapper (#215): the checkout's own index, the common dir's config only
-  const co = lib.checkoutOf(root);
+  const co = lib.checkoutOf(root, root);
   if (!co) return { capped: true, why: "git ls-files failed here (not a git checkout)" };
   const run = (args, o) => { const [a, opts] = lib.gitCall(co.common, args, { stdio: ["ignore", "pipe", "pipe"], ...o }); return spawnSync("git", a, { ...opts, timeout: Math.max(1, left()) }); };
   const r = run(["-c", "core.quotepath=off", "ls-files", "-z", "--", ...specs], { cwd: root, workTree: co.root, index: co.index });

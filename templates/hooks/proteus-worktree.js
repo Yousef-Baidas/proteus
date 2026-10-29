@@ -80,7 +80,7 @@ if (tier) {
   let prev = null;
   try { prev = lib.TIER_LINE.exec(fs.readFileSync(lib.ownedFile(wt), "utf8")); } catch {}
   let base = prev ? prev[3] : "";
-  base = base || lib.headOf(wt);
+  base = base || lib.headOf(wt, wt);
   if (!base) {
     console.error(`proteus-worktree: ${wt} has no commit to measure the tier from`);
     process.exitCode = 1;
@@ -127,7 +127,7 @@ try {
 // git runs through lib's wrapper on the common dir (#215): the worktree's gitdir comes from <common>/worktrees/<id>,
 // never its .git file, and its config.worktree is written by path, never read.
 function installPreCommit() {
-  const co = lib.checkoutOf(wt);
+  const co = lib.checkoutOf(wt, wt);
   if (!co) return "no git dir";
   const git = (...a) => { try { return String(lib.gitRun(co.common, a, { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 })).trim(); } catch { return null; } };
   const slash = (p) => p.replace(/\\/g, "/");
@@ -162,7 +162,7 @@ if (hookErr) console.error(`proteus-worktree: pre-commit owned-path check not in
 
 // a worker branch proteus-work/<run>/<id> cut from a run branch carrying the lead's record .proteus/owned/<id>:
 // CI checks the PR against that record, so a list that differs from it is named now, not at the PR
-const branch = lib.branchOf(wt);
+const branch = lib.branchOf(wt, wt);
 const work = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/.exec(branch);
 if (work && work[1] !== "lead-docs") {
   const rec = path.join(wt, ...lib.OWNED_RECORDS.split("/"), work[1]);
