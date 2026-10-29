@@ -12,6 +12,13 @@
 //                   - a PR into main (Quick, Direct; the human merges those) or a run whose <base> has no
 //                     .proteus/owned/ yet (cut before the records, until its close PR merges): the "Owned:"
 //                     line of the PR body (env PR_BODY), entries separated by commas or spaces
+// A merge of the base (#232) is judged by what it changes beyond the base, not by what it brings in:
+// - --staged: while MERGE_HEAD names a commit that origin/main, origin/master or the worker branch's run branch
+//   origin/proteus/<run> holds, the paths where the index differs from MERGE_HEAD (conflict resolutions, edits made
+//   during the merge); a MERGE_HEAD git (pinned to the common dir) cannot resolve, or from any other branch, is
+//   judged in full
+// - --ci: when a merge commit since <base> has a second parent <base> holds, each commit is judged on its own: such
+//   a merge against that parent, any other commit against its first parent; without one, the range since <base>
 // Matching is proteus-lib's ownedMatch, the same rule the edit hooks apply. The owned-path list file itself is
 // refused in every mode whatever the globs (lib.isOwnedList), and so is any record under .proteus/owned/ outside
 // the lead's docs PR. Exit 1 lists the paths outside the list, or says the list is missing; exit 2 is bad usage.
@@ -30,6 +37,34 @@ const LEAD_DOCS = ["CONTEXT.md", "CONVENTIONS.md", "AGENTS.md", "docs/adr/", "do
 const lines = (text) => String(text || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
 const fail = (msg) => { console.error(`proteus-owned-check: ${msg}`); process.exit(1); };
 
+// the staged paths a protected merge's result changes beyond MERGE_HEAD, else null (judge every staged path)
+function mergeStaged(root) {
+  const co = lib.checkoutOf(root, root);
+  if (!co) return null;
+  let sha = "";
+  try { sha = require("fs").readFileSync(path.join(co.gitDir, "MERGE_HEAD"), "utf8").split(/\s+/)[0]; } catch { return null; }
+  sha = sha && lib.gitIn(co.common, ["rev-parse", "--verify", "-q", `${sha}^{commit}`]);
+  if (!sha) return null;
+  const work = /^proteus-work\/([^/]+)\/[^/]+$/.exec(lib.branchOf(root, root));
+  const refs = ["main", "master", ...(work ? [`proteus/${work[1]}`] : [])].map((b) => `refs/remotes/origin/${b}`);
+  if (!refs.some((ref) => lib.gitTry(co.common, ["merge-base", "--is-ancestor", sha, ref]).ok)) return null;
+  // the index the commit records: git hands its hooks GIT_INDEX_FILE, which the pinned call would drop
+  const index = process.env.GIT_INDEX_FILE ? path.resolve(process.env.GIT_INDEX_FILE) : co.index;
+  const out = lib.gitTry(co.common, ["diff", "--cached", "--name-only", "--no-renames", "-z", sha], { index, timeout: 60000 });
+  return out.ok ? out.out.split("\0").filter(Boolean) : null;
+}
+
+// the paths changed since base, with a merge of the base judged by what it changes beyond the parent base holds
+function changedSince(base) {
+  const commits = git(["rev-list", "--parents", `${base}..HEAD`]).split(/\r?\n/).filter(Boolean).map((l) => l.split(" "));
+  const synced = (c) => c.length === 3 && tryGit(["merge-base", "--is-ancestor", c[2], base]) !== null;
+  if (!commits.some(synced)) return names([`${base}...HEAD`]);
+  const out = new Set();
+  // a root commit (an unrelated history merged in) is all its own
+  for (const c of commits) for (const p of c.length > 1 ? names([synced(c) ? c[2] : c[1], c[0]]) : git(["diff-tree", "-r", "--root", "--name-only", "--no-renames", "-z", c[0]]).split("\0").filter(Boolean)) out.add(p);
+  return [...out];
+}
+
 function fromBody() {
   const m = /^Owned:[ \t]*(.+)$/im.exec(process.env.PR_BODY || "");
   const owned = m ? m[1].split(/[,\s]+/).filter(Boolean) : [];
@@ -44,7 +79,7 @@ if (mode === "--staged") {
   const root = git(["rev-parse", "--show-toplevel"]).trim();
   if (!require("fs").existsSync(lib.ownedFile(root))) process.exit(0);
   from = path.relative(root, lib.ownedFile(root)).split(path.sep).join("/");
-  bad = names(["--cached"]).filter((p) => lib.ownedDenial(root, p));
+  bad = (mergeStaged(root) || names(["--cached"])).filter((p) => lib.ownedDenial(root, p));
 } else if (mode === "--ci" && base) {
   if (!tryGit(["rev-parse", "--verify", "-q", `${base}^{commit}`])) fail(`${base} is not a commit in this checkout; fetch it (actions/checkout with fetch-depth: 0)`);
   const head = process.env.GITHUB_HEAD_REF || (tryGit(["symbolic-ref", "-q", "--short", "HEAD"]) || "").trim();
@@ -70,7 +105,7 @@ if (mode === "--staged") {
   }
   // the owned-path list itself fails whatever the list says, as ownedDenial refuses it for --staged; so does a
   // record, which would widen a later check, outside the lead's docs PR
-  bad = names([`${base}...HEAD`]).filter((p) => lib.isOwnedList(process.cwd(), p) || (!records && lib.isOwnedRecord(p)) || !owned.some((g) => lib.ownedMatch(g, p)));
+  bad = changedSince(base).filter((p) => lib.isOwnedList(process.cwd(), p) || (!records && lib.isOwnedRecord(p)) || !owned.some((g) => lib.ownedMatch(g, p)));
 } else {
   console.error("usage: node proteus-owned-check.js --staged | --ci <base-ref>");
   process.exit(2);
