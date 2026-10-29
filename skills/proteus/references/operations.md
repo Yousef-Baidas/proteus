@@ -1,6 +1,6 @@
 # Operations
 
-Commands the human types mid-run, the stall check, scratch, and installs. Each runs before anything else in the turn it arrives in. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; other names per `harnesses.md`.
+Commands the human types mid-run, the stall check, scratch, and installs. Each runs before anything else in the turn it arrives in. `<hooks>` and other names per `harnesses.md`.
 
 ## `status`
 

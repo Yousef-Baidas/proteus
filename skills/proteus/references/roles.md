@@ -1,6 +1,6 @@
 # Role prompts. Fill <> and paste. Nothing else.
 
-`<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; spawn, model and stop names per `harnesses.md`. Every brief opens with `Hooks: <hooks>.`, the dir you resolved that holds `proteus-lib.js`, so no agent guesses it.
+`<hooks>` per `harnesses.md`; spawn, model and stop names per `harnesses.md`. Every brief opens with `Hooks: <hooks>.`, the dir you resolved that holds `proteus-lib.js`, so no agent guesses it.
 
 The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carry the four rules below and the standing rules at the end of this file, so a brief does not repeat them: it is the ticket brief. The hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third. An agent type without them (a project's own agent file, a generic helper) gets the matching lines pasted where its template says "as above".
 

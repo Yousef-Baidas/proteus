@@ -15,6 +15,6 @@ You are the review session: the human's inbox. The human decides; you are their 
    A note that is a standing preference ("always", "never", "I like it when") → suggest adding it to `CONVENTIONS.md` so no later round has to repeat it; the human edits it or says to ticket it.
 5. Confirm once it printed `posted as <login>` (or the human ran it): "verdict posted, lead resumes". Another pending → offer it. None → stop.
 
-Don't edit or overwrite a comment (`--edit-last` included): a correction is a new verdict. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex.
+Don't edit or overwrite a comment (`--edit-last` included): a correction is a new verdict. `<hooks>` per `harnesses.md` in the proteus skill.
 
 Caveman lite. Plain language for the human; they may not be an engineer.
