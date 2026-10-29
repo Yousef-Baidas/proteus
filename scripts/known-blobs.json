@@ -550,6 +550,7 @@
       "6adaabf9223ca85e4eff1246bb47b6105dff43aa",
       "6c5b1d75b9d13be5df220ec346791f71c99b0110",
       "6eb500973e46daf65376c18d4e641032b6e2e96e",
+      "6fbd3a64deb0cf86c0b672085b71a51f471ff509",
       "710f518f9ad8fbcf53228b4820f651867b486281",
       "764d887fbf379603c56b40ad237fb96eefdee56a",
       "7f4d92f0b09068740f13cf6545ee8bc56da143a0",
@@ -603,6 +604,7 @@
     "templates/hooks/proteus-merge.js": [
       "1970518875cc6eb2262732e4ee232f65bb4bd8f4",
       "249d3993052f783984ccdde6b33c102f3462b6a9",
+      "33b609db87f00ade92e2f0af9f5c998eff2f190d",
       "3ed6c76bac8c3ad4a106564e1792008ea4bc9bec",
       "8fa9ceae1e1131255dd819a479d2c87d18ccc685",
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b"
@@ -620,6 +622,7 @@
       "54a3ca9cc24b0833155a8a1a8ddb47431cbaba0a"
     ],
     "templates/hooks/proteus-run-tree.js": [
+      "16df50fe90c15d2524b78986feba601f173fc783",
       "c7317b16f19ac0c2b8a82fa872827a06603b9cb0"
     ],
     "templates/hooks/proteus-scan.js": [
