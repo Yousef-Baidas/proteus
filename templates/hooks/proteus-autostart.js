@@ -19,7 +19,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { execFileSync, spawn } = require("child_process");
+const { spawn } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const { pluginRoot } = require(path.join(__dirname, "proteus-confine.js"));
 
@@ -109,7 +109,9 @@ function update(home, cfg, notes) {
   const last = typeof cfg.lastFetch === "number" ? cfg.lastFetch : Date.parse(cfg.lastFetch) || 0;
   if (Date.now() - last > 24 * 3600e3) {
     try {
-      const c = spawn("git", ["-C", home, "fetch", "--quiet", "--tags"], { detached: true, stdio: "ignore", windowsHide: true });
+      // the human's global config (credentials, proxy) but none the repo's worktrees could plant (lib.gitCall, #215)
+      const [args, o] = lib.gitCall(lib.homeGitDir(home), ["fetch", "--quiet", "--tags"], { user: true });
+      const c = spawn("git", args, { cwd: o.cwd, env: o.env, detached: true, stdio: "ignore", windowsHide: true });
       c.on("error", () => {});
       c.unref();
     } catch {}
@@ -120,17 +122,21 @@ function update(home, cfg, notes) {
   if (behind && cfg.autoUpdate === true) {
     try {
       const v = lib.verifyRelease(home, rel.tag);
-      const dirty = execFileSync("git", ["-C", home, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8", timeout: 3000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+      const gd = lib.homeGitDir(home);
+      if (!gd) throw new Error(`${home} is not a git checkout`);
+      const tree = { cwd: home, workTree: home, index: path.join(gd, "index") };
+      // tracked changes only, as status --untracked-files=no showed them (no git status, #215)
+      const dirty = String(lib.gitRun(gd, ["diff", "--no-ext-diff", "--name-only", "HEAD", "--"], tree));
       if (v.error) {
         notes.push(`proteus: not updating to ${rel.tag}: ${v.error}. To trust the maintainer's key see "Releases" in ${path.join(home, "docs", "updating.md")}; or review the tag, then git -C "${home}" merge --ff-only ${rel.tag} and node "${path.join(home, "install.js")}" --update`);
       } else if (dirty.trim()) {
         notes.push(`proteus: local changes in ${home}; not updating to ${rel.tag}`);
       } else {
-        const before = lib.git(["-C", home, "rev-parse", "HEAD"], home);
+        const before = lib.homeGit(home, ["rev-parse", "HEAD"]);
         // the verified commit, already fetched: no network wait, no race with the background fetch
-        execFileSync("git", ["-C", home, "merge", "--ff-only", "--quiet", v.commit], { encoding: "utf8", timeout: 15000, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+        lib.gitRun(gd, ["merge", "--ff-only", "--quiet", v.commit], { ...tree, timeout: 15000, stdio: ["ignore", "ignore", "pipe"] });
         const log = lib.changelog(home, v.commit, rel.current, rel.tag);
-        notes.push(`proteus: updated to ${rel.tag} (${lib.git(["-C", home, "rev-parse", "--short", "HEAD"], home)})${rel.current ? ` from ${rel.current}` : ""}, signature verified${log.length ? "; CHANGELOG.md:" : ""}`, ...log.map((l) => `  ${l}`));
+        notes.push(`proteus: updated to ${rel.tag} (${lib.homeGit(home, ["rev-parse", "--short", "HEAD"])})${rel.current ? ` from ${rel.current}` : ""}, signature verified${log.length ? "; CHANGELOG.md:" : ""}`, ...log.map((l) => `  ${l}`));
         behind = 0;
         // an install from before the tour existed gets a what's-new tour from here, not a first-time one
         if (cfg.toured === undefined && before) patch.toured = before;
@@ -192,10 +198,10 @@ function tourOffer(tour) {
 const FEATURE = /^feat(\([^)]*\))?!?:|^\w+(\([^)]*\))?!:/;
 function tourState(home, cfg) {
   let field = "tour=new";
-  const head = lib.git(["-C", home, "rev-parse", "HEAD"], home);
+  const head = lib.homeGit(home, ["rev-parse", "HEAD"]);
   if (cfg.toured) {
     if (!head || head === cfg.toured) return "";
-    const n = lib.git(["-C", home, "log", "--format=%s", `${cfg.toured}..HEAD`], home).split("\n").filter((l) => FEATURE.test(l)).length;
+    const n = lib.homeGit(home, ["log", "--format=%s", `${cfg.toured}..HEAD`]).split("\n").filter((l) => FEATURE.test(l)).length;
     if (!n) return "";
     field = `tour=whats-new:${n}`;
   }

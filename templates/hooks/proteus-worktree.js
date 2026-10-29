@@ -16,7 +16,7 @@
 // that the branch carries from the run branch, which CI checks the PR against; a difference is warned about.
 "use strict";
 const fs = require("fs");
-const { execFileSync } = require("child_process");
+const os = require("os");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 const ad = require(path.join(__dirname, "proteus-harness.js"));
@@ -80,7 +80,7 @@ if (tier) {
   let prev = null;
   try { prev = lib.TIER_LINE.exec(fs.readFileSync(lib.ownedFile(wt), "utf8")); } catch {}
   let base = prev ? prev[3] : "";
-  try { base = base || execFileSync("git", ["-C", wt, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch {}
+  base = base || lib.headOf(wt);
   if (!base) {
     console.error(`proteus-worktree: ${wt} has no commit to measure the tier from`);
     process.exitCode = 1;
@@ -124,16 +124,19 @@ try {
 // A repo with no commit-msg hook (no lefthook yet, or a guest repo) gets one running commit-msg.js, the check
 // CI runs on every commit of the PR, so a worker learns of a bad message before it pushes (#28).
 // A failure is only warned about: CI's check of the PR is the backstop, and `git commit --no-verify` skips this.
+// git runs through lib's wrapper on the common dir (#215): the worktree's gitdir comes from <common>/worktrees/<id>,
+// never its .git file, and its config.worktree is written by path, never read.
 function installPreCommit() {
-  const git = (...a) => { try { return execFileSync("git", ["-C", wt, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); } catch { return null; } };
+  const co = lib.checkoutOf(wt);
+  if (!co) return "no git dir";
+  const git = (...a) => { try { return String(lib.gitRun(co.common, a, { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 })).trim(); } catch { return null; } };
   const slash = (p) => p.replace(/\\/g, "/");
   const sq = (s) => `'${slash(s).replace(/'/g, "'\\''")}'`;
-  const gitdir = git("rev-parse", "--absolute-git-dir");
-  if (!gitdir) return "no git dir";
-  const dir = path.join(gitdir, "proteus-hooks");
+  const dir = path.join(co.gitDir, "proteus-hooks");
   const kept = path.join(dir, "orig-hooks-path");
-  let orig = git("rev-parse", "--path-format=absolute", "--git-path", "hooks");
-  if (orig === null) return "git too old for --path-format";
+  // the repo's own hooks path (the common config.worktree, then config), relative to the checkout as git reads it
+  const set = ["config.worktree", "config"].map((f) => git("config", "--file", path.join(co.common, f), "--get", "core.hooksPath")).find(Boolean);
+  let orig = set ? path.resolve(co.root, set.replace(/^~(?=$|[\\/])/, os.homedir())) : path.join(co.common, "hooks");
   // a re-run sees our own dir as the hooks path: the hooks to forward to are the ones saved the first time
   if (path.resolve(orig) === path.resolve(dir)) orig = fs.readFileSync(kept, "utf8");
   fs.mkdirSync(dir, { recursive: true });
@@ -151,7 +154,7 @@ function installPreCommit() {
     .map((d) => path.join(d, "commit-msg.js")).find((f) => fs.existsSync(f));
   if (!have.includes("commit-msg") && msgCheck) write("commit-msg", `exec node ${sq(msgCheck)} "$1"\n`);
   write("pre-commit", `node ${sq(check)} --staged || exit 1\nnode ${sq(tierCheck)} --staged ${sq(path.join(__dirname, "proteus-worktree.js"))} || exit 1\n[ -x ${sq(path.join(orig, "pre-commit"))} ] && exec ${sq(path.join(orig, "pre-commit"))} "$@"\nexit 0\n`);
-  if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--worktree", "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
+  if (git("config", "extensions.worktreeConfig", "true") === null || git("config", "--file", path.join(co.gitDir, "config.worktree"), "core.hooksPath", slash(dir)) === null) return "git config --worktree failed";
   return "";
 }
 const hookErr = installPreCommit();
@@ -159,8 +162,7 @@ if (hookErr) console.error(`proteus-worktree: pre-commit owned-path check not in
 
 // a worker branch proteus-work/<run>/<id> cut from a run branch carrying the lead's record .proteus/owned/<id>:
 // CI checks the PR against that record, so a list that differs from it is named now, not at the PR
-let branch = "";
-try { branch = execFileSync("git", ["-C", wt, "symbolic-ref", "-q", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 10000 }).trim(); } catch {}
+const branch = lib.branchOf(wt);
 const work = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/.exec(branch);
 if (work && work[1] !== "lead-docs") {
   const rec = path.join(wt, ...lib.OWNED_RECORDS.split("/"), work[1]);

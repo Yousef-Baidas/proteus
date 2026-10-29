@@ -12,7 +12,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { tailLines, oldWorktreeDirs, worktreesUnder, git, gitRoot } = require(path.join(__dirname, "proteus-lib.js"));
+const { tailLines, oldWorktreeDirs, worktreesUnder, gitRoot, gitIn, checkoutOf } = require(path.join(__dirname, "proteus-lib.js"));
 const claude = require(path.join(__dirname, "proteus-harness-claude.js"));
 const { claudeDir, samePath } = require(path.join(__dirname, "proteus-confine.js"));
 
@@ -482,7 +482,8 @@ function exportEnv(root, vars) {
   const refuse = (why) => ({ file, error: `${file} ${why}; set ${Object.keys(vars).join(", ")} under [shell_environment_policy.set] in $CODEX_HOME/config.toml yourself` });
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch { return Object.values(vars).some(Boolean) ? refuse("is missing (install.js --project --harness codex makes it)") : { file, changed: false }; }
-  if (git(["ls-files", "--", ".codex/config.toml"], root)) return refuse("is tracked by git, and a path on this machine does not belong in it");
+  const co = checkoutOf(root);
+  if (co && gitIn(co.common, ["ls-files", "--", ".codex/config.toml"], 3000, { cwd: path.resolve(root), workTree: co.root, index: co.index })) return refuse("is tracked by git, and a path on this machine does not belong in it");
   if (/"""|'''/.test(text)) return refuse("has a multi-line string");
   const t = tomlTables(text);
   const le = /\r\n/.test(text) ? "\r\n" : "\n";

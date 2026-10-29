@@ -10,7 +10,7 @@
 // mode and a content hash (cached by size, mtime and inode in <state>/guard-hash.json, so a call hashes only what
 // changed); settings JSON is compared without its `permissions`. A git config file (.git/config, config.worktree)
 // is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream).
-// It also keeps `git status --porcelain` of every other prepared worktree whose agent is idle.
+// It also keeps the changed paths (lib.treeChanges) of every other prepared worktree whose agent is idle.
 // After the call (PostToolUse, this script as a hook) it compares. A guarded path that changed counts unless git
 // explains it: in a checkout, the path is clean now, was tracked before if it existed, and any commit HEAD moved
 // over that touches it is already on a protected remote branch (main, master, a run branch). A change in
@@ -35,7 +35,6 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
-const { execFile } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const MAX_ENTRIES = 8000;
@@ -208,34 +207,9 @@ function rootOf(abs, roots) {
   return best;
 }
 
-// a checkout's git dir: .git, or where a linked worktree's .git file points
-function gitDirOf(root) {
-  const gd = path.join(root, ".git");
-  if (fs.statSync(gd).isFile()) return path.resolve(root, /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(gd, "utf8"))[1]);
-  return gd;
-}
-
-// HEAD's commit for a checkout, read from files (no git call): HEAD, a loose ref or packed-refs
-function headOf(root, common) {
-  try {
-    const gd = gitDirOf(root);
-    const head = fs.readFileSync(path.join(gd, "HEAD"), "utf8").trim();
-    const m = /^ref:\s*(.+)$/.exec(head);
-    if (!m) return head;
-    for (const d of [gd, common]) { try { return fs.readFileSync(path.join(d, m[1]), "utf8").trim(); } catch {} }
-    const packed = fs.readFileSync(path.join(common, "packed-refs"), "utf8");
-    const p = new RegExp(`^([0-9a-f]{40}) ${m[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m").exec(packed);
-    return p ? p[1] : "";
-  } catch { return ""; }
-}
-
-// the branch a checkout has checked out, "" when detached or unknown
-function branchName(root) {
-  try {
-    const m = /^ref:\s*refs\/heads\/(.+?)\s*$/.exec(fs.readFileSync(path.join(gitDirOf(root), "HEAD"), "utf8"));
-    return m ? m[1] : "";
-  } catch { return ""; }
-}
+// HEAD's commit and branch for a checkout, read from <common>/worktrees/<id>/HEAD, never through its .git file (#215)
+const headOf = (root) => lib.headOf(root);
+const branchName = (root) => lib.branchOf(root);
 
 // ---- who is working where
 
@@ -276,24 +250,16 @@ function busy(wt, since, fl, agents, common) {
   return false;
 }
 
-const gitAsync = (args, cwd) => new Promise((resolve) => {
-  execFile("git", args, { cwd, encoding: "utf8", timeout: 5000, maxBuffer: 16 << 20, windowsHide: true }, (err, out) => resolve(err ? null : out));
-});
-// a worktree's porcelain lines, each with the size and mtime of the file now, so a further edit to a dirty file shows
+// a worktree's changed paths (lib.treeChanges: no git status, #215), each with the size and mtime of the file now,
+// so a further edit to a dirty file shows
 async function porcelain(wt) {
-  const out = await gitAsync(["--no-optional-locks", "status", "--porcelain=v1", "-z", "-unormal"], wt);
+  const out = await lib.treeChangesAsync(wt);
   if (out === null) return null;
-  const lines = [];
-  const parts = out.split("\0");
-  for (let i = 0; i < parts.length; i++) {
-    const l = parts[i];
-    if (!l) continue;
-    if (/^[RC]/.test(l)) i++; // a rename's source follows
+  return out.map((l) => {
     let s = "-";
     try { const st = fs.lstatSync(path.join(wt, l.slice(3))); s = `${st.size}:${Math.round(st.mtimeMs)}`; } catch {}
-    lines.push(`${l} ${s}`);
-  }
-  return lines.sort();
+    return `${l} ${s}`;
+  }).sort();
 }
 
 // ---- the lead's own calls
@@ -508,14 +474,8 @@ function explained(root, rels, before, oldHead, newHead) {
   const ok = new Set();
   if (!rels.length) return ok;
   const specs = rels.map((r) => `:(literal)${r}`);
-  const st = lib.git(["--no-optional-locks", "status", "--porcelain=v1", "-z", "--ignored=matching", "-uall", "--", ...specs], root, 10000);
-  const dirtyNow = new Set();
-  const parts = st.split("\0");
-  for (let i = 0; i < parts.length; i++) {
-    if (!parts[i]) continue;
-    dirtyNow.add(parts[i].slice(3).replace(/\/$/, ""));
-    if (/^[RC]/.test(parts[i])) dirtyNow.add(parts[++i]);
-  }
+  // tracked changes against HEAD, and every untracked file, ignored ones too (no git status: #215)
+  const dirtyNow = new Set((lib.treeChanges(root, specs, true) || []).map((l) => l.slice(3).replace(/\/$/, "")));
   const isDirty = (r) => [...dirtyNow].some((d) => r === d || r.startsWith(d + "/"));
   const inOld = oldHead ? new Set(lib.git(["ls-tree", "-r", "--name-only", "-z", oldHead, "--", ...specs], root, 10000).split("\0").filter(Boolean)) : new Set();
   for (const r of rels) {
@@ -646,10 +606,6 @@ const shown = (it) => (it.kind === "sibling" ? `${slash(it.worktree)} (${it.line
       : it.keys ? `${slash(it.path)} (${Object.keys(it.keys).join(", ")})` : slash(it.path));
 const MSG = (items, again) => `proteus: ${again ? "paths the guard protects still differ from their state before your earlier shell call" : "this shell call changed paths the guard protects"}: ${items.map(shown).slice(0, 12).join("; ")}${items.length > 12 ? `; and ${items.length - 12} more` : ""}. They hold Proteus's hooks, gates, git internals, CLI settings or another worker's worktree, and are never a worker's. Put each back as it was now (\`git checkout -- <path>\` for a tracked file; recreate or delete what the call added or removed; \`git config --unset <key>\` for a config key), then go on with the ticket. Until they match, a verifier cannot sign off MERGE on your branch. If you need one changed, comment "NEEDS <path>: <why>" on the issue and stop.`;
 
-function branchOf(wt) {
-  return lib.git(["rev-parse", "--abbrev-ref", "HEAD"], wt) || "";
-}
-
 async function check(ev, ad) {
   if (ev.tool !== "shell") return;
   const common = lib.gitCommonDir(lib.projectRoot(ev));
@@ -709,7 +665,7 @@ async function check(ev, ad) {
   const add = fresh.filter((i) => !(i.path && byPath.has(i.path)));
   const all = [...left, ...add].map((i) => withAfter(i.kind === "snapshot" ? { ...i, reported: true } : i));
   lib.writeJSON(recFile, {
-    key, agent: ev.agent || "", session: ev.session || "", worktree: own, branch: (rec && rec.branch) || (own ? branchOf(own) : ""),
+    key, agent: ev.agent || "", session: ev.session || "", worktree: own, branch: (rec && rec.branch) || (own ? branchName(own) || (headOf(own) ? "HEAD" : "") : ""),
     open: true, at: (rec && rec.open && rec.at) || new Date().toISOString(), items: all, history: (rec && rec.history) || [],
   });
   const msg = MSG(fresh.length ? fresh : left, !fresh.length);
