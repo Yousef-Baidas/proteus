@@ -41,6 +41,15 @@ Grill with `/grill-with-docs` when `CONTEXT.md` exists, `/grilling` on a blank r
 
 Gate item (g), the threat model: the assets at stake, the trust boundaries the work crosses, and two to five abuse cases, each an observable outcome ("a user without the project role gets 403 on `PATCH /projects/:id`"). It applies when `proteus-tier.js <planned paths>` ends with a `threat model` line (a path matches the `security` block of `teams/ROUTING.md`, or the tier is Full); go by that line, not by globs read by eye. Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket that touches one gets a failing check for it in its contract (step 3).
 
+### Refactor checkpoint
+
+Standard and Full only; Direct and Quick skip it. The cheapest moment to clean an area up is before anything is built on it.
+
+- A `helper` runs the scan phase of mattpocock `improve-codebase-architecture` (the skill `enforcement.md` §10 runs at close, read from its `SKILL.md`) over the modules the work order touches, and reports at most three refactor candidates, each with its cost to the planned work.
+- No candidates → no question; log `refactor-checkpoint: none`.
+- Candidates → one picker question with three options: **refactor first** (the candidates become a prep milestone ahead of the work), **defer to debt** (filed on the first milestone's debt issue, the way §10 files its scan), **ignore**.
+- Log the answer on the run log as `refactor-checkpoint: <first|defer|ignore|none>`.
+
 ## 2. Tickets
 
 Read `teams.md` again. `/to-spec`, then `/to-tickets`; every ticket becomes a tracker issue, every milestone a tracker milestone. Route each ticket by `teams/ROUTING.md` (no row → ask the human, then add the row via a ticket); owned paths inside that team's `Owns`; one owner per file among the tickets in flight; hotspot files (routes, registries, config, shared scene or project files) in a ticket that runs first; tags `difficulty:standard|hard` and `profile:<team>`. Two teams in one ticket → two tickets with a contract between them. A ticket whose outcome rests on facts outside the repo gets `needs-research` (its worker runs `/research` first). Milestones per `review.md`, one user-visible result each, acceptance checks frozen from gate item (b).
