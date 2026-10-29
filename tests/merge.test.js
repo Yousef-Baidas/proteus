@@ -10,13 +10,15 @@ const lib = require(path.join(__dirname, "lib.js"));
 const { ok, run, g } = lib;
 const { spawnSync, spawn } = require("child_process");
 const HOOKS = path.join(__dirname, "..", "templates", "hooks");
-const { mergeOrder, checkState } = require(path.join(HOOKS, "proteus-merge.js"));
-const SCRIPT = path.join(HOOKS, "proteus-merge.js"), RUN_TREE = path.join(HOOKS, "proteus-run-tree.js");
+const { mergeOrder, checkState, writeState } = require(path.join(HOOKS, "proteus-merge.js"));
+const SCRIPT = path.join(HOOKS, "proteus-merge.js"), RUN_TREE = path.join(HOOKS, "proteus-run-tree.js"), GATES = path.join(HOOKS, "proteus-gates-cache.js");
 
 const GREEN = [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }, { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" }];
 const write = (dir, files) => { for (const [f, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), body); };
 const dirLink = (target, at) => fs.symlinkSync(target, at, process.platform === "win32" ? "junction" : "dir");
 const listing = (d) => fs.readdirSync(d).sort().join(",");
+// every path under d with its size and mtime, links not followed
+const snapDir = (d) => fs.readdirSync(d, { recursive: true }).sort().map((f) => { const st = fs.lstatSync(path.join(d, f)); return `${f}:${st.size}:${st.mtimeMs}`; }).join("\n");
 
 // every child proteus-merge.js starts, one JSON line each
 const LW = lib.workdir("merge-log"), SPAWNS = path.join(LW, "spawns.jsonl");
@@ -93,14 +95,18 @@ let s = setup("green", [
   { t: 7, pr: 43, files: { "e.txt": "e\n" }, checks: [{ __typename: "StatusContext", context: "proteus/verdict", state: "FAILURE" }] },
   { t: 8, pr: 44, files: { "f.txt": "f\n" }, checks: [GREEN[0], { __typename: "CheckRun", name: "gates", status: "IN_PROGRESS", conclusion: "" }] },
 ]);
-const tipOf = (root) => g(root, "rev-parse", "origin/proteus/r1");
-ok("green: one line naming the merges in dependency order, the run's tip and the two sandboxed commands, exit 0", s.r.code === 0 && s.line.startsWith("merged PR #40 for #4, PR #42 for #6, PR #41 for #5; suite: run node ") && stepSha(s.line) === tipOf(s.root) && s.line.endsWith(` r1 --suite ${JSON.stringify(NEVER)} --result pass|fail`), `${s.r.code} ${s.r.out} ${s.r.err}`);
+// the run branch's tip as origin has it
+const tipOf = (s) => g(s.W, "--git-dir", path.join(s.W, "origin.git"), "rev-parse", "refs/heads/proteus/r1");
+ok("green: one line naming the merges in dependency order, the run's tip and the two sandboxed commands, exit 0", s.r.code === 0 && s.line.startsWith("merged PR #40 for #4, PR #42 for #6, PR #41 for #5; suite: run node ") && stepSha(s.line) === tipOf(s) && s.line.endsWith(` r1 --suite ${JSON.stringify(NEVER)} --result pass|fail`), `${s.r.code} ${s.r.out} ${s.r.err}`);
 ok("green: origin has the three merges in that order", s.merges.slice(0, 3).join("|") === "Merge pull request #41 from o/proteus-work/r1/5|Merge pull request #42 from o/proteus-work/r1/6|Merge pull request #40 from o/proteus-work/r1/4", s.merges.join("|"));
-ok("green: the script leaves .worktrees/_run alone; the state names the tip", !fs.existsSync(RUN(s.root)) && JSON.parse(fs.readFileSync(STATE(s.root), "utf8")).at === tipOf(s.root));
+ok("green: the script leaves .worktrees/_run alone; the state names the tip", !fs.existsSync(RUN(s.root)) && JSON.parse(fs.readFileSync(STATE(s.root), "utf8")).at === tipOf(s));
 const again = s.merge();
 ok("green: a second batch is refused while one awaits --result", again.code === 1 && again.out.includes("a batch awaits --result pass|fail"), again.out + again.err);
+const commonBefore = snapDir(s.common);
 const t0 = tree(s.root, stepSha(s.line));
-ok("green: proteus-run-tree.js fills _run with the tip's tree, a plain directory", t0.code === 0 && ["c.txt", "d.txt", "suite.js"].every((f) => fs.existsSync(path.join(RUN(s.root), f))) && !fs.existsSync(path.join(RUN(s.root), ".git")) && !fs.readdirSync(path.join(s.root, ".worktrees")).some((d) => d.startsWith("_run-index-")), `${t0.code} ${t0.out} ${t0.err}`);
+ok("green: proteus-run-tree.js checks the tip out in _run, a repo of its own", t0.code === 0 && ["c.txt", "d.txt", "suite.js"].every((f) => fs.existsSync(path.join(RUN(s.root), f))) && fs.lstatSync(path.join(RUN(s.root), ".git")).isDirectory(), `${t0.code} ${t0.out} ${t0.err}`);
+ok("green: proteus-run-tree.js writes nothing under <common>", snapDir(s.common) === commonBefore);
+ok("green: git in _run answers for the tested commit: HEAD, its files, a clean status", g(RUN(s.root), "rev-parse", "HEAD") === stepSha(s.line) && g(RUN(s.root), "ls-files").split("\n").includes("c.txt") && g(RUN(s.root), "status", "--porcelain") === "", g(RUN(s.root), "status", "--porcelain"));
 let l = loop(s);
 ok("green: --result pass ends the batch, naming the worktrees and branches left as the tracker has them, exit 0", l.steps === 1 && l.r.code === 0 && /^run r1: suite green at [0-9a-f]{12}; worktree and branch left for the lead: proteus-work\/r1\/4, proteus-work\/r1\/6, proteus-work\/r1\/5$/.test(l.line) && stateGone(s.root), `${l.r.code} ${l.r.out} ${l.r.err}`);
 ok("green: no worktree removed, the lead removes the merged ones (#226)", [4, 5, 6, 7, 8].every((t) => !gone(s.root, t)));
@@ -158,7 +164,7 @@ s = setup("wtlink", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W) => 
 t = tree(s.root, stepSha(s.line));
 ok("wtlink: a linked .worktrees is refused by proteus-run-tree.js, exit 1", t.code === 1 && /^run-tree: refused: .*\.worktrees is not a real directory/.test(t.out), `${t.code} ${t.out} ${t.err}`);
 ok("wtlink: the dir the link leads to is unchanged", listing(path.join(T, "_run")) === "victim.txt", listing(path.join(T, "_run")));
-// an older Proteus's _run, a registered worktree: emptied and filled as a plain directory, its admin dir untouched
+// an older Proteus's _run, a registered worktree: refused with a message naming git worktree remove, nothing changed
 let admin;
 s = setup("migrate", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
   g(root, "worktree", "add", "-q", "--detach", path.join(root, ".worktrees", "_run"), "origin/proteus/r1");
@@ -167,7 +173,7 @@ s = setup("migrate", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, co
 });
 const adminBefore = listing(admin) + fs.readFileSync(path.join(admin, "HEAD"), "utf8");
 t = tree(s.root, stepSha(s.line));
-ok("migrate: a registered _run becomes a plain directory holding the tip, with a message naming git worktree prune", t.code === 0 && /was a registered worktree.*git worktree prune/.test(t.err) && fs.existsSync(path.join(RUN(s.root), "b.txt")) && !fs.existsSync(path.join(RUN(s.root), "stale.txt")) && !fs.existsSync(path.join(RUN(s.root), ".git")), `${t.code} ${t.out} ${t.err}`);
+ok("migrate: a registered _run is refused, exit 1, with a message naming git worktree remove and no prune", t.code === 1 && /registered.*git worktree remove --force \.worktrees\/_run` outside any agent session/.test(t.out) && !/prune/.test(t.out + t.err) && fs.existsSync(path.join(RUN(s.root), "stale.txt")) && fs.lstatSync(path.join(RUN(s.root), ".git")).isFile(), `${t.code} ${t.out} ${t.err}`);
 ok("migrate: <common>/worktrees/_run untouched", listing(admin) + fs.readFileSync(path.join(admin, "HEAD"), "utf8") === adminBefore);
 // round 2 R5: <common>/worktrees/_run a link to another repo's .git naming _run: the batch and its loop leave it alone
 let OG, before;
@@ -192,7 +198,7 @@ const V = path.join(T, "profile.sh");
 const racer = path.join(s.W, "racer.js");
 fs.writeFileSync(racer, `const fs=require("fs");const [R,T]=process.argv.slice(2);const RR=R+".real";const ty=process.platform==="win32"?"junction":"dir";
 for(;;){try{fs.renameSync(R,RR);fs.symlinkSync(T,R,ty);for(let i=0;i<20000;i++);fs.unlinkSync(R);fs.renameSync(RR,R);for(let i=0;i<20000;i++);}catch{}}`);
-const tip = tipOf(s.root);
+const tip = tipOf(s);
 const forged = { head: tip, at: tip, merged: [1, 2, 3, 4, 5].map((n) => ({ n, sha: tip })), left: [], lo: -1, mid: 2, hi: 4 };
 const rc = spawn(process.execPath, [racer, RUN(s.root), T], { stdio: "ignore" });
 let raced = 0;
@@ -209,7 +215,7 @@ ok("race: the dir the link leads to is unchanged", listing(T) === "profile.sh" &
 // #226: the state file is an agent's to write; every read checks it, a forged one is refused and changes nothing
 s = setup("forge", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }, { t: 2, pr: 11, files: { "c.txt": "c\n" } }]);
 const good = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
-ok("forge: the state written is one checkState accepts", checkState(good) && good.left.join() === "proteus-work/r1/1,proteus-work/r1/2", JSON.stringify(good));
+ok("forge: the state written is one checkState accepts", checkState(good, "r1") && good.left.join() === "proteus-work/r1/1,proteus-work/r1/2", JSON.stringify(good));
 const ESC = "\u001b[31mINJECTED\u001b[0m";
 const step = { ...good, lo: -1, mid: 0, hi: 1, at: good.merged[0].sha };
 const forgeries = {
@@ -227,6 +233,8 @@ const forgeries = {
   "a left of the run branch": { ...good, left: ["proteus/r1"] },
   "a left with an escape": { ...good, left: [`proteus-work/r1/1${ESC}`] },
   "a left no merged PR heads": { ...good, left: ["proteus-work/r1/9"] },
+  "a head of another run's worker branch": { ...good, merged: [{ ...good.merged[0], head: "proteus-work/r2/1" }, good.merged[1]], left: ["proteus-work/r2/1"] },
+  "a head whose ticket is no number": { ...good, merged: [{ ...good.merged[0], head: "proteus-work/r1/$(x)" }, good.merged[1]], left: ["proteus-work/r1/$(x)"] },
   "no merges": { ...good, merged: [], left: [] },
   "lo below -1": { ...step, lo: -2 },
   "hi past the merges": { ...step, mid: 1, hi: 2, at: good.merged[1].sha },
@@ -263,6 +271,100 @@ ok("forge: on pass only a MERGED PR's head that is a worker branch is named: not
 fs.writeFileSync(STATE(s.root), JSON.stringify({ ...forged, head: good.head, at: good.head, merged: forged.merged.map((p) => ({ ...p, sha: good.head })) }));
 const esc = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1", "--suite", `x ${ESC}`, "--result", "pass"] });
 ok("forge: a control character in the suite is stripped from the output", !esc.out.includes("\u001b") && esc.out.includes("[31mINJECTED"), esc.out + esc.err);
+
+// the batch's state a link: never written through, made new (round 1 R4)
+let VS;
+s = setup("statelink", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+  VS = path.join(W, "victim"); fs.writeFileSync(VS, "victim\n");
+  fs.mkdirSync(path.join(common, "proteus", "merge"), { recursive: true });
+  fs.symlinkSync(VS, path.join(common, "proteus", "merge", "r1.json"));
+});
+ok("statelink: a state that is a link refuses the batch, exit 1, nothing merged", s.r.code === 1 && s.line.includes("refused:") && s.line.includes("is not a regular file") && s.merges[0] === "init", `${s.r.code} ${s.r.out} ${s.r.err}`);
+ok("statelink: the link's target is unchanged", fs.readFileSync(VS, "utf8") === "victim\n");
+const lr = s.merge("--result", "pass");
+ok("statelink: --result refuses it too, the target unchanged", lr.code === 1 && lr.out.includes("is not a regular file") && fs.readFileSync(VS, "utf8") === "victim\n", lr.out + lr.err);
+writeState(s.common, "r1", { mid: null });
+ok("statelink: writing the state replaces the link with a new file, the target unchanged", fs.readFileSync(VS, "utf8") === "victim\n" && fs.lstatSync(STATE(s.root)).isFile() && JSON.parse(fs.readFileSync(STATE(s.root), "utf8")).mid === null);
+// merge/ a link to a dir outside: refused, nothing written there
+s = setup("statedir", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+  T = path.join(W, "outside"); fs.mkdirSync(T);
+  fs.mkdirSync(path.join(common, "proteus"), { recursive: true });
+  dirLink(T, path.join(common, "proteus", "merge"));
+});
+ok("statedir: a linked merge/ is refused, exit 1, nothing written through it", s.r.code === 1 && /; suite not run: .*merge is not a real directory/.test(s.line) && listing(T) === "", `${s.r.code} ${s.r.out} ${s.r.err} ${listing(T)}`);
+fs.writeFileSync(path.join(T, "r1.json"), "{}");
+const dr = s.merge("--result", "pass");
+ok("statedir: a state behind a linked merge/ is not read", dr.code === 1 && dr.out.includes("refused:") && fs.readFileSync(path.join(T, "r1.json"), "utf8") === "{}", dr.out + dr.err);
+
+// #226 round 3: what an agent plants under <common> for the batch's fetch to write or delete through. The fetch runs
+// no auto maintenance (whose worktree prune empties what a worktrees/<x> link with no gitdir leads to) and writes no
+// FETCH_HEAD or remote-tracking ref and reflog
+const two = [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }, { t: 2, pr: 11, files: { "c.txt": "c\n" } }];
+const plants = {
+  "a <common>/worktrees/<x> link with no gitdir": (common, W) => {
+    const vd = path.join(W, "victim"); fs.mkdirSync(path.join(vd, "sub"), { recursive: true });
+    write(vd, { "keep.txt": "keep\n" }); fs.writeFileSync(path.join(vd, "sub", "notes.md"), "notes\n");
+    fs.mkdirSync(path.join(common, "worktrees"), { recursive: true });
+    dirLink(vd, path.join(common, "worktrees", "x"));
+    return () => listing(vd) === "keep.txt,sub" && listing(path.join(vd, "sub")) === "notes.md";
+  },
+  "a FETCH_HEAD link": (common, W) => {
+    const vf = path.join(W, "victim"); fs.writeFileSync(vf, "the human's file\n");
+    fs.rmSync(path.join(common, "FETCH_HEAD"), { force: true });
+    fs.symlinkSync(vf, path.join(common, "FETCH_HEAD"));
+    return () => fs.readFileSync(vf, "utf8") === "the human's file\n";
+  },
+  "a link at the run branch's remote-tracking reflog": (common, W) => {
+    const vf = path.join(W, "victim"); fs.writeFileSync(vf, "the human's file\n");
+    const log = path.join(common, "logs", "refs", "remotes", "origin", "proteus", "r1");
+    fs.mkdirSync(path.dirname(log), { recursive: true });
+    fs.rmSync(log, { force: true });
+    fs.symlinkSync(vf, log);
+    return () => fs.readFileSync(vf, "utf8") === "the human's file\n";
+  },
+};
+for (const [what, plant] of Object.entries(plants)) {
+  let same;
+  s = setup(`plant-${Object.keys(plants).indexOf(what)}`, two, (root, W, common) => { same = plant(common, W); });
+  l = loop(s);
+  ok(`fetch: ${what} leaves what it leads to unchanged through a batch and its end`, s.r.code === 0 && s.line.startsWith("merged PR #10 for #1, PR #11 for #2; suite: ") && l.r.code === 0 && same(), `${s.r.out} ${l.r.out} ${l.r.err}`);
+}
+
+// #226 round 3: refs/tags/origin/proteus/r1 and refs/heads/origin/proteus/r1 shadow origin/proteus/r1; the tip comes
+// from origin itself, so the printed commit, the merges' shas and the end are origin's
+let agentSha;
+s = setup("shadow", two, (root) => {
+  agentSha = g(root, "commit-tree", "-m", "agent", "HEAD^{tree}");
+  g(root, "update-ref", "refs/tags/origin/proteus/r1", agentSha);
+  g(root, "update-ref", "refs/heads/origin/proteus/r1", agentSha);
+});
+const shadowState = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
+const originAt = (rev) => g(s.W, "--git-dir", path.join(s.W, "origin.git"), "rev-parse", rev);
+ok("shadow: with both shadow refs planted the printed commit is origin's tip", s.r.code === 0 && stepSha(s.line) === tipOf(s) && tipOf(s) !== agentSha, `${s.r.out} ${s.r.err}`);
+ok("shadow: each merge's sha is origin's", shadowState.merged.map((p) => p.sha).join() === [originAt("refs/heads/proteus/r1~1"), originAt("refs/heads/proteus/r1")].join(), JSON.stringify(shadowState));
+l = loop(s);
+ok("shadow: the batch ends green at origin's tip", l.r.code === 0 && l.line.startsWith(`run r1: suite green at ${tipOf(s).slice(0, 12)};`), l.r.out + l.r.err);
+
+// the run name: letters, digits, _ . -, so the worker branches it names are proteus-work/<run>/<n> only
+const badRun = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1$(touch${IFS}x)", "--suite", NEVER] });
+ok("run name: one with shell syntax is a usage error", badRun.code === 2 && /not a run name/.test(badRun.err), badRun.out + badRun.err);
+
+// #226 round 3: the post-merge suite runs bare in _run; gates-cache there would key on the main checkout's tree, so it
+// refuses and runs nothing
+s = setup("gatesrun", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }]);
+t = tree(s.root, stepSha(s.line));
+const gc = run(GATES, "", { cwd: RUN(s.root), env: { CLAUDE_PROJECT_DIR: s.root }, args: [NEVER] });
+ok("gates-cache: in .worktrees/_run it refuses, exit 2, and runs nothing", t.code === 0 && gc.code === 2 && /is not the top of its checkout/.test(gc.err) && !fs.existsSync(NEVER_RAN), `${t.out} ${gc.code} ${gc.out} ${gc.err}`);
+
+// #226 round 3: _run is a repo of its own, so a suite that asks git is answered for the tested commit: Proteus's own
+// frontmatter test passes in a _run built from a clone of this repo
+const PW = lib.workdir("merge-self"), self = path.join(PW, "proteus");
+g(PW, "clone", "-q", path.join(__dirname, ".."), self);
+const selfSha = g(self, "rev-parse", "HEAD");
+t = tree(self, selfSha);
+const fm = spawnSync(process.execPath, [path.join("tests", "frontmatter.test.js")], { cwd: RUN(self), env: { ...lib.ENV, CLAUDE_PROJECT_DIR: self }, encoding: "utf8" });
+ok("self: run-tree builds _run from a clone of Proteus, its HEAD the sha", t.code === 0 && g(RUN(self), "rev-parse", "HEAD") === selfSha, `${t.code} ${t.out} ${t.err}`);
+ok("self: tests/frontmatter.test.js passes in that _run", fm.status === 0 && / 0 failed/.test(fm.stdout), `${fm.status} ${(fm.stdout || "").slice(-400)} ${(fm.stderr || "").slice(-400)}`);
 
 // across every batch above: the script ran no suite, and no git with a working tree, an index or in _run
 ok("never: proteus-merge.js ran no suite (#226)", !fs.existsSync(NEVER_RAN));

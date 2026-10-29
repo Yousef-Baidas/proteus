@@ -3,10 +3,12 @@
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
 // verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
-// conflict or any other failed merge stops the batch. It runs outside the sandbox, so it does only that, a fetch,
-// ref reads and its state file: no git call with a work tree, nothing under <common>/worktrees, nothing run from
-// .worktrees/_run or a PR (#226). It prints the commit to test and two commands for the lead to run sandboxed:
-// proteus-run-tree.js <sha>, which fills .worktrees/_run with that commit's tree, then the suite in _run.
+// conflict or any other failed merge stops the batch. It runs outside the sandbox, so it does only that, an
+// ls-remote, a fetch that writes objects only, and its state file: no git call with a work tree, no ref read by a
+// short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD and runs
+// no auto maintenance, whose worktree prune would follow a link an agent plants under <common>/worktrees. It prints
+// the commit to test and two commands for the lead to run sandboxed: proteus-run-tree.js <sha>, which checks that
+// commit out in .worktrees/_run, then the suite in _run, bare.
 // `--result pass|fail` reports that run: pass ends the batch; fail on the tip starts a bisect over the batch's merges,
 // each step printing the next commit and both commands again, until it names the first bad merge. The batch's state
 // between calls is <git-common-dir>/proteus/merge/<run>.json, which a sandboxed agent can write: every read checks
@@ -35,8 +37,10 @@ or branch is removed: the end names the merged branches left for the lead.
 State between calls: <git-common-dir>/proteus/merge/<run>.json.
 Exit 0 a step printed, green or nothing to merge; 1 on a stop, a red end or a failure; 2 on usage.`;
 
-// the worker-branch shape proteus-worktree.js and proteus-owned-check.js accept
-const WORK = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/;
+// a run name, and the worker branches of run: proteus-work/<run>/<ticket>
+const RUN = /^[A-Za-z0-9][\w.-]*$/;
+const literal = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const WORK = (run) => new RegExp(`^${literal(`${lib.CURRENT.work}${run}/`)}\\d+$`);
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // what reaches the lead's output: no control character (terminal escapes, a second line)
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
@@ -62,15 +66,16 @@ function writeState(common, run, state) {
 }
 // a batch's state as this script writes it, else false: { head, at, merged: [{ n, ticket?, head?, sha }], left, mid,
 // lo?, hi? }. head and at (the commit the lead tests) and every sha full ids; n and ticket positive integers; a head
-// only on a merged PR whose worktree is left, and left only those heads, each a worker branch; mid null while the tip
-// is tested, else lo < mid < hi, all within merged, with at that merge's sha
-function checkState(st) {
+// only on a merged PR whose worktree is left, and left only those heads, each a worker branch of run; mid null while
+// the tip is tested, else lo < mid < hi, all within merged, with at that merge's sha
+function checkState(st, run) {
+  const work = WORK(run);
   const int = (x, min) => Number.isInteger(x) && x >= min;
   const sha = (x) => typeof x === "string" && SHA.test(x);
   if (!st || typeof st !== "object" || !sha(st.head) || !sha(st.at) || !Array.isArray(st.merged) || !st.merged.length || !Array.isArray(st.left)) return false;
   if (!st.merged.every((p) => p && typeof p === "object" && int(p.n, 1) && (p.ticket === undefined || int(p.ticket, 1)) && sha(p.sha)
-    && (p.head === undefined || (typeof p.head === "string" && WORK.test(p.head))))) return false;
-  if (!st.left.every((b) => typeof b === "string" && WORK.test(b) && st.merged.some((p) => p.head === b))) return false;
+    && (p.head === undefined || (typeof p.head === "string" && work.test(p.head))))) return false;
+  if (!st.left.every((b) => typeof b === "string" && work.test(b) && st.merged.some((p) => p.head === b))) return false;
   const top = st.merged.length - 1;
   if (st.mid === null) return st.lo === undefined && st.hi === undefined && st.at === st.head;
   return int(st.lo, -1) && int(st.mid, 0) && int(st.hi, 0) && st.lo < st.mid && st.mid < st.hi && st.hi <= top && st.at === st.merged[st.mid].sha;
@@ -84,7 +89,7 @@ function readState(common, run) {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
   let state;
   try { state = JSON.parse(fs.readFileSync(fd, "utf8")); } catch { state = null; } finally { fs.closeSync(fd); }
-  if (!checkState(state)) throw new Error(`${file} is not a batch's state`);
+  if (!checkState(state, run)) throw new Error(`${file} is not a batch's state`);
   return state;
 }
 const dropState = (common, run) => { try { fs.unlinkSync(stateFile(common, run)); } catch {} };
@@ -132,6 +137,8 @@ function main() {
   const runBranches = common ? lib.runBranches(common) : [];
   const run = lib.runName(arg || runBranches[0] || "");
   if (!run) { console.error(`no run named and no open ${lib.CURRENT.branch}<run> branch`); return 2; }
+  if (!RUN.test(run)) { console.error(`run ${plain(run)}: not a run name (a letter or digit, then letters, digits, _ . -)`); return 2; }
+  const work = WORK(run);
   const names = lib.schemeOf(arg) || lib.schemeOf(runBranches.find((b) => lib.runName(b) === run) || "") || lib.CURRENT;
   const base = `${names.branch}${run}`;
   const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
@@ -146,7 +153,7 @@ function main() {
   const leftFor = (st) => {
     const out = st.merged.filter((p) => p.head && st.left.includes(p.head)).flatMap((p) => {
       const v = parse(lib.gh(["pr", "view", String(p.n), "--json", "headRefName,state"], root, 30000));
-      return v && v.state === "MERGED" && typeof v.headRefName === "string" && WORK.test(v.headRefName) ? [v.headRefName] : [];
+      return v && v.state === "MERGED" && typeof v.headRefName === "string" && work.test(v.headRefName) ? [v.headRefName] : [];
     });
     return out.length ? `; worktree and branch left for the lead: ${out.join(", ")}` : "";
   };
@@ -208,8 +215,16 @@ function main() {
   const batch = mergeOrder(ready, open);
   if (!batch.length) { say("merged none; suite not run"); return 0; }
 
-  // fetch with the human's config (credentials, proxy), as lib's release fetch; the run branch's tip as a ref read
-  const tip = () => (lib.gitTry(common, ["fetch", "origin", base], { user: true, timeout: 120000 }).ok && lib.gitTry(common, ["rev-parse", "--verify", "-q", `origin/${base}^{commit}`]).out) || "";
+  // the run branch's tip as origin has it (ls-remote, so no local ref can shadow it), then its objects fetched, with the
+  // human's config (credentials, proxy) as lib's release fetch: no ref, reflog or FETCH_HEAD written, no maintenance
+  const user = { user: true, timeout: 120000 };
+  const tip = () => {
+    const ls = lib.gitTry(common, ["ls-remote", "origin", `refs/heads/${base}`], user);
+    const sha = ls.ok ? (ls.out.split("\n").map((l) => l.split("\t")).find((f) => f[1] === `refs/heads/${base}`) || [])[0] || "" : "";
+    if (!SHA.test(sha)) return "";
+    const fetched = lib.gitTry(common, ["fetch", "-q", "--no-auto-maintenance", "--no-write-fetch-head", "--refmap=", "origin", `refs/heads/${base}`], user).ok;
+    return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
+  };
   if (!tip()) return fail(`cannot fetch origin/${base}`);
   // each linked worktree's branch, its HEAD read as a file
   const worktrees = {};
@@ -227,7 +242,7 @@ function main() {
     }
     const sha = tip();
     if (!sha) { stop = `cannot fetch origin/${base} after PR #${p.n}`; break; }
-    merged.push({ n: p.n, ...(p.ticket && { ticket: p.ticket }), ...(worktrees[p.head] && WORK.test(p.head) && { head: p.head }), sha });
+    merged.push({ n: p.n, ...(p.ticket && { ticket: p.ticket }), ...(worktrees[p.head] && work.test(p.head) && { head: p.head }), sha });
   }
   const line = `merged ${merged.length ? merged.map(name).join(", ") : "none"}${stop ? `; ${stop}` : ""}`;
   if (!merged.length) { say(`${line}; suite not run`); return 1; }
