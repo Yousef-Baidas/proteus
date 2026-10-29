@@ -340,7 +340,7 @@ const lastLine = (res) => res.out.trim().split("\n").pop();
   const h = resultOf(res).hooks || {};
   ok("the clone's pre-commit refuses a path outside the owned list", h.owned === "refused", JSON.stringify(h));
   ok("the clone's commit-msg refuses a bad message", h.msg === "refused", JSON.stringify(h));
-  ok("the clone's hooks path is the read-only /in/hooks", /\/in\/hooks$/.test(h.path || ""), h.path);
+  ok("the clone's hooks path is the read-only /in/hooks", (h.path || "").endsWith("/in/hooks"), h.path);
   ok("the owned-list copy is git-excluded in the clone", h.ignored === "passed", JSON.stringify(h));
   const files = g(R, "ls-tree", "-r", "--name-only", t.branch);
   ok("the imported commits carry no hook or owned-list file", res.code === 0 && tip(t) !== t.base && !/proteus-owned|pre-commit|commit-msg|proteus-lib/.test(files), files + res.err);
@@ -414,10 +414,10 @@ function publishRun(t, report, env = {}, keep = false) {
 {
   const t = worktree();
   const res = publishRun(t, "DONE #5 x\n", { FAKE_CLAUDE: "outside" });
-  ok("a refused import: exit 1, last line `RED #5 container: refused: ...`, nothing pushed or posted", res.code === 1 && /^RED #5 container: refused: /.test(lastLine(res)) && comments().length === 0 && prs().length === 0 && !remoteRefs().includes(`refs/heads/${t.branch}`), res.out + res.err);
+  ok("a refused import: exit 1, last line `RED #5 container: refused: ...`, nothing pushed or posted", res.code === 1 && lastLine(res).startsWith("RED #5 container: refused: ") && comments().length === 0 && prs().length === 0 && !remoteRefs().includes(`refs/heads/${t.branch}`), res.out + res.err);
   const t2 = worktree();
   const res2 = publishRun(t2, "BLOCKED #5 x\n", { FAKE_GH: "fail" });
-  ok("a failed post: exit 1 and a RED container line", res2.code === 1 && /^RED #5 container: cannot post the report on #5/.test(lastLine(res2)), res2.out + res2.err);
+  ok("a failed post: exit 1 and a RED container line", res2.code === 1 && lastLine(res2).startsWith("RED #5 container: cannot post the report on #5"), res2.out + res2.err);
 }
 
 // ---- usage

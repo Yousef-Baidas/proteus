@@ -33,14 +33,14 @@ function git(args, cwd = REPO) {
 function agentOf(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)([\s\S]*)$/.exec(text.replace(/^\uFEFF/, ""));
   if (!m) return { body: text.trim(), tools: [] };
-  const lines = m[1].split(/\r?\n/), i = lines.findIndex((l) => /^disallowedTools:/.test(l));
+  const lines = m[1].split(/\r?\n/), i = lines.findIndex((l) => l.startsWith("disallowedTools:"));
   const tools = [];
   if (i >= 0) {
     const inline = lines[i].replace(/^disallowedTools:\s*/, "").replace(/^\[|\]$/g, "").trim();
     if (inline) tools.push(...inline.split(","));
     for (const l of lines.slice(i + 1)) { const b = /^\s+-\s*(.+?)\s*$/.exec(l); if (!b) break; tools.push(b[1]); }
   }
-  return { body: m[2].trim(), tools: tools.map((t) => t.trim().replace(/^(["'])(.*)\1$/, "$2")).filter(Boolean) };
+  return { body: m[2].trim(), tools: tools.flatMap((t) => t.trim().replace(/^(["'])(.*)\1$/, "$2") || []) };
 }
 
 function main() {
