@@ -29,8 +29,10 @@ const CONTEXT = "proteus/security";
 const NONE = "no security path touched";
 const NO_BLOCK = "no security block in teams/ROUTING.md; nothing checked";
 const USAGE = "usage: proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>] | --list <report or dir>";
-const fail = (msg) => { console.error(`proteus-security: ${msg}`); return 1; };
-// head-derived text (a path, a rule id) as one inert line: neither a newline in a filename nor a filename starting with
+// every line that can hold head text (a path, a rule id, a report's parse error) prints between ::stop-commands::
+// markers (lib.fenced), so the runner runs none of it as a workflow command
+const fail = (msg) => { lib.fenced([`proteus-security: ${msg}`], console.error); return 1; };
+// and, a second layer, head text as one inert line: neither a newline in a filename nor a filename starting with
 // :: (the runner trims leading spaces) can start a workflow command
 const inert = (s) => String(s).replace(/\p{Cc}/gu, "?").replace(/^(\s*):/u, "$1?");
 
@@ -78,7 +80,7 @@ function main(argv) {
     if (argv.length !== 2) { console.error(USAGE); return 2; }
     let found;
     try { found = readFindings(argv[1]); } catch (e) { return fail(`cannot read the findings ${argv[1]}: ${e.message}`); }
-    for (const f of found) console.log(line(f));
+    if (found.length) lib.fenced(found.map(line));
     return found.length ? 1 : 0;
   }
   const at = argv.indexOf("--findings");
@@ -92,7 +94,7 @@ function main(argv) {
   const post = (state, description) => {
     const got = gh(["api", "-X", "POST", `repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", `context=${CONTEXT}`, "-f", `description=${description.slice(0, 140)}`, "--jq", ".state"]);
     if (got !== state) return fail(`posting ${CONTEXT}=${state} on ${sha.slice(0, 12)} failed (gh api returned "${got}")`);
-    console.log(`proteus-security: ${CONTEXT} = ${state}: ${description}`);
+    lib.fenced([`proteus-security: ${CONTEXT} = ${state}: ${description}`]);
     return 0;
   };
 
@@ -121,10 +123,10 @@ function main(argv) {
   const status = (() => { try { return JSON.parse(gh(["api", `repos/${repo}/commits/${sha}/status`])); } catch { return null; } })();
   const mine = ((status && status.statuses) || []).find((s) => s.context === CONTEXT);
   if (mine && mine.state === "success" && mine.description !== NONE && mine.description !== NO_BLOCK) {
-    console.log(`proteus-security: ${hits.length} security path(s) touched, and ${CONTEXT} is already signed off: ${inert(mine.description)}`);
+    lib.fenced([`proteus-security: ${hits.length} security path(s) touched, and ${CONTEXT} is already signed off: ${inert(mine.description)}`]);
     return 0;
   }
-  console.log(`proteus-security: security paths touched:\n  ${hits.join("\n  ")}`);
+  lib.fenced(["proteus-security: security paths touched:", ...hits.map((h) => `  ${h}`)]);
   const more = hits.length > 1 ? ` and ${hits.length - 1} more` : "";
   return post("failure", `needs the security verifier: ${hits[0]}${more}`);
 }

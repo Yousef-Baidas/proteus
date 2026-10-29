@@ -30,6 +30,7 @@ const fake = (tool) => `const fs = require("fs");
 const TOOL = ${JSON.stringify(tool)}, args = process.argv.slice(2), key = TOOL.replace(/-/g, "_").toUpperCase();
 fs.appendFileSync(process.env.FAKE_SCAN_LOG, JSON.stringify({ tool: TOOL, args, cwd: process.cwd() }) + "\\n");
 const found = JSON.parse(process.env["FAKE_SCAN_" + key] || "[]"), exit = +(process.env["FAKE_SCAN_EXIT_" + key] || 0);
+process.stderr.write(process.env["FAKE_SCAN_STDERR_" + key] || "");
 if (TOOL === "actionlint") { process.stdout.write(JSON.stringify(found.map(([kind, filepath]) => ({ kind, filepath, message: "m", line: 1, column: 1 })))); process.exit(exit); }
 const sarif = { version: "2.1.0", runs: [{ tool: { driver: { name: TOOL } }, results: found.map(([ruleId, uri]) => ({ ruleId, message: { text: "m" }, locations: [{ physicalLocation: { artifactLocation: { uri } } }] })) }] };
 const at = args.findIndex((a) => ["--report-path", "--sarif-output", "--output-file"].includes(a));
@@ -55,6 +56,25 @@ const scan = (args, env = {}) => {
   return lib.run(SCAN, "", { cwd: W, args, env: { FAKE_SCAN_LOG: LOG, ...env } });
 };
 const sarif = (tool) => JSON.parse(fs.readFileSync(path.join(OUT, `${tool}.sarif`), "utf8"));
+
+// the stretches of out between ::stop-commands::<token> and ::<token>::, cut into lines as the runner reads them
+// (a bare \r ends one too), and the lines outside every stretch, markers excluded
+const fences = (out) => {
+  const lines = String(out).split(/\r\n|\r|\n/), inside = [], outside = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^::stop-commands::([0-9a-f]{32,})$/.exec(lines[i]), end = m ? lines.indexOf(`::${m[1]}::`, i + 1) : -1;
+    if (end < 0) { outside.push(lines[i]); continue; }
+    inside.push({ token: m[1], lines: lines.slice(i + 1, end) });
+    i = end;
+  }
+  return { inside, outside, tokens: inside.map((f) => f.token) };
+};
+// head text inside a stretch, no command syntax outside one, and no stretch holding its own token
+const fencedIn = (out, ...texts) => {
+  const f = fences(out);
+  return texts.every((t) => f.inside.some((x) => x.lines.some((l) => l.includes(t)))) && !f.outside.some((l) => /^\s*::|##\[/.test(l))
+    && f.inside.every((x) => !x.lines.some((l) => l.toLowerCase().includes(x.token)));
+};
 
 // a token shaped like a GitHub PAT, made at run time so no secret sits in this file
 const token = () => "ghp_" + [...crypto.randomBytes(36)].map((b) => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[b % 62]).join("");
@@ -129,11 +149,28 @@ fs.rmSync(path.join(OUT, "extra.sarif"));
 fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "gitleaks" } }, results: [{ ruleId: "r\n::stop-commands::x", locations: [{ physicalLocation: { artifactLocation: { uri: "a\n::error::spoof.js" } } }] }] }] }));
 r = sec(["src/cfg.js"], "--findings", OUT);
 ok("security: a path or rule from the head prints and posts as one inert line, never a workflow command",
-  r.status.state === "failure" && !/^\s*::/m.test(r.out) && /a\?::error::spoof\.js \(gitleaks r\?::stop-commands::x\)/.test(r.out), r.out + r.err);
+  r.status.state === "failure" && fencedIn(r.out, "a?::error::spoof.js") && /a\?::error::spoof\.js \(gitleaks r\?::stop-commands::x\)/.test(r.out), r.out + r.err);
 fs.rmSync(path.join(OUT, "evil.sarif"));
 r = sec(["::warning::x/auth/y.js"]);
 ok("security: a changed path that itself starts with :: prints as an inert line",
-  r.status.state === "failure" && !/^\s*::/m.test(r.out) && /^ {2}\?:warning::x\/auth\/y\.js \(\*\*\/auth\/\*\*\)$/m.test(r.out), r.out + r.err);
+  r.status.state === "failure" && /^ {2}\?:warning::x\/auth\/y\.js \(\*\*\/auth\/\*\*\)$/m.test(r.out)
+  && fencedIn(r.out, ":warning::x/auth/y.js"), r.out + r.err);
+fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "semgrep" } }, results: [{ ruleId: "r", locations: [{ physicalLocation: { artifactLocation: { uri: "src/##[add-mask]x.js" } } }] }] }] }));
+r = sec(["src/auth/##[warning]x.js"], "--findings", OUT);
+const r2 = sec(["src/auth/##[warning]x.js"], "--findings", OUT);
+ok("security: a ##[cmd] anywhere in a changed path or a finding's path prints only between stop-commands markers",
+  r.status.state === "failure" && fencedIn(r.out, "src/auth/##[warning]x.js", "src/##[add-mask]x.js"), r.out + r.err);
+ok("security: the stop-commands token is new each run", fences(r.out).tokens.length > 0 && !fences(r.out).tokens.some((t) => fences(r2.out).tokens.includes(t)), r.out + r2.out);
+fs.rmSync(path.join(OUT, "evil.sarif"));
+{
+  const hookLib = require(path.join(HOOKS, "proteus-lib.js"));
+  const seen = [], tokens = ["a".repeat(32), "b".repeat(32)];
+  hookLib.fenced([`x ::${"A".repeat(32)}:: y`], (l) => seen.push(l), () => tokens.shift());
+  ok("security: a token the head text contains is drawn again", seen.join("\n") === `::stop-commands::${"b".repeat(32)}\nx ::${"A".repeat(32)}:: y\n::${"b".repeat(32)}::`, seen.join("\n"));
+  const lens = new Set();
+  hookLib.fenced(["x"], (l) => { const m = /^::stop-commands::(.*)$/.exec(l); if (m) lens.add(m[1].length); });
+  ok("security: the default token is 16 random bytes in hex", lens.has(32), [...lens].join());
+}
 fs.writeFileSync(path.join(OUT, "semgrep.json"), JSON.stringify({ results: [{ check_id: "js.eval", path: "::x.js" }] }));
 r = sec(["::x.js"], "--findings", OUT);
 ok("security: a semgrep finding in a changed file named ::x.js still counts", r.status.state === "failure" && /\?:x\.js \(semgrep js\.eval\)/.test(r.out), r.out + r.err);
@@ -162,7 +199,7 @@ ok("baseline: and the ratchet sees it as new too", cmpCve.code === 1, cmpCve.out
 fs.rmSync(BL);
 const list = lib.run(SEC, "", { cwd: BASEDIR, args: ["--list", OUT] });
 ok("security: --list prints one line per finding and exits 1; an empty directory exits 0",
-  list.code === 1 && list.out.trim() === "finding gitleaks github-pat src/cfg.js" && lib.run(SEC, "", { cwd: BASEDIR, args: ["--list", BIN] }).code === 0, list.out + list.err);
+  list.code === 1 && list.out.split(/\r?\n/).filter((l) => l.startsWith("finding ")).join() === "finding gitleaks github-pat src/cfg.js" && fencedIn(list.out, "finding gitleaks") && lib.run(SEC, "", { cwd: BASEDIR, args: ["--list", BIN] }).code === 0, list.out + list.err);
 fs.writeFileSync(path.join(W, "bad.json"), JSON.stringify({ nope: 1 }));
 r = sec(["src/cfg.js"], "--findings", path.join(W, "bad.json"));
 ok("security: a report that is neither SARIF nor semgrep JSON exits 1 with nothing posted", r.code === 1 && /neither SARIF nor a semgrep JSON report/.test(r.err) && !r.status.state, r.err);
@@ -219,6 +256,23 @@ else {
 
 r = scan(pr(), { FAKE_SCAN_EXIT_SEMGREP: "2" });
 ok("scan: a scanner that errors fails the scan", r.code === 1 && /semgrep exited 2; its findings are unknown/.test(r.err), r.out + r.err);
+r = scan(pr(), { FAKE_SCAN_EXIT_SEMGREP: "2", FAKE_SCAN_STDERR_SEMGREP: "bad file src/x.js\r::error::x\n::warning::y\nsrc/##[add-mask]z.js\n" });
+ok("scan: a failing scanner's stderr, a bare \\r, a :: line and a ##[cmd] in it, prints only between stop-commands markers",
+  r.code === 1 && fencedIn(r.err, "::error::x", "::warning::y", "##[add-mask]z.js", "semgrep exited 2") && fencedIn(r.out), r.out + r.err);
+
+// gitleaks reports no leaks for a commit it cannot find, so a head the mirror lacks fails the scan
+const LOST = path.join(W, "lost");
+g(W, "init", "-q", "-b", "main", LOST);
+fs.writeFileSync(path.join(LOST, "a.txt"), "a\n");
+g(LOST, "add", "-A"); g(LOST, "commit", "-qm", "base");
+const lostBase = g(LOST, "rev-parse", "HEAD");
+fs.writeFileSync(path.join(LOST, "a.txt"), "b\n");
+g(LOST, "add", "-A"); g(LOST, "commit", "-qm", "head");
+const lostHead = g(LOST, "rev-parse", "HEAD");
+g(LOST, "reset", "-q", "--hard", lostBase);
+r = scan(["--dir", LOST, "--out", OUT, "--base", lostBase, "--head", lostHead]);
+ok("scan: a head commit the gitleaks mirror lacks fails the scan, gitleaks not run",
+  r.code === 1 && new RegExp(`lacks the commit ${lostHead}; its findings are unknown`).test(r.err) && !call("gitleaks") && !fs.existsSync(path.join(OUT, "gitleaks-head.git")), r.out + r.err);
 r = scan(pr("b".repeat(40), HEAD_SHA));
 ok("scan: a base the checkout lacks fails before any scanner runs", r.code === 1 && /git cannot list the changed files/.test(r.err) && !calls().length, r.err);
 

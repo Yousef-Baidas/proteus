@@ -17,7 +17,9 @@
 // working tree; osv-scanner's and actionlint's config from <out>; zizmor --no-config --no-ignores).
 // --all scans every tracked file, lockfile and workflow instead, for the baseline's record (enforcement.md §4);
 // gitleaks, which reads a PR's commits, is skipped there.
-// Exit 0 every tool ran or was skipped, 1 a tool failed or git could not list the changes, 2 bad usage.
+// A failure that quotes git's or a scanner's output prints it between ::stop-commands:: markers (lib.fenced).
+// Exit 0 every tool ran or was skipped, 1 a tool failed, git could not list the changes or the mirror lacks the
+// base or head commit, 2 bad usage.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -30,7 +32,8 @@ const LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.loc
   "gradle.lockfile", "packages.lock.json", "conan.lock", "renv.lock"]);
 const SHA = /^[0-9a-f]{40}$/i;
 const say = (msg) => console.log(`proteus-scan: ${msg}`);
-const fail = (msg) => { console.error(`proteus-scan: ${msg}`); return 1; };
+// a failure, fenced (lib.fenced): it may quote git's or a scanner's output, and so a head path; quoted lines go first
+const fail = (msg, quoted = []) => { lib.fenced([...quoted, msg].map((l) => `proteus-scan: ${l}`), console.error); return 1; };
 
 // name runs from PATH: a file there, with a PATHEXT extension on win32
 const onPath = (name) => (process.env.PATH || "").split(path.delimiter).filter(Boolean).some((d) =>
@@ -106,15 +109,20 @@ function main(argv) {
       fs.rmSync(HEAD_GIT, { recursive: true, force: true });
       const c = lib.spawnArgv("git", ["clone", "-q", "--mirror", "--no-local", dir, HEAD_GIT], { encoding: "utf8", windowsHide: true });
       if (c.error || c.status !== 0) return fail(`git cannot copy ${dir} for ${name}: ${(c.stderr || (c.error && c.error.message) || "").trim()}`);
+      // gitleaks logs an unknown commit and reports no leaks, so a commit missing from the mirror fails here instead
+      const missing = [opt.base, opt.head].filter((s) => lib.spawnArgv("git", ["-C", HEAD_GIT, "cat-file", "-e", `${s}^{commit}`], { encoding: "utf8", windowsHide: true }).status !== 0);
+      if (missing.length) {
+        fs.rmSync(HEAD_GIT, { recursive: true, force: true });
+        return fail(`the copy of ${dir} for ${name} lacks the commit ${missing.join(" and ")}; its findings are unknown`);
+      }
     }
     const r = lib.spawnArgv(name, args, { cwd: t.bare ? out : dir, encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_SCAN_TIMEOUT", 1800000) });
     if (t.bare) fs.rmSync(HEAD_GIT, { recursive: true, force: true });
     const why = `${name} exited ${r.status === null ? (r.error && r.error.message) || r.signal : r.status}`;
     if ((t.clean || []).includes(r.status)) { say(`${name}: nothing to check in ${list.length} ${what} file(s)`); continue; }
     if (r.error || !(name === "actionlint" ? [0, 1] : t.ok).includes(r.status)) {
-      // its stderr may quote a head path; each line prefixed, so none starts a workflow command
-      for (const l of String(r.stderr || "").split(/\r?\n/).filter(Boolean)) console.error(`proteus-scan: ${name}: ${l}`);
-      return fail(`${why}; its findings are unknown`);
+      // its stderr may quote a head path: fenced with the failure
+      return fail(`${why}; its findings are unknown`, String(r.stderr || "").split(/\r?\n/).filter(Boolean).map((l) => `${name}: ${l}`));
     }
     let sarif;
     try {

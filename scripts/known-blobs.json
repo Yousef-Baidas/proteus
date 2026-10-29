@@ -554,6 +554,7 @@
       "ad09178ee5e0d9b4a1bba0991fbab3354bdbc0ba",
       "b22de604f5d49141a94303d05e777933bc4482df",
       "b49f7148cbf5d4d2c0de17dc66f1d896d0151685",
+      "bbfa72b8f30e1a2824a1cf847a32befe7b258004",
       "bfb87b64d2f37b565b5ec23ad61a712c4fe13ab4",
       "c00fe191d580e77e95f2f9fa6cb474c9acc7fad4",
       "c1051f5b047d5b3acf8c9bd35c55fac1256504e1",
@@ -594,6 +595,7 @@
       "54a3ca9cc24b0833155a8a1a8ddb47431cbaba0a"
     ],
     "templates/hooks/proteus-scan.js": [
+      "20de203c577909fa4f61fae15e0c7d75598fb49c",
       "4d98a177191ef9a5ae651a7f452698126973f70f"
     ],
     "templates/hooks/proteus-scratch.js": [
@@ -605,6 +607,7 @@
       "c164087b9bb85495d72ae7ae35eb052c039df9c3"
     ],
     "templates/hooks/proteus-security.js": [
+      "54b55e4897468e7fe1935a8eff0bed2bfee70043",
       "b36a95997b7cd1d1604b9f6e4d29f0f600ba09b4",
       "d46aedf93c9fcd2678c5c6d6b62087c2557ae72c"
     ],
