@@ -356,6 +356,39 @@ g(REPO, "config", "--unset", "branch.release.merge");
 s = sign("MERGE");
 ok("#182 re-check: ...until the key is put back by hand, with no call of that agent", s.code === 0, s.err);
 
+// #229: a record with only a missing snapshot on it. Once its agent has ended, the signoff snapshots the agent's
+// worktree again and compares it with the branch's commit
+const WT7 = path.join(REPO, ".worktrees", "r1-7");
+g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/7", WT7, "main");
+const lost = { key: "agent-s7", agent: "s7", session: "s0", worktree: fs.realpathSync(WT7), branch: "proteus-work/r1/7", open: true, at: new Date().toISOString(), history: [], items: [{ kind: "snapshot", reported: true }] };
+fs.writeFileSync(path.join(STATE, "tamper", "agent-s7.json"), JSON.stringify(lost));
+fs.writeFileSync(PR, JSON.stringify({ head: HEAD, branch: "proteus-work/r1/7", files: [], statuses: {} }));
+const flight7 = path.join(STATE, "guard-flight", "s7-call.json"), beat7 = path.join(STATE, "beats", "s7.json");
+fs.mkdirSync(path.dirname(flight7), { recursive: true });
+fs.writeFileSync(flight7, JSON.stringify({ id: "s7-call", key: "agent-s7", agent: "s7", own: lost.worktree, at: Date.now() }));
+s = sign("MERGE");
+ok("#229 snapshot: a clean worktree does not clear the record while its agent has a call in flight", s.code === 1 && s.err.includes("the guard's snapshot"), s.err);
+fs.rmSync(flight7);
+fs.mkdirSync(path.dirname(beat7), { recursive: true });
+fs.writeFileSync(beat7, JSON.stringify({ agent: "s7", last: new Date().toISOString() }));
+s = sign("MERGE");
+ok("#229 snapshot: ...nor while its beat says it is still running", s.code === 1 && s.err.includes("the guard's snapshot"), s.err);
+fs.writeFileSync(beat7, JSON.stringify({ agent: "s7", last: new Date().toISOString(), ended: new Date().toISOString() }));
+s = sign("MERGE");
+ok("#229 snapshot: once the agent has ended, a worktree matching the branch's commit does not refuse MERGE", s.code === 0, s.err);
+g(WT7, "checkout", "-q", "--detach");
+s = sign("MERGE");
+ok("#229 snapshot: ...one whose worktree is no longer on the branch does, saying so", s.code === 1 && s.err.includes("HEAD is not on proteus-work/r1/7"), s.err);
+g(WT7, "checkout", "-q", "proteus-work/r1/7");
+fs.mkdirSync(path.join(WT7, ".claude", "agents"), { recursive: true });
+fs.writeFileSync(path.join(WT7, ".claude", "agents", "y.md"), "x");
+fs.writeFileSync(path.join(WT7, ".github", "workflows", "ci.yml"), "on: pull_request\n");
+s = sign("MERGE");
+ok("#229 snapshot: ...a worktree with an untracked or dirty guarded path does, naming each", s.code === 1 && /open guard-violation record/.test(s.err) && s.err.includes(slash(path.join(lost.worktree, ".claude", "agents", "y.md"))) && s.err.includes(slash(path.join(lost.worktree, ".github", "workflows", "ci.yml"))), s.err);
+g(REPO, "worktree", "remove", "--force", WT7);
+s = sign("MERGE");
+ok("#229 snapshot: ...and so does one whose worktree is gone, saying how the human clears it", s.code === 1 && /worktree .* is gone/.test(s.err) && s.err.includes("/tamper/agent-s7.json") && /delete/.test(s.err), s.err);
+
 // registration
 const claudeH = require(path.join(SRC, "proteus-harness-claude.js")), codexH = require(path.join(SRC, "proteus-harness-codex.js"));
 ok("wiring: both adapters register the check on PostToolUse Bash and answer with postBlock",
