@@ -6,11 +6,13 @@
 //   wall-clock    issue created → closed (open tickets: so far, marked open)
 // Bounce and escalation rate: share of tickets with at least one. The team rows (profile:<team>, difficulty:<d>)
 // are what tunes ROUTING.md and the difficulty call.
+// --save <file> also writes what it read from the tracker, as {run, issues, prs, logs} with each PR's checks and the
+// run log's comments, for proteus-retro.js, which reads files only.
 // Cost comes from ccusage at the version enforcement.md §5 pins (Codex: @ccusage/codex), summed over the
 // sessions the journal saw a human message in between the run log's creation and the last ticket's close.
 // ccusage reports per session, not per ticket, so cost per ticket is that sum over closed tickets: an
 // average. --cost-json reads a saved `ccusage session --json`; --no-cost skips it. Exit 1 when the tracker
-// cannot be read.
+// cannot be read or --save cannot write.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -19,7 +21,7 @@ lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hook
 const ad = require(path.join(__dirname, "proteus-harness.js"));
 
 const CCUSAGE = { claude: ["-y", "ccusage@20.0.26", "session", "--json"], codex: ["-y", "@ccusage/codex@19.0.0", "session", "--json"] };
-const USAGE = "usage: node proteus-close-report.js [run] [--no-cost | --cost-json <file>]";
+const USAGE = "usage: node proteus-close-report.js [run] [--no-cost | --cost-json <file>] [--save <file>]";
 
 let arg = "";
 const HELP = `${USAGE}
@@ -28,13 +30,16 @@ Markdown for the run-log issue and the close PR body: one row per ticket, one pe
   [run]               the run; default the open proteus/<run> branch
   --no-cost           skip the ccusage cost columns
   --cost-json <file>  read a saved \`ccusage session --json\` instead of running ccusage
-Exit 1 when the tracker cannot be read; 2 on bad usage or no run.`;
+  --save <file>       also write the tracker data it read, with PR checks and run-log comments, for proteus-retro.js
+Exit 1 when the tracker cannot be read or --save cannot write; 2 on bad usage or no run.`;
 if (process.argv[2] === "--help" || process.argv[2] === "-h") { console.log(HELP); process.exit(0); }
 let cost = "ccusage";
+let save = "";
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--no-cost") cost = "";
   else if (argv[i] === "--cost-json" && argv[i + 1]) cost = argv[++i];
+  else if (argv[i] === "--save" && argv[i + 1]) save = argv[++i];
   else if (!argv[i].startsWith("-") && !arg) arg = argv[i];
   else { console.error(USAGE + "\n(--help explains each flag)"); process.exit(2); }
 }
@@ -45,28 +50,20 @@ const runBranches = common ? lib.runBranches(common) : [];
 const run = lib.runName(arg || runBranches[0] || "");
 if (!run) { console.error(`no run named and no open ${lib.CURRENT.branch}<run> branch`); process.exit(2); }
 const names = lib.schemeOf(arg) || lib.schemeOf(runBranches.find((b) => lib.runName(b) === run) || "") || lib.CURRENT;
-const NOT_TICKET = new Set([names.review, names.log, names.debt, names.question]);
 
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,createdAt,closedAt,milestone,labels,comments", "--limit", "500"], root, 30000));
 if (!Array.isArray(issues)) { console.error(`run ${run}: tracker unreachable (gh issue list failed)`); process.exit(1); }
-const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "all", "--json", "number,headRefName,body,reviews,comments", "--limit", "500"], root, 30000)) || [];
-const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", "number,title,createdAt", "--limit", "100"], root, 10000)) || [];
-
-const tickets = issues.filter((i) => i.milestone && String(i.milestone.title).startsWith(run + "/") && !String(i.title || "").startsWith("Revision ") &&
-  !(i.labels || []).some((l) => NOT_TICKET.has(l.name))).sort((a, b) => a.number - b.number);
-
-// a PR's ticket: the number its head ends in (proteus-work/<run>/<id>, or <run>-<id> before the rename), else Closes #n
-const workHeads = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`];
-function ticketOf(pr) {
-  const head = String(pr.headRefName || "");
-  const pre = workHeads.find((p) => head.startsWith(p));
-  const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec(pr.body || "");
-  return m ? +m[1] : 0;
+const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "all", "--json", `number,headRefName,body,reviews,comments${save ? ",statusCheckRollup" : ""}`, "--limit", "500"], root, 30000)) || [];
+const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", `number,title,createdAt${save ? ",comments" : ""}`, "--limit", "100"], root, 10000)) || [];
+if (save) {
+  try { fs.writeFileSync(save, JSON.stringify({ run, issues, prs, logs }) + "\n"); } catch (e) { console.error(`cannot write ${save}: ${e.message}`); process.exit(1); }
 }
-const firstWord = (re) => (c) => re.test(String((c && c.body) || ""));
-const BOUNCE = firstWord(/^\s*(\*\*)?BACK-TO-WORKER\b/);
-const ESCALATION = firstWord(/^\s*(\*\*)?(RED|CONTRACT-WRONG)\b/);
+
+const tickets = lib.runTickets(issues, run, names);
+const ticketOf = (pr) => lib.prTicket(pr, run, names);
+const BOUNCE = lib.verdictIs("bounce");
+const ESCALATION = lib.verdictIs("escalation");
 const label = (i, prefix) => ((i.labels || []).map((l) => l.name).find((n) => n.startsWith(prefix)) || "").slice(prefix.length);
 const isOpen = (i) => String(i.state).toUpperCase() === "OPEN";
 const now = Date.now();
@@ -121,7 +118,7 @@ console.log(out.join("\n"));
 
 // the sessions this run's lead had: journal entries (session ids of human messages) inside the run's window
 function runSessions() {
-  const log = logs.find((l) => new RegExp(`(^|[\\s:])${run.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`).test(String(l.title || "")));
+  const log = lib.runLogOf(logs, run);
   const starts = tickets.map((i) => Date.parse(i.createdAt || "")).filter(Number.isFinite);
   const from = (log && Date.parse(log.createdAt || "")) || (starts.length ? Math.min(...starts) : 0);
   const ends = tickets.map((i) => (isOpen(i) ? now : Date.parse(i.closedAt || ""))).filter(Number.isFinite);
