@@ -287,8 +287,10 @@ g(MWT, "reset", "-q", "--hard", head0);
 // Dated commits make the base and the PR share two merge bases, the newer one the run's own src/r.txt, so a diff
 // of the range alone would list main's docs/x.md as the PR's
 const CREPO = path.join(W, "merge-ci");
+// dated runs under the suite's ENV like g: a runner's system core.autocrlf=true (Windows) would check out
+// merged files with CRLF that g, which ignores system config, then sees as local changes
 let tick = 0;
-const dated = (dir, ...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8", env: { ...process.env, ...ID, GIT_COMMITTER_DATE: `${1700000000 + 60 * ++tick} +0000` } });
+const dated = (dir, ...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8", env: { ...lib.ENV, GIT_COMMITTER_DATE: `${1700000000 + 60 * ++tick} +0000` } });
 const cput = (dir, file, msg) => { put(dir, file, `${file}\n`); g(dir, "add", "-A"); dated(dir, "commit", "-qm", msg, "--no-verify"); };
 g(W, "init", "-q", "-b", "main", CREPO);
 cput(CREPO, "src/a.txt", "init");
