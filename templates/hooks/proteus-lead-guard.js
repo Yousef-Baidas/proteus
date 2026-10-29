@@ -6,7 +6,8 @@
 //    owned-path records (.proteus/owned/<id>).
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
-//    floor (Sonnet by default, so Haiku) is refused.
+//    floor (Sonnet by default, so Haiku) is refused. So is a `proteus-container.js run` (the lead's shell)
+//    without --model, or with one that is not the build or judge tier's (containerDenial).
 // 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
 //    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
 //    teams/skills-lock.json (lib.lockDrift), no proteus worker or verifier spawn either; helpers (scout, guide, anything not proteus-*-worker/verifier) pass.
@@ -26,7 +27,7 @@
 // 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
+//   no background Bash, no Monitor, no proteus-container.js (runsContainer), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
 //   through xargs, find -exec, git checkout/restore/apply/am/stash, patch, rm -r/mv/rsync of a parent). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
@@ -73,7 +74,7 @@ else lib.run((ev, ad) => {
   if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
+    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || (ev.tool === "shell" && runsContainer(ev.command) && CONTAINER_MSG);
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
@@ -85,7 +86,7 @@ else lib.run((ev, ad) => {
     const secret = lib.secretDenial(ev);
     if (secret) ad.deny(secret);
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
-    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd);
+    const why = lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
     if (why) ad.deny(why);
     return shellCheck("leadStart", ev);
   }
@@ -144,6 +145,59 @@ function modelDenial(c, name) {
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;
   if (r < c.floor) return `model "${name}" is under the floor (${c.floorName}); it does not produce or review work: ${use}.`;
+  return "";
+}
+
+// only the lead runs proteus-container.js (#80): excludedCommands runs it outside the sandbox, with the host's git and gh.
+// Any copy, any subcommand, as the program or a script an interpreter runs, inside sh -c too; a command too complex
+// to split is refused when it names the runner at all
+const CONTAINER_MSG = "proteus-container.js is the lead's: it runs outside the sandbox with the host's git and gh. Report what you need and stop.";
+const RUNNER = /(^|[\\/])proteus-container\.js$/;
+const LAUNCH = new Set(["env", "timeout", "nice", "nohup", "sudo", "exec", "command", "time", "stdbuf", "xargs"]);
+const INTERP = /^(node|nodejs|bun|deno)$/;
+const SHELLS = /^(sh|bash|zsh|dash|ksh|fish|pwsh|powershell|cmd)$/;
+function runsContainer(command, depth = 0) {
+  if (!/proteus-container/.test(command)) return false;
+  let cmds;
+  try { cmds = lib.shellCommands(command); } catch { return true; }
+  const prog = (w) => String(w).split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+  return cmds.some((w) => {
+    let lead = true;
+    for (let i = 0; i < w.length; i++) {
+      const p = prog(w[i]);
+      const interp = w.slice(0, i).some((x) => INTERP.test(prog(x)));
+      if (RUNNER.test(w[i]) && (lead || interp)) return true;
+      // node -e / --require naming it
+      if (interp && /proteus-container/.test(w[i]) && /^(-e|--eval|-p|--print|-r|--require|--import)$/.test(w[i - 1])) return true;
+      if (SHELLS.test(p) && depth < 3) { const c = w.findIndex((x, j) => j > i && /^(-[a-z]*c[a-z]*|-command|\/c)$/i.test(x)); if (c > 0 && runsContainer(w.slice(c + 1).join(" "), depth + 1)) return true; }
+      if (!(LAUNCH.has(p) || /^[A-Za-z_]\w*=/.test(w[i]) || (i > 0 && w[i].startsWith("-")) || /^\d+$/.test(w[i]))) lead = false;
+    }
+    return false;
+  });
+}
+
+// rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
+// (an escalation), on the ladder as an Agent call's model would be
+function containerDenial(ev) {
+  if (!/proteus-container/.test(ev.command)) return "";
+  let cmds = [];
+  try { cmds = lib.shellCommands(ev.command); } catch {}
+  for (const w of cmds) {
+    const i = w.findIndex((x) => /(^|[\\/])proteus-container\.js$/.test(x));
+    if (i < 0 || w[i + 1] !== "run") continue;
+    let model = "";
+    for (let j = i + 2; j < w.length; j++) {
+      if (w[j] === "--model") model = w[j + 1] || "";
+      else if (w[j].startsWith("--model=")) model = w[j].slice(8);
+    }
+    const c = lib.modelCaps(ev, lib.projectRoot(ev));
+    if (!model) return `proteus-container.js run needs --model <the build tier's model${c.tiers.build.model ? `, "${c.tiers.build.model}"` : ""}>.`;
+    const why = modelDenial(c, model);
+    if (why) return `proteus-container.js run: ${why}`;
+    if (!c.ladder.length) continue;
+    const r = lib.rungOf(c.ladder, model, c.aliases), ok = [c.tiers.build, c.tiers.judge].map((t) => lib.rungOf(c.ladder, t.model, c.aliases));
+    if (!ok.includes(r)) return `proteus-container.js run: --model "${model}" is neither the build tier's "${c.tiers.build.model}" (tickets) nor the judge tier's "${c.tiers.judge.model}" (an escalation).`;
+  }
   return "";
 }
 

@@ -79,13 +79,16 @@ if (WIN) {
   ok("profile: token env vars kept from sandboxed commands", ["GH_TOKEN", "GITHUB_TOKEN", "NPM_TOKEN", "ANTHROPIC_API_KEY"].every((n) => ((sb.credentials || {}).envVars || []).some((e) => e.name === n && e.mode === "deny")));
   ok("profile: WebFetch and exec or fetch MCP servers denied", ["WebFetch", "mcp__plugin_context-mode_context-mode__*", "mcp__plugin_playwright_playwright__*"].every((x) => deny.includes(x)));
 
-  // 1 and 2: excludedCommands name only the absolute copy, outside every writable path, Edit-denied
+  // 1 and 2: excludedCommands name only the absolute copies, outside every writable path, Edit-denied
   const bins = files(path.join(profileDir(), "bin"));
   const bin = path.join(profileDir(), "bin", bins[0] || "x"), copy = path.join(bin, "proteus-worktree.js");
   ok("copy: proteus-worktree.js and what it requires copied to proteus-sandbox/bin/<hash>",
     bins.length === 1 && ["proteus-worktree.js", "proteus-lib.js", "proteus-harness.js", "proteus-harness-claude.js", "proteus-confine.js", "worktree-settings.local.json"].every((f) => fs.existsSync(path.join(bin, f))), bins.join(" "));
   ok("copy: sandbox-root.json names the repo", read(path.join(bin, "sandbox-root.json")).root === realRepo);
-  ok("profile: excludedCommands hold only the absolute copy", excluded.length > 0 && excluded.every((c) => c === `node ${copy} *` || c === `node ${JSON.stringify(copy)} *`), JSON.stringify(excluded));
+  const box = path.join(bin, "proteus-container.js"), named = (c, f) => c === `node ${f} *` || c === `node ${JSON.stringify(f)} *`;
+  ok("profile: excludedCommands hold only the absolute copies", excluded.length > 0 && excluded.every((c) => named(c, copy) || named(c, box)), JSON.stringify(excluded));
+  ok("copy: the container runner and its entrypoint are in bin, and excludedCommands name the runner (#80)",
+    ["proteus-container.js", "proteus-container-entry.js"].every((f) => fs.existsSync(path.join(bin, f))) && excluded.some((c) => named(c, box)), JSON.stringify(excluded));
   ok("profile: no relative or install.js entry in excludedCommands", !excluded.some((c) => /\.claude\/hooks|install\.js/.test(c)));
   ok("profile: the copy is outside every writable path", !allowWrite.some((w) => bin.startsWith(w + path.sep) || bin === w));
   ok("profile: Edit denied on the copies and the profile", deny.includes(`${rule("Edit", profileDir())}/**)`), deny.slice(0, 30).join(" "));
