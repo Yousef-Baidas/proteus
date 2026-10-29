@@ -31,6 +31,20 @@ if (CD) {
   if (!fs.existsSync(hosts)) { process.stderr.write("gh: not logged in\n"); process.exit(1); }
   if (/^api user --jq \.login$/.test(a)) { process.stdout.write(fs.readFileSync(hosts, "utf8") + "\n"); process.exit(0); }
 }
+// FAKE_GH_PRS (a JSON file [{number, base, head, title, body}]): `pr list --head <b> --state open --json number -q .[].number`
+// prints that head's PR numbers; `pr create --base <b> --head <h> --title <t> --body-file -` adds one, its body from stdin
+if (process.env.FAKE_GH_PRS) {
+  const fs = require("fs"), file = process.env.FAKE_GH_PRS, prs = JSON.parse(fs.readFileSync(file, "utf8"));
+  let m;
+  if ((m = /^pr list --head (\S+) --state open --json number -q \.\[\]\.number$/.exec(a))) { process.stdout.write(prs.filter((p) => p.head === m[1]).map((p) => `${p.number}\n`).join("")); process.exit(0); }
+  if ((m = /^pr create --base (\S+) --head (\S+) --title (.+) --body-file -$/.exec(a))) {
+    const number = 100 + prs.length;
+    prs.push({ number, base: m[1], head: m[2], title: m[3], body: fs.readFileSync(0, "utf8") });
+    fs.writeFileSync(file, JSON.stringify(prs));
+    process.stdout.write(`https://github.com/o/r/pull/${number}\n`);
+    process.exit(0);
+  }
+}
 // FAKE_GH_ISSUES (a JSON file {<n>: {title, labels: [name], comments: [{author: {login}, body}]}}) answers an issue's title,
 // labels and comments; `issue comment <n> --body-file -` appends stdin as a comment by the current login and prints its URL;
 // `issue list --state all --search <q> in:title` matches titles containing <q>, `issue create --title` adds the next number

@@ -475,6 +475,8 @@ const ALLOW = {
   "proteus-container.js:prepare": "a fresh mkdtemp dir under <common>/proteus/scratch, its parents lstat'd real dirs: a lead CLI, never a hook (#80)",
   "proteus-container.js:dropBundles": "unlinks the two bundles in that fresh dir; unlink removes a link, never its target",
   "proteus-container.js:buildCmd": "a fresh mkdtemp build context in os.tmpdir(), removed after",
+  "proteus-container.js:copyHooks": "in/hooks under the fresh mkdtemp dir prepare made: copies of the worktree's hook scripts and owned list (#80)",
+  "proteus-container.js:runCmd": "run.json and agent.md in that fresh in/ dir, read-only to the container (#80)",
   "proteus-container-entry.js:main": "/out inside the container, never run on the host (#80)",
   "proteus-scratch.js:cli": "--path makes <common>/proteus/scratch/<key> from the caller's own (sandboxed) shell",
   "proteus-scratch.js:removeStray": "--sweep, run only from the lead's own (sandboxed) shell (#237): a stray directly in the temp dir, inode and owner checked",
