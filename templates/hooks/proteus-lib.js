@@ -513,20 +513,34 @@ function pentestInScope(url, targets = []) {
   if (u.hostname === "localhost" || u.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(u.hostname)) return true;
   return targets.some((t) => { const v = pentestURL(t); return !!v && v.origin === u.origin; });
 }
-// a subagent's scanner run (strix, ZAP's scripts, under python, docker or any wrapper): every URL argument, and a
-// -t / --target value without a scheme that names a host rather than a path, must be in scope
+// a subagent's scanner run (strix, ZAP's scripts, under python, docker or any wrapper): every word holding :// (an env
+// assignment or wrapper option before the scanner too) and every -t / --target value (-t<v>, --target=<v>, --tar)
+// must be in scope, a bare value judged as http://<v> unless it starts ./, ../ or /. A word the shell builds at run
+// time ($VAR, $( ), backticks, find's or xargs's {}) or xargs before the scanner cannot be judged, so it is refused.
+// Defence in depth, not the boundary (enforcement.md §10c).
 const PENTEST_TOOLS = /^(strix|zap-baseline\.py|zap\.sh|zap-full-scan\.py)$/;
 const PENTEST_MSG = (url) => `pentest target out of scope: ${url} (localhost or ## Learned pentest-targets only)`;
-function pentestDenial(root, words) {
+const PENTEST_BUILT = (what) => `proteus: \`${what}\` names a target the shell builds when it runs ($VAR, $( ), backticks, {} or xargs), so the guard cannot judge its scope: spell the target out; the guard can't expand shell variables.`;
+const TARGET_OPT = /^--t(?:a(?:r(?:g(?:e(?:t)?)?)?)?)?$/;
+function pentestDenial(root, words, line = "") {
   const i = words.findIndex((w) => PENTEST_TOOLS.test(progName(w)));
   if (i < 0) return "";
+  const built = words.find((w) => /[$`]|\{\}/.test(String(w))) ?? (String(line).includes("`") ? "`…`" : undefined);
+  if (built !== undefined) return PENTEST_BUILT(`${progName(words[i])} ${built}`);
+  if (words.slice(0, i).some((w) => progName(w) === "xargs")) return PENTEST_BUILT(`xargs ${progName(words[i])}`);
   let targets = null;
-  for (let k = i + 1; k < words.length; k++) {
-    const w = String(words[k]), flag = /^--?[\w-]+=/.exec(w), v = flag ? w.slice(flag[0].length) : w;
-    const named = flag ? /^--?(t|target)=$/.test(flag[0]) : /^(-t|--target)$/.test(words[k - 1]);
+  for (let k = 0; k < words.length; k++) {
+    if (k === i) continue;
+    const w = String(words[k]), prev = k > i + 1 ? String(words[k - 1]) : "";
+    const value = prev === "-t" || TARGET_OPT.test(prev), eq = !value && /^--?[\w-]+=|^[A-Za-z_]\w*=/.exec(w);
+    let v = eq ? w.slice(eq[0].length) : w, named = value;
+    if (k > i && !value) {
+      if (eq) named = /^(?:-t|--t(?:a(?:r(?:g(?:e(?:t)?)?)?)?)?)=$/.test(eq[0]);
+      else if (/^-t./.test(w)) { v = w.slice(2); named = true; }
+    }
     let url = null;
-    if (/^[a-z][\w+.-]*:/i.test(v) && /:\/\//.test(v)) url = v;
-    else if (named && !/^[.~/\\]|^[a-z]:[\\/]/i.test(v) && /[.:[]|^localhost$/i.test(v)) url = `http://${v}`;
+    if (v.includes("://")) url = v;
+    else if (named && !/^(?:\.{0,2}\/)/.test(v)) url = `http://${v}`;
     if (url === null) continue;
     if (!targets) targets = pentestTargets(root);
     if (!pentestInScope(url, targets)) return PENTEST_MSG(v);
@@ -2846,7 +2860,7 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
       for (const p of spellings(t, dir)) written.add(p);
     }
     if (!words.length) return null;
-    const scan = pentestDenial(projectRoot(ev), all);
+    const scan = pentestDenial(projectRoot(ev), all, command);
     if (scan) return scan;
     if (prog === "node" && /(^|[\\/])proteus-worktree\.js$/.test(words[1] || "") && words.some((w) => /^--allow(?:=|$)/.test(w))) return AGENT_MSG.selfAllow;
     if (prog === "cd" || prog === "pushd") {
