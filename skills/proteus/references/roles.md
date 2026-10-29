@@ -72,7 +72,7 @@ MERGE #<n>
 BACK-TO-WORKER #<n>  1. <file:line> wrong → green looks like  2. ...
 CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
 Then sign it on the head you read: proteus-signoff.js <pr> <sha> <WORD> (security verifier: --security).
-<isolation=container: Never run the branch's code yourself. Reply `CHECKS:` with each gate or test command on its own line, then stop; the lead runs each as `node <hooks>/proteus-container.js check --worktree <wt> --ref <head sha> -- <command>` and sends back the CHECK lines and log paths. Judge from the logs, one round, then the verdict.>
+<isolation=container: never run the branch's code; reply `CHECKS:` with each command, stop, then judge from the lead's logs.>
 ```
 
 ## Guide (human review gate)
