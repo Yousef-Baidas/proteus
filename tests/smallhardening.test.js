@@ -1,7 +1,7 @@
 // Small hardening items from #104 and #96: Codex writable_roots case folding and the [[sandbox_workspace_write]]
 // refusal, the journal recall not following links,
 // link-skills saying "confined" only when it removed something, owned-path globs naming a plain directory, and
-// tests/run.js totals for a file that crashes or is chatty, owned-path globs below a matched folder and the one
+// tests/run.js totals for a file that crashes or is chatty and its check that the run left the checkout alone (#218), owned-path globs below a matched folder and the one
 // samePath (#96). Temp dirs only; no network.
 "use strict";
 const fs = require("fs");
@@ -120,6 +120,24 @@ if (process.platform !== "win32") {
   const r = spawnSync(process.execPath, [path.join(dir, "run.js")], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   ok("run.js: a crashed file is named, counted as a failure and fails the run", r.status === 1 && /FAIL b\.test\.js: no summary line/.test(r.stdout) && /\n8 passed, 1 failed across 3 files \(1 did not finish cleanly\)\n/.test(r.stdout), r.stdout.slice(-300));
   ok("run.js: a file printing more than 1 MiB keeps its summary line in the total", /8 passed/.test(r.stdout) && !/FAIL c\.test\.js/.test(r.stdout), r.stdout.slice(-300));
+  ok("run.js: outside a git repo the checkout check is skipped", !/changed the checkout/.test(r.stdout), r.stdout.slice(-300));
+}
+
+// ---- tests/run.js: a test that writes a tracked file into the checkout fails the run (#218)
+{
+  const repo = path.join(W, "runner-repo"), t = path.join(repo, "tests");
+  fs.mkdirSync(t, { recursive: true });
+  fs.copyFileSync(path.join(__dirname, "run.js"), path.join(t, "run.js"));
+  fs.writeFileSync(path.join(repo, "AGENTS.md"), "# agents\n");
+  fs.writeFileSync(path.join(t, "a.test.js"), 'console.log("2 passed, 0 failed");\n');
+  g(W, "init", "-q", "-b", "main", repo);
+  g(repo, "add", "-A"); g(repo, "commit", "-qm", "init");
+  const run = () => spawnSync(process.execPath, [path.join(t, "run.js")], { encoding: "utf8" });
+  let r = run();
+  ok("run.js: a run that leaves the checkout alone passes", r.status === 0 && !/changed the checkout/.test(r.stdout), r.stdout.slice(-300));
+  fs.writeFileSync(path.join(t, "b.test.js"), 'require("fs").writeFileSync(require("path").join(__dirname, "..", "AGENTS.md"), "x\\n"); console.log("1 passed, 0 failed");\n');
+  r = run();
+  ok("run.js: a test writing a tracked file fails the run and names the path", r.status === 1 && /FAIL the run changed the checkout .*:\n {2}AGENTS\.md\n/.test(r.stdout) && /\n3 passed, 1 failed across 2 files\n/.test(r.stdout), r.stdout.slice(-300));
 }
 
 lib.summary();
