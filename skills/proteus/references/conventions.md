@@ -9,6 +9,7 @@ Every worker works to `CONVENTIONS.md` at the repo root; every verifier checks t
    - naming: files, directories, variables, functions, types, constants, DB tables/columns, env vars, branch names
    - layout: feature folders vs layers, where tests live, barrel files yes/no, max file length
    - style: formatter and its config, semicolons/quotes/trailing commas or the language equivalent, import order, line width
+   - authorization: the path of the one module that holds every permission rule (single source of truth, field-level rules included; handlers, services and query filters go through it)
    - errors: exceptions vs result types, logging library and levels, what is fatal
    - comments: when allowed, docstring style, TODO format
    - tests: runner, file naming, unit vs integration split, mocking policy, coverage floor
