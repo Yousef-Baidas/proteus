@@ -2266,8 +2266,8 @@ function makeScratch(dir) {
   return "";
 }
 
-function sandboxProfile(root, bin, scratch) {
-  const lib = hl(), common = commonDir(root) || path.join(root, ".git");
+function sandboxProfile(root, common, bin, scratch) {
+  const lib = hl();
   const guest = lib.guestDir(root);
   const writable = [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
   const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
@@ -2312,8 +2312,7 @@ function sandboxProfile(root, bin, scratch) {
   };
 }
 
-const sandboxFile = (root) => {
-  const common = commonDir(root) || root;
+const sandboxFile = (root, common) => {
   const name = path.basename(root).replace(/[^\w.-]/g, "_");
   return path.join(CLAUDE, "proteus-sandbox", `${name}-${C.sandboxKey(common)}.json`);
 };
@@ -2350,21 +2349,23 @@ function mainWorktreeConfig(common) {
 
 function sandbox() {
   if (WIN) die("--sandbox: native Windows has no Claude Code sandbox; run Claude Code in WSL2 and run this there (docs/install.md, Sandboxed bypass)", 2);
-  const top = git(["rev-parse", "--show-toplevel"], process.cwd());
-  if (!top.ok || !top.out) die("--sandbox: run it inside the repo the profile is for (no git repo here)", 2);
-  const root = real(top.out) || path.resolve(top.out);
-  const common = commonDir(root) || path.join(root, ".git");
-  const file = sandboxFile(root), bin = C.sandboxBin(common), scratch = sandboxScratch();
+  // the repo by lib's trusted resolution (#215), never git or a .git file: the realpath of the main checkout's .git
+  // dir, whose parent is the main root. sandbox-root.json pins both for the copy that runs outside the sandbox
+  const lib = hl(), common = lib.trustedCommon(process.cwd()), root = common && lib.mainRoot(common);
+  if (!common) die("--sandbox: run it inside the repo the profile is for (no git repo here)", 2);
+  // a layout trustedCommon does not know falls back to a .git file and commondir: the cwd must be in the root it found
+  if (!root || !inside(realish(process.cwd()), realish(root))) die(`--sandbox: ${common} is not the .git directory of a main checkout holding ${process.cwd()}; run it in the repo's main checkout`, 2);
+  const file = sandboxFile(root, common), bin = C.sandboxBin(common), scratch = sandboxScratch();
   // the copies run outside the sandbox: refused when an agent could write them (Claude Code's config dir inside the
   // repo, the temp dir or the guest dir)
-  const guest = hl().guestDir(root);
+  const guest = lib.guestDir(root);
   const open = [root, common, scratch, ...(guest ? [guest] : [])].map((p) => realish(p));
   const place = realish(path.dirname(path.dirname(bin)));
   const hit = open.find((w) => inside(place, w) || inside(w, place));
   if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
   const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common);
   if (bad) die(`--sandbox: ${bad}`, 1);
-  writeJson(file, sandboxProfile(root, bin, scratch));
+  writeJson(file, sandboxProfile(root, common, bin, scratch));
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
   log(`sandbox  -> ${file}`);
   log(`sandbox  -> ${bin} (proteus-worktree.js and its hooks, run outside the sandbox for this repo's worktrees only)`);
