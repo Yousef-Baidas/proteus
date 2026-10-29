@@ -18,6 +18,8 @@
 // skills-lock=drift:<names> plus a note, and the lead guard refuses worker and verifier spawns until it clears.
 // With `isolation: container` in AGENTS.md, runs proteus-container.js doctor: isolation=container, or
 // isolation=container-unready plus a note naming the failed row (on a harness other than Claude Code, always unready).
+// Adds sandbox=on|off|unavailable (lib.sandboxState) and stores it for this session under proteus-lead (#189): the lead
+// guard refuses worker and verifier spawns under bypassPermissions unless it is on.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -78,7 +80,7 @@ lib.run(async (ev, ad) => {
   // hashed afresh each session start; the guard reuses the result until the lock changes
   const drift = safe(() => lib.lockDrift(root, true), []);
   if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
-  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(ad, root, notes), "");
+  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(ad, root, notes), "") + safe(() => sandbox(ev, root), " sandbox=off");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchNote(root, notes));
 
@@ -409,6 +411,14 @@ function isolation(ad, root, notes) {
   const row = String(r.stdout || "").split("\n").find((l) => /^FIX\b/.test(l)) || (r.error ? `doctor did not finish (${r.error.code || r.error.message})` : `doctor exited ${r.status}`);
   notes.push(`proteus: isolation: container is set, but node ${script} doctor fails: ${row.replace(/^FIX\s+/, "")}. ${wait}`);
   return " isolation=container-unready";
+}
+
+// the session's sandbox (#189), stored per session under proteus-lead, where the lead guard reads it before it lets a
+// bypassPermissions session dispatch; the state shows even when the store is refused
+function sandbox(ev, root) {
+  const s = lib.sandboxState(root), common = lib.gitCommonDir(root);
+  if (common && ev.session) safe(() => lib.saveSandbox(common, ev.session, s));
+  return ` sandbox=${s}`;
 }
 
 // the ladder for this session: the lead's model, and each role tier's model (@effort where the
