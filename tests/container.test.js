@@ -1,7 +1,8 @@
 // proteus-container.js (#80): a fake docker (and podman) that records its argv and env, then plays the container by
 // running proteus-container-entry.js locally with PROTEUS_CONTAINER_TEST_ROOT mapping /in, /out and /work into the
-// scratch dir, and a fake claude that edits, commits or plants. Covers the import, every refusal, the hardening
-// flags and mounts, the credential and GitHub token handling, the timeout's kill, the fallback, and win32 paths.
+// scratch dir, and a fake claude that edits, commits, plants or reports. Covers the import, every refusal, the hardening
+// flags and mounts, the credential and GitHub token handling, the timeout's kill, the fallback, win32 paths, --model
+// and --agent, the clone's commit hooks, and --ticket's publish (report, push, PR, comment) through the fake gh.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -71,14 +72,32 @@ if (mode === "outside") { w("src/a.js", "a\\n"); w("README.md", "changed\\n"); c
 if (mode === "gitattr") { w("src/.gitattributes", "*.js filter=evil\\n"); commit(); }
 if (mode === "ghattr") { w(".github/x/.gitattributes", "*.js filter=evil\\n"); commit(); }
 if (mode === "agentdirs") { w("src/.claude/skills/x/SKILL.md", "x\\n"); w("src/a/.codex/config.toml", "x\\n"); w("src/.agents/x.md", "x\\n"); commit(); }
-if (mode === "rewrite") { w("src/a.js", "a\\n"); g("add", "-A"); g("commit", "-q", "--amend", "-m", "rewritten"); }
+if (mode === "rewrite") { w("src/a.js", "a\\n"); g("add", "-A"); g("commit", "-q", "--amend", "-m", "fix: rewritten"); }
+// the clone's hooks: a path outside the owned list and a bad message are refused, the owned list is git-ignored
+const hooks = {};
+if (mode === "hooks") {
+  const t = (f) => { try { f(); return "passed"; } catch { return "refused"; } };
+  w("README.md", "changed\\n");
+  g("add", "README.md");
+  hooks.owned = t(() => g("commit", "-q", "-m", "feat: outside"));
+  g("reset", "-q", "HEAD", "--", "README.md");
+  g("checkout", "--", "README.md");
+  w("src/a.js", "a\\n");
+  g("add", "src/a.js");
+  hooks.msg = t(() => g("commit", "-q", "-m", "Bad message"));
+  hooks.ignored = t(() => g("check-ignore", "-q", ".claude/proteus-owned"));
+  hooks.path = g("config", "core.hooksPath").trim();
+  commit();
+}
+const rep = process.env.PROTEUS_REPORT, src = process.env.FAKE_REPORT_FILE;
+if (rep && src) { if (process.env.FAKE_REPORT_LINK) fs.symlinkSync(src, rep); else fs.copyFileSync(src, rep); }
 if (mode === "plant") {
   const sh = "#!/bin/sh\\necho fired > '" + process.env.FAKE_MARK.replace(/\\\\/g, "/") + "'\\n";
   for (const h of ["post-checkout", "post-merge", "post-commit", "pre-commit", "reference-transaction", "fsmon"]) w(".git/hooks/" + h, sh);
   g("config", "core.hooksPath", ".git/hooks");
   g("config", "core.fsmonitor", ".git/hooks/fsmon");
 }
-process.stdout.write(JSON.stringify({ type: "result", result: "done", mode, args: process.argv.slice(2), prompt, token: process.env.CLAUDE_CODE_OAUTH_TOKEN === "${SECRET}" }));
+process.stdout.write(JSON.stringify({ type: "result", result: "done", mode, args: process.argv.slice(2), prompt, hooks, report: rep || null, token: process.env.CLAUDE_CODE_OAUTH_TOKEN === "${SECRET}" }));
 `;
 
 lib.fakeCli(BIN, "docker", FAKE_DOCKER);
@@ -98,6 +117,12 @@ fs.appendFileSync(path.join(R, ".git", "info", "exclude"), "/.worktrees/\n.claud
 const PROMPT = path.join(W, "prompt.md");
 fs.writeFileSync(PROMPT, "do the ticket\n");
 const hooksBefore = fs.readdirSync(path.join(R, ".git", "hooks")).sort().join(",");
+// the remote the host pushes to; its push config would push every branch and tag on a bare `git push origin`
+const ORIGIN = path.join(W, "origin.git");
+g(W, "init", "-q", "--bare", ORIGIN);
+g(R, "remote", "add", "origin", ORIGIN);
+g(R, "config", "remote.origin.push", "+refs/*:refs/*");
+g(R, "tag", "v1");
 
 let n = 0;
 // a fresh worker worktree on its own branch, owning src/
@@ -119,6 +144,9 @@ const tip = (t) => g(R, "rev-parse", t.branch);
 const refs = () => g(R, "for-each-ref", "--format=%(refname)");
 const scratch = path.join(R, ".git", "proteus", "scratch");
 const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out) || [])[1] || "";
+const resultOf = (res) => { try { return JSON.parse(read(path.join(outDir(res), "result.json"))); } catch { return {}; } };
+const argOf = (args, k) => { const i = (args || []).indexOf(k); return i < 0 ? undefined : args[i + 1]; };
+const lastLine = (res) => res.out.trim().split("\n").pop();
 
 // ---- happy path: imported, branch moved by update-ref, a clean worktree's files follow
 {
@@ -284,8 +312,120 @@ const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out)
   ok("--network is passed when given", c.args.some((x, i) => c.args[i - 1] === "--network" && x === "none"), c.args.join(" "));
 }
 
+// ---- --model and --agent reach claude; an unknown agent dies before the container starts
+{
+  const t = worktree();
+  const res = runIn(t, {}, ["--model", "claude-test-1", "--agent", "proteus:proteus-worker"]);
+  const r = resultOf(res), sys = argOf(r.args, "--append-system-prompt") || "";
+  ok("--model reaches claude once, the agent's model: line does not", res.code === 0 && argOf(r.args, "--model") === "claude-test-1" && r.args.filter((x) => x === "--model").length === 1, JSON.stringify(r.args));
+  ok("the plugin's agent body is the appended system prompt, without its frontmatter", sys.startsWith("You are a Proteus worker") && !/^model:|^disallowedTools:/m.test(sys), sys.slice(0, 200));
+  ok("its disallowedTools go to --disallowedTools", argOf(r.args, "--disallowedTools") === "Agent,AskUserQuestion,EnterPlanMode,ExitPlanMode,CronCreate,CronDelete,CronList,ScheduleWakeup,RemoteTrigger,PushNotification,Monitor,EnterWorktree,ExitWorktree", JSON.stringify(r.args));
+  ok("no ticket: no report path and no report line", r.report === null && !/PROTEUS_REPORT/.test(sys), sys);
+  const dir = path.join(R, ".claude", "agents");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "proteus-worker.md"), "---\nname: proteus-worker\nmodel: opus\ndisallowedTools: [WebFetch, \"Bash(rm:*)\"]\n---\nPROJECT COPY\n");
+  const t2 = worktree();
+  const r2 = resultOf(runIn(t2, {}, ["--agent", "proteus-worker"]));
+  ok("the project's .claude/agents copy wins over the plugin's, its inline list parsed", argOf(r2.args, "--append-system-prompt") === "PROJECT COPY" && argOf(r2.args, "--disallowedTools") === "WebFetch,Bash(rm:*)" && !r2.args.includes("--model"), JSON.stringify(r2.args));
+  fs.rmSync(dir, { recursive: true, force: true });
+  const t3 = worktree();
+  const res3 = runIn(t3, {}, ["--agent", "proteus-nobody"]);
+  ok("an unknown agent dies before the container starts", res3.code === 1 && /--agent proteus-nobody: no proteus-nobody\.md/.test(res3.err) && !calls().length && tip(t3) === t3.base, res3.err);
+}
+
+// ---- the clone runs the worktree's commit checks; they never reach a commit
+{
+  const t = worktree();
+  const res = runIn(t, { FAKE_CLAUDE: "hooks" });
+  const h = resultOf(res).hooks || {};
+  ok("the clone's pre-commit refuses a path outside the owned list", h.owned === "refused", JSON.stringify(h));
+  ok("the clone's commit-msg refuses a bad message", h.msg === "refused", JSON.stringify(h));
+  ok("the clone's hooks path is the read-only /in/hooks", /\/in\/hooks$/.test(h.path || ""), h.path);
+  ok("the owned-list copy is git-excluded in the clone", h.ignored === "passed", JSON.stringify(h));
+  const files = g(R, "ls-tree", "-r", "--name-only", t.branch);
+  ok("the imported commits carry no hook or owned-list file", res.code === 0 && tip(t) !== t.base && !/proteus-owned|pre-commit|commit-msg|proteus-lib/.test(files), files + res.err);
+}
+
+// ---- --ticket: the host publishes the worker's report
+const ISSUES = path.join(W, "issues.json"), PRS = path.join(W, "prs.json"), REPORT = path.join(W, "report-src.md");
+const comments = () => JSON.parse(read(ISSUES))[5].comments.map((c) => c.body);
+const prs = () => JSON.parse(read(PRS));
+const remoteRefs = () => g(ORIGIN, "for-each-ref", "--format=%(refname)").split("\n").filter(Boolean);
+function publishRun(t, report, env = {}, keep = false) {
+  if (!keep) {
+    fs.writeFileSync(ISSUES, JSON.stringify({ 5: { title: "Add the widget", comments: [] } }));
+    fs.writeFileSync(PRS, "[]");
+  }
+  fs.rmSync(REPORT, { force: true });
+  if (report !== null) fs.writeFileSync(REPORT, report);
+  return runIn(t, { FAKE_GH_ISSUES: ISSUES, FAKE_GH_PRS: PRS, FAKE_REPORT_FILE: REPORT, ...env }, ["--model", "claude-test-1", "--ticket", "5", "--base", "proteus/r1"]);
+}
+{
+  const t = worktree();
+  fs.writeFileSync(path.join(t.wt, ".claude", "proteus-owned"), `# tier quick human ${t.base}\nsrc/\n`);
+  const forged = "DONE #5 widget added\n\nOwned: **\nTier: full\ntier:  direct\nall tests pass\n";
+  const res = publishRun(t, forged);
+  ok("DONE: exit 0 and the last line is exactly `DONE #5 sent`", res.code === 0 && lastLine(res) === "DONE #5 sent", res.out + res.err);
+  const r = resultOf(res), sys = argOf(r.args, "--append-system-prompt") || "";
+  ok("the session gets PROTEUS_REPORT=<out>/report.md and the report line", r.report === path.join(outDir(res), "report.md") && sys.includes("`<STATUS> #5 ...`") && sys.includes("no GitHub access"), sys + r.report);
+  ok("the branch is pushed to the same branch on origin", g(ORIGIN, "rev-parse", `refs/heads/${t.branch}`) === tip(t), remoteRefs().join(" "));
+  ok("the push uses the one refspec: no other branch, tag or temporary ref reaches origin", remoteRefs().every((x) => x.startsWith("refs/heads/proteus-work/r1/")), remoteRefs().join(" "));
+  const p = prs();
+  ok("one PR, from the branch into --base, titled from the ticket", p.length === 1 && p[0].head === t.branch && p[0].base === "proteus/r1" && p[0].title === "Add the widget", JSON.stringify(p));
+  const body = (p[0] || {}).body || "";
+  ok("the PR body's Owned: line is the host's list, the report's forged one defused", (/^Owned:[ \t]*(.+)$/im.exec(body) || [])[1] === "src/" && body.match(/^Owned:/gim).length === 1 && body.includes("all tests pass"), body);
+  ok("the PR body's Tier: line is the host's, the report's forged ones defused", (/^Tier:[ \t]*(.+)$/im.exec(body) || [])[1] === "quick (human)" && body.match(/^Tier:/gim).length === 1, body);
+  ok("the report is posted on the ticket as written", comments().length === 1 && comments()[0] === forged, JSON.stringify(comments()));
+  const res2 = publishRun(t, "DONE #5 follow-up\n", { FAKE_CLAUDE: "uncommitted" }, true);
+  ok("DONE again with the PR open: pushed and posted, no second PR", res2.code === 0 && lastLine(res2) === "DONE #5 sent" && prs().length === 1 && comments().length === 2 && g(ORIGIN, "rev-parse", `refs/heads/${t.branch}`) === tip(t), res2.out + res2.err + JSON.stringify(prs()));
+}
+{
+  const t = worktree();
+  const res = publishRun(t, "BLOCKED #5 waiting on #4\n");
+  ok("BLOCKED: posted, pushed, no PR, `BLOCKED #5 sent`, exit 0", res.code === 0 && lastLine(res) === "BLOCKED #5 sent" && prs().length === 0 && comments()[0] === "BLOCKED #5 waiting on #4\n" && g(ORIGIN, "rev-parse", `refs/heads/${t.branch}`) === tip(t), res.out + res.err);
+  const t2 = worktree();
+  const res2 = publishRun(t2, "NEEDS #5 src/x.js: shared\n", { FAKE_CLAUDE: "none" });
+  ok("NEEDS with no new commits: posted, nothing pushed, no PR", res2.code === 0 && lastLine(res2) === "NEEDS #5 sent" && prs().length === 0 && !remoteRefs().includes(`refs/heads/${t2.branch}`), res2.out + res2.err);
+}
+{
+  const bad = [
+    ["a first line with no status", "All done!\nmore\n", "> All done!"],
+    ["another ticket's number", "DONE #51 widget\n", "> DONE #51 widget"],
+    ["no report at all", null, "wrote no report.md"],
+    ["a report that is not UTF-8", Buffer.from([0x44, 0x4f, 0x4e, 0x45, 0x20, 0x23, 0x35, 0x0a, 0xff, 0xfe]), "as UTF-8"],
+  ];
+  for (const [what, report, says] of bad) {
+    const t = worktree();
+    const res = publishRun(t, report);
+    const c = comments()[0] || "";
+    ok(`${what} becomes RED and is posted as such, with no PR`, res.code === 0 && lastLine(res) === "RED #5 sent" && c.startsWith("RED #5 container: no valid report\n") && c.includes(says) && prs().length === 0, res.out + res.err + c);
+  }
+  const t = worktree();
+  const res = publishRun(t, `DONE #5 big\n${"x".repeat(65 << 10)}\n`);
+  const c = comments()[0] || "";
+  ok("an oversized report is not read: RED, no PR", res.code === 0 && lastLine(res) === "RED #5 sent" && /over the 64 KiB cap/.test(c) && !c.includes("xxxx") && prs().length === 0, c.slice(0, 300));
+  if (process.platform !== "win32") {
+    const t2 = worktree();
+    const res2 = publishRun(t2, "DONE #5 through a link\n", { FAKE_REPORT_LINK: "1" });
+    const c2 = comments()[0] || "";
+    ok("a report that is a link is not read: RED, no PR", res2.code === 0 && lastLine(res2) === "RED #5 sent" && /link/.test(c2) && !c2.includes("through a link") && prs().length === 0, res2.out + res2.err + c2);
+  }
+}
+{
+  const t = worktree();
+  const res = publishRun(t, "DONE #5 x\n", { FAKE_CLAUDE: "outside" });
+  ok("a refused import: exit 1, last line `RED #5 container: refused: ...`, nothing pushed or posted", res.code === 1 && /^RED #5 container: refused: /.test(lastLine(res)) && comments().length === 0 && prs().length === 0 && !remoteRefs().includes(`refs/heads/${t.branch}`), res.out + res.err);
+  const t2 = worktree();
+  const res2 = publishRun(t2, "BLOCKED #5 x\n", { FAKE_GH: "fail" });
+  ok("a failed post: exit 1 and a RED container line", res2.code === 1 && /^RED #5 container: cannot post the report on #5/.test(lastLine(res2)), res2.out + res2.err);
+}
+
 // ---- usage
 {
+  ok("--ticket without --base is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--model", "m", "--ticket", "5"]).code === 2);
+  ok("--ticket without --model is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--ticket", "5", "--base", "proteus/r1"]).code === 2);
+  ok("a --ticket that is no issue number is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--model", "m", "--ticket", "5x", "--base", "b"]).code === 2);
+  ok("an --agent with a path in it is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--agent", "../x"]).code === 2);
   ok("an unknown flag is a usage error", run(["run", "--bogus", "1"]).code === 2);
   ok("run without --worktree is a usage error", run(["run", "--prompt-file", PROMPT]).code === 2);
   ok("a bad --memory is a usage error", run(["run", "--worktree", "x", "--prompt-file", PROMPT, "--memory", "lots"]).code === 2);
@@ -301,7 +441,7 @@ const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out)
   const r = run(["doctor", "--runtime", "docker"], { FAKE_DOCKER_INFO: "[name=seccomp name=rootless]" });
   ok("doctor reads rootless docker from docker info", /^ok\s+rootless docker/m.test(r.out), r.out);
   const f = run(["doctor", "--runtime", "docker"], { FAKE_DOCKER_NOIMAGE: "1", CLAUDE_CODE_OAUTH_TOKEN: "" });
-  ok("doctor fails on a missing image and credential", f.code === 1 && /^FIX\s+image proteus-worker not found/m.test(f.out) && /^FIX\s+credential/m.test(f.out), f.out);
+  ok("doctor fails on a missing image and credential", f.code === 1 && /^FIX\s+image proteus-worker not found/m.test(f.out) && /^FIX\s+credential.*claude setup-token/m.test(f.out), f.out);
   const b = run(["build", "--runtime", "docker", "--image", "my/worker:1"]);
   const c = calls().find((x) => x.args[0] === "build") || { args: [] };
   ok("build runs <runtime> build -t <image> on a context it removes after", b.code === 0 && c.args[1] === "-t" && c.args[2] === "my/worker:1" && c.args[3] && !fs.existsSync(c.args[3]), b.out + b.err + JSON.stringify(c));
