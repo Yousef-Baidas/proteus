@@ -2288,8 +2288,8 @@ function sandboxProfile(root, common, bin, scratch, guest) {
   const secrets = [...new Set([...SANDBOX_SECRETS, ...(human ? [path.resolve(human) + "/"] : []), own])];
   const domains = [...SANDBOX_GITHUB, ...registries(learnedText(guest || root))];
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);
-  // the lead script whose writes the sandbox always refuses (.claude settings and hooks, .git/config) runs outside
-  // it, matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
+  // the copy of proteus-worktree.js that adds a new submodule's deny rules to this profile runs outside the sandbox,
+  // matched by the absolute path of the copy in bin, which no agent can write; the copy checks its arguments
   const copy = path.join(bin, "proteus-worktree.js");
   const excluded = [...new Set([`node ${copy} *`, `node ${q(copy)} *`])];
   const dir = (s) => s.endsWith("/");
@@ -2313,8 +2313,9 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         // the copies that run outside the sandbox, and the profile itself
         slashRule("Edit", path.join(path.dirname(path.dirname(bin)), "**")),
         // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config); the git
-        // rules exact or ending in /**, the only ones Linux honours, per worktree and submodule (proteus-worktree.js
-        // adds a new worktree's)
+        // rules exact or ending in /**, the only ones Linux honours, per submodule (the copy of proteus-worktree.js
+        // adds a new one's). A worktree's own config.worktree and hooks are the worker's, not a boundary
+        // (enforcement.md)
         slashRule("Edit", path.join(root, "**", ".claude", "**")),
         ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
         ...outsideEdits(keep),
@@ -2349,9 +2350,12 @@ function sandboxCopy(bin, root, common, profile) {
   return "";
 }
 
-// the main worktree's config.worktree, made empty when missing so the profile's exact deny names a file that
-// exists (git reads it once proteus-worktree.js sets extensions.worktreeConfig); "" or why not
+// extensions.worktreeConfig set in <common>/config, which the profile denies, so a sandboxed proteus-worktree.js
+// can give each worktree its own hooks path, and nothing outside the sandbox writes under <common> during the
+// session (#212 r5); and the main worktree's config.worktree, made empty when missing so the profile's exact deny
+// names a file that exists (git reads it once worktreeConfig is on). "" or why not
 function mainWorktreeConfig(common) {
+  try { hl().gitRun(common, ["config", "--file", path.join(common, "config"), "extensions.worktreeConfig", "true"], { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 }); } catch (e) { return `cannot set extensions.worktreeConfig in ${path.join(common, "config")} (${String(e.stderr || e.message).trim()})`; }
   const f = path.join(common, "config.worktree"), st = lstat(f);
   if (st) return st.isFile() ? "" : `${f} is not a regular file`;
   try { fs.writeFileSync(f, "", { flag: "wx" }); } catch (e) { return `cannot make ${f} (${e.message})`; }
@@ -2387,7 +2391,7 @@ function sandbox() {
   log(`  node ${q(path.join(HERE, "install.js"))} --project`);
   log("Start Claude Code in the repo root with the profile (your own settings files are untouched):");
   log(`  claude --settings ${q(file)} --permission-mode bypassPermissions`);
-  log(`In that session prepare a worktree with the in-repo proteus-worktree.js <worktree> ..., then its git half with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree>`);
+  log(`In that session prepare a worktree with the in-repo proteus-worktree.js <worktree> ..., then add any new submodule's deny rules with: node ${q(path.join(bin, "proteus-worktree.js"))} <worktree>`);
   log("Run the review session (/proteus-review) without it. Run --sandbox again after moving the repo or updating Proteus.");
   return true;
 }

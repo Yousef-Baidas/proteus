@@ -108,7 +108,7 @@ if (WIN) {
   const linuxOk = (x) => /^Edit\(.*\)$/.test(x) && !x.slice(5, -1).replace(/\/\*\*$/, "").includes("*");
   ok("profile: every .git deny rule is exact or ends in /**", gitRules(deny).length >= 3 && gitRules(deny).every(linuxOk), gitRules(deny).filter((x) => !linuxOk(x)).join(" "));
 
-  // gitDenyRules: each worktree, each submodule git dir (nested ones and ones under a name path), no other wildcard
+  // gitDenyRules: each submodule git dir (nested ones and ones under a name path), no worktree's, no other wildcard
   const C = require(path.join(ROOT, "templates", "hooks", "proteus-confine.js"));
   const fakeGit = path.join(realW, "fake-git");
   for (const d of [["worktrees", "a"], ["modules", "sub"], ["modules", "sub", "modules", "inner"], ["modules", "lib", "deep"]]) {
@@ -116,37 +116,48 @@ if (WIN) {
     if (d[0] === "modules") fs.writeFileSync(path.join(fakeGit, ...d, "HEAD"), "ref: refs/heads/main\n");
   }
   const gr = C.gitDenyRules(fakeGit);
-  const want = [["config"], ["config.worktree"], ["hooks", "**"], ["worktrees", "a", "config.worktree"], ["worktrees", "a", "proteus-hooks", "**"],
+  const want = [["config"], ["config.worktree"], ["hooks", "**"],
     ["modules", "sub", "config"], ["modules", "sub", "hooks", "**"], ["modules", "sub", "config.worktree"], ["modules", "sub", "modules", "inner", "config"],
     ["modules", "sub", "modules", "inner", "hooks", "**"], ["modules", "lib", "deep", "config"], ["modules", "lib", "deep", "hooks", "**"]]
     .map((s) => `${rule("Edit", path.join(fakeGit, ...s))})`);
-  ok("gitDenyRules: config, config.worktree and hooks for the git dir, each worktree and each submodule, nested too",
+  ok("gitDenyRules: config, config.worktree and hooks for the git dir and each submodule, nested too",
     want.every((x) => gr.includes(x)) && !gr.some((x) => x.includes(path.join("modules", "lib") + "/config")), gr.join(" "));
+  ok("gitDenyRules: no rule for a worktree's config.worktree or proteus-hooks (#212 r5)", !gr.some((x) => x.includes("/worktrees/")), gr.join(" "));
   ok("gitDenyRules: every rule exact or ending in /**", gr.every(linuxOk), gr.filter((x) => !linuxOk(x)).join(" "));
+  ok("--sandbox sets extensions.worktreeConfig in <common>/config before any session", /worktreeConfig = true/i.test(fs.readFileSync(path.join(dotGit, "config"), "utf8")));
 
-  // 3: the copy prepares only this repo's listed worktrees under .worktrees/
+  // 3: the in-repo script prepares a worktree whole, sandboxed; the copy that runs outside the sandbox writes nothing
+  // under <common> (#212 r5), only the profile's deny rules
   const runCopy = (...a) => run(copy, "", { cwd: repo, args: a });
-  // the in-repo script writes the worktree half, then names the copy; the copy writes the git half only (#212 B1)
   const runTree = (...a) => run(path.join(ROOT, "templates", "hooks", "proteus-worktree.js"), "", { cwd: repo, args: a });
   const w1 = path.join(repo, ".worktrees", "w1");
   g(repo, "worktree", "add", "-q", "-b", "w1", w1);
   const half = runTree(w1, "src/**");
-  ok("in-repo script: writes the worktree half and names the copy for the git half",
-    half.code === 0 && fs.existsSync(path.join(w1, ".claude", "settings.local.json")) && fs.existsSync(path.join(w1, ".claude", "proteus-owned")) && half.out.includes(`node ${copy} ${fs.realpathSync(w1)}`), half.err + half.out);
-  fs.rmSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks"), { recursive: true, force: true });
-  fs.rmSync(path.join(w1, ".claude"), { recursive: true, force: true });
+  ok("in-repo script: writes the worktree's .claude, hooks and config.worktree, and names the copy",
+    half.code === 0 && fs.existsSync(path.join(w1, ".claude", "settings.local.json")) && fs.existsSync(path.join(w1, ".claude", "proteus-owned"))
+      && fs.existsSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks", "pre-commit")) && /hooksPath = /.test(fs.readFileSync(path.join(dotGit, "worktrees", "w1", "config.worktree"), "utf8"))
+      && half.out.includes(`node ${copy} ${fs.realpathSync(w1)}`), half.err + half.out);
   const good = runCopy(w1);
-  ok("copy: prepares the git half of a listed worktree under .worktrees/, nothing in the worktree",
-    good.code === 0 && fs.existsSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks", "pre-commit")) && !fs.existsSync(path.join(w1, ".claude"))
-      && /hooksPath = /.test(fs.readFileSync(path.join(dotGit, "worktrees", "w1", "config.worktree"), "utf8")) && /worktreeConfig = true/i.test(fs.readFileSync(path.join(dotGit, "config"), "utf8")), good.err + good.out);
+  ok("copy: takes a listed worktree under .worktrees/", good.code === 0, good.err + good.out);
   ok("copy: sandbox-root.json names the profile", read(path.join(bin, "sandbox-root.json")).profile === file);
-  const w1Rules = [["config.worktree"], ["proteus-hooks", "**"]].map((s) => `${rule("Edit", path.join(dotGit, "worktrees", "w1", ...s))})`);
   const after = (read(file).permissions || {}).deny || [];
-  ok("copy: preparing a new worktree adds its config.worktree and proteus-hooks denies to the profile",
-    !w1Rules.some((x) => deny.includes(x)) && w1Rules.every((x) => after.includes(x)) && deny.every((x) => after.includes(x)), after.filter((x) => x.includes("worktrees")).join(" "));
-  const again = runCopy(path.join(repo, ".worktrees", "w1"), "src/**");
-  const after2 = (read(file).permissions || {}).deny || [];
-  ok("copy: a re-run adds no rule twice", again.code === 0 && after2.length === after.length, again.err);
+  ok("copy: adds no worktree rule to the profile", deny.every((x) => after.includes(x)) && !after.some((x) => x.includes("/worktrees/")), after.filter((x) => x.includes("worktrees")).join(" "));
+  const sub = path.join(dotGit, "modules", "sub");
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, "HEAD"), "ref: refs/heads/main\n");
+  const subRule = `${rule("Edit", path.join(sub, "config"))})`;
+  const withSub = runCopy(w1), after1 = (read(file).permissions || {}).deny || [];
+  ok("copy: adds a new submodule's deny rules to the profile", withSub.code === 0 && !after.includes(subRule) && after1.includes(subRule), withSub.err + after1.filter((x) => x.includes("modules")).join(" "));
+  const again = runCopy(w1);
+  ok("copy: a re-run adds no rule twice", again.code === 0 && ((read(file).permissions || {}).deny || []).length === after1.length, again.err);
+  fs.rmSync(path.join(dotGit, "modules"), { recursive: true, force: true });
+  g(repo, "config", "--unset", "extensions.worktreeConfig");
+  const off = runCopy(w1);
+  ok("copy: refuses when extensions.worktreeConfig is missing, naming install.js --sandbox, and sets nothing",
+    off.code === 1 && /extensions\.worktreeConfig/.test(off.err) && /install\.js --sandbox/.test(off.err) && !/worktreeConfig/i.test(fs.readFileSync(path.join(dotGit, "config"), "utf8")), off.err);
+  g(repo, "config", "extensions.worktreeConfig", "true");
+  const al = runCopy(w1, "--allow", "force-push");
+  ok("copy: refuses --allow, which the in-repo script writes", al.code === 1 && /in-repo/.test(al.err) && !files(path.join(dotGit, "proteus", "allow")).length, al.err);
   const fake = path.join(TMP, "fake");
   fs.mkdirSync(fake);
   fs.writeFileSync(path.join(fake, ".git"), `gitdir: ${path.join(realRepo, ".git")}\n`);
@@ -169,55 +180,113 @@ if (WIN) {
   fs.symlinkSync(victim, path.join(w2, ".claude"));
   const esc5 = runCopy(w2, "src/**");
   ok("copy: writes nothing through a worktree's .claude link", esc5.code === 0 && !files(victim).length, esc5.err);
-  // a link at a fixed path under <common> is replaced, never written through; a merged file that is a link refuses
-  const outsideFile = path.join(W, "outside-hook");
-  fs.writeFileSync(outsideFile, "keep\n");
-  fs.rmSync(path.join(dotGit, "worktrees", "w2", "proteus-hooks", "pre-commit"), { force: true });
-  fs.symlinkSync(outsideFile, path.join(dotGit, "worktrees", "w2", "proteus-hooks", "pre-commit"));
-  const esc6 = runCopy(w2);
-  ok("copy: refuses a link at a hook file it writes, leaving its target", esc6.code === 1 && /link/.test(esc6.err) && fs.readFileSync(outsideFile, "utf8") === "keep\n", esc6.err);
-  const CB = require(path.join(bin, "proteus-confine.js"));
-  const leaf = path.join(W, "leaf");
-  fs.mkdirSync(leaf);
-  fs.symlinkSync(outsideFile, path.join(leaf, "f"));
-  CB.replaceFile(path.join(leaf, "f"), () => "mine\n");
-  ok("replaceFile: a link at the path is replaced by a file, its target left", fs.readFileSync(outsideFile, "utf8") === "keep\n" && !fs.lstatSync(path.join(leaf, "f")).isSymbolicLink() && fs.readFileSync(path.join(leaf, "f"), "utf8") === "mine\n");
-  fs.symlinkSync(outsideFile, path.join(leaf, "f.lock"));
-  let threw = false;
-  try { CB.replaceFile(path.join(leaf, "f"), () => "x"); } catch { threw = true; }
-  ok("replaceFile: a link at <path>.lock refuses, its target left", threw && fs.readFileSync(outsideFile, "utf8") === "keep\n");
 
-  // the copy opens no path under the worktree: every fs call that opens, reads, makes or moves a path is traced
+  // the copy writes nothing a sandboxed command can write: every fs call that opens, reads, makes or moves a path is
+  // traced, with the flags it opens with, and every command it runs
   const trace = path.join(W, "trace.js"), traced = path.join(W, "traced.txt");
-  fs.writeFileSync(trace, `const fs = require("fs"), p = require("path"), log = fs.appendFileSync, out = ${JSON.stringify(traced)};
+  fs.writeFileSync(trace, `const fs = require("fs"), cp = require("child_process"), p = require("path"), log = fs.appendFileSync, out = ${JSON.stringify(traced)};
 let busy = false;
-const two = new Set(["renameSync", "copyFileSync", "symlinkSync", "linkSync"]);
-for (const k of ["openSync", "readFileSync", "writeFileSync", "appendFileSync", "copyFileSync", "cpSync", "mkdirSync", "mkdtempSync", "readdirSync", "opendirSync", "renameSync", "rmSync", "unlinkSync", "rmdirSync", "symlinkSync", "linkSync", "chmodSync", "truncateSync"]) {
+const note = (s) => { if (!busy) { busy = true; try { log(out, s + "\\n"); } finally { busy = false; } } };
+const READ = new Set(["readFileSync", "readdirSync", "opendirSync", "readlinkSync", "realpathSync", "statSync", "lstatSync", "existsSync", "accessSync"]);
+const two = new Set(["renameSync", "copyFileSync", "symlinkSync", "linkSync", "cpSync"]);
+for (const k of ["openSync", "readFileSync", "writeFileSync", "appendFileSync", "copyFileSync", "cpSync", "mkdirSync", "mkdtempSync", "readdirSync", "opendirSync", "renameSync", "rmSync", "unlinkSync", "rmdirSync", "symlinkSync", "linkSync", "chmodSync", "chownSync", "utimesSync", "truncateSync", "createWriteStream"]) {
   const f = fs[k];
   fs[k] = function (a, b, ...r) {
-    if (!busy) { busy = true; try { for (const x of two.has(k) ? [a, b] : [a]) if (typeof x === "string") log(out, k + " " + p.resolve(x) + "\\n"); } finally { busy = false; } }
+    const kind = k === "openSync" ? (b === undefined || b === "r" || (typeof b === "number" && (b & 3) === 0) ? "read" : "write") : READ.has(k) ? "read" : "write";
+    for (const x of two.has(k) ? [a, b] : [a]) if (typeof x === "string") note(kind + " " + k + " " + p.resolve(x));
     return f.call(this, a, b, ...r);
   };
 }
+for (const k of ["execFileSync", "spawnSync", "execSync", "spawn", "execFile", "exec"]) {
+  const f = cp[k];
+  cp[k] = function (c, a, ...r) { note("run " + k + " " + JSON.stringify([c, Array.isArray(a) ? a : []])); return f.call(this, c, a, ...r); };
+}
 `);
+  const writable = allowWrite.map((w) => fs.realpathSync(w));
+  const underAny = (x, dirs) => dirs.some((d) => x === d || x.startsWith(d + path.sep));
   const w5 = path.join(repo, ".worktrees", "w5");
   g(repo, "worktree", "add", "-q", "-b", "w5", w5);
-  for (const a of [[w5, "src/**"], [w5, "--allow", "force-push"]]) {
-    fs.mkdirSync(path.join(w5, ".claude"), { recursive: true });
-    fs.writeFileSync(path.join(w5, ".claude", "proteus-owned"), "src/**\n");
+  ok("in-repo script: prepares w5", runTree(w5, "src/**").code === 0);
+  for (const a of [[w5], [w5, "src/**"], [w5, "--allow", "force-push"]]) {
     fs.rmSync(traced, { force: true });
     const tr = run(copy, "", { cwd: repo, args: a, env: { NODE_OPTIONS: `--require ${JSON.stringify(trace)}` } });
-    const opened = files(W).includes("traced.txt") ? fs.readFileSync(traced, "utf8").split("\n").filter(Boolean) : [];
+    const lines = files(W).includes("traced.txt") ? fs.readFileSync(traced, "utf8").split("\n").filter(Boolean) : [];
+    const fsLines = lines.filter((l) => !l.startsWith("run ")), at = (l) => l.split(" ").slice(2).join(" ");
     const realW5 = fs.realpathSync(w5);
-    const inTree = opened.filter((l) => [w5, realW5].some((d) => l.split(" ").slice(1).join(" ").startsWith(d + path.sep) || l.endsWith(" " + d)));
-    ok(`copy ${a.slice(1).join(" ")}: opens no path under the worktree (${opened.length} traced)`, tr.code === 0 && opened.length > 0 && !inTree.length, inTree.join(" ") + tr.err);
+    const inTree = fsLines.filter((l) => [w5, realW5].some((d) => at(l).startsWith(d + path.sep) || at(l) === d));
+    const label = a.slice(1).join(" ") || "(no paths)";
+    ok(`copy ${label}: opens no path under the worktree (${fsLines.length} traced)`, (a[1] === "--allow" ? tr.code === 1 : tr.code === 0) && fsLines.length > 0 && !inTree.length, inTree.join(" ") + tr.err);
+    const writes = fsLines.filter((l) => l.startsWith("write ")), bad = writes.filter((l) => underAny(at(l), writable) || !underAny(at(l), [profileDir()]));
+    ok(`copy ${label}: opens nothing for writing under a profile-writable path, only the profile (${writes.length} writes)`, !bad.length, bad.join(" "));
+    const runs = lines.filter((l) => l.startsWith("run ")).map((l) => JSON.parse(l.split(" ").slice(2).join(" ")));
+    const writer = runs.filter(([c, args]) => !(/git/.test(path.basename(String(c))) && args.includes("config") && args.includes("--get")));
+    ok(`copy ${label}: runs only git config --get (${runs.length} runs)`, !writer.length, JSON.stringify(writer));
   }
+
+  // a sandboxed swapper, while the copy runs: it plants every lock the copy used to make (config, config.worktree,
+  // the worktree's hooks, info/exclude, allow) and flips every parent dir it used to write in for a link to a dir
+  // outside allowWrite. Nothing under <common> or outside changes but what the swapper itself did (#212 r5 B3, B4)
+  const w6 = path.join(repo, ".worktrees", "w6"), outsideDir = path.join(W, "outside");
+  g(repo, "worktree", "add", "-q", "-b", "w6", w6);
+  ok("in-repo script: prepares w6", runTree(w6, "src/**").code === 0);
+  fs.mkdirSync(outsideDir);
+  const swapper = path.join(W, "swapper.js"), sig = (n) => path.join(W, `swap-${n}`);
+  fs.writeFileSync(swapper, `const fs = require("fs"), path = require("path");
+const [common, outside, dir] = process.argv.slice(2), sig = (n) => path.join(dir, "swap-" + n);
+const EVIL = "[core]\\n\\tfsmonitor = \\"touch PWNED; false\\"\\n", w = path.join(common, "worktrees", "w6");
+const locks = ["config", "config.worktree", "info/exclude", "proteus/allow/w6.lock-target", "worktrees/w6/config.worktree", "worktrees/w6/proteus-hooks/pre-commit",
+  "worktrees/w6/proteus-hooks/commit-msg", "worktrees/w6/proteus-hooks/orig-hooks-path"].map((f) => path.join(common, ...f.split("/")) + ".lock");
+const parents = [path.join(w, "proteus-hooks"), path.join(common, "info"), path.join(common, "proteus", "allow"), w];
+const plant = () => { let n = 0; for (const l of locks) { if (!fs.existsSync(l)) { fs.mkdirSync(path.dirname(l), { recursive: true }); fs.writeFileSync(l, EVIL); n++; } } return n; };
+plant();
+fs.writeFileSync(sig("ready"), "");
+while (!fs.existsSync(sig("go"))) {}
+let flips = 0, replanted = 0;
+const restore = () => { for (const q of [...parents].reverse()) { try { if (fs.lstatSync(q).isSymbolicLink()) { fs.unlinkSync(q); fs.renameSync(q + ".aside", q); } } catch {} } };
+while (!fs.existsSync(sig("stop"))) {
+  for (const q of parents) { try { fs.renameSync(q, q + ".aside"); fs.symlinkSync(outside, q); flips++; } catch {} }
+  restore();
+  replanted += plant();
+}
+restore();
+fs.writeFileSync(sig("done"), JSON.stringify({ flips, replanted }));
+`);
+  const snap = (d) => {
+    const m = {};
+    const walk = (x, rel) => {
+      const st = fs.lstatSync(x, { throwIfNoEntry: false });
+      if (!st) return;
+      if (st.isSymbolicLink()) m[rel] = "link " + fs.readlinkSync(x);
+      else if (st.isDirectory()) { m[rel] = "dir"; for (const n of fs.readdirSync(x).sort()) walk(path.join(x, n), rel + "/" + n); }
+      else m[rel] = "file " + (st.mode & 0o777).toString(8) + " " + fs.readFileSync(x, "utf8");
+    };
+    walk(d, "");
+    return JSON.stringify(m);
+  };
+  const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  const waitFor = (f) => { for (let i = 0; i < 600 && !fs.existsSync(f); i++) nap(50); return fs.existsSync(f); };
+  const sw = require("child_process").spawn(process.execPath, [swapper, dotGit, outsideDir, W], { stdio: "ignore" });
+  const ready = waitFor(sig("ready"));
+  const before = [snap(dotGit), snap(outsideDir)];
+  fs.writeFileSync(sig("go"), "");
+  const codes = [];
+  for (let i = 0; i < 5; i++) codes.push(runCopy(w6).code);
+  fs.writeFileSync(sig("stop"), "");
+  const done = waitFor(sig("done"));
+  const swapped = done ? JSON.parse(fs.readFileSync(sig("done"), "utf8")) : {};
+  sw.kill();
+  ok(`swapper: ran while the copy did (${swapped.flips} parent flips; copy exits ${codes.join(",")})`, ready && done && swapped.flips > 0, JSON.stringify(swapped));
+  ok("swapper: every lock it planted is left as planted and none was taken, nothing under <common> changed",
+    swapped.replanted === 0 && snap(dotGit) === before[0], `replanted ${swapped.replanted}`);
+  ok("swapper: nothing landed in the dir outside allowWrite, and <common>/config holds none of its text",
+    snap(outsideDir) === before[1] && !files(outsideDir).length && !/PWNED/.test(fs.readFileSync(path.join(dotGit, "config"), "utf8")) && !/PWNED/.test(fs.readFileSync(path.join(dotGit, "config.worktree"), "utf8")));
+  for (const f of fs.readdirSync(dotGit, { recursive: true })) if (String(f).endsWith(".lock")) fs.rmSync(path.join(dotGit, String(f)), { force: true });
 
   // the copy's main root and state dir come from sandbox-root.json: a worktree's planted .git file and commondir,
   // the cwd and CLAUDE_PROJECT_DIR move neither
   const w3 = path.join(repo, ".worktrees", "w3"), evil = path.join(w3, "evil");
   g(repo, "worktree", "add", "-q", "-b", "w3", w3);
-  ok("copy: prepares w3", runTree(w3, "src/**").code === 0 && runCopy(w3).code === 0);
+  ok("in-repo script and copy: prepare w3", runTree(w3, "src/**").code === 0 && runCopy(w3).code === 0);
   fs.mkdirSync(path.join(evil, "gd"), { recursive: true });
   fs.mkdirSync(path.join(evil, "common", "info"), { recursive: true });
   fs.writeFileSync(path.join(evil, "gd", "commondir"), "../common\n");
@@ -225,12 +294,10 @@ for (const k of ["openSync", "readFileSync", "writeFileSync", "appendFileSync", 
   fs.writeFileSync(path.join(dotGit, "worktrees", "w3", "commondir"), path.join(evil, "common") + "\n");
   const plantEnv = { env: { CLAUDE_PROJECT_DIR: evil } };
   const pa = run(copy, "", { cwd: w3, args: [w3, "--allow", "force-push"], ...plantEnv });
-  ok("copy: a planted .git file and commondir leave --allow's state in the repo's <common>/proteus",
-    pa.code === 0 && files(path.join(dotGit, "proteus", "allow")).some((f) => f.startsWith("w3-")) && !fs.existsSync(path.join(evil, "common", "proteus")), pa.err + pa.out);
+  ok("copy: with a planted .git file and commondir, still refuses --allow", pa.code === 1 && /in-repo/.test(pa.err), pa.err + pa.out);
   const pp = run(copy, "", { cwd: w3, args: [w3, "src/**"], ...plantEnv });
-  ok("copy: ... and preparing writes the repo's info/exclude and git dir, none of the planted ones",
-    pp.code === 0 && !files(path.join(evil, "common", "info")).length && !fs.existsSync(path.join(evil, "gd", "proteus-hooks"))
-      && fs.existsSync(path.join(dotGit, "worktrees", "w3", "proteus-hooks", "pre-commit")), pp.err + pp.out);
+  ok("copy: ... and writes none of the planted dirs", !files(path.join(evil, "common", "info")).length && !fs.existsSync(path.join(evil, "gd", "proteus-hooks"))
+    && !fs.existsSync(path.join(evil, "common", "proteus")), pp.err + pp.out);
   const probe = `const l = require(${JSON.stringify(path.join(bin, "proteus-lib.js"))}); const p = require(${JSON.stringify(path.join(bin, "sandbox-root.json"))});
 l.pinProject(p.root, p.common); const c = l.gitCommonDir(${JSON.stringify(w3)});
 console.log(JSON.stringify({ c, state: c && l.stateDir(c), main: l.mainRoot(c), project: l.projectRoot({}), git: l.repoCommon(${JSON.stringify(w3)}), out: l.gitCommonDir(${JSON.stringify(fake)}) }));`;

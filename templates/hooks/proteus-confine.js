@@ -35,19 +35,18 @@ const userHome = () => { try { return realish(os.userInfo().homedir); } catch { 
 const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"));
 // install.js --sandbox (#188): a repo's key (its git common dir, hashed) and the dir its copy of
 // proteus-worktree.js and the hooks beside it go in. That copy runs outside the sandbox, so it sits outside every
-// path the sandbox lets agents write, and proteus-worktree.js names it when a sandboxed run cannot write.
+// path the sandbox lets agents write, and the in-repo proteus-worktree.js names it once a worktree is prepared.
 const sandboxKey = (common) => require("crypto").createHash("sha256").update(real(common) || path.resolve(common)).digest("hex").slice(0, 8);
 const sandboxBin = (common) => path.join(claudeDir(), "proteus-sandbox", "bin", sandboxKey(common));
-// Edit deny rules for what git in a git dir would run outside the sandbox: its config, config.worktree and hooks;
-// each worktree's config.worktree and proteus-hooks/; and the same for every submodule git dir under modules/ (a
-// dir holding HEAD, nested ones too). On Linux and WSL2 the sandbox's denyWrite honours an exact path or a
-// trailing /** only, so every rule is one of those, listed per worktree and submodule as they are now; links are
-// not followed
+// Edit deny rules for what git in a git dir would run outside the sandbox: its config, config.worktree and hooks,
+// and the same for every submodule git dir under modules/ (a dir holding HEAD, nested ones too). A worktree's own
+// config.worktree and proteus-hooks/ are not denied: renaming worktrees/<id> defeats such a rule (#212 r5), and the
+// hooks' pinned git reads neither. On Linux and WSL2 the sandbox's denyWrite honours an exact path or a trailing /**
+// only, so every rule is one of those, listed per submodule as they are now; links are not followed
 function gitDenyRules(gitdir) {
   const rule = (...s) => `Edit(/${path.join(gitdir, ...s).split(path.sep).join("/")})`;
   const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
   const rules = [rule("config"), rule("config.worktree"), rule("hooks", "**")];
-  for (const id of dirs(path.join(gitdir, "worktrees"))) rules.push(rule("worktrees", id, "config.worktree"), rule("worktrees", id, "proteus-hooks", "**"));
   const modules = (d) => {
     for (const n of dirs(d)) {
       const sub = path.join(d, n);
@@ -139,30 +138,6 @@ function writeFile(p, data, roots, from = null) {
 }
 const copyFile = (src, dest, roots) => writeFile(dest, null, roots, src);
 
-// p's text, "" when it is missing, a link (never followed) or not a regular file (a fifo never blocks)
-function readText(p) {
-  let fd;
-  try { fd = fs.openSync(p, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0)); } catch (e) { if (["ENOENT", "ELOOP", "EMLINK"].includes(e.code)) return ""; throw e; }
-  try { return fs.fstatSync(fd).isFile() ? fs.readFileSync(fd, "utf8") : ""; } finally { fs.closeSync(fd); }
-}
-// replace p the way git does: <p>.lock made new ('wx': refused when anything, a link included, is there), filled
-// with next(p's text), renamed over p. A link at p is replaced, never followed. next returning null leaves p as it
-// was; mode defaults to p's own. True when p was replaced; throws, the lock removed, on any failure (#212 B1)
-function replaceFile(p, next, mode) {
-  const lock = p + ".lock", st = lstat(p), drop = () => remove(lock, [real(path.dirname(p))], "file");
-  const fd = fs.openSync(lock, "wx", mode || (st && st.isFile() ? st.mode & 0o777 : 0o644));
-  try {
-    let data;
-    try {
-      data = next(readText(p));
-      if (data !== null) { fs.writeFileSync(fd, data); if (mode) fs.fchmodSync(fd, mode); }
-    } finally { fs.closeSync(fd); }
-    if (data === null) { drop(); return false; }
-    fs.renameSync(lock, p);
-    return true;
-  } catch (e) { drop(); throw e; }
-}
-
 // point link at the directory target; a link already there goes through remove(link), which refuses by
 // default. False when a real file or directory is in the way or the old link stays
 function linkDir(target, link, rm = () => false) {
@@ -177,4 +152,4 @@ function linkDir(target, link, rm = () => false) {
   return true;
 }
 
-module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, gitDenyRules, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, readText, replaceFile, linkDir };
+module.exports = { WIN, lstat, real, isDir, isFile, samePath, inside, realish, userHome, claudeDir, sandboxKey, sandboxBin, gitDenyRules, pluginRoot, blocker, ownDir, refusal, remove, writeFile, copyFile, linkDir };
