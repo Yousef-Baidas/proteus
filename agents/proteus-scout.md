@@ -37,3 +37,11 @@ Report once: one tracker-free report to the lead; your final turn text is one li
 ## Script first
 
 - **Script first**: a deterministic procedure the lead or a worker has run twice (a data refresh, a render-and-compare, a release checklist) becomes a ticket for a program: a script or small CLI in the project's own `scripts/`, or `teams/<team>/bin/` for team tooling, with `--help` and an exit code. From then on, briefs call the program. Only the ambiguous step stays with a model, and it writes its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment in them.
+
+## Principles
+
+- the simplest thing that meets the contract;
+- no option, abstraction, file or dependency without a caller in this run;
+- one source of truth per fact or rule;
+- delete before you add;
+- leave the touched area no worse.

@@ -25,7 +25,7 @@ Codex CLI has no plugin: it uses the installer path ([Install with the installer
 4. The [context-mode](https://github.com/mksglu/context-mode) plugin, optional. Without it, agents write large output to a file in the scratch dir (`proteus-scratch.js --path <key>`) and read it with `grep`, `head` and `tail`; Proteus works the same, it just spends more context. `install.js` installs it through the claude CLI and only warns if that fails; if the CLI is not on PATH, run `claude plugin marketplace add mksglu/context-mode` and `claude plugin install context-mode@context-mode` yourself. Research, logs, test output, and web pages go through its sandbox so only the findings enter an agent's context. It is third-party code: its hooks see every tool call in every Claude Code session on the machine, and it keeps session events and indexed content in local SQLite under your home directory (`~/.context-mode/`). Read it before you install it.
 5. Recommended companions (each is its own install; the skill works without them but saves less):
    - [caveman](https://github.com/JuliusBrussee/caveman) — terse agent output
-   - [ponytail](https://github.com/DietrichGebert/ponytail) — minimal code, on Quick and mechanical tickets
+   - [ponytail](https://github.com/DietrichGebert/ponytail) — minimal code: full on Quick and mechanical tickets, lite on standard and hard
    - [rtk](https://github.com/rtk-ai/rtk) — compressed shell output
    - [Chisle](https://github.com/JayPokale/Chisle) is not a companion: it restates caveman and ponytail in one ruleset and the prose styles fight when stacked. Optional, compress hook only (`CHISLE_DEFAULT_MODE=off`); see `references/stack.md`
    - Claude Code LSP plugin: `/plugin install <language>-lsp@claude-plugins-official`
