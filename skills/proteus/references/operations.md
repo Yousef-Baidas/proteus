@@ -23,9 +23,22 @@ The human sends videos with ideas; each gets one set of notes on the tracker, ke
 2. The themes: the owner's numbered goals for this intake, from the message or the work order; none stated → ask once (`AskUserQuestion`), they are what every helper watches for.
 3. The video skill: the one the scout picked (`teams.md`, Skills), a `teams/*/skills.txt` line that fetches or watches videos; name its `SKILL.md` path in the brief. None → the helpers fall back to `yt-dlp` plus captions. Never assume a skill's path outside the project.
 4. Spawn one helper per distinct URL with the Intake helper prompt (`roles.md`), several in parallel, each on `helper`. Each posts one comment through `proteus-intake.js --post`, which renders the template, keeps the transcript's text as data, and skips a source the issue already has.
-5. When all have reported, `node <hooks>/proteus-scratch.js --sweep intake-<date>`, then one line per source: the URL, the findings count or `failed`, and the issue link.
+5. When all have reported, one line per source: the URL, the findings count or `failed`, and the issue link.
+6. Synthesis: spawn one Intake drafter (`roles.md`) on `judge`. It reads the notes, `gh issue list --state all` and the repo, and posts one draft comment on the intake issue: the drafted issues and a coverage table that `proteus-intake-coverage.js` passed.
+7. Nothing is filed until the human replies. Wait for `node <hooks>/proteus-verdict.js <issue> --wait` (background, as for a review). `ACCEPT` → file the draft as posted. `CHANGES` with edits to the list → apply them to the draft, re-run the coverage check until it exits 0, post the revised draft, wait again.
+8. File each drafted issue with `node <hooks>/proteus-gh.js issue create --label intake` (create the label once if missing): its title, then problem, change, acceptance, refs, supporting notes (the finding ids), estimate and dependencies, with draft numbers replaced by the filed issue numbers. Then post one dispatch-order comment on the intake issue: the filed issues in dependency order, which can run in parallel, and the coverage table's `candidate` rows left for the owner.
+9. `node <hooks>/proteus-scratch.js --sweep intake-<date>`.
 
-A helper's notes are findings, not decisions: what to build from them goes through the usual flow.
+Each finding in a note has an id `<h>-F<k>`: `<h>` is the first 6 hex of sha256 of its source URL, `<k>` its position in that note. The coverage table cites these ids.
+
+| Coverage outcome | Meaning |
+|------------------|---------|
+| `issue <k>` | drafted as issue `<k>`, whose supporting notes cite the id |
+| `shipped <file>` | the repo already does it; the file that does |
+| `candidate` | plausible, for the owner to decide; drafted nowhere |
+| `rejected <reason>` | not worth doing, and why |
+
+A helper's notes are findings, not decisions: the draft is a proposal, and nothing is filed without the human's reply.
 
 ## `pause` / `resume`
 

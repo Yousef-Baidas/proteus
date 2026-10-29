@@ -84,7 +84,7 @@ The status line at the bottom of the terminal shows `proteus: 2 questions · 1 r
 ## Commands mid-run
 
 - `questions` / `inbox` — every open question as a picker, in order.
-- `intake <urls|file>` — one helper per video posts structured notes on the issue `Intake: <date>`.
+- `intake <urls|file>` — one helper per video posts structured notes on the issue `Intake: <date>`; a `judge` drafter then posts draft issues and a coverage table there, filed with the `intake` label once the human replies `ACCEPT`.
 - `status` — one line: milestone, tickets closed/total, open PRs and verdicts, running workers, ETA from this run's median ticket time.
 - `pause` (or your own alias, e.g. `gaming`) — stops every worker and heavy job (renders, encodes, test farms), logs the position; `resume` picks up on the same worktrees.
 - `revision` — fast review rounds for small taste tweaks: one standing worker commits each tweak as a script in the repo, you approve each by eye, one verifier checks the whole round and that a clean rebuild reproduces it. Nothing lives outside git.
@@ -243,6 +243,7 @@ templates/
     proteus-merge.js        a merge batch: ready PRs in dependency order, the suite step for _run, bisect on red
     proteus-run-tree.js     checks a commit out in .worktrees/_run for the suite, run sandboxed
     proteus-intake.js       the intake issue; renders and posts one note per video
+    proteus-intake-coverage.js  the intake draft's coverage table maps every finding exactly once
     proteus-close-report.js bounce and escalation rates, wall-clock and cost per ticket at close
     proteus-baseline.js     baseline ratchet: a gate fails only on findings not in teams/baseline.json
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents

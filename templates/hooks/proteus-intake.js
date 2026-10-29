@@ -5,8 +5,11 @@
 //   node <hooks>/proteus-intake.js --render <note.json>        print the comment, post nothing
 // A note's text comes from a transcript, so it is data: each field is flattened to one line and set after the
 // template's own text, so no line of a comment starts with words from the video, and mentions and HTML are defused.
+// Each finding line carries an id `<h>-F<k>`: h = the first 6 hex of sha256 of the source URL, k = its 1-based position;
+// a note is posted once per source, so ids are unique in an intake and the coverage table (#198) cites them.
 // Writes go through proteus-gh.js. A source the issue already has a note for is not posted again (exit 0).
 "use strict";
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
@@ -20,6 +23,7 @@ The intake tracker: one issue "Intake: <date>" (default today), one comment per 
 note.json: {"url", "title", "channel", "length", "summary": [3-5 lines],
   "findings": [{"at": "02:40-03:50", "themes": [1, 4], "text"}], "quotes": [{"at", "text"}]}
 or, when the download failed after its one retry: {"url", "failed": "<the error>"}.
+Each finding is rendered "- <id> <at> [<themes>] <text>", id <h>-F<k>: h = 6 hex of sha256(url), k = its position.
 Exit 1 on a note that does not fit the template (each problem named) or a gh error.`;
 
 const AT = /^\d{1,2}(:\d{2}){1,2}(-\d{1,2}(:\d{2}){1,2})?$/;
@@ -52,6 +56,7 @@ function check(n) {
 }
 
 const sourceLine = (url) => `Source: ${one(url)}`;
+const findingId = (url, k) => `${crypto.createHash("sha256").update(String(url).trim()).digest("hex").slice(0, 6)}-F${k}`;
 
 function render(n) {
   if ("failed" in n) return [`## Intake: download failed`, sourceLine(n.url), `Error: ${one(n.failed)}`, ""].join("\n");
@@ -59,7 +64,7 @@ function render(n) {
   for (const s of n.summary) out.push(`- ${one(s)}`);
   out.push("", "### Findings");
   if (!n.findings.length) out.push("- none relevant to the themes");
-  for (const f of n.findings) out.push(`- ${one(f.at)} [${f.themes.join(",")}] ${one(f.text)}`);
+  n.findings.forEach((f, i) => out.push(`- ${findingId(n.url, i + 1)} ${one(f.at)} [${f.themes.join(",")}] ${one(f.text)}`));
   if ((n.quotes || []).length) {
     out.push("", "### Quotes");
     for (const q of n.quotes) out.push(`- ${one(q.at)} "${one(q.text)}"`);
@@ -126,4 +131,4 @@ if (require.main === module) {
   require(path.join(__dirname, "proteus-lib.js")).homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
   process.exitCode = main(process.argv.slice(2));
 }
-module.exports = { check, render, one };
+module.exports = { check, render, one, findingId };
