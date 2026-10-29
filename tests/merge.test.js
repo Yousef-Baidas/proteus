@@ -529,10 +529,10 @@ ok("never: proteus-merge.js spawned only git and gh", spawns.every((x) => /(^|[\
 
 // proteus-run-tree.js runs sandboxed: no prefix rule or sandbox exclusion names it, while proteus-merge.js's rule stays
 const cx = require(path.join(HOOKS, "proteus-harness-codex.js"));
-const outside = [cx.RULES, ...["install.js", ...fs.readdirSync(HOOKS).map((f) => path.join("templates", "hooks", f))]
+const outside = [cx.rules(LW), ...["install.js", ...fs.readdirSync(HOOKS).map((f) => path.join("templates", "hooks", f))]
   .map((f) => fs.readFileSync(path.join(__dirname, "..", f), "utf8"))
   .flatMap((text) => text.split("\n").filter((x) => /prefix_rule|excludedCommands|allowUnsandboxedCommands/.test(x)))];
-ok("run-tree: no prefix rule or sandbox exclusion names proteus-run-tree.js", outside.length > 0 && outside.every((x) => !x.includes("proteus-run-tree")) && cx.RULES.includes(".codex/hooks/proteus-merge.js"), outside.join("\n"));
+ok("run-tree: no prefix rule or sandbox exclusion names proteus-run-tree.js", outside.length > 0 && outside.every((x) => !x.includes("proteus-run-tree")) && cx.rules(LW).includes("/.codex/hooks/proteus-merge.js\""), outside.join("\n"));
 ok("run-tree: anything but one full commit id is a usage error", ["--index-output=x", "HEAD", "abc"].every((a) => tree(s.root, a).code === 2) && run(RUN_TREE, "", { cwd: s.root, args: [] }).code === 2);
 
 const h = run(SCRIPT, "", { args: ["--help"] });

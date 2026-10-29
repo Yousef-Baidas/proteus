@@ -151,6 +151,6 @@ const CX = path.join(W, "cx");
 fs.mkdirSync(CX);
 cx.registerLead(CX);
 ok("codex: the rules let the lead's watchdog write its flags outside the sandbox",
-  fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes('".codex/hooks/proteus-watchdog.js"'));
+  fs.readFileSync(path.join(CX, ".codex", "rules", "proteus.rules"), "utf8").includes(JSON.stringify(path.join(CX, ".codex", "hooks", "proteus-watchdog.js").split(path.sep).join("/"))));
 
 lib.summary();

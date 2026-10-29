@@ -7,6 +7,7 @@
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 if (process.argv[2] === "--help" || process.argv[2] === "-h") {
   console.log("usage: node proteus-status.js [run]\nOne status line: the run (default the open proteus/<run> branch), its open milestone and\ntickets closed, open PRs and how many carry a verdict, and an ETA from the median ticket time.");

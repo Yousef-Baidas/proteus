@@ -23,6 +23,7 @@
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 // printed for the lead to run sandboxed, never run here
 const RUN_TREE = path.join(__dirname, "proteus-run-tree.js");

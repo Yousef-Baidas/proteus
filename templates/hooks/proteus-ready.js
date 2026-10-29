@@ -11,6 +11,7 @@
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 // globs a and b can name a common file (ownedMatch both ways, each glob read as a path)
 const overlaps = (a, b) => lib.ownedMatch(a, b) || lib.ownedMatch(b, a);

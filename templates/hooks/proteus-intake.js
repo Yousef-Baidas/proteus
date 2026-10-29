@@ -122,5 +122,8 @@ function main(args) {
   return fail(`unknown argument ${args[0]}; --help`);
 }
 
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module) {
+  require(path.join(__dirname, "proteus-lib.js")).homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
+  process.exitCode = main(process.argv.slice(2));
+}
 module.exports = { check, render, one };

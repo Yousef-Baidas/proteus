@@ -24,6 +24,7 @@
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 const MIN = 60000;
 const DAY = 24 * 60 * MIN;

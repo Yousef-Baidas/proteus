@@ -45,6 +45,7 @@ function roots() {
 }
 
 if (require.main === module) {
+  require(path.join(__dirname, "proteus-lib.js")).homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
   const USAGE = "usage: node proteus-skillpath.js <skill>";
   const name = process.argv[2];
   if (name === "--help" || name === "-h") {
