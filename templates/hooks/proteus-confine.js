@@ -38,15 +38,16 @@ const claudeDir = () => path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(
 // path the sandbox lets agents write, and the in-repo proteus-worktree.js names it once a worktree is prepared.
 const sandboxKey = (common) => require("crypto").createHash("sha256").update(real(common) || path.resolve(common)).digest("hex").slice(0, 8);
 const sandboxBin = (common) => path.join(claudeDir(), "proteus-sandbox", "bin", sandboxKey(common));
-// Edit deny rules for what git in a git dir would run outside the sandbox: its config, config.worktree and hooks,
-// and the same for every submodule git dir under modules/ (a dir holding HEAD, nested ones too). A worktree's own
-// config.worktree and proteus-hooks/ are not denied: renaming worktrees/<id> defeats such a rule (#212 r5), and the
-// hooks' pinned git reads neither. On Linux and WSL2 the sandbox's denyWrite honours an exact path or a trailing /**
-// only, so every rule is one of those, listed per submodule as they are now; links are not followed
+// Edit deny rules for what git in a git dir would run outside the sandbox: its config, config.worktree and hooks; and for
+// proteus-lead/, the state the hooks write outside the sandbox (install.js --sandbox makes it first). The same for
+// every submodule git dir under modules/ (a dir holding HEAD, nested ones too). A worktree's own config.worktree and
+// proteus-hooks/ are not denied: renaming worktrees/<id> defeats such a rule (#212 r5), and the hooks' pinned git
+// reads neither. On Linux and WSL2 the sandbox's denyWrite honours an exact path or a trailing /** only, so every
+// rule is one of those, listed per submodule as they are now; links are not followed
 function gitDenyRules(gitdir) {
   const rule = (...s) => `Edit(/${path.join(gitdir, ...s).split(path.sep).join("/")})`;
   const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; } };
-  const rules = [rule("config"), rule("config.worktree"), rule("hooks", "**")];
+  const rules = [rule("config"), rule("config.worktree"), rule("hooks", "**"), rule("proteus-lead", "**")];
   const modules = (d) => {
     for (const n of dirs(d)) {
       const sub = path.join(d, n);

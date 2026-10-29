@@ -2317,6 +2317,11 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         // adds a new one's). A worktree's own config.worktree and hooks are the worker's, not a boundary
         // (enforcement.md)
         slashRule("Edit", path.join(root, "**", ".claude", "**")),
+        // the root's own hooks and settings each by a rule Linux honours too: a planted hook or a flipped gate there
+        // runs install.js outside the sandbox at the next SessionStart (#237 r2)
+        slashRule("Edit", path.join(root, ".claude", "hooks", "**")),
+        slashRule("Edit", path.join(root, ".claude", "settings*.json")),
+        ...["settings.json", "settings.local.json"].map((f) => slashRule("Edit", path.join(root, ".claude", f))),
         ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
         ...outsideEdits(keep),
       ],
@@ -2362,6 +2367,17 @@ function mainWorktreeConfig(common) {
   return "";
 }
 
+// <common>/proteus-lead, the lead's state the hooks write outside the sandbox (#237), made before the profile denies
+// it, so it exists when the sandbox starts and no agent makes it first (as a link, or with files of its own in it).
+// lib.leadDir makes it (0700, the old state copied in) or refuses a link, a non-directory or a dir another user
+// owns. "" or why not
+function sandboxLead(common) {
+  let d;
+  try { d = hl().leadDir(common); } catch (e) { return `cannot use ${path.join(common, "proteus-lead")} (${e.message})`; }
+  try { fs.chmodSync(d, 0o700); } catch (e) { return `cannot make ${d} private (${e.message})`; }
+  return "";
+}
+
 function sandbox() {
   if (WIN) die("--sandbox: native Windows has no Claude Code sandbox; run Claude Code in WSL2 and run this there (docs/install.md, Sandboxed bypass)", 2);
   // the repo by lib's trusted resolution (#215), never git or a .git file: the realpath of the main checkout's .git
@@ -2378,7 +2394,7 @@ function sandbox() {
   const place = realish(path.dirname(path.dirname(bin)));
   const hit = open.find((w) => inside(place, w) || inside(w, place));
   if (hit) die(`--sandbox: ${place} is inside or holds ${hit}, which sandboxed commands may write; set CLAUDE_CONFIG_DIR outside it`, 2);
-  const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common);
+  const bad = makeScratch(scratch) || sandboxCopy(bin, root, common, file) || mainWorktreeConfig(common) || sandboxLead(common);
   if (bad) die(`--sandbox: ${bad}`, 1);
   writeJson(file, sandboxProfile(root, common, bin, scratch, guest));
   const q = (p) => (/[\s"'\\$`]/.test(p) ? JSON.stringify(p) : p);

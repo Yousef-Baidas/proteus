@@ -107,6 +107,37 @@ if (WIN) {
   const gitRules = (d) => d.filter((x) => x.includes("/.git/"));
   const linuxOk = (x) => /^Edit\(.*\)$/.test(x) && !x.slice(5, -1).replace(/\/\*\*$/, "").includes("*");
   ok("profile: every .git deny rule is exact or ends in /**", gitRules(deny).length >= 3 && gitRules(deny).every(linuxOk), gitRules(deny).filter((x) => !linuxOk(x)).join(" "));
+  // a write the profile refuses on Linux too: a rule of the two forms Linux honours names the path or a dir above it
+  const deniedOnLinux = (p2) => deny.filter(linuxOk).some((x) => {
+    const at = x.slice(6, -1);
+    return at.endsWith("/**") ? p2.startsWith(at.slice(0, -2)) : at === p2;
+  });
+  // #237: the lead's state, which the hooks write outside the sandbox, made before the profile and denied by it
+  const leadDir = path.join(dotGit, "proteus-lead"), lst = fs.lstatSync(leadDir, { throwIfNoEntry: false });
+  ok("--sandbox makes <common>/proteus-lead, a real dir, mode 0700", Boolean(lst) && lst.isDirectory() && !lst.isSymbolicLink() && (lst.mode & 0o777) === 0o700, lst && (lst.mode & 0o777).toString(8));
+  ok("profile: an agent write to <common>/proteus-lead is denied", deny.includes(`${rule("Edit", leadDir)}/**)`)
+    && deniedOnLinux(path.join(leadDir, "journal.jsonl")) && deniedOnLinux(path.join(leadDir, "agents", "x.json")), deny.filter((x) => x.includes("proteus-lead")).join(" "));
+  // #237 r2: the root's hooks and settings, which the plugin's SessionStart acts on outside the sandbox
+  ok("profile: an agent write to the root's .claude/hooks is denied", deniedOnLinux(path.join(realRepo, ".claude", "hooks", "proteus-lib.js")),
+    deny.filter((x) => x.includes(".claude")).join(" "));
+  ok("profile: an agent write to the root's .claude/settings*.json is denied", deny.includes(`${rule("Edit", path.join(realRepo, ".claude", "settings*.json"))})`)
+    && ["settings.json", "settings.local.json"].every((f) => deniedOnLinux(path.join(realRepo, ".claude", f))), deny.filter((x) => x.includes(".claude")).join(" "));
+  // proteus-lead a link or a file: --sandbox refuses, writes no profile and nothing through the link
+  const leadVictim = path.join(W, "lead-victim"), leadAside = path.join(W, "lead-aside");
+  fs.mkdirSync(leadVictim);
+  fs.renameSync(leadDir, leadAside);
+  fs.rmSync(file);
+  fs.symlinkSync(leadVictim, leadDir);
+  const ll = sandbox({ XDG_CONFIG_HOME: XDG });
+  ok("--sandbox refuses a link at <common>/proteus-lead, writing no profile and nothing through it",
+    ll.code === 1 && /proteus-lead/.test(ll.err) && !fs.existsSync(file) && !files(leadVictim).length, ll.err);
+  fs.unlinkSync(leadDir);
+  fs.writeFileSync(leadDir, "");
+  const lf = sandbox({ XDG_CONFIG_HOME: XDG });
+  ok("--sandbox refuses a file at <common>/proteus-lead and writes no profile", lf.code === 1 && /proteus-lead/.test(lf.err) && !fs.existsSync(file), lf.err);
+  fs.unlinkSync(leadDir);
+  fs.renameSync(leadAside, leadDir);
+  ok("--sandbox writes the profile again once proteus-lead is a real dir", sandbox({ XDG_CONFIG_HOME: XDG }).code === 0 && fs.existsSync(file));
 
   // gitDenyRules: each submodule git dir (nested ones and ones under a name path), no worktree's, no other wildcard
   const C = require(path.join(ROOT, "templates", "hooks", "proteus-confine.js"));

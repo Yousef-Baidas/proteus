@@ -840,17 +840,43 @@ function changeCalls(co, specs, ignored) {
     [["ls-files", "-o", "-z", ...(ignored ? [] : ["--exclude-standard", "--directory", "--no-empty-directory"]), "--", ...specs], "?? ", o]];
 }
 const changeLines = (outs, calls) => (outs.some((x) => x === null) ? null : outs.flatMap((out, i) => String(out).split("\0").filter(Boolean).map((p) => calls[i][1] + p)));
-function treeChanges(dir, specs = [], ignored = false) {
-  const co = checkoutOf(dir);
+// co with its index swapped for a private copy, and done() to delete the copy; null when co is, or its index is a
+// link or not a regular file. git diff rewrites a stat-dirty index (a lock, then a rename, both by path), and
+// GIT_OPTIONAL_LOCKS=0 does not stop it, so run on <common>/worktrees/<id>/index it writes wherever an agent swaps
+// that dir for a link (#212). The copy is a 'wx' file in a fresh mkdtemp dir; its source is lstat'd and opened
+// without following a link. A checkout with no index yet gets a name in that dir with nothing there, as before
+function privateIndex(co) {
   if (!co) return null;
-  const calls = changeCalls(co, specs, ignored);
-  return changeLines(calls.map(([args, , o]) => { try { return String(gitRun(co.common, args, o)); } catch { return null; } }), calls);
+  let st = null;
+  try { st = fs.lstatSync(co.index); } catch (e) { if (e.code !== "ENOENT") return null; }
+  if (st && !st.isFile()) return null;
+  let dir;
+  try { dir = fs.mkdtempSync(path.join(os.tmpdir(), "proteus-index-")); } catch { return null; }
+  const done = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch {} };
+  const index = path.join(dir, "index");
+  if (st) {
+    try {
+      const { fd } = openRegular(co.index);
+      try { fs.writeFileSync(index, fs.readFileSync(fd), { flag: "wx", mode: 0o600 }); } finally { fs.closeSync(fd); }
+    } catch { done(); return null; }
+  }
+  return { co: { ...co, index }, done };
+}
+function treeChanges(dir, specs = [], ignored = false) {
+  const p = privateIndex(checkoutOf(dir));
+  if (!p) return null;
+  try {
+    const calls = changeCalls(p.co, specs, ignored);
+    return changeLines(calls.map(([args, , o]) => { try { return String(gitRun(p.co.common, args, o)); } catch { return null; } }), calls);
+  } finally { p.done(); }
 }
 async function treeChangesAsync(dir, specs = [], ignored = false) {
-  const co = checkoutOf(dir);
-  if (!co) return null;
-  const calls = changeCalls(co, specs, ignored);
-  return changeLines(await Promise.all(calls.map(([args, , o]) => gitAsync(co.common, args, o))), calls);
+  const p = privateIndex(checkoutOf(dir));
+  if (!p) return null;
+  try {
+    const calls = changeCalls(p.co, specs, ignored);
+    return changeLines(await Promise.all(calls.map(([args, , o]) => gitAsync(p.co.common, args, o))), calls);
+  } finally { p.done(); }
 }
 // a release home's git dir: a bare clone's own dir, else its checkout's (trustedCommon)
 function homeGitDir(home) {
