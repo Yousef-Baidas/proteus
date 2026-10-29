@@ -58,6 +58,18 @@ ok("gh: --admin and a human's word through a wrapper with options denied",
   denied("rtk -v gh pr merge 4 --admin", /--admin/) && denied("sudo -u x gh pr merge 4 --admin", /--admin/) && denied("env -i gh issue comment 4 --body 'ACCEPT'", /human's words/));
 ok("push: the words only in text, a heredoc body or a comment allowed",
   !all(allowed, ['echo "git push origin trunk"', "gh issue create --title x --body-file - <<'EOF'\ngit push origin trunk\ngh pr merge 3 --admin\nEOF", "git status # git push origin trunk"]).length);
+// #221: a bare push is judged as the branch checked out where it runs, not the upstream a worker branch was cut from
+const WTF = path.join(REPO, ".worktrees", "fix"), WTD = path.join(REPO, ".worktrees", "det"), WTM = path.join(REPO, ".worktrees", "trunk");
+g(REPO, "worktree", "add", "-q", "-b", "fix/x", WTF, "trunk"); g(WTF, "branch", "-q", "--set-upstream-to=origin/trunk");
+g(REPO, "worktree", "add", "-q", "--detach", WTD, "trunk"); g(REPO, "worktree", "add", "-q", WTM, "trunk");
+const inWt = (wt, c) => `cd ${JSON.stringify(wt.split(path.sep).join("/"))} && ${c}`;
+ok("push: a bare push or `git push origin` of a branch tracking main passes, from the lead's cwd after cd and from the worktree (#221)",
+  !all((c) => allowed(c, sub), [inWt(WTF, "git push"), inWt(WTF, "git push origin"), inWt(WTF, "git push -u origin")]).length &&
+  shell("git push", sub).code === 2 && lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: WTF, tool_name: "Bash", tool_input: { command: "git push origin" }, ...sub }, { cwd: WTF }).code === 0);
+ok("push: a bare push of main checked out in a worktree still denied", denied(inWt(WTM, "git push"), /never push to trunk/, sub) && denied(inWt(WTM, "git push origin"), /never push to trunk/));
+ok("push: a bare push from a detached HEAD, or after a cd the guard cannot follow, names `git push origin <branch>`",
+  !all((c) => denied(c, /git push origin <branch>/, sub), [inWt(WTD, "git push"), inWt(WTD, "git push origin"), "cd $T && git push", "cd - && git push origin"]).length);
+ok("push: an explicit refspec keeps its own rules", denied(inWt(WTF, "git push origin HEAD:trunk"), /never push to/, sub) && allowed(inWt(WTF, "git push origin fix/x"), sub) && allowed(inWt(WTD, "git push origin HEAD:proteus-work/r1/8"), sub));
 
 // merges and protection
 ok("gh: pr merge --admin denied, a plain merge allowed", denied("gh pr merge 4 --merge --admin", /--admin/) && allowed("gh pr merge 4 --merge --delete-branch"));

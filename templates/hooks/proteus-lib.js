@@ -1658,6 +1658,7 @@ const BRANCH_MSG = {
   admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
   protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
   status: "proteus: a commit status or check run on a PR is a verdict the run branch's ruleset requires (proteus/verdict, proteus/security); nobody posts one by hand. A verifier records its verdict with `node <hooks>/proteus-signoff.js <pr> <sha> <WORD>`; CI posts the rest.",
+  bare: "proteus: a bare `git push` here has no branch the guard can read (a detached HEAD, or no checkout of this project); push by name: `git push origin <branch>`.",
   wide: (flag) => `proteus: \`git push ${flag}\` can reach main or a run branch; push one branch by name.`,
   main: (b) => `proteus: agents never push to ${b}; a run reaches it only as the close PR the human merges.`,
   del: (b) => `proteus: agents never delete ${b}; the human does at close.`,
@@ -1702,12 +1703,21 @@ const PUSH_VALUE = new Set(["--repo", "-o", "--push-option", "--receive-pack", "
 function branchDenial(command, cwd, extra) {
   const cmd = String(command || "");
   if (!/\b(gh|git)\b/.test(cmd)) return null;
+  // the dir each command runs in, moved by a cd on the way (a subagent's calls start in the lead's checkout); lost
+  // after a cd the guard cannot follow, so a bare push there has no branch to read (#221)
+  let dir = path.resolve(cwd || "."), lost = false;
   for (const all of shellCommands(cmd)) {
     let words = unwrap(all);
     let prog = progName(words[0]);
+    if (prog === "cd" || prog === "pushd") {
+      const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-") || "~";
+      if (to === "-" || unexpanded(to, dir)) lost = true;
+      else dir = path.resolve(dir, expandPath(to, dir));
+      continue;
+    }
     // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
     if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
-    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || "."), extra) : null;
+    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), dir, extra, lost) : null;
     if (why) return why;
   }
   return null;
@@ -1746,8 +1756,8 @@ function ghApi(args) {
 }
 
 // git <global options> push …: each destination it would write, judged against main and the run branches
-// extra(dst), when given, may refuse a destination neither main nor a run branch
-function pushDenial(words, cwd, extra) {
+// extra(dst), when given, may refuse a destination neither main nor a run branch; lost: cwd is not where it runs
+function pushDenial(words, cwd, extra, lost = false) {
   let i = 0, dir = cwd, built = "";
   for (; i < words.length && words[i].startsWith("-"); i++) {
     const v = words[i] === "-C" ? words[++i] : words[i].startsWith("-C") ? words[i].slice(2) : null;
@@ -1769,12 +1779,14 @@ function pushDenial(words, cwd, extra) {
     else if (!a.startsWith("-")) pos.push(a);
   }
   const g = (...a) => git(a, dir);
-  const cur = branchOf(dir);
+  const cur = lost ? "" : branchOf(dir);
   const remote = pos[0] || (cur && g("config", "--get", `branch.${cur}.remote`)) || "origin";
   let specs = pos.slice(1);
+  // a bare push (or remote only) is judged as the branch checked out where it runs, read from that checkout's own
+  // HEAD (branchOf, #215), not from an upstream a worker branch cut from origin/main points at (#221)
   if (!specs.length && !del) {
-    if (!cur) return null;
-    specs = [`${cur}:${g("config", "--get", `branch.${cur}.merge`).replace(/^refs\/heads\//, "") || cur}`];
+    if (!cur) return BRANCH_MSG.bare;
+    specs = [cur];
   }
   for (const spec of specs) {
     const s = spec.replace(/^\+/, "");
