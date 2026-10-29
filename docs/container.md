@@ -1,7 +1,7 @@
 # Container runner
 
 `proteus-container.js` runs one Claude Code worker session in a container that never sees the host's `.git` (#80).
-Inside, the worker can run with `bypassPermissions`: nothing it writes can make the host run code.
+Inside, the worker can run with `bypassPermissions`: nothing it writes outside the owned paths comes back, and no git config, hooks or agent config dirs (`.claude`, `.codex`, `.agents`).
 
 ## What it isolates
 
@@ -9,7 +9,7 @@ Inside, the worker can run with `bypassPermissions`: nothing it writes can make 
 - Inside: every capability dropped, `no-new-privileges`, a read-only root, tmpfs `/tmp`, `/work` and home, the image's `node` user (`--userns keep-id` on podman), and pids, memory and cpu caps.
 - Credential: `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`, passed by name (`-e NAME`), so the value is never in argv. No GitHub token: `GH_TOKEN` and `GITHUB_TOKEN` are dropped before the runtime starts. The host pushes.
 - Out: the entrypoint commits leftovers as `wip: uncommitted worker changes` and bundles the branch to `/out`. The host reads only that bundle, with its pinned git (no hooks, fsmonitor or user config). It verifies the bundle and fetches one fixed refspec, with no tags, into `refs/proteus-container/<id>`.
-- The import is refused when the result does not descend from the old tip, or changes a path outside the worktree's `.claude/proteus-owned`. A `.git*` path such as `.gitattributes` also needs an owned entry that names it.
+- The import is refused when the result does not descend from the old tip, or changes a path outside the worktree's `.claude/proteus-owned`. A `.git*` path such as `.gitattributes`, or a `.claude`, `.codex` or `.agents` dir, at any depth and even inside an owned path, also needs an owned entry that names it (`src/.claude/**`; `.github/` does not cover `.github/x/.gitattributes`). The owned list is read once, before the run; a missing or unreadable one is refused.
 - Otherwise `update-ref` moves the branch. A clean worktree's files follow with `read-tree -m -u`. A dirty one is left alone, and the command is printed.
 - The clone's config and hooks never leave the container: a bundle carries commits only.
 

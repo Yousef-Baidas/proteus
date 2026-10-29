@@ -33,6 +33,7 @@ const src = (t) => (mounts.find((m) => m.target === t) || {}).source;
 const root = path.dirname(src("/in"));
 if (path.dirname(src("/out")) !== root) process.exit(4);
 fs.mkdirSync(path.join(root, "work"), { recursive: true });
+if (process.env.FAKE_DOCKER_RM) fs.rmSync(process.env.FAKE_DOCKER_RM, { force: true });
 spawnSync(process.execPath, [process.env.FAKE_DOCKER_ENTRY], { env: { ...process.env, PROTEUS_CONTAINER_TEST_ROOT: root }, stdio: "inherit" });
 if (process.env.FAKE_DOCKER_EXTRA) {
   const repo = path.join(root, "work", "repo");
@@ -56,6 +57,8 @@ if (mode === "ok" || mode === "plant" || mode === "extra") { w("src/a.js", "a\\n
 if (mode === "uncommitted") w("src/b.js", "b\\n");
 if (mode === "outside") { w("src/a.js", "a\\n"); w("README.md", "changed\\n"); commit(); }
 if (mode === "gitattr") { w("src/.gitattributes", "*.js filter=evil\\n"); commit(); }
+if (mode === "ghattr") { w(".github/x/.gitattributes", "*.js filter=evil\\n"); commit(); }
+if (mode === "agentdirs") { w("src/.claude/skills/x/SKILL.md", "x\\n"); w("src/a/.codex/config.toml", "x\\n"); w("src/.agents/x.md", "x\\n"); commit(); }
 if (mode === "rewrite") { w("src/a.js", "a\\n"); g("add", "-A"); g("commit", "-q", "--amend", "-m", "rewritten"); }
 if (mode === "plant") {
   const sh = "#!/bin/sh\\necho fired > '" + process.env.FAKE_MARK.replace(/\\\\/g, "/") + "'\\n";
@@ -171,6 +174,23 @@ const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out)
   const t2 = worktree("src/\nsrc/.gitattributes\n");
   const res2 = runIn(t2, { FAKE_CLAUDE: "gitattr" });
   ok("an owned entry naming the .git* path lets it through", res2.code === 0 && tip(t2) !== t2.base, res2.out + res2.err);
+  const t3 = worktree(".github/\n");
+  const res3 = runIn(t3, { FAKE_CLAUDE: "ghattr" });
+  ok("an entry naming .github/ does not let a .gitattributes under it through", res3.code === 1 && res3.err.includes(".github/x/.gitattributes") && tip(t3) === t3.base, res3.err);
+}
+{
+  const t = worktree();
+  const res = runIn(t, { FAKE_CLAUDE: "agentdirs" });
+  ok("a .claude, .codex or .agents dir at any depth under an owned dir is refused",
+    res.code === 1 && ["src/.claude/skills/x/SKILL.md", "src/a/.codex/config.toml", "src/.agents/x.md"].every((p) => res.err.includes(p)) && tip(t) === t.base, res.err);
+  const t2 = worktree("src/\nsrc/.claude/**\nsrc/a/.codex/\nsrc/.agents/\n");
+  const res2 = runIn(t2, { FAKE_CLAUDE: "agentdirs" });
+  ok("owned entries naming those dirs let them through", res2.code === 0 && tip(t2) !== t2.base, res2.out + res2.err);
+}
+{
+  const t = worktree();
+  const res = runIn(t, { FAKE_CLAUDE: "outside", FAKE_DOCKER_RM: path.join(t.wt, ".claude", "proteus-owned") });
+  ok("the import checks the owned list read before the run, even if it is gone after", res.code === 1 && res.err.includes("README.md") && tip(t) === t.base, res.err);
 }
 {
   const t = worktree();
@@ -232,6 +252,10 @@ const outDir = (res) => (/result\.json and status\.json in (.+)$/m.exec(res.out)
   const t2 = worktree(null);
   const res2 = runIn(t2);
   ok("a worktree with no owned-path list is refused before the run", res2.code === 1 && /proteus-owned/.test(res2.err) && !calls().length, res2.err);
+  const t3 = worktree(null);
+  fs.mkdirSync(path.join(t3.wt, ".claude", "proteus-owned"), { recursive: true });
+  const res4 = runIn(t3);
+  ok("an unreadable owned-path list is refused before the run", res4.code === 1 && /proteus-owned/.test(res4.err) && !calls().length && tip(t3) === t3.base, res4.err);
   const res3 = run(["run", "--worktree", W, "--prompt-file", PROMPT, "--runtime", "docker"]);
   ok("a dir that is no worktree of the repo is refused", res3.code === 1 && /not a worktree/.test(res3.err), res3.err);
 }

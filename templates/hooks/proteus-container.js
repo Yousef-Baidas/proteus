@@ -11,9 +11,10 @@
 // the runtime. proteus-container-entry.js clones the bundle, runs `claude -p` with bypassPermissions and bundles the
 // branch's new commits to /out. Back on the host only that bundle is read, through the pinned git: verified, fetched
 // with no tags and one fixed refspec into refs/proteus-container/<id>, and the branch moved there with update-ref
-// only when its old tip is an ancestor and every changed path is owned (.claude/proteus-owned through lib.ownedDenial,
-// as proteus-owned-check.js --staged; a .git* path such as .gitattributes only when an owned entry names it). A clean
-// worktree's files follow (read-tree -m -u old new); a dirty one is left, with the command that brings them along.
+// only when its old tip is an ancestor and every changed path is owned (.claude/proteus-owned, as read before the
+// run, matched by lib.ownedMatch as proteus-owned-check.js --staged; a .git*, .claude, .codex or .agents segment at
+// any depth only when an owned entry names that segment). A clean worktree's files follow (read-tree -m -u old new);
+// a dirty one is left, with the command that brings them along.
 // result.json and status.json stay in the scratch dir; the bundles are removed.
 // build: builds templates/container/Dockerfile with the entrypoint. doctor: runtime, rootless, image, credential.
 // Exit 0 imported, nothing to import, built or doctor clean; 1 refused or failed (reason on stderr); 2 usage.
@@ -58,8 +59,13 @@ const CHECKS = {
   network: [/^[A-Za-z0-9][\w.-]*$/, "a network name"],
   timeout: [/^(?:\d+(?:\.\d+)?)$/, "minutes"],
 };
-// a .git* name anywhere in a path: .gitattributes, .gitmodules, .gitignore, a nested .git
-const SPECIAL = (rel) => rel.split("/").some((s) => /^\.git/i.test(s));
+// a segment git or a host agent session acts on, at any depth: a .git* name (.gitattributes, .gitmodules, a nested
+// .git) or an agent config dir (.claude, .codex, .agents: host sessions load nested skills and hooks from them)
+const SPECIAL_SEG = (s) => /^\.git/i.test(s) || /^\.(?:claude|codex|agents)$/i.test(s);
+const specials = (rel) => String(rel).replace(/\\/g, "/").split("/").filter(SPECIAL_SEG);
+const SPECIAL = (rel) => specials(rel).length > 0;
+// an owned entry lets a special path through only when it matches the path and names each of its special segments
+const specialOwned = (e, rel) => lib.ownedMatch(e, rel) && specials(rel).every((p) => specials(e).some((s) => lib.ownedMatch(s, p)));
 // what reaches the lead's output from a file the container wrote or a path it named: no control character
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
 
@@ -160,7 +166,10 @@ function runCmd(o) {
   if (!co || !lib.samePath(co.root, lib.realOr(wt))) die(`${wt} is not a worktree of this project's repo (run from the project, naming the worktree's root)`);
   const branch = lib.branchOf(wt), base = lib.headOf(wt);
   if (!branch || !/^[\w][\w./-]*$/.test(branch) || !base) die(`${wt} has no branch checked out (or an unusual branch name)`);
-  if (!fs.existsSync(lib.ownedFile(wt))) die(`${wt} has no ${path.relative(wt, lib.ownedFile(wt))}, so nothing the container returns could be checked; run proteus-worktree.js on it first`);
+  // read once, before the run: the import checks against this copy, whatever happens to the file meanwhile
+  let entries;
+  try { entries = fs.readFileSync(lib.ownedFile(wt), "utf8").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#")); }
+  catch { die(`${wt} has no readable ${path.relative(wt, lib.ownedFile(wt))}, so nothing the container returns could be checked; run proteus-worktree.js on it first`); }
   if (!regular(path.resolve(o.prompt))) die(`${o.prompt}: not a regular file`);
   const rt = needRuntime(o.runtime);
   const cred = credential();
@@ -183,13 +192,13 @@ function runCmd(o) {
     }
     if (run.error) die(`${rt.name} did not start: ${run.error.message}`);
     if (run.status !== 0) die(`${rt.name} run exited ${run.status}${run.signal ? ` (${run.signal})` : ""}; nothing imported. Is the image built (\`node ${path.basename(__filename)} doctor\`)?`);
-    return importResult(co, wt, branch, base, s, g);
+    return importResult(co, wt, branch, base, s, g, entries);
   } finally {
     dropBundles(s);
   }
 }
 
-function importResult(co, wt, branch, base, s, g) {
+function importResult(co, wt, branch, base, s, g, entries) {
   const status = regular(path.join(s.outDir, "status.json"), 1 << 20) ? lib.readJSON(path.join(s.outDir, "status.json"), {}) : {};
   console.log(`container: worker exited ${plain(status.exit)}${status.error ? `, error: ${plain(status.error).slice(0, 300)}` : ""}; result.json and status.json in ${s.outDir}`);
   const bundle = path.join(s.outDir, "out.bundle");
@@ -208,12 +217,12 @@ function importResult(co, wt, branch, base, s, g) {
   r = g(["diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", base, sha]);
   if (!r.ok) die(`cannot diff ${base.slice(0, 12)}..${sha.slice(0, 12)}: ${plain(r.err)}${keep}`);
   const paths = r.out.split("\0").filter(Boolean);
-  let entries = [];
-  try { entries = fs.readFileSync(lib.ownedFile(wt), "utf8").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#")); } catch {}
+  const list = path.relative(wt, lib.ownedFile(wt)).split(path.sep).join("/");
   const bad = paths.map((p) => {
-    const no = lib.ownedDenial(wt, p);
-    if (no) return no.replace(/ Comment "NEEDS.*$/, "");
-    return SPECIAL(p) && !entries.some((e) => SPECIAL(e) && lib.ownedMatch(e, p)) ? `${p} is a .git* path no owned entry names` : "";
+    if (lib.isOwnedList(wt, p)) return `${p} is the owned-path list itself, which only the lead writes`;
+    if (lib.isOwnedRecord(p)) return `${p} is a ticket's owned-path record, which only the lead writes`;
+    if (!entries.some((e) => lib.ownedMatch(e, p))) return `${p} is not in ${list}`;
+    return SPECIAL(p) && !entries.some((e) => specialOwned(e, p)) ? `${p} is a .git*, .claude, .codex or .agents path no owned entry names` : "";
   }).filter(Boolean);
   if (bad.length) die(`refused: the result changes paths outside ${branch}'s owned list:\n  ${bad.map(plain).join("\n  ")}\n${keep.slice(2)}`);
   const clean = (lib.treeChanges(wt) || [null]).length === 0;
