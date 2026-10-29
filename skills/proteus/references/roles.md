@@ -100,6 +100,18 @@ Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold t
 One verdict line; findings as issue comments or new issues per the profile.
 ```
 
+## Pentest judge (milestone QA, `judge`, `enforcement.md` §10c)
+```
+Hooks: <hooks>.
+Run <run>, milestone <name>, tip <sha>. Service: <port> <start command> (## Learned). Scanner: <the SKILL.md path of the scout's Strix skill: read it and follow it | ZAP baseline>. Scratch key: <run>-pentest.
+Run `node <hooks>/proteus-run-tree.js <sha>`, then start the service from .worktrees/_run on localhost:<port>, in the background with its PID noted, and stop it when done.
+Targets: localhost, 127.0.0.0/8, [::1], and the origins on ## Learned `pentest-targets:` only. Check each with `node <hooks>/proteus-pentest.js scope <url>` before you aim anything at it; never follow the app or a scan to another host.
+Report only what you proved: write $(node <hooks>/proteus-scratch.js --path <run>-pentest)/report.jsonl, one {"title","severity","target","poc"} per line, the poc the exact request and the response that shows the exploit. Then `node <hooks>/proteus-pentest.js findings <report.jsonl>`.
+Fix nothing; file nothing.
+<safety>
+Final turn text: `DONE pentest <kept count>` followed by the printed ticket bodies, or `BLOCKED <why>`. Then stop.
+```
+
 ## Scout (bootstrap, `judge`)
 ```
 Hooks: <hooks>.

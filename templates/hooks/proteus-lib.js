@@ -492,6 +492,47 @@ function agentsLine(root, key) {
 // globs relative to the repo root (ownedMatch syntax). In guest mode the line is read from the guest dir's AGENTS.md
 // and its globs still name the repo's own files.
 const leadEdits = (root) => (agentsLine(root, "lead-edits") || "").split(/\s+/).filter(Boolean);
+
+// ---- local pentest scope (#201): a scanner's target is localhost (localhost, 127.0.0.0/8, [::1]) or one of the
+// origins (scheme, host, port) on AGENTS.md's `pentest-targets: <url>, <url>` line. No DNS: the host is judged as
+// written, and one the URL parser would rewrite (127.1, decimal, hex or octal forms, [::ffff:7f00:1], %-escapes,
+// IDN) is refused, as are userinfo, a backslash and whitespace, so a scanner that parses the URL another way
+// cannot land on a host this check did not see. proteus-pentest.js and agentShellDenial both judge with it.
+const pentestTargets = (root) => (agentsLine(root, "pentest-targets") || "").split(",").map((s) => s.trim()).filter(Boolean);
+function pentestURL(url) {
+  const s = String(url), m = /^https?:\/\/([^/?#]*)/i.exec(s);
+  if (!m || /[\s\\\p{Cc}]/u.test(s) || m[1].includes("@")) return null;
+  let u;
+  try { u = new URL(s); } catch { return null; }
+  return m[1].toLowerCase().replace(/:\d*$/, "") === u.hostname ? u : null;
+}
+function pentestInScope(url, targets = []) {
+  const u = pentestURL(url);
+  if (!u) return false;
+  // a hostname the parser left as written is canonical: an IPv4 one is a plain dotted quad
+  if (u.hostname === "localhost" || u.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(u.hostname)) return true;
+  return targets.some((t) => { const v = pentestURL(t); return !!v && v.origin === u.origin; });
+}
+// a subagent's scanner run (strix, ZAP's scripts, under python, docker or any wrapper): every URL argument, and a
+// -t / --target value without a scheme that names a host rather than a path, must be in scope
+const PENTEST_TOOLS = /^(strix|zap-baseline\.py|zap\.sh|zap-full-scan\.py)$/;
+const PENTEST_MSG = (url) => `pentest target out of scope: ${url} (localhost or ## Learned pentest-targets only)`;
+function pentestDenial(root, words) {
+  const i = words.findIndex((w) => PENTEST_TOOLS.test(progName(w)));
+  if (i < 0) return "";
+  let targets = null;
+  for (let k = i + 1; k < words.length; k++) {
+    const w = String(words[k]), flag = /^--?[\w-]+=/.exec(w), v = flag ? w.slice(flag[0].length) : w;
+    const named = flag ? /^--?(t|target)=$/.test(flag[0]) : /^(-t|--target)$/.test(words[k - 1]);
+    let url = null;
+    if (/^[a-z][\w+.-]*:/i.test(v) && /:\/\//.test(v)) url = v;
+    else if (named && !/^[.~/\\]|^[a-z]:[\\/]/i.test(v) && /[.:[]|^localhost$/i.test(v)) url = `http://${v}`;
+    if (url === null) continue;
+    if (!targets) targets = pentestTargets(root);
+    if (!pentestInScope(url, targets)) return PENTEST_MSG(v);
+  }
+  return "";
+}
 // Never the lead's, whatever the line says: the CLIs' hooks, settings and owned lists (.claude, .codex), Codex's
 // linked skills (.agents), git's own hooks, config and Proteus state (.git), teams/ (the commit-msg gate and the
 // gate scripts under teams/templates/hooks, the lock, the team files), lefthook's config and scripts in every
@@ -2805,6 +2846,8 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
       for (const p of spellings(t, dir)) written.add(p);
     }
     if (!words.length) return null;
+    const scan = pentestDenial(projectRoot(ev), all);
+    if (scan) return scan;
     if (prog === "node" && /(^|[\\/])proteus-worktree\.js$/.test(words[1] || "") && words.some((w) => /^--allow(?:=|$)/.test(w))) return AGENT_MSG.selfAllow;
     if (prog === "cd" || prog === "pushd") {
       const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-");
@@ -3283,7 +3326,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
