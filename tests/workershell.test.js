@@ -312,7 +312,7 @@ const BROKEN = [
   ["source of stdin", "      if (f === undefined || ", "      if (false && ", "source /dev/stdin <<< 'rm README.md'"],
   ["busybox", "busybox: [], ", "", "busybox rm README.md"],
   ["xargs writer", "&& writesOperands(words)) return AGENT_MSG.xargs(prog);", "&& false) return null;", "echo README.md | xargs rm"],
-  ["attached git -C", "else if (a.startsWith(\"-C\")) { d = path.resolve(d, expandPath(a.slice(2), d)); out.push([\"-C\", d]); }", "", "git -C/x status"],
+  ["attached git -C", "else if (a.startsWith(\"-C\")) { const e = at(\"-C\", a.slice(2), d); if (e[1]) d = e[1]; out.push(e); }", "", "git -C/x status"],
   ["output options", "if (OUTPUT_OPT[prog]) {", "if (false) {", "curl -o /tmp/x http://127.0.0.1:9/x"],
   ["tar -x", "if (prog === \"tar\" && (", "if (false && (", "tar -xf x.tar -C /tmp"],
   ["unzip", "if (prog === \"unzip\") {", "if (false) {", "unzip x.zip -d /tmp"],
