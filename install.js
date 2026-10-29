@@ -2129,6 +2129,18 @@ async function doctor(fix) {
         if (mod.length) return ["FIX", `commit-msg gate: ${mod.join("; ")} as an ES module (no tracked package.json says "commonjs")`, `point it at ${COMMIT_MSG} and commit teams/templates/hooks/package.json`];
         return ["ok", found.length ? "commit-msg gate runs a tracked file" : "commit-msg gate not installed yet (the scaffold ticket adds it)"];
       });
+      // a slow pre-commit gets bypassed; time it with nothing staged. PROTEUS_LEFTHOOK names the binary (a .js file runs
+      // under node) and PROTEUS_PRECOMMIT_BUDGET_MS the limit, so tests use a fake lefthook
+      if (!guest) check(() => {
+        const cfg = ["lefthook", ".lefthook", "lefthook-local"].flatMap((n) => ["yml", "yaml", "json", "toml"].map((x) => `${n}.${x}`));
+        const bin = process.env.PROTEUS_LEFTHOOK || "lefthook", budget = Number(process.env.PROTEUS_PRECOMMIT_BUDGET_MS) > 0 ? Number(process.env.PROTEUS_PRECOMMIT_BUDGET_MS) : 3000;
+        if (!cfg.some((f) => fs.existsSync(path.join(root, f)))) return ["ok", "pre-commit time: skipped (no lefthook config)"];
+        const js = bin.endsWith(".js"), t0 = Date.now();
+        const r = spawnSync(js ? process.execPath : bin, js ? [bin, "run", "pre-commit"] : ["run", "pre-commit"], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30000, stdio: "ignore" });
+        if (r.error && r.error.code !== "ETIMEDOUT") return ["ok", "pre-commit time: skipped (lefthook not found)"];
+        const ms = Date.now() - t0, secs = (ms / 1000).toFixed(1);
+        return ms > budget ? ["WARN", `pre-commit took ${r.error ? "over " : ""}${secs}s`, "move slow checks to pre-push or CI"] : ["ok", `pre-commit took ${secs}s`];
+      });
       // the template's EDIT-* steps fail on purpose; a workflow that still has one keeps every PR red
       if (!guest) check(() => {
         const left = [...(readText(path.join(root, ".github", "workflows", "proteus-gates.yml")) || "").matchAll(/^[^#\n]*\b(EDIT-\w+)/gm)].map((m) => m[1]);

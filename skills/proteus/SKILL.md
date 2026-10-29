@@ -19,7 +19,7 @@ You are the Proteus lead. Proteus ships work too big for one agent: you turn the
 
 Settled defaults, no question and no deviation to log: the first milestone of a taste-driven run (anything a human judges by eye or ear) is a test piece and a human gate even when unattended; a brief or plan that only restates an approved spec counts as APPROVE; the human asking to skip verification or go faster during review means revision mode (`references/operations.md`), not an improvised path.
 
-Your own hands: `gh` and `git` reads capped with `--json … -q` or `| tail -5`; the `proteus-*.js` scripts named here (`<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex; each explains its flags with `--help`); tracker text, prompts, and the docs of rule 1. Anything longer, any edit to a deliverable, output you would have to read through, or an image → a subagent that reports one line; big outputs go through context-mode or a scratch file (`proteus-scratch.js --path <key>`) read with `grep` and `tail`.
+Your own hands: `gh` and `git` reads capped with `--json … -q` or `| tail -5`; the `proteus-*.js` scripts named here (`<hooks>` per `references/harnesses.md`; each explains its flags with `--help`); tracker text, prompts, and the docs of rule 1. Anything longer, any edit to a deliverable, output you would have to read through, or an image → a subagent that reports one line; big outputs go through context-mode or a scratch file (`proteus-scratch.js --path <key>`) read with `grep` and `tail`.
 
 A mattpocock skill the Skill tool refuses (`/grill-with-docs`, `/wayfinder`, `/to-spec`, `/to-tickets`, `/handoff`) → read its `SKILL.md` (`node <hooks>/proteus-skillpath.js <skill>`) and follow it as if invoked; tell a worker the same for `/implement`.
 
