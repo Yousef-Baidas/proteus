@@ -572,7 +572,7 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
 // and never into a submodule, whose config under <common>/modules an agent can write (#226)
 const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
-  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false", "-c", "protocol.file.allow=user"];
+  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
 // o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)
@@ -668,10 +668,13 @@ function checkoutAt(common, dir) {
   return best && { common, ...best, index: path.join(best.gitDir, "index"), headFile: path.join(best.gitDir, "HEAD") };
 }
 // the common dir git runs on for dir: the project's when dir is in one of its checkouts, else null (no checkout).
-// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215)
+// Never dir's own repo: a sandboxed command can build one anywhere it writes, config and filters included (#215).
+// Null too when <common>/commondir exists: git's files ref backend follows it even with GIT_COMMON_DIR pinned (#226)
 function repoCommon(dir) {
   const c = anchorCommon();
-  return c && (!dir || checkoutAt(c, dir)) ? c : null;
+  if (!c) return null;
+  try { fs.lstatSync(path.join(c, "commondir")); return null; } catch {}
+  return !dir || checkoutAt(c, dir) ? c : null;
 }
 // dir's checkout. root: a project root a human or the lead names on a command line (install.js, proteus-worktree.js),
 // whose repo git runs on in place of the harness's project dir; never a path from a hook event or a shell command

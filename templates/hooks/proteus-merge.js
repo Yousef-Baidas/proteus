@@ -9,8 +9,8 @@
 // no submodule, and runs no auto maintenance, whose worktree prune would follow a link an agent plants under
 // <common>/worktrees. It prints the commit to test and two commands for the lead to run sandboxed:
 // proteus-run-tree.js <sha>, which checks that commit out in .worktrees/_run, then the suite in _run, bare.
-// `--result pass|fail` reports that run: pass ends the batch, printing the full sha it tested for the lead's
-// fast-forward; fail on the tip starts a bisect over the batch's merges,
+// `--result pass|fail` reports that run: pass ends the batch, printing origin's tip for the lead's fast-forward only
+// when it is the commit the state names; fail on the tip starts a bisect over the batch's merges,
 // each step printing the next commit and both commands again, until it names the first bad merge. The batch's state
 // between calls is <git-common-dir>/proteus/merge/<run>.json, which a sandboxed agent can write: every read checks
 // it, and the branch names the end prints come from the tracker, never from it. It removes no worktree and deletes
@@ -159,13 +159,41 @@ function main() {
     return out.length ? `; worktree and branch left for the lead: ${out.join(", ")}` : "";
   };
 
+  // origin's URL from the project's own config only, never <common>/remotes/origin or branches/origin, which an agent
+  // can write (#226)
+  const url = lib.gitTry(common, ["config", "--file", path.join(common, "config"), "--get", "remote.origin.url"]).out;
+  // the run branch's tip as origin has it (ls-remote, so no local ref can shadow it)
+  const user = { user: true, timeout: 120000 };
+  const lsTip = () => {
+    if (!url || url.startsWith("-")) return "";
+    const ls = lib.gitTry(common, ["ls-remote", url, `refs/heads/${base}`], user);
+    const sha = ls.ok ? (ls.out.split("\n").map((l) => l.split("\t")).find((f) => f[1] === `refs/heads/${base}`) || [])[0] || "" : "";
+    return SHA.test(sha) ? sha : "";
+  };
+  // then its objects fetched, with the human's config (credentials, proxy) as lib's release fetch: no ref, reflog or
+  // FETCH_HEAD written, no maintenance, no submodule fetched (git would read an agent-written <common>/.gitmodules and
+  // <common>/modules/<p>/config), and no `git for-each-ref` run in an alternate an agent lists in
+  // <common>/objects/info/alternates, which would read that repo's config without GIT_SAFE
+  const tip = () => {
+    const sha = lsTip();
+    if (!sha) return "";
+    const fetched = lib.gitTry(common, ["-c", "core.alternateRefsCommand=true", "fetch", "-q", "--no-auto-maintenance", "--no-recurse-submodules", "--no-write-fetch-head", "--refmap=", url, `refs/heads/${base}`], user).ok;
+    return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
+  };
+
   // --result: the lead's run of the printed suite on the commit the state names; the tip's, then each bisect step's
   if (result) {
     try {
       const st = readState(common, run);
       if (!st) { console.error(`run ${plain(run)}: no batch awaits a result (run it without --result first)`); return 2; }
       if (st.mid === null) {
-        if (result === "pass") { dropState(common, run); say(`run ${run}: suite green at ${st.head}${leftFor(st)}`); return 0; }
+        // the state is an agent's to write: the sha printed for the lead's fast-forward is origin's tip, never the state's
+        if (result === "pass") {
+          dropState(common, run);
+          if (lsTip() !== st.head) return fail("refused: origin's run branch is not the commit the state names (the branch moved or the state changed); no commit to fast-forward to");
+          say(`run ${run}: suite green at ${st.head}${leftFor(st)}`);
+          return 0;
+        }
         // bisect the batch's merges: the last batch ended green, the tip failed
         st.lo = -1;
         st.hi = st.merged.length - 1;
@@ -216,17 +244,7 @@ function main() {
   const batch = mergeOrder(ready, open);
   if (!batch.length) { say("merged none; suite not run"); return 0; }
 
-  // the run branch's tip as origin has it (ls-remote, so no local ref can shadow it), then its objects fetched, with the
-  // human's config (credentials, proxy) as lib's release fetch: no ref, reflog or FETCH_HEAD written, no maintenance,
-  // no submodule fetched (git would read an agent-written <common>/.gitmodules and <common>/modules/<p>/config)
-  const user = { user: true, timeout: 120000 };
-  const tip = () => {
-    const ls = lib.gitTry(common, ["ls-remote", "origin", `refs/heads/${base}`], user);
-    const sha = ls.ok ? (ls.out.split("\n").map((l) => l.split("\t")).find((f) => f[1] === `refs/heads/${base}`) || [])[0] || "" : "";
-    if (!SHA.test(sha)) return "";
-    const fetched = lib.gitTry(common, ["fetch", "-q", "--no-auto-maintenance", "--no-recurse-submodules", "--no-write-fetch-head", "--refmap=", "origin", `refs/heads/${base}`], user).ok;
-    return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
-  };
+  if (!url) return fail("refused: <common>/config names no remote.origin.url");
   if (!tip()) return fail(`cannot fetch origin/${base}`);
   // each linked worktree's branch, its HEAD read as a file
   const worktrees = {};

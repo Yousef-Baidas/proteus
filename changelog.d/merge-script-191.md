@@ -11,16 +11,17 @@
   git runs pinned to the project's common dir, as every hook's (#215). It checks its state file on every read,
   never writes or reads it through a link, and strips control characters from its output (#226).
   It reads the run branch's tip with `git ls-remote` and fetches with no auto maintenance, no submodule and no
-  ref, reflog or `FETCH_HEAD` written. On pass it prints the full sha it tested; the lead fast-forwards to that
-  sha, never to a short ref name. `proteus-run-tree.js` is in no prefix rule or sandbox exclusion, makes `_run`
+  ref, reflog or `FETCH_HEAD` written, origin's URL read from the project's own config only. On pass it reads
+  origin's tip again and prints it only when it is the commit the state names, else refuses and prints no sha;
+  the lead fast-forwards to that sha, never to a short ref name. `proteus-run-tree.js` is in no prefix rule or sandbox exclusion, makes `_run`
   anew for each commit and checks its tree against the project's, writes nothing under the common dir, and
   refuses a linked `.worktrees` or `_run`, or a `_run` an older Proteus registered as a worktree.
 
 ### Changed
 
-- Every hook's git runs with submodule recursion off (`fetch.recurseSubmodules`, `submodule.recurse`,
-  `protocol.file.allow=user`), so an agent's `<common>/.gitmodules` and `<common>/modules/<path>/config` never
-  reach git outside the sandbox (#226).
+- Every hook's git runs with submodule recursion off (`fetch.recurseSubmodules`, `submodule.recurse`), so an
+  agent's `<common>/.gitmodules` and `<common>/modules/<path>/config` never reach git outside the sandbox, and
+  hooks run no git on a common dir that holds a `commondir` file (#226).
 
 - `proteus-gates-cache.js` refuses (exit 2) to run below the top of a checkout, where its key would name that
   checkout's tree, not the files the command tests (#226). The lead's suite after a merge runs bare in

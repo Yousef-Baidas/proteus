@@ -26,8 +26,8 @@ const SHIM = `--require "${path.join(__dirname, "fixtures", "spawn-log.js").repl
 const logged = { SPAWN_LOG: SPAWNS, NODE_OPTIONS: [lib.ENV.NODE_OPTIONS, SHIM].filter(Boolean).join(" ") };
 
 // a run r1 on origin, one worker worktree and pushed branch per ticket; tickets: [{ t, pr, files, deps, checks }].
-// plant(root, W, common): what an agent writes before the lead runs the script
-function setup(name, tickets, plant) {
+// plant(root, W, common): what an agent writes before the lead runs the script; env: more for each script call
+function setup(name, tickets, plant, env = {}) {
   const W = lib.workdir(name);
   const origin = path.join(W, "origin.git"), root = path.join(W, "root");
   g(W, "init", "-q", "--bare", "-b", "main", origin);
@@ -52,7 +52,7 @@ function setup(name, tickets, plant) {
     prs: tickets.map((k) => ({ number: k.pr, headRefName: `proteus-work/r1/${k.t}`, baseRefName: "proteus/r1", body: `Closes #${k.t}`, isDraft: false, statusCheckRollup: k.checks || GREEN })),
   }));
   if (plant) plant(root, W, path.join(root, ".git"));
-  const merge = (...more) => run(SCRIPT, "", { cwd: root, env: { FAKE_GH_MERGE: state, ...logged }, args: ["r1", "--suite", NEVER, ...more] });
+  const merge = (...more) => run(SCRIPT, "", { cwd: root, env: { FAKE_GH_MERGE: state, ...logged, ...env }, args: ["r1", "--suite", NEVER, ...more] });
   const r = merge();
   const merges = g(root, "--git-dir", origin, "log", "--first-parent", "--format=%s", "proteus/r1").split("\n");
   return { r, root, W, merges, merge, line: r.out.trim(), common: path.join(root, ".git") };
@@ -355,6 +355,77 @@ s = setup("lstail", two, (root) => {
 const tailState = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
 ok("lstail: with origin's a/refs/heads/proteus/r1 listed first, the printed commit and each merge's sha are the run branch's", s.r.code === 0 && stepSha(s.line) === tipOf(s) && tailState.merged.every((p) => p.sha !== tailSha) && tailState.merged[1].sha === tipOf(s), `${s.r.out} ${s.r.err} ${JSON.stringify(tailState)}`);
 
+// #226 round 5: while the lead's suite runs, an agent commits on top of the tip (its objects in the shared store) and
+// rewrites the state so head and at name that commit; pass prints no sha for the lead to fast-forward to
+s = setup("forgehead", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }]);
+const testedTip = stepSha(s.line);
+const awt = path.join(s.root, ".worktrees", "1");
+g(awt, "fetch", "-q", "origin");
+g(awt, "checkout", "-q", "--detach", testedTip);
+write(awt, { "hook.js": "// the agent's, unreviewed\n" });
+g(awt, "add", "-A");
+g(awt, "commit", "-q", "-m", "agent");
+const agentHead = g(awt, "rev-parse", "HEAD");
+const fst = JSON.parse(fs.readFileSync(STATE(s.root), "utf8"));
+fs.rmSync(STATE(s.root));
+fs.writeFileSync(STATE(s.root), JSON.stringify({ ...fst, head: agentHead, at: agentHead, merged: fst.merged.map((p, i) => (i === fst.merged.length - 1 ? { ...p, sha: agentHead } : p)) }));
+const fp = s.merge("--result", "pass");
+ok("forgehead: a state naming a commit that is not origin's tip is refused on pass, exit 1, no sha printed, the state dropped", fp.code === 1 && !fp.out.includes(agentHead) && !/[0-9a-f]{40}/.test(fp.out) && fp.out.startsWith("run r1: refused: origin's run branch is not the commit the state names") && stateGone(s.root), `${fp.code} ${fp.out} ${fp.err}`);
+
+// #226 round 5: with no remote.origin.url in <common>/config the batch refuses; an agent's <common>/remotes/origin or
+// branches/origin is never read
+s = setup("noremote", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+  const url = g(root, "config", "--get", "remote.origin.url");
+  g(root, "config", "--unset", "remote.origin.url");
+  fs.mkdirSync(path.join(common, "remotes"), { recursive: true });
+  fs.mkdirSync(path.join(common, "branches"), { recursive: true });
+  write(path.join(common, "remotes"), { origin: `URL: ${url}\n` });
+  write(path.join(common, "branches"), { origin: `${url}\n` });
+});
+ok("noremote: no remote.origin.url in the project's config refuses the batch, exit 1, nothing merged", s.r.code === 1 && s.line === "run r1: refused: <common>/config names no remote.origin.url" && s.merges[0] === "init", `${s.r.code} ${s.r.out} ${s.r.err}`);
+
+// #226 round 5: the fetch runs no `git for-each-ref` in an alternate an agent lists in <common>/objects/info/alternates
+// (that child reads the alternate's config without GIT_SAFE); GIT_TRACE logs every command git starts
+const altTrace = path.join(lib.workdir("merge-trace"), "trace");
+s = setup("alternates", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, common) => {
+  const alt = path.join(W, "alt.git");
+  g(W, "init", "-q", "--bare", alt);
+  write(path.join(common, "objects", "info"), { alternates: `${path.join(alt, "objects").split(path.sep).join("/")}\n` });
+}, { GIT_TRACE: altTrace });
+const traced = fs.existsSync(altTrace) ? fs.readFileSync(altTrace, "utf8") : "";
+ok("alternates: the batch merges after fetches that ran no for-each-ref in the alternate", s.r.code === 0 && s.line.startsWith("merged PR #10 for #1; suite: ") && /git fetch/.test(traced) && !traced.includes("for-each-ref"), `${s.r.out} ${s.r.err} ${traced.slice(0, 400)}`);
+// the same fetch without core.alternateRefsCommand runs it there, so the check above is not void
+const control = path.join(s.W, "trace-control");
+const ctl = spawnSync("git", ["--git-dir", s.common, "fetch", "-q", "--no-write-fetch-head", "--refmap=", "origin", "refs/heads/proteus/r1"], { env: { ...lib.ENV, GIT_TRACE: control }, encoding: "utf8" });
+ok("alternates: a git fetch without core.alternateRefsCommand runs for-each-ref in the alternate", ctl.status === 0 && fs.readFileSync(control, "utf8").includes("for-each-ref"), `${ctl.status} ${ctl.stderr}`);
+
+// #226 round 5: git's files ref backend follows <common>/commondir even with GIT_COMMON_DIR pinned, so no hook runs
+// git on a common dir that holds one
+s = setup("commondir", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }]);
+const cdTip = stepSha(s.line);
+fs.writeFileSync(path.join(s.common, "commondir"), "../../victim\n");
+const cdMerge = s.merge("--result", "pass");
+const cdTree = tree(s.root, cdTip);
+fs.rmSync(path.join(s.common, "commondir"));
+ok("commondir: a <common>/commondir gets no git, the script and run-tree refuse, exit 2", cdMerge.code === 2 && /not in a project checkout/.test(cdMerge.err) && cdTree.code === 2 && /not in a project checkout/.test(cdTree.err) && !stateGone(s.root), `${cdMerge.code} ${cdMerge.out} ${cdMerge.err} ${cdTree.code} ${cdTree.out} ${cdTree.err}`);
+
+// #226 round 5: the tip's ref at origin names a tag object, not a commit: the script refuses before any merge
+s = setup("notcommit", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W) => {
+  g(root, "tag", "-a", "-m", "t", "tg", "HEAD");
+  g(root, "push", "-q", "origin", "refs/tags/tg");
+  fs.writeFileSync(path.join(W, "origin.git", "refs", "heads", "proteus", "r1"), `${g(root, "rev-parse", "refs/tags/tg")}\n`);
+});
+ok("notcommit: origin's run branch at a tag object refuses the batch, exit 1, nothing merged", s.r.code === 1 && s.line === "run r1: cannot fetch origin/proteus/r1" && s.merges[0] === "init", `${s.r.code} ${s.r.out} ${s.r.err}`);
+
+// #226 round 5: run-tree checks _run's tree against the commit's in the project's repo; a <common>/refs/replace/<sha>
+// that gives the commit another tree there makes the two differ, and run-tree refuses
+s = setup("replace", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }]);
+const rTip = stepSha(s.line);
+const other = g(s.root, "commit-tree", "-m", "other", g(s.root, "rev-parse", "HEAD~0^{tree}"));
+g(s.root, "replace", rTip, other);
+t = tree(s.root, rTip);
+ok("replace: a <common>/refs/replace/<sha> giving the tested commit another tree makes run-tree refuse, exit 1", g(s.root, "rev-parse", `${rTip}^{tree}`) !== g(s.root, "--no-replace-objects", "rev-parse", `${rTip}^{tree}`) && t.code === 1 && t.out.startsWith("run-tree: .worktrees/_run's tree is not "), `${t.code} ${t.out} ${t.err}`);
+
 // #226 round 4: a PR that changes a gitlink, with no local ref left reaching it, and an agent's <common>/.gitmodules,
 // <common>/index entry and <common>/modules/vx/config whose core.sshCommand writes a marker. lib runs git with cwd
 // <common>, so a submodule fetch would read all three and run that program outside the sandbox: neither the script's
@@ -388,6 +459,14 @@ setup("submodule-lib", [{ t: 1, pr: 10, files: { "b.txt": "b\n" } }], (root, W, 
   libFetch = require(path.join(HOOKS, "proteus-lib.js")).gitTry(common, ["fetch", "-q", "--no-write-fetch-head", "--refmap=", "origin", "refs/heads/proteus-work/r1/1"], { user: true, timeout: 120000 });
 });
 ok("submodule: a lib git fetch with no flag of its own fetches no submodule either (GIT_SAFE)", libFetch.ok && !fs.existsSync(libMark), `${JSON.stringify(libFetch)} ${fs.existsSync(libMark)}`);
+// #226 round 5: GIT_SAFE sets no protocol.file.allow, so a lib call with the human's config keeps their stricter one
+const strict = path.join(MARKS, "strict.gitconfig");
+fs.writeFileSync(strict, "[protocol \"file\"]\n\tallow = never\n");
+const savedGlobal = process.env.GIT_CONFIG_GLOBAL;
+process.env.GIT_CONFIG_GLOBAL = strict;
+const strictLs = require(path.join(HOOKS, "proteus-lib.js")).gitTry(s.common, ["ls-remote", path.join(s.W, "origin.git"), "refs/heads/proteus/r1"], { user: true, timeout: 120000 });
+if (savedGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = savedGlobal;
+ok("protocol: a human's global protocol.file.allow=never holds for a lib git call with user: true", !strictLs.ok && /not allowed/.test(strictLs.err), JSON.stringify(strictLs));
 
 // the run name: letters, digits, _ . -, so the worker branches it names are proteus-work/<run>/<n> only
 const badRun = run(SCRIPT, "", { cwd: s.root, env: { FAKE_GH_MERGE: path.join(s.W, "gh.json") }, args: ["r1$(touch${IFS}x)", "--suite", NEVER] });
