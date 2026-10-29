@@ -35,7 +35,7 @@ const ev = (tool_name, tool_input, extra) => ({ hook_event_name: "PreToolUse", s
 const lead = (command, extra = sub, env = {}) => lib.run(LG, ev("Bash", { command }, extra), { cwd: REPO, env });
 // the binding: a1's first edit is in WT1
 const bind = lib.run(LG, ev("Write", { file_path: path.join(WT1, "src", "a.js"), content: "b\n" }, sub), { cwd: REPO });
-ok("setup: a1's first edit in its worktree passes and binds it", bind.code === 0 && fs.existsSync(path.join(REPO, ".git", "proteus", "agents", "agent-a1")), bind.err);
+ok("setup: a1's first edit in its worktree passes and binds it", bind.code === 0 && fs.existsSync(path.join(REPO, ".git", "proteus-lead", "agents", "agent-a1")), bind.err);
 
 const denied = (command, re, extra, env) => { const r = lead(command, extra, env); return r.code === 2 && (!re || re.test(r.err)) ? "" : `${command} => ${r.code} ${r.err}`; };
 const allowed = (command, extra, env) => { const r = lead(command, extra, env); return r.code === 0 ? "" : `${command} => ${r.code} ${r.err}`; };

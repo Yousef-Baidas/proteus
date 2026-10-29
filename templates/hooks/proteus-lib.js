@@ -193,6 +193,120 @@ function writeJSON(file, obj) {
   try { fs.renameSync(tmp, file); } catch { fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n"); try { fs.unlinkSync(tmp); } catch {} }
 }
 
+// ---- the lead's state (#236): <git-common-dir>/proteus-lead. A hook runs outside any sandbox, while agents (and,
+// sandboxed, the lead's own shell) can write <common>/proteus, so a hook that wrote there could be pointed through a
+// planted link at any file the user owns. Every file a hook creates, rewrites, appends, renames or deletes is under
+// proteus-lead and goes through leadWrite/leadAppend/leadCreate/leadRemove: each refuses, writing nothing, when
+// <common> or proteus-lead (or a dir under it) is a link or not this user's; a rewrite is a fresh 'wx' temp file
+// renamed over the name, an append opens with O_NOFOLLOW. What agents write under <common>/proteus is read with
+// readUntrusted and never written back.
+const LEAD = "proteus-lead";
+const leadPath = (common, ...segs) => path.join(common, LEAD, ...segs);
+const leadErr = (msg) => Object.assign(new Error(`proteus: lead state refused: ${msg}`), { code: "ELEADSTATE" });
+const uidOk = (st) => typeof process.getuid !== "function" || st.uid === process.getuid();
+// d is a real dir (not a link, junction included) this user owns
+function ownDir(d) {
+  const st = fs.lstatSync(d);
+  if (st.isSymbolicLink() || !st.isDirectory()) throw leadErr(`${d} is not a directory`);
+  if (!uidOk(st)) throw leadErr(`${d} is not owned by this user`);
+}
+function makeDir(d) {
+  try { fs.mkdirSync(d, { mode: 0o700 }); return true; } catch (e) { if (e.code !== "EEXIST") throw e; return false; }
+}
+// <common>/proteus-lead, made (and the old <common>/proteus state copied in) on first use
+function leadDir(common) {
+  if (!common) throw leadErr("no git common dir");
+  ownDir(common);
+  const d = path.join(path.resolve(common), LEAD);
+  const made = makeDir(d);
+  ownDir(d);
+  if (made) migrateLead(common, d);
+  return d;
+}
+// file's path under the lead dir, each dir on the way made and checked; refused for any path outside it
+function leadTarget(common, file) {
+  const root = leadDir(common);
+  const rel = path.relative(root, path.resolve(file));
+  const segs = rel.split(path.sep);
+  if (!rel || path.isAbsolute(rel) || segs.some((s) => !s || s === "." || s === "..")) throw leadErr(`${file} is outside ${root}`);
+  let d = root;
+  for (const s of segs.slice(0, -1)) { d = path.join(d, s); makeDir(d); ownDir(d); }
+  return path.join(d, segs[segs.length - 1]);
+}
+const tmpName = (f) => `${f}.${process.pid}.${require("crypto").randomBytes(6).toString("hex")}.tmp`;
+// replace file's content: a new temp file ('wx': never an existing name, so never a planted link), renamed over it
+function leadWrite(common, file, text) {
+  const f = leadTarget(common, file), tmp = tmpName(f);
+  fs.writeFileSync(tmp, text, { flag: "wx", mode: 0o600 });
+  try { fs.renameSync(tmp, f); } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+}
+const leadJSON = (common, file, obj) => leadWrite(common, file, JSON.stringify(obj, null, 2) + "\n");
+// append to file, made if missing; a link at its name is refused (O_NOFOLLOW; Windows has none, so lstat first)
+function leadAppend(common, file, text) {
+  const f = leadTarget(common, file), c = fs.constants;
+  try { if (fs.lstatSync(f).isSymbolicLink()) throw leadErr(`${f} is a link`); } catch (e) { if (e.code !== "ENOENT") throw e; }
+  const fd = fs.openSync(f, c.O_WRONLY | c.O_APPEND | c.O_CREAT | (c.O_NOFOLLOW || 0), 0o600);
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw leadErr(`${f} is not a regular file`);
+    fs.writeSync(fd, text);
+  } finally { fs.closeSync(fd); }
+}
+// create file only if no entry has its name; false when one has. The lstat first: on Windows 'wx' creates through
+// a dangling link. What is left there is the race between the lstat and the open, Windows only, and outside any
+// boundary: Windows has no Proteus sandbox, so an agent there can write proteus-lead directly anyway.
+function leadCreate(common, file, text) {
+  const f = leadTarget(common, file);
+  try { fs.lstatSync(f); return false; } catch (e) { if (e.code !== "ENOENT") throw e; }
+  try { fs.writeFileSync(f, text, { flag: "wx", mode: 0o600 }); return true; } catch (e) { if (e.code === "EEXIST") return false; throw e; }
+}
+// unlink file (a link is removed as a link), or with tree a whole dir; no error when it is gone
+function leadRemove(common, file, tree = false) {
+  const f = leadTarget(common, file);
+  if (tree) return fs.rmSync(f, { recursive: true, force: true }); // rm never follows a link inside the tree
+  try { fs.unlinkSync(f); } catch (e) { if (e.code !== "ENOENT") throw e; }
+}
+// an agent-writable file's text: a regular file only (never via a link, never a FIFO), at most cap bytes
+function readUntrusted(file, cap = 1 << 20) {
+  if (process.platform === "win32" && fs.lstatSync(file).isSymbolicLink()) throw notRegular(fs.lstatSync(file));
+  const { fd, st } = openRegular(file);
+  try {
+    if (st.size > cap) throw Object.assign(new Error(`${file} is over ${cap} bytes`), { code: "EFBIG" });
+    const buf = Buffer.alloc(st.size);
+    const n = st.size ? fs.readSync(fd, buf, 0, st.size, 0) : 0;
+    return buf.toString("utf8", 0, n);
+  } finally { fs.closeSync(fd); }
+}
+function readUntrustedJSON(file, dflt, cap) {
+  try { const v = JSON.parse(readUntrusted(file, cap)); return v && typeof v === "object" ? v : dflt; } catch { return dflt; }
+}
+// what moves from <common>/proteus on first use: the lead's own files and the shell check's notices (read once
+// here, never there again; checked again when shown); the rest there (scratch, allow, guest.json, gates,
+// forgotten.json) is agents' or the lead shell's and stays
+const LEAD_FILES = ["journal.jsonl", "questions-nudged", "visibility.json", "skills-drift.json", "lead-model.json", "inbox.json",
+  "lesson-hits.jsonl", "lessons-cache.json", "scratch-ledger.jsonl", "scratch-size.json", "stall-blocked.json", "guard-hash.json"];
+const LEAD_DIRS = ["agents", "spawns", "beats", "tamper", "lessons-seen", "unattributed"];
+// regular files only, each lstat'd first and opened without following a link; nothing already there is overwritten
+function migrateLead(common, dst) {
+  const src = stateDir(common);
+  try { ownDir(src); } catch { return; }
+  const copy = (from, to) => {
+    try {
+      if (!fs.lstatSync(from).isFile()) return;
+      const f = leadTarget(common, to);
+      fs.writeFileSync(f, readUntrusted(from, 8 << 20), { flag: "wx", mode: 0o600 });
+    } catch {}
+  };
+  for (const n of LEAD_FILES) copy(path.join(src, n), path.join(dst, n));
+  for (const d of LEAD_DIRS) {
+    let st;
+    try { st = fs.lstatSync(path.join(src, d)); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    let names = [];
+    try { names = fs.readdirSync(path.join(src, d)); } catch {}
+    for (const n of names) copy(path.join(src, d, n), path.join(dst, d, n));
+  }
+}
+
 const configFile = () => path.join(claudeDir(), "proteus.json");
 const proteusConfig = () => readJSON(configFile(), {}) || {};
 // the gh config dir the agents post from ("agentGh" in proteus.json, a leading ~ allowed): a GitHub login of
@@ -570,9 +684,13 @@ const execOpts = (cwd, timeout, env) => ({ cwd, encoding: "utf8", timeout, windo
 // off. git then reads <common>/config and <common>/config.worktree only, which the sandbox profile denies. A linked
 // worktree's HEAD is read as a file under <common>/worktrees/<id>; its working tree through its index (treeChanges).
 const NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
-// and never into a submodule, whose config under <common>/modules an agent can write (#226)
+// and never into a submodule, whose config under <common>/modules an agent can write (#226), and no automatic gc or
+// maintenance, so no hook's git prunes <common>/worktrees, where an agent can plant a link git deletes through (#237).
+// maintenance.auto=false is what holds: gc's prune drops a worktrees/<x> with no gitdir file whatever the expiry, so
+// worktreePruneExpire=never covers only entries whose gitdir names a missing path.
 const GIT_SAFE = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", "core.untrackedCache=false",
-  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false"];
+  "-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false",
+  "-c", "gc.worktreePruneExpire=never", "-c", "maintenance.auto=false"];
 const GIT_REPO_ENV = /^GIT_(?:DIR|COMMON_DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|NAMESPACE|CONFIG|CONFIG_COUNT|CONFIG_PARAMETERS|CONFIG_KEY_\d+|CONFIG_VALUE_\d+)$/i;
 const GIT_USER_ENV = /^GIT_CONFIG_(?:GLOBAL|SYSTEM|NOSYSTEM)$/i;
 // o.user keeps the human's global and system config (verify-tag's trust, fetch's credentials and proxy: #215 decision 1)
@@ -1616,26 +1734,26 @@ const AGENT_MSG = {
   refs: (what) => `proteus: agents never move a branch through the API (\`${what}\`): a ref update there can force it past the push checks. Push your branch by name with git.`,
 };
 // One worker, one worktree: the lead guard's bindingDenial records a subagent's first edit per agent id in
-// <git-common-dir>/proteus/agents/; its cwd's prepared worktree counts first.
-const bindFile = (common, agent) => path.join(stateDir(common), "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
+// <git-common-dir>/proteus-lead/agents/; its cwd's prepared worktree counts first.
+const bindFile = (common, agent) => leadPath(common, "agents", "agent-" + String(agent).replace(/[^\w.-]/g, "_"));
 function bound(common, agent) {
   try { return fs.readFileSync(bindFile(common, agent), "utf8").trim() || null; } catch { return null; }
 }
 // A spawn the lead names (#180): Claude Code then reports the spawn's name as the subagent's agent_type, not its
 // subagent_type. The lead guard records each main-thread spawn's name -> subagent_type in
-// <git-common-dir>/proteus/spawns/ (recordSpawn), and agentTypeOf maps a reported type that matches a recorded
+// <git-common-dir>/proteus-lead/spawns/ (recordSpawn), and agentTypeOf maps a reported type that matches a recorded
 // name back to it; an unrecorded value is used as it is. Only the lead's own Agent call writes a record, and a
 // subagent's edits and shell writes to .git/ are refused (agentShellDenial, AGENT_NEVER). A guard, not a boundary.
 // An unnamed spawn is recorded under its subagent_type (Claude Code reports that as its agent_type), and each
 // record carries the spawn's time: the watchdog tracks only agents with a lead spawn record (spawnRecord, #179).
-const spawnFile = (common, name) => path.join(stateDir(common), "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
+const spawnFile = (common, name) => leadPath(common, "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
 function recordSpawn(ev) {
   const name = ev.spawnName || ev.spawnType;
   if (ev.agent || !name || !ev.spawnType) return;
   const common = gitCommonDir(path.resolve(projectRoot(ev)));
   if (!common) return;
   const file = spawnFile(common, name);
-  try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ name, type: ev.spawnType, at: new Date().toISOString() }) + "\n"); } catch {}
+  try { leadWrite(common, file, JSON.stringify({ name, type: ev.spawnType, at: new Date().toISOString() }) + "\n"); } catch {}
 }
 // the lead's record of this subagent's spawn, found by the agent_type its harness reports, else null
 function spawnRecord(ev) {
@@ -2254,24 +2372,39 @@ const TOO_COMPLEX = "proteus: command too complex to judge; split it.";
 const DEVICES = /^(?:\/dev\/(?:null|stdout|stderr)|nul)$/i;
 const fwd = (p) => String(p).split(path.sep).join("/");
 // the lead's one-off authorisations for a worktree (proteus-worktree.js <wt> --allow <what>), one per line, in
-// <git-common-dir>/proteus/allow/<name>-<hash>: outside every checkout, under .git where no agent's shell writes
+// <git-common-dir>/proteus/allow/<name>-<hash>: outside every checkout, under .git where no agent's shell writes.
+// The lead's shell appends there; a hook only reads it, and records what it used in proteus-lead/allow-taken/<name>
+// (#236): line i, keyed by the hash of lines 0..i, so a used entry stays used while the file only grows, and a
+// rewritten file starts afresh.
 const ALLOWS = ["force-push"];
 function allowFile(wt) {
   const common = gitCommonDir(wt);
   return common ? path.join(stateDir(common), "allow", `${path.basename(wt).replace(/[^\w.-]/g, "_")}-${require("crypto").createHash("sha256").update(realOr(wt)).digest("hex").slice(0, 8)}`) : null;
 }
-const allowLines = (wt) => { try { return fs.readFileSync(allowFile(wt), "utf8").split(/\r?\n/).filter(Boolean); } catch { return []; } };
+const allowTakenFile = (wt) => { const f = allowFile(wt); return f && leadPath(gitCommonDir(wt), "allow-taken", path.basename(f)); };
+const prefixSha = (lines, i) => require("crypto").createHash("sha256").update(lines.slice(0, i + 1).join("\n")).digest("hex");
+// every line of the allow file, and the indexes of those a hook already used
+function allowState(wt) {
+  let lines = [];
+  try { lines = readUntrusted(allowFile(wt), 64 * 1024).split(/\r?\n/).filter(Boolean); } catch {}
+  const taken = new Set();
+  const recs = lines.length && readJSON(allowTakenFile(wt), []);
+  for (const r of Array.isArray(recs) ? recs : []) if (r && Number.isInteger(r.i) && r.i < lines.length && r.sha === prefixSha(lines, r.i)) taken.add(r.i);
+  return { lines, taken };
+}
+// the entries not yet used
+const allowLines = (wt) => { const { lines, taken } = allowState(wt); return lines.filter((_, i) => !taken.has(i)); };
 function addAllow(wt, what) {
   const f = allowFile(wt);
   fs.mkdirSync(path.dirname(f), { recursive: true });
   fs.appendFileSync(f, what + "\n");
 }
-// removes one what entry; true when there was one
+// uses one what entry; true when there was one
 function takeAllow(wt, what) {
-  const lines = allowLines(wt), i = lines.indexOf(what);
+  const { lines, taken } = allowState(wt), i = lines.findIndex((l, j) => l === what && !taken.has(j));
   if (i < 0) return false;
-  lines.splice(i, 1);
-  try { if (lines.length) fs.writeFileSync(allowFile(wt), lines.join("\n") + "\n"); else fs.rmSync(allowFile(wt)); return true; } catch { return false; }
+  const keep = [...taken].map((j) => ({ i: j, sha: prefixSha(lines, j) }));
+  try { leadJSON(gitCommonDir(wt), allowTakenFile(wt), [...keep, { i, sha: prefixSha(lines, i) }]); return true; } catch { return false; }
 }
 // the prepared worktree a worker's shell is judged against: the one its first edit bound it to, its cwd's, and
 // for the worker guard's own session (no agent id) its project dir's; null when none (#48 F1: it then writes nothing)
@@ -2557,9 +2690,9 @@ function syncText(a, dst, marker) {
   return true;
 }
 
-// The human's inbox: open needs-human issues, cached in <common>/proteus/inbox.json as
+// The human's inbox: open needs-human issues, cached in <common>/proteus-lead/inbox.json as
 // {at, questions:[{n,title}], reviews:[{n,title}]}. null when there is no cache.
-const inboxFile = (common) => path.join(stateDir(common), "inbox.json");
+const inboxFile = (common) => leadPath(common, "inbox.json");
 function readInbox(common) {
   const c = readJSON(inboxFile(common), null);
   return c && Array.isArray(c.questions) && Array.isArray(c.reviews) ? c : null;
@@ -2569,7 +2702,7 @@ function readInbox(common) {
 // A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
 // differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
 const lockFile = (root) => path.join(docRoot(root), "teams", "skills-lock.json");
-const driftFile = (common) => path.join(stateDir(common), "skills-drift.json");
+const driftFile = (common) => leadPath(common, "skills-drift.json");
 const SKILL_LINKS = [[".claude", "skills"], [".agents", "skills"]];
 
 // byte-identical to link-skills.js hashDir (sha256 over relative path + content of every file), or every lock drifts
@@ -2615,7 +2748,7 @@ function lockDrift(root, fresh = false) {
   const cache = common && !fresh ? readJSON(driftFile(common), null) : null;
   if (cache && cache.lock === key && Array.isArray(cache.drift) && !cache.drift.length) return [];
   const drift = skillsDrift(root);
-  if (common) { try { writeJSON(driftFile(common), { lock: key, drift }); } catch {} }
+  if (common) { try { leadJSON(common, driftFile(common), { lock: key, drift }); } catch {} }
   return drift;
 }
 
@@ -2659,10 +2792,10 @@ function rungOf(ladder, name, aliases = {}) {
 // the session's model, as the harness finds it
 const leadModel = (ev) => harness().sessionModel(ev);
 // the model SessionStart reported, kept by the autostart for when the transcript tail has no reply
-const leadFile = (root) => { const c = gitCommonDir(root); return c ? path.join(stateDir(c), "lead-model.json") : null; };
+const leadFile = (root) => { const c = gitCommonDir(root); return c ? leadPath(c, "lead-model.json") : null; };
 function saveLead(ev, root) {
   const f = leadFile(root);
-  if (f && ev.model && ev.session) writeJSON(f, { session: ev.session, model: ev.model });
+  if (f && ev.model && ev.session) leadJSON(gitCommonDir(root), f, { session: ev.session, model: ev.model });
 }
 function savedLead(ev, root) {
   const f = leadFile(root);
@@ -2750,12 +2883,14 @@ function handoffLines(ev, root) {
 // the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
 const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
 const isPipelineAgent = (type) => PIPELINE_AGENT.test(agentName(type));
-const beatsDir = (common) => path.join(stateDir(common), "beats");
+const beatsDir = (common) => leadPath(common, "beats");
+// written by the watchdog, which the lead runs from its shell (sandboxed, so it cannot write proteus-lead):
+// agent-writable, read as untrusted
 const forgetFile = (common) => path.join(stateDir(common), "forgotten.json");
 const isoMs = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? t : 0; };
 // proteus-watchdog.js --forget: ids forgotten now, and all = every agent spawned until now; a week's ids are kept
 function forget(common, ids, all = false) {
-  const prev = readJSON(forgetFile(common), null) || {};
+  const prev = readUntrustedJSON(forgetFile(common), null) || {};
   const now = new Date().toISOString();
   const keep = Date.now() - 7 * 24 * 3600e3;
   const agents = {};
@@ -2764,7 +2899,7 @@ function forget(common, ids, all = false) {
   writeJSON(forgetFile(common), { all: all ? now : prev.all || "", agents });
 }
 function forgotten(common, id, spawnAt) {
-  const f = readJSON(forgetFile(common), null) || {};
+  const f = readUntrustedJSON(forgetFile(common), null) || {};
   if (f.agents && typeof f.agents === "object" && Object.prototype.hasOwnProperty.call(f.agents, id)) return true;
   return !!f.all && isoMs(f.all) >= isoMs(spawnAt);
 }
@@ -2774,15 +2909,15 @@ function beat(ev, state) {
     const common = gitCommonDir(projectRoot(ev));
     if (!common) return;
     const file = path.join(beatsDir(common), `${String(ev.agent).replace(/[^\w.-]/g, "_")}.json`);
-    if (state === "done") { fs.rmSync(file, { force: true }); return; }
+    if (state === "done") { leadRemove(common, file); return; }
     const spawn = spawnRecord(ev);
     if (!spawn || !isPipelineAgent(spawn.type) || forgotten(common, ev.agent, spawn.at)) return;
     const prev = readJSON(file, null) || {};
     const now = new Date().toISOString();
     // a rewrite drops `flagged`: a tool call after the watchdog's STALL is the agent answering
-    const rec = { agent: ev.agent, type: spawn.type, session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
+    const rec = { agent: ev.agent, type: spawn.type, spawn: spawn.at || "", session: ev.session || prev.session || "", cwd: ev.cwd || prev.cwd || "", first: prev.first || now, last: now };
     if (state === "ended") { rec.last = prev.last || now; rec.ended = now; rec.flagged = prev.flagged; }
-    writeJSON(file, rec);
+    leadJSON(common, file, rec);
   } catch {}
 }
 
@@ -2794,7 +2929,7 @@ function refreshInbox(root, common, timeout = 10000) {
   const has = (i, name) => (i.labels || []).some((l) => l && l.name === name);
   const item = (i) => ({ n: i.number, title: String(i.title || "") });
   const inbox = { at: new Date().toISOString(), questions: list.filter((i) => SCHEMES.some((s) => has(i, s.question))).map(item), reviews: list.filter((i) => SCHEMES.some((s) => has(i, s.review))).map(item) };
-  writeJSON(inboxFile(common), inbox);
+  try { leadJSON(common, inboxFile(common), inbox); } catch {}
   return inbox;
 }
 
@@ -2911,6 +3046,7 @@ function verifyInstalled(bare, sha) {
 }
 
 module.exports = {
+  LEAD, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,

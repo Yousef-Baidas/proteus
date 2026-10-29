@@ -250,7 +250,7 @@ r = viaLead("git push --force-with-lease origin proteus-work/r1/1", { who: ver }
 ok("allow: a verifier's force-push stays refused, the entry kept", r.code === 2 && hooks.allowLines(WT1).length === 1, r.err);
 r = viaLead("git push --force-with-lease origin proteus-work/r1/1");
 ok("allow: the worker's first force-push passes (lead route)", r.code === 0, r.err);
-ok("allow: ...and consumes the entry", hooks.allowLines(WT1).length === 0 && !fs.existsSync(hooks.allowFile(WT1)));
+ok("allow: ...and consumes the entry (recorded under proteus-lead; the allow file is not written)", hooks.allowLines(WT1).length === 0 && fs.existsSync(hooks.allowFile(WT1)));
 r = viaLead("git push --force-with-lease origin proteus-work/r1/1");
 ok("allow: the next one is refused again", r.code === 2 && FORCE.test(r.err), r.err);
 allow(WT1); allow(WT1);

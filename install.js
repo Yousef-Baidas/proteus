@@ -1294,7 +1294,7 @@ function inFlight(root) {
     if (/^(proteus|proteus-work)\//.test(br) || (wt && inside(realish(wt), realish(path.join(root, ".worktrees"))))) return `a run is in flight (worker worktree ${wt})`;
   }
   const common = commonDir(root);
-  for (const d of common ? [hl().stateDir(common)] : []) {
+  for (const d of common ? [hl().leadPath(common), hl().stateDir(common)] : []) {
     try { if (Date.now() - fs.statSync(path.join(d, "journal.jsonl")).mtimeMs < 3600e3) return "a run is in flight (its lead journal was written within the hour)"; } catch {}
   }
   return "";

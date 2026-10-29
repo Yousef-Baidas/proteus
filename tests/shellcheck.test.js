@@ -30,7 +30,7 @@ const WT1 = path.join(REPO, ".worktrees", "r1-1"), WT2 = path.join(REPO, ".workt
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/1", WT1, "main");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/2", WT2, "main");
 for (const wt of [WT1, WT2]) lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [wt, "src/**", "dist/**"] });
-const STATE = path.join(REPO, ".git", "proteus");
+const STATE = path.join(REPO, ".git", "proteus-lead");
 
 const LG = path.join(SRC, "proteus-lead-guard.js"), SC = path.join(SRC, "proteus-shell-check.js");
 const sub = { agent_id: "a1", agent_type: "proteus-backend-worker" };

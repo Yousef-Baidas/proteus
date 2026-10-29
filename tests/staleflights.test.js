@@ -22,7 +22,7 @@ g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "init");
 const WT1 = path.join(REPO, ".worktrees", "r1-1");
 g(REPO, "worktree", "add", "-q", "-b", "proteus-work/r1/1", WT1, "main");
 lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: REPO, args: [WT1, "src/**"] });
-const STATE = path.join(REPO, ".git", "proteus");
+const STATE = path.join(REPO, ".git", "proteus-lead");
 const LG = path.join(SRC, "proteus-lead-guard.js"), SC = path.join(SRC, "proteus-shell-check.js"), ST = path.join(SRC, "proteus-stall.js");
 const AGENTS = path.join(REPO, ".claude", "agents");
 fs.mkdirSync(AGENTS, { recursive: true });
