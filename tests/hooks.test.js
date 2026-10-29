@@ -175,6 +175,16 @@ ok("guard: other words, other commands and the keyword past line 1 pass", !said(
   ok("guard: what it cannot judge stays refused: eval, xargs into gh, a $( ) or $VAR program, sh -c with a variable", !open.length, open.join("\n---\n"));
 }
 ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm test" }, sub)) === 0);
+{ // only the lead runs proteus-container.js (#80): it runs outside the sandbox with the host's git and gh
+  const runs = ["node .claude/hooks/proteus-container.js run --worktree . --prompt-file b --model sonnet", "node /h/.claude/proteus-sandbox/bin/ab12cd34/proteus-container.js doctor",
+    "env X=1 timeout 60 ./proteus-container.js build", "bash -lc 'true && node \"/x y/proteus-container.js\" run'", "node -e \"require('./templates/hooks/proteus-container.js')\"", "echo $(nohup node --trace-warnings proteus-container.js doctor)"];
+  // a verifier's shell meets only this rule; a worker without a worktree may meet an earlier one (node -e, sh -c), refused all the same
+  const ver = { agent_id: "a3", agent_type: "proteus-verifier" };
+  const through = [...runs.filter((c) => run(LG, pre("Bash", { command: c }, sub)).code !== 2),
+    ...runs.filter((c) => { const x = run(LG, pre("Bash", { command: c }, ver)); return !(x.code === 2 && /proteus-container\.js is the lead's/.test(x.err)); })];
+  ok("guard: a subagent runs no proteus-container.js, any copy or subcommand, through a shell or an interpreter too", !through.length, through.join("\n"));
+  ok("guard: a subagent may still name the runner's file (git add, tests, grep)", ["git add templates/hooks/proteus-container.js", "node tests/container.test.js", "rg -n proteus-container templates"].every((c) => code(pre("Bash", { command: c }, sub)) === 0 && code(pre("Bash", { command: c }, ver)) === 0));
+}
 r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
 r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: T190 }));
@@ -1095,6 +1105,13 @@ ok("commit-msg: trailer", cm("fix: x\n\nCo-Authored-By: Claude <x>\n") === 1);
   r = run(path.join(CX, ".codex", "hooks", "proteus-autostart.js"), { hook_event_name: "SessionStart", session_id: "c1", cwd: CX, model: "gpt-6-sol", source: "startup", transcript_path: null }, { cwd: CX, env: cenvx });
   ok("codex autostart: skill body from .agents/skills as plain stdout, models= from the event", r.code === 0 && r.out.trim().endsWith("CODEX SKILL BODY") && !r.out.startsWith("{") &&
     /models=lead:gpt-6-sol,judge:gpt-6-sol@high,build:gpt-6-sol@medium,helper:gpt-6-sol@low/.test(r.out), r.out.slice(0, 800) + r.err);
+  { // isolation: container on Codex (#80): no container path, so never ready, whatever doctor says
+    const CA = path.join(CX, "AGENTS.md"), had = fs.existsSync(CA) ? fs.readFileSync(CA, "utf8") : null;
+    fs.writeFileSync(CA, (had || "") + "\nisolation: container\n");
+    r = run(path.join(CX, ".codex", "hooks", "proteus-autostart.js"), { hook_event_name: "SessionStart", session_id: "c1", cwd: CX, model: "gpt-6-sol", source: "startup", transcript_path: null }, { cwd: CX, env: cenvx });
+    ok("codex autostart: isolation: container is container-unready, the runner drives Claude Code only", / isolation=container-unready( |$)/m.test(r.out) && /the container runner drives Claude Code only, not codex\. No worker runs until it passes/.test(r.out), r.out.slice(0, 1500) + r.err);
+    if (had === null) fs.rmSync(CA); else fs.writeFileSync(CA, had);
+  }
   { // the sync of agents into CODEX_HOME refreshes a generated role and leaves the user's own
     const SH = path.join(W, "cx-sync"); fs.mkdirSync(path.join(SH, "agents"), { recursive: true });
     for (const n of ["proteus-worker", "proteus-guide"]) fs.writeFileSync(path.join(SH, "agents", `${n}.md`), `---\nname: ${n}\ndescription: d\n---\nbody ${n}\n`);

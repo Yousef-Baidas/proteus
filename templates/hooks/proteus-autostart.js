@@ -17,7 +17,7 @@
 // Re-hashes the linked team skills against teams/skills-lock.json (lib.lockDrift): a drift shows as
 // skills-lock=drift:<names> plus a note, and the lead guard refuses worker and verifier spawns until it clears.
 // With `isolation: container` in AGENTS.md, runs proteus-container.js doctor: isolation=container, or
-// isolation=container-unready plus a note naming the failed row.
+// isolation=container-unready plus a note naming the failed row (on a harness other than Claude Code, always unready).
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -78,7 +78,7 @@ lib.run(async (ev, ad) => {
   // hashed afresh each session start; the guard reuses the result until the lock changes
   const drift = safe(() => lib.lockDrift(root, true), []);
   if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
-  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(root, notes), "");
+  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(ad, root, notes), "");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchNote(root, notes));
 
@@ -398,14 +398,16 @@ function humanSaid(root) {
 
 // AGENTS.md `isolation: container` (#80): workers run through proteus-container.js. Its doctor (the sandbox's bin copy
 // when there is one, which no agent can write) gates it: a failing row makes it container-unready, and the lead waits
-function isolation(root, notes) {
+function isolation(ad, root, notes) {
   if ((lib.agentsLine(root, "isolation") || "").trim() !== "container") return "";
+  const wait = "No worker runs until it passes; tell the human this in one line and wait.";
+  if (ad.name !== "claude") { notes.push(`proteus: isolation: container is set, but the container runner drives Claude Code only, not ${ad.name}. ${wait}`); return " isolation=container-unready"; }
   const common = lib.gitCommonDir(root), bin = common && path.join(sandboxBin(common), "proteus-container.js");
   const script = bin && safe(() => fs.lstatSync(bin).isFile(), false) ? bin : path.join(__dirname, "proteus-container.js");
   const r = lib.spawnArgv(process.execPath, [script, "doctor"], { stdio: ["ignore", "pipe", "pipe"], timeout: 10000 });
   if (r.status === 0) return " isolation=container";
   const row = String(r.stdout || "").split("\n").find((l) => /^FIX\b/.test(l)) || (r.error ? `doctor did not finish (${r.error.code || r.error.message})` : `doctor exited ${r.status}`);
-  notes.push(`proteus: isolation: container is set, but node ${script} doctor fails: ${row.replace(/^FIX\s+/, "")}. No worker runs until it passes; tell the human this in one line and wait.`);
+  notes.push(`proteus: isolation: container is set, but node ${script} doctor fails: ${row.replace(/^FIX\s+/, "")}. ${wait}`);
   return " isolation=container-unready";
 }
 

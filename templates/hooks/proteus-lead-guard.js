@@ -27,7 +27,7 @@
 // 7. The lead does not Read images (renders cost ~1.5k tokens each) unless the human's
 //    latest prompt names the file.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
-//   no background Bash, no Monitor, no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
+//   no background Bash, no Monitor, no proteus-container.js (runsContainer), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
 //   through xargs, find -exec, git checkout/restore/apply/am/stash, patch, rm -r/mv/rsync of a parent). An edit inside a checkout with .claude/proteus-owned
 //   must be an owned path (same rule as proteus-owned-paths.js) in the agent's own worktree (bindingDenial:
@@ -74,7 +74,7 @@ else lib.run((ev, ad) => {
   if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad));
+    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || (ev.tool === "shell" && runsContainer(ev.command) && CONTAINER_MSG);
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
@@ -146,6 +146,34 @@ function modelDenial(c, name) {
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;
   if (r < c.floor) return `model "${name}" is under the floor (${c.floorName}); it does not produce or review work: ${use}.`;
   return "";
+}
+
+// only the lead runs proteus-container.js (#80): excludedCommands runs it outside the sandbox, with the host's git and gh.
+// Any copy, any subcommand, as the program or a script an interpreter runs, inside sh -c too; a command too complex
+// to split is refused when it names the runner at all
+const CONTAINER_MSG = "proteus-container.js is the lead's: it runs outside the sandbox with the host's git and gh. Report what you need and stop.";
+const RUNNER = /(^|[\\/])proteus-container\.js$/;
+const LAUNCH = new Set(["env", "timeout", "nice", "nohup", "sudo", "exec", "command", "time", "stdbuf", "xargs"]);
+const INTERP = /^(node|nodejs|bun|deno)$/;
+const SHELLS = /^(sh|bash|zsh|dash|ksh|fish|pwsh|powershell|cmd)$/;
+function runsContainer(command, depth = 0) {
+  if (!/proteus-container/.test(command)) return false;
+  let cmds;
+  try { cmds = lib.shellCommands(command); } catch { return true; }
+  const prog = (w) => String(w).split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+  return cmds.some((w) => {
+    let lead = true;
+    for (let i = 0; i < w.length; i++) {
+      const p = prog(w[i]);
+      const interp = w.slice(0, i).some((x) => INTERP.test(prog(x)));
+      if (RUNNER.test(w[i]) && (lead || interp)) return true;
+      // node -e / --require naming it
+      if (interp && /proteus-container/.test(w[i]) && /^(-e|--eval|-p|--print|-r|--require|--import)$/.test(w[i - 1])) return true;
+      if (SHELLS.test(p) && depth < 3) { const c = w.findIndex((x, j) => j > i && /^(-[a-z]*c[a-z]*|-command|\/c)$/i.test(x)); if (c > 0 && runsContainer(w.slice(c + 1).join(" "), depth + 1)) return true; }
+      if (!(LAUNCH.has(p) || /^[A-Za-z_]\w*=/.test(w[i]) || (i > 0 && /^-/.test(w[i])) || /^\d+$/.test(w[i]))) lead = false;
+    }
+    return false;
+  });
 }
 
 // rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
