@@ -36,16 +36,23 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - `--worktree` must be a linked worktree; the main checkout is refused.
 
 - The runtime is podman when found (rootless), else docker; `--runtime` picks one.
-- Options: `--model`, `--agent`, `--ticket` with `--base`, `--image`, `--memory 4g`, `--cpus 2`, `--pids 512`, `--network <name>`, `--timeout <min>` (default 60; the container is killed then).
+- Options: `--model`, `--agent`, `--ticket` with `--base`, `--image`, `--memory 4g`, `--cpus 2`, `--pids 512`, `--network <name>`, `--timeout <min>` (default 60; the container is killed then), `--queue-timeout <min>` (default 30).
 - A project that needs a toolchain builds its own image `FROM proteus-worker` and passes `--image`.
 - Without a runtime, run the worker without the container, in its worktree as usual.
 - `result.json` (Claude's JSON output) and `status.json` stay in `<git-common-dir>/proteus/scratch/container-<id>/out`. The bundles are removed.
 - Exit 0: imported, or nothing to import (and published, with `--ticket`). Exit 1: refused or failed, with the reason on stderr. Exit 2: usage.
-- `check --worktree <wt> --ref <sha> -- <command...>` runs a command on a commit reachable from the worktree's branch, checked out detached, in the same hardened container with no credential env and `--network none` unless `--network` is given. The verdict is the runtime's exit status: the entry, as PID 1, exits with the command's code (124 on its timeout, 125 when it failed first), and the runtime kills whatever the command left running. The last line is `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. `check.log` (stdout and stderr, 1 MiB each) is data the code under test can write; its path is printed only when it is a regular file under its cap. `status.json` is informational and never read. Nothing is imported and no ref is made. Exit 0 when the command exited 0, else 1; 2 usage.
+- `check`: see Checks.
+- The cap: `run` and `check` each hold a slot while their container runs, `<git-common-dir>/proteus-lead/containers/slot-<i>` (pid and start time, made exclusively and never through a link). AGENTS.md `containers: <n>` sets how many, default 2, clamped to 1..8. A slot whose pid is dead is reclaimed. With none free the runner polls every 5 s for up to `--queue-timeout <min>` (default 30), then exits 1. The slot is freed when the runner ends, on a throw, SIGINT or SIGTERM too.
+
+## Checks
+
+`check --worktree <wt> --ref <sha> -- <command...>` runs a command on a commit reachable from the worktree's branch, checked out detached, in the same hardened container with no credential env and `--network none` unless `--network` is given. The verdict is the runtime's exit status: the entry, as PID 1, exits with the command's code (124 on its timeout, 125 when it failed first), and the runtime kills whatever the command left running. The last line is `CHECK <sha12> exit <n>` or `CHECK <sha12> timed out`. `check.log` (stdout and stderr, 1 MiB each) is data the code under test can write; its path is printed only when it is a regular file under its cap. `status.json` is informational and never read. Nothing is imported and no ref is made. Exit 0 when the command exited 0, else 1; 2 usage.
+
+A verifier reads the diff on the host and runs none of the branch's code. Its brief (`roles.md`) has it reply `CHECKS:` with one command per line; the lead runs each as `proteus-container.js check --worktree <wt> --ref <head sha> -- <command>` and sends the `CHECK` lines and log paths back; the verifier then gives its verdict. The lead guard refuses a verifier's shell call that runs a gate or test (the `gate:` lines of `## Learned`, `npm test`, `node tests/run.js`, test runners, `proteus-gates-cache.js`); reads such as `git diff` and `gh pr diff` pass.
 
 ## Using it in a run
 
-- Opt in with a line in `AGENTS.md`: `isolation: container`. The lead then runs each worker through `proteus-container.js run` instead of the Agent tool; verifiers stay Agent spawns.
+- Opt in with a line in `AGENTS.md`: `isolation: container`. The lead then runs each worker through `proteus-container.js run` instead of the Agent tool; verifiers stay Agent spawns, but run nothing of the branch's on the host.
 - Credential: `claude setup-token` prints a long-lived token; export it as `CLAUDE_CODE_OAUTH_TOKEN` in the shell that starts the lead.
 - At session start the autostart runs `node .claude/hooks/proteus-container.js doctor` (the `--sandbox` bin copy when there is one). `proteus-state` then shows `isolation=container`, or `isolation=container-unready` with the failed row, and the lead dispatches no worker until it passes.
 
@@ -54,6 +61,7 @@ node .claude/hooks/proteus-container.js run --worktree .worktrees/<id> --prompt-
 - No egress allowlist: the network is open unless `--network` is given.
 - Docker rootful means a container escape is root on the host. Prefer podman or rootless Docker; `doctor` warns.
 - The credential is visible to the agent inside the container.
+- A runner killed with SIGKILL keeps its slot until the next taker finds its pid dead; two takers reclaiming the same dead slot at once can both run.
 - A bundle-size or pack bomb is bounded only by the timeout.
 - `check.log` is the command's to write: a child that left its process group (`setsid`) can rewrite it before the container exits. It never decides the verdict.
 - A sandboxed subagent could write a script that requires the runner. The native sandbox still holds that script: `excludedCommands` matches only the runner's own command line, so the script runs sandboxed.

@@ -190,6 +190,24 @@ ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm t
   ok("guard: a teammate may still name the runner's file", code(pre("Bash", { command: "git add templates/hooks/proteus-container.js" }, tm)) === 0);
   ok("guard: a subagent may still name the runner's file (git add, tests, grep)", ["git add templates/hooks/proteus-container.js", "node tests/container.test.js", "rg -n proteus-container templates"].every((c) => code(pre("Bash", { command: c }, sub)) === 0 && code(pre("Bash", { command: c }, ver)) === 0));
 }
+{ // isolation: container (#80): a verifier runs none of the branch's code on the host; the lead runs it as a container check
+  const AG = path.join(REPO, "AGENTS.md"), agBefore = fs.readFileSync(AG, "utf8");
+  const ver = { agent_id: "a4", agent_type: "proteus-verifier" };
+  const refused = (c, who = ver) => { const x = run(LG, pre("Bash", { command: c }, who)); return x.code === 2 && /run it through the lead as a container check/.test(x.err); };
+  const gates = ["npm test", "node tests/run.js", "env CI=1 npm run lint", "npm ci", "npx vitest run", "pnpm lint", "yarn", "pytest -q", "python3 -m pytest", "go test ./...", "cargo test",
+    "make check", "bash -lc 'cd /x && npm test'", "node .claude/hooks/proteus-gates-cache.js \"npm test\"", "node src/a.test.js", "./scripts/verify.sh --all"];
+  const reads = ["git diff origin/main...HEAD", "gh pr diff 5", "gh pr diff 5 --name-only", "cat src/a.ts", "rg -n test src", "git log --oneline -5", "gh pr checks 5 --json name,state", "npm view oxlint version"];
+  fs.writeFileSync(AG, `${agBefore}- gate: \`./scripts/verify.sh --all\` (exit code)\nisolation: container\n`);
+  const open = gates.filter((c) => !refused(c));
+  ok("verifier gate: under isolation: container a verifier's gate or test is refused, the ## Learned gate:, npm, runners and sh -c included", !open.length, open.join("\n"));
+  const shut = reads.filter((c) => code(pre("Bash", { command: c }, ver)) !== 0);
+  ok("verifier gate: reads still pass under the flag (git diff, gh pr diff, cat, rg)", !shut.length, shut.join("\n"));
+  ok("verifier gate: a worker still runs its tests under the flag", code(pre("Bash", { command: "npm test" }, sub)) === 0 && code(pre("Bash", { command: "node tests/run.js" }, sub)) === 0);
+  fs.writeFileSync(AG, `${agBefore}- gate: \`./scripts/verify.sh --all\` (exit code)\n`);
+  const loose = gates.filter((c) => code(pre("Bash", { command: c }, ver)) !== 0);
+  fs.writeFileSync(AG, agBefore);
+  ok("verifier gate: without the flag a verifier runs them", !loose.length, loose.join("\n"));
+}
 r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
 r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: T190 }));

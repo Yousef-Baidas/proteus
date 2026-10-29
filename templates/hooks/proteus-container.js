@@ -2,9 +2,9 @@
 // Container runner (#80): one Claude Code worker session in a container that never sees the host's .git.
 //   node <hooks>/proteus-container.js run --worktree <dir> --prompt-file <file> [--model <id>] [--agent <name>]
 //        [--ticket <n> --base <branch>] [--image <name>] [--runtime docker|podman]
-//        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>]
+//        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>] [--queue-timeout <min>]
 //   node <hooks>/proteus-container.js check --worktree <dir> --ref <sha> [--image <name>] [--runtime docker|podman]
-//        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>] -- <command...>
+//        [--memory 4g] [--cpus 2] [--pids 512] [--network <name>] [--timeout <min>] [--queue-timeout <min>] -- <command...>
 //   node <hooks>/proteus-container.js build [--image <name>] [--runtime docker|podman]
 //   node <hooks>/proteus-container.js doctor [--image <name>] [--runtime docker|podman]
 // run: bundles the worktree's branch (lib's pinned git on the trusted common dir, #215) into a fresh 0700 dir under
@@ -34,6 +34,10 @@
 // the code under test can write; its path is printed only when it lstat's as a regular file under its cap.
 // out/status.json is informational and never read. Nothing is imported or pushed and no git ref is created.
 // Exit 0 when the command exited 0, else 1; 2 usage.
+// The cap: run and check each hold a slot while their container runs, <common>/proteus-lead/containers/slot-<i> for i
+// in 1..N (AGENTS.md `containers: <n>`, default 2, clamped to 1..8), made exclusively through lib.leadCreate and holding
+// the pid and start time. A slot whose pid is dead is reclaimed. With none free, it polls every 5 s up to
+// --queue-timeout (default 30 min), then dies. The slot goes in finally, and on SIGINT and SIGTERM.
 // build: builds templates/container/Dockerfile with the entrypoint. doctor: runtime, rootless, image, credential.
 // Exit 0 imported, nothing to import, published, built or doctor clean; 1 refused or failed (reason on stderr); 2 usage.
 "use strict";
@@ -55,6 +59,7 @@ const STREAM_MAX = 1 << 20;
 const LOG_MAX = 2 * STREAM_MAX + 4096;
 // the entry's exit when the command ran past --timeout, and when the entry failed before running it
 const TIMED_OUT = 124, ENTRY_FAILED = 125;
+const MAX_SLOTS = 8, POLL_MS = 5000;
 const USAGE = "usage: node proteus-container.js run --worktree <dir> --prompt-file <file> [options] | check --worktree <dir> --ref <sha> [options] -- <command...> | build [--image <name>] | doctor";
 const HELP = `${USAGE}
 Runs one Claude Code worker session in a container that never sees the host's .git:
@@ -78,13 +83,14 @@ Options:
   --ref <sha>          check: the commit to check out (detached); reachable from the worktree's branch
   --network <name>     the container's network; default the runtime's (open egress), none for check
   --timeout <min>      wall clock before the container is killed; default 60
+  --queue-timeout <min> how long to wait for a free slot (AGENTS.md containers: <n>, default 2); default 30
 Credential: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in the env, passed by name. No GitHub token.
 Exit 0 imported or nothing to import (and published, with --ticket); 1 refused or failed; 2 usage.
 check: exit 0 when the command exited 0, 1 otherwise, 2 usage.`;
 
-const FLAGS = { "--worktree": "worktree", "--prompt-file": "prompt", "--image": "image", "--runtime": "runtime", "--memory": "memory", "--cpus": "cpus", "--pids": "pids", "--network": "network", "--timeout": "timeout",
+const FLAGS = { "--worktree": "worktree", "--prompt-file": "prompt", "--image": "image", "--runtime": "runtime", "--memory": "memory", "--cpus": "cpus", "--pids": "pids", "--network": "network", "--timeout": "timeout", "--queue-timeout": "queue",
   "--model": "model", "--agent": "agent", "--ticket": "ticket", "--base": "base", "--ref": "ref" };
-const CAPS = ["image", "runtime", "memory", "cpus", "pids", "network", "timeout"];
+const CAPS = ["image", "runtime", "memory", "cpus", "pids", "network", "timeout", "queue"];
 const ALLOWED = { run: [...CAPS, "worktree", "prompt", "model", "agent", "ticket", "base"], check: [...CAPS, "worktree", "ref"], build: ["image", "runtime"], doctor: ["image", "runtime"] };
 const CHECKS = {
   runtime: [/^(?:docker|podman)$/, "docker or podman"],
@@ -94,6 +100,7 @@ const CHECKS = {
   pids: [/^[1-9]\d*$/, "a whole number"],
   network: [/^[A-Za-z0-9][\w.-]*$/, "a network name"],
   timeout: [/^(?:\d+(?:\.\d+)?)$/, "minutes"],
+  queue: [/^(?:\d+(?:\.\d+)?)$/, "minutes"],
   model: [/^[A-Za-z0-9][\w.:@/[\]-]*$/, "a model id"],
   agent: [/^(?:proteus:)?[A-Za-z0-9][\w-]*$/, "an agent name"],
   ticket: [/^[1-9]\d*$/, "an issue number"],
@@ -116,7 +123,7 @@ const die = (msg, code = 1) => { throw new Stop(msg, code); };
 function parse(argv) {
   const [cmd, ...args] = argv;
   if (!Object.keys(ALLOWED).includes(cmd)) die(`${USAGE}\n(--help explains each command)`, 2);
-  const o = { cmd, image: IMAGE, memory: "4g", cpus: "2", pids: "512", timeout: "60" };
+  const o = { cmd, image: IMAGE, memory: "4g", cpus: "2", pids: "512", timeout: "60", queue: "30" };
   // check's command is everything after --, passed as argv
   const dash = args.indexOf("--"), rest = dash < 0 ? args : args.slice(0, dash);
   if (dash >= 0) o.command = args.slice(dash + 1);
@@ -249,6 +256,46 @@ function workerCheckout(worktree) {
   return { wt, co, branch, base };
 }
 
+// the cap: AGENTS.md `containers: <n>`, how many run or check containers at once; default 2, clamped to 1..8
+function slotCount(root) {
+  const n = parseInt(lib.agentsLine(root, "containers") || "", 10);
+  return Number.isFinite(n) ? Math.min(MAX_SLOTS, Math.max(1, n)) : 2;
+}
+// EPERM: alive, another user's (process.kill(pid, 0) checks the same way on Windows)
+function alive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; }
+}
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, ms));
+// a free slot under <common>/proteus-lead/containers, made exclusively (lib.leadCreate: never through a link); a slot
+// whose pid is dead is reclaimed. Polls every 5 s until --queue-timeout, then dies. Returns the release, which also
+// runs on exit and on SIGINT and SIGTERM (Node runs those once the runtime's synchronous run returns).
+function takeSlot(co, queue) {
+  const n = slotCount(lib.mainRoot(co.common) || co.root), dir = lib.leadPath(co.common, "containers");
+  const end = Date.now() + Math.round(+queue * 60000), mine = JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) + "\n";
+  for (let told = false; ; told = true) {
+    for (let i = 1; i <= n; i++) {
+      const f = path.join(dir, `slot-${i}`);
+      if (lib.leadCreate(co.common, f, mine)) return release(co.common, f);
+      // an unreadable or half-written slot is held: only a pid known dead frees it
+      const held = lib.readUntrustedJSON(f, {}, 4096);
+      if (Number.isInteger(held.pid) && held.pid > 0 && !alive(held.pid)) {
+        lib.leadRemove(co.common, f);
+        if (lib.leadCreate(co.common, f, mine)) return release(co.common, f);
+      }
+    }
+    if (Date.now() >= end) die(`no free container slot after ${queue} min: ${n} in use (${dir}). Wait for one to finish, raise \`containers: <n>\` in AGENTS.md (at most ${MAX_SLOTS}), or pass a longer --queue-timeout`);
+    if (!told) console.log(`container: all ${n} slots in use; waiting up to ${queue} min for one`);
+    sleep(Math.min(POLL_MS, end - Date.now()));
+  }
+}
+function release(common, f) {
+  let done = false;
+  const free = () => { if (!done) { done = true; try { lib.leadRemove(common, f); } catch {} } };
+  process.once("exit", free);
+  for (const sig of ["SIGINT", "SIGTERM"]) process.once(sig, () => { free(); process.exit(128 + os.constants.signals[sig]); });
+  return free;
+}
+
 function runCmd(o) {
   const { wt, co, branch, base } = workerCheckout(o.worktree);
   // read once, before the run: the import checks against this copy, whatever happens to the file meanwhile
@@ -264,6 +311,7 @@ function runCmd(o) {
   if (!cred) die(`neither ${CREDS.join(" nor ")} is set; set one in the env (it reaches the container by name only), or ${FALLBACK}`);
 
   const g = (args, x = {}) => lib.gitTry(co.common, args, { timeout: 600000, ...x });
+  const free = takeSlot(co, o.queue);
   const s = prepare(co.common, path.resolve(o.prompt));
   try {
     copyHooks(s.inDir, owned);
@@ -289,6 +337,7 @@ function runCmd(o) {
     return publish(o, wt, branch, s, g, { entries, tier: tier ? `${tier[1]}${tier[2] ? " (human)" : ""}` : "standard" }, moved);
   } finally {
     dropBundles(s);
+    free();
   }
 }
 
@@ -411,6 +460,7 @@ function checkCmd(o) {
   if (!g(["merge-base", "--is-ancestor", sha, `refs/heads/${branch}`]).ok) die(`refused: ${short} is not reachable from ${branch}`);
   const rt = needRuntime(o.runtime);
   const ms = Math.round(+o.timeout * 60000), network = o.network || "none";
+  const free = takeSlot(co, o.queue);
   const s = prepare(co.common);
   try {
     fs.writeFileSync(path.join(s.inDir, "run.json"), JSON.stringify({ mode: "check", ref: sha, command: o.command, timeout: ms }) + "\n");
@@ -440,6 +490,7 @@ function checkCmd(o) {
     return code === 0 ? 0 : 1;
   } finally {
     dropBundles(s);
+    free();
   }
 }
 
@@ -499,4 +550,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, parse, which, findRuntime, runArgs, childEnv, credential, SPECIAL, readReport };
+module.exports = { main, parse, slotCount, which, findRuntime, runArgs, childEnv, credential, SPECIAL, readReport };

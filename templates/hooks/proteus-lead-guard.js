@@ -35,6 +35,7 @@
 //   while a run branch exists (proteus/* or a pre-rename run's, lib.runOpen) is refused (except the
 //   scout's teams/*/skills.txt, scratch under <git-common-dir>/proteus/scratch/, lib.inScratch, and a
 //   `memory: local` agent's own .claude/agent-memory-local/<type>/, lib.ownMemory). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
+//   Under AGENTS.md `isolation: container`, a verifier's shell runs no gate or test (verifierGate): the lead runs it as a container check.
 //   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
 //   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
@@ -74,7 +75,7 @@ else lib.run((ev, ad) => {
   if (humanSide(ev, ad)) return;
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
-    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(ev);
+    const why = lib.workerDenial(ev) || unnamedSignoff(ev, ad) || (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(ev) || verifierGate(ev);
     if (why) ad.deny(why);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
@@ -160,7 +161,6 @@ function runsContainer(command, depth = 0) {
   if (!/proteus-container/.test(command)) return false;
   let cmds;
   try { cmds = lib.shellCommands(command); } catch { return true; }
-  const prog = (w) => String(w).split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
   return cmds.some((w) => {
     let lead = true;
     for (let i = 0; i < w.length; i++) {
@@ -178,6 +178,63 @@ function runsContainer(command, depth = 0) {
 
 // a subagent's or a teammate's shell (a teammate is a session of its own, so it reaches the lead's branch)
 const noRunner = (ev) => (ev.agent || ev.teammate) && ev.tool === "shell" && runsContainer(ev.command) ? CONTAINER_MSG : "";
+
+// isolation: container (#80): a verifier runs none of the branch's code on the host. Its gates and tests go through
+// the lead as container checks (roles.md, CHECKS:); reads (git diff, gh pr diff, cat, rg) pass. A gate is a command
+// of the `gate:` lines in AGENTS.md's ## Learned, a package manager's test, run, install or exec, a test runner or
+// build tool, or node, bun or deno on a test file or proteus-gates-cache.js; inside sh -c too. A command too complex
+// to split is refused when it names one.
+const GATE_MSG = "proteus: under isolation: container a verifier runs none of the branch's code on the host; run it through the lead as a container check. List the commands under CHECKS: in your reply and stop (roles.md); the lead sends back each CHECK line and its log.";
+const PM = /^(npm|pnpm|yarn|bun)$/, PM_RUN = /^(t|tst|test|it|cit|install-test|run|run-script|ci|i|install|add|exec|x|start)$/;
+const PM_READ = /^(info|why|list|ls|outdated|view|config|audit)$/;
+const SUB = /^(cargo|go|deno|dotnet|swift|mix|zig)$/, SUB_RUN = /^(test|run|bench|build)$/;
+const TOOL = /^(npx|pnpx|bunx|pytest|py\.test|tox|nox|jest|vitest|mocha|ava|tap|playwright|cypress|phpunit|rspec|rake|make|gmake|just|task|gradle|gradlew|mvn|mvnw|ctest|ninja)$/;
+const TEST_FILE = /(^|[\\/])(tests?|spec|__tests__)[\\/]|\.(test|spec)\.[cm]?[jt]sx?$|(^|[\\/])proteus-gates-cache\.js$/;
+const prog = (w) => String(w).split(/[\\/]/).pop().replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+// the backticked commands on AGENTS.md's `- gate:` lines, each simple command's words
+function learnedGates(root) {
+  let text = "";
+  try { text = fs.readFileSync(path.join(lib.docRoot(root), "AGENTS.md"), "utf8"); } catch {}
+  const learned = (/^## Learned\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(text) || [])[1] || "";
+  const out = [];
+  for (const line of learned.split("\n").filter((l) => /^\s*-\s*gate:/.test(l))) {
+    for (const m of line.matchAll(/`([^`]+)`/g)) try { out.push(...lib.shellCommands(m[1]).map(unlaunch).filter((w) => w.length)); } catch {}
+  }
+  return out;
+}
+// a simple command's words from its program on: env X=1 timeout 60 npm test -> npm test
+function unlaunch(w) {
+  let i = 0;
+  while (i < w.length && (LAUNCH.has(prog(w[i])) || /^[A-Za-z_]\w*=/.test(w[i]) || (i > 0 && w[i].startsWith("-")) || /^\d+$/.test(w[i]))) i++;
+  return w.slice(i);
+}
+function isGate(w, gates) {
+  const p = prog(w[0] || ""), sub = (w.slice(1).find((x) => !x.startsWith("-")) || "").toLowerCase();
+  if (gates.some((gw) => gw.length && gw.every((x, i) => (i ? w[i] === x : prog(w[0] || "") === prog(x))))) return true;
+  if (PM.test(p)) return p === "npm" ? PM_RUN.test(sub) : !PM_READ.test(sub); // pnpm lint, yarn and bun x.js run too
+  if (SUB.test(p)) return SUB_RUN.test(sub);
+  if (TOOL.test(p)) return true;
+  if (/^python[\d.]*$|^py$/.test(p)) return w.some((x, i) => w[i - 1] === "-m" && /^(pytest|unittest|tox|nox)$/.test(x)) || w.slice(1).some((x) => TEST_FILE.test(x));
+  if (INTERP.test(p)) return w.slice(1).some((x) => TEST_FILE.test(x));
+  return false;
+}
+function runsGate(command, gates, depth = 0) {
+  let cmds;
+  try { cmds = lib.shellCommands(command); } catch { return /\b(test|npm|pnpm|yarn|bun|npx|pytest|jest|vitest|make|cargo|go|gates-cache)\b/.test(command); }
+  return cmds.some((raw) => {
+    const w = unlaunch(raw);
+    if (isGate(w, gates)) return true;
+    if (!SHELLS.test(prog(w[0] || "")) || depth >= 3) return false;
+    const c = w.findIndex((x, j) => j > 0 && /^(-[a-z]*c[a-z]*|-command|\/c)$/i.test(x));
+    return c > 0 && runsGate(w.slice(c + 1).join(" "), gates, depth + 1);
+  });
+}
+function verifierGate(ev) {
+  if (ev.tool !== "shell" || !lib.isVerifier(lib.agentTypeOf(ev))) return "";
+  const root = lib.projectRoot(ev);
+  if ((lib.agentsLine(root, "isolation") || "").trim() !== "container") return "";
+  return runsGate(ev.command, learnedGates(root)) ? GATE_MSG : "";
+}
 
 // rule 2 for a container worker (#80): `proteus-container.js run` carries --model, the build tier's or the judge's
 // (an escalation), on the ladder as an Agent call's model would be

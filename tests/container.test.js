@@ -7,6 +7,7 @@
 "use strict";
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 const lib = require("./lib.js");
 const { ok, g } = lib;
 
@@ -577,6 +578,50 @@ if (process.platform !== "win32") {
   const res2 = checkIn(t, t.base, NODE("process.exit(0)"), { FAKE_DOCKER_SLEEP: "30000" }, ["--timeout", "0.01"]);
   const kill = calls().find((x) => x.args[0] === "kill");
   ok("a container that outlives the timeout is killed: CHECK <sha12> timed out, exit 1", res2.code === 1 && lastLine(res2) === `CHECK ${t.base.slice(0, 12)} timed out` && kill && res2.ms < 25000, res2.out + res2.err);
+}
+
+// ---- the cap: a slot per container under <common>/proteus-lead/containers, AGENTS.md containers: <n> (default 2)
+const SLOTS = path.join(R, ".git", "proteus-lead", "containers");
+const slots = () => { try { return fs.readdirSync(SLOTS).sort(); } catch { return []; } };
+const hold = (i, pid) => { fs.mkdirSync(SLOTS, { recursive: true }); fs.writeFileSync(path.join(SLOTS, `slot-${i}`), JSON.stringify({ pid, at: "2026-10-29T00:00:00Z" }) + "\n"); };
+const ranContainer = () => calls().some((x) => x.args[0] === "run");
+{
+  const t = worktree(), go = NODE("process.exit(0)");
+  const res = checkIn(t, t.base, go);
+  ok("a check takes a slot and frees it when it ends", res.code === 0 && fs.existsSync(SLOTS) && !slots().length, res.out + res.err + slots());
+  hold(1, process.pid);
+  hold(2, process.pid);
+  const r = checkIn(t, t.base, go, {}, ["--queue-timeout", "0.02"]);
+  ok("every slot held by a live pid: check waits out --queue-timeout, then dies starting no container", r.code === 1 && /no free container slot after 0\.02 min: 2 in use/.test(r.err) && r.ms >= 1000 && !ranContainer(), r.out + r.err + r.ms);
+  ok("it says once that it is waiting", (r.out.match(/all 2 slots in use; waiting up to 0\.02 min/g) || []).length === 1, r.out);
+  ok("the held slots are left as they were", slots().join() === "slot-1,slot-2" && read(path.join(SLOTS, "slot-1")).includes(`"pid":${process.pid}`), slots());
+  const dead = +spawnSync(process.execPath, ["-e", "console.log(process.pid)"], { encoding: "utf8" }).stdout.trim();
+  hold(2, dead);
+  const r2 = checkIn(t, t.base, go, {}, ["--queue-timeout", "0"]);
+  ok("a slot whose pid is dead is reclaimed at once, then freed", r2.code === 0 && ranContainer() && slots().join() === "slot-1", r2.out + r2.err + slots());
+  // a holder that exits while the runner waits: the next poll takes its slot
+  const gone = spawnSync(process.execPath, ["-e", "const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 1500)'], { detached: true, stdio: 'ignore' }); c.unref(); console.log(c.pid)"], { encoding: "utf8" });
+  hold(2, +gone.stdout.trim());
+  const r3 = checkIn(t, t.base, go, {}, ["--queue-timeout", "0.06"]);
+  ok("the runner waits for a slot and runs once its holder is gone", r3.code === 0 && r3.ms >= 1500 && ranContainer() && /waiting up to 0\.06 min/.test(r3.out) && slots().join() === "slot-1", r3.out + r3.err + r3.ms);
+  fs.rmSync(SLOTS, { recursive: true, force: true });
+  const r4 = runIn(t, { FAKE_DOCKER_EXIT: "3" });
+  ok("a run that throws after taking its slot frees it", r4.code === 1 && /run exited 3/.test(r4.err) && fs.existsSync(SLOTS) && !slots().length, r4.out + r4.err + slots());
+  // the runner reads the cap from the project's AGENTS.md
+  fs.writeFileSync(path.join(R, "AGENTS.md"), "containers: 1\n");
+  hold(1, process.pid);
+  const r5 = checkIn(t, t.base, go, {}, ["--queue-timeout", "0"]);
+  ok("AGENTS.md containers: 1 caps it at one slot", r5.code === 1 && /1 in use/.test(r5.err) && !ranContainer(), r5.out + r5.err);
+  fs.rmSync(path.join(R, "AGENTS.md"));
+  fs.rmSync(SLOTS, { recursive: true, force: true });
+  ok("a --queue-timeout that is no number is a usage error", run(["check", "--worktree", t.wt, "--ref", t.base, "--queue-timeout", "soon", "--", "true"]).code === 2);
+}
+{
+  const d = path.join(W, "cap");
+  fs.mkdirSync(d);
+  const cap = (line) => { if (line === null) fs.rmSync(path.join(d, "AGENTS.md"), { force: true }); else fs.writeFileSync(path.join(d, "AGENTS.md"), `# x\n${line}\n`); return C.slotCount(d); };
+  const got = [cap(null), cap("containers: 3"), cap("containers: 0"), cap("containers: -2"), cap("containers: 99"), cap("containers: 8"), cap("containers: lots")];
+  ok("containers: <n> is clamped to 1..8, default 2", got.join() === "2,3,1,1,8,8,2", got.join());
 }
 
 // ---- usage
