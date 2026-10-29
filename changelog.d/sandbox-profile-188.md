@@ -32,9 +32,10 @@
   `node <home>/install.js --update`, which you run from your own terminal. `--sandbox` refuses such a home and
   writes nothing: under the profile, install Proteus as a plugin, or move the home outside every sandboxed repo.
   The profile denies everything under the `.claude/` of the repo root and the guest dir, by a rule Linux honours.
-  A deeper `.claude/skills/` is held by a `PreToolUse` hook on `Skill`, run from the copy outside the write set: it
-  refuses a skill while a `SKILL.md` for its name sits in any `.claude/skills/` the profile makes writable, other
-  than those two, and refuses every skill when its scan errs or passes 8 levels or 50,000 entries. `--sandbox`
+  The profile is extra protection that blocks many attacks, not a boundary against a determined agent: Claude
+  Code loads and runs project files, such as a nested `.claude/skills/` with `hooks:`, from folders the sandbox
+  lets agents write, and on Linux the sandbox cannot deny every `.claude` at any depth. docs/install.md lists the
+  known gaps; Sandcastle (#80) is the isolation layer for workers. `--sandbox`
   points a Proteus `statusLine` whose script sandboxed commands can write at its own copy outside the write set,
   in `.claude/settings.local.json` only, and warns about a plugin installed inside it. It checks both settings
   files before writing anything. Once a profile exists, `--project`, `--plugin-setup` and `--migrate-here` do the
