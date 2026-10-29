@@ -73,6 +73,17 @@ bad = each(allowed, [`git -C ${JSON.stringify(slash(WT1))} status`, `git -C ${JS
 ok("git -C: the worker's own bound worktree, a dir in it, and -C . after cd into it pass", !bad.length, bad.join("\n"));
 ok("git -C: an unbound agent is refused even its cwd's checkout", !denied(`git -C ${JSON.stringify(slash(WT1))} status`, /not your worktree/, { agent_id: "a9", agent_type: "proteus-verifier" }));
 ok("git -C: an unbound agent passes after cd into a prepared worktree", !allowed(cd1 + "git -C . status", { agent_id: "a9", agent_type: "proteus-verifier" }));
+// #220: a git dir the shell builds when it runs is unknown, not a literal path resolved from the cwd
+bad = each((c) => denied(c, /spell the path out; the guard can't expand shell variables/), [
+  cd1 + "GIT_WORK_TREE=$T git status", cd1 + 'GIT_WORK_TREE="$T" git status', cd1 + "GIT_DIR=${D}/.git git log", cd1 + 'GIT_DIR="`pwd`/.git" git log',
+  cd1 + "env GIT_WORK_TREE=$(pwd) git status", cd1 + "git -C $T status", cd1 + "git -C `pwd` status", cd1 + 'git --git-dir="$D" log',
+  cd1 + "git --work-tree=$(pwd) status", cd1 + 'GIT_WORK_TREE="$(pwd)/x" git status', cd1 + "git -C . -C $T status", cd1 + "git -C $T push origin proteus-work/r1/1",
+]);
+ok("git -C: a $VAR, $( ) or backtick in GIT_DIR, GIT_WORK_TREE, -C, --git-dir or --work-tree refused as unknown (#220)", !bad.length, bad.join("\n"));
+const varPush = lib.run(LG, ev("Bash", { command: cd1 + "git -C $T push origin HEAD:main" }, {}), { cwd: REPO });
+ok("git -C: the lead's own push through a shell-built -C refused the same", varPush.code === 2 && /spell the path out/.test(varPush.err), varPush.err);
+bad = each(allowed, [cd1 + "GIT_WORK_TREE=. git status", cd1 + "git -C $PWD status", cd1 + 'git -C "$PWD/src" status', cd1 + "T=x git status"]);
+ok("git -C: $PWD, $HOME and an unrelated assignment still resolve and pass", !bad.length, bad.join("\n"));
 ok("git -C: the lead's own shell is not judged by it", !allowed(`git -C ${JSON.stringify(slash(WT2))} status`, {}));
 
 // 3. shell writes to the always-refused paths

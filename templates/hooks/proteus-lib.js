@@ -1658,6 +1658,7 @@ const BRANCH_MSG = {
   admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
   protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
   status: "proteus: a commit status or check run on a PR is a verdict the run branch's ruleset requires (proteus/verdict, proteus/security); nobody posts one by hand. A verifier records its verdict with `node <hooks>/proteus-signoff.js <pr> <sha> <WORD>`; CI posts the rest.",
+  bare: "proteus: a bare `git push` here has no branch the guard can read (a detached HEAD, or no checkout of this project); push by name: `git push origin <branch>`.",
   wide: (flag) => `proteus: \`git push ${flag}\` can reach main or a run branch; push one branch by name.`,
   main: (b) => `proteus: agents never push to ${b}; a run reaches it only as the close PR the human merges.`,
   del: (b) => `proteus: agents never delete ${b}; the human does at close.`,
@@ -1702,12 +1703,21 @@ const PUSH_VALUE = new Set(["--repo", "-o", "--push-option", "--receive-pack", "
 function branchDenial(command, cwd, extra) {
   const cmd = String(command || "");
   if (!/\b(gh|git)\b/.test(cmd)) return null;
+  // the dir each command runs in, moved by a cd on the way (a subagent's calls start in the lead's checkout); lost
+  // after a cd the guard cannot follow, so a bare push there has no branch to read (#221)
+  let dir = path.resolve(cwd || "."), lost = false;
   for (const all of shellCommands(cmd)) {
     let words = unwrap(all);
     let prog = progName(words[0]);
+    if (prog === "cd" || prog === "pushd") {
+      const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-") || "~";
+      if (to === "-" || unexpanded(to, dir)) lost = true;
+      else dir = path.resolve(dir, expandPath(to, dir));
+      continue;
+    }
     // node <hooks>/proteus-gh.js <args> is gh with retries: same rules
     if (prog === "node" && /(^|[\\/])proteus-gh\.js$/.test(words[1] || "")) { words = words.slice(1); prog = "gh"; }
-    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), path.resolve(cwd || "."), extra) : null;
+    const why = prog === "gh" ? ghBranchDenial(words.slice(1)) : prog === "git" ? pushDenial(words.slice(1), dir, extra, lost) : null;
     if (why) return why;
   }
   return null;
@@ -1746,15 +1756,17 @@ function ghApi(args) {
 }
 
 // git <global options> push …: each destination it would write, judged against main and the run branches
-// extra(dst), when given, may refuse a destination neither main nor a run branch
-function pushDenial(words, cwd, extra) {
-  let i = 0, dir = cwd;
+// extra(dst), when given, may refuse a destination neither main nor a run branch; lost: cwd is not where it runs
+function pushDenial(words, cwd, extra, lost = false) {
+  let i = 0, dir = cwd, built = "";
   for (; i < words.length && words[i].startsWith("-"); i++) {
-    if (words[i] === "-C") dir = path.resolve(dir, words[++i] || ".");
-    else if (words[i].startsWith("-C")) dir = path.resolve(dir, words[i].slice(2));
-    else if (GIT_VALUE.has(words[i])) i++;
+    const v = words[i] === "-C" ? words[++i] : words[i].startsWith("-C") ? words[i].slice(2) : null;
+    if (v === null) { if (GIT_VALUE.has(words[i])) i++; continue; }
+    if (v === undefined || unexpanded(v, dir)) built ||= `git -C ${v || ""}`.trim(); // #220: not a path to resolve
+    else dir = path.resolve(dir, expandPath(v, dir));
   }
   if (words[i] !== "push") return null;
+  if (built) return UNEXPANDED_MSG(built);
   const args = words.slice(i + 1);
   let del = false;
   const pos = [];
@@ -1767,12 +1779,14 @@ function pushDenial(words, cwd, extra) {
     else if (!a.startsWith("-")) pos.push(a);
   }
   const g = (...a) => git(a, dir);
-  const cur = branchOf(dir);
+  const cur = lost ? "" : branchOf(dir);
   const remote = pos[0] || (cur && g("config", "--get", `branch.${cur}.remote`)) || "origin";
   let specs = pos.slice(1);
+  // a bare push (or remote only) is judged as the branch checked out where it runs, read from that checkout's own
+  // HEAD (branchOf, #215), not from an upstream a worker branch cut from origin/main points at (#221)
   if (!specs.length && !del) {
-    if (!cur) return null;
-    specs = [`${cur}:${g("config", "--get", `branch.${cur}.merge`).replace(/^refs\/heads\//, "") || cur}`];
+    if (!cur) return BRANCH_MSG.bare;
+    specs = [cur];
   }
   for (const spec of specs) {
     const s = spec.replace(/^\+/, "");
@@ -1927,6 +1941,9 @@ function cwdWorktree(cwd, common) {
 // and on Windows a Git Bash or Cygwin drive path (/c/x, /cygdrive/c/x) as the drive path it names
 const expandPath = (w, dir, win = process.platform === "win32") => drivePath(String(w).replace(/^~(?=$|[\\/])/, () => os.homedir()).replace(/^\$(?:\{HOME\}|HOME\b)/, () => os.homedir()).replace(/^\$(?:\{PWD\}|PWD\b)/, () => dir), win);
 const drivePath = (p, win = process.platform === "win32") => (win ? p.replace(/^[\\/](?:cygdrive[\\/])?([a-zA-Z])(?=$|[\\/])/, (_, d) => `${d.toUpperCase()}:/`).replace(/^([A-Z]:\/)[\\/]/, "$1") : p);
+// a path word the shell builds when it runs ($VAR, $( ) or backticks), left after expandPath reads ~, $HOME and $PWD
+const unexpanded = (w, dir) => /[$`]/.test(expandPath(w, dir));
+const UNEXPANDED_MSG = (what) => `proteus: \`${what}\` names a path the shell builds when it runs ($VAR, $( ) or backticks), so the guard cannot tell which checkout git works in: spell the path out; the guard can't expand shell variables.`;
 // the dir a shell call runs in: the event's cwd, moved by the shell tool's own workdir when the harness has one
 const shellCwd = (ev) => { const base = ev.cwd || projectRoot(ev); return ev.workdir ? path.resolve(base, expandPath(ev.workdir, base)) : base; };
 
@@ -2047,20 +2064,24 @@ function ownWorktree(ev, dir, common) {
   return cwdWorktree(dir, common) || (ev.cwd && cwdWorktree(path.resolve(ev.cwd), common)) || (ev.agent && common ? bound(common, ev.agent) : null);
 }
 // git's own options that move it to another checkout, each with its path (-C <p>, -C<p>, --git-dir[=]<p>,
-// --work-tree[=]<p>); GIT_DIR / GIT_WORK_TREE assignments too
+// --work-tree[=]<p>); GIT_DIR / GIT_WORK_TREE assignments too. Each is [option, path, value as written]; the path
+// is null for a value the shell builds when it runs ($VAR, $( ), backticks, or a value a substitution split off), which
+// the guard cannot resolve (#220), and the list ends there
 function gitDirs(all, words, dir) {
   const out = [];
-  for (const a of all.slice(0, all.length - words.length)) {
+  const at = (opt, v, d) => (v === undefined || unexpanded(v, d) ? [opt, null, v || ""] : [opt, path.resolve(d, expandPath(v, d)), v]);
+  // an unquoted $( ) or backticks splits the command it sits in; the part after it resumes the assignment it built
+  for (const a of [...(all.resumes || []), ...all.slice(0, all.length - words.length)]) {
     const m = /^(GIT_DIR|GIT_WORK_TREE)=(.*)$/.exec(a);
-    if (m) out.push([m[1] + "=", path.resolve(dir, expandPath(m[2], dir))]);
+    if (m) out.push(at(m[1] + "=", m[2], dir));
   }
   let d = dir;
-  for (let i = 1; i < words.length && words[i].startsWith("-"); i++) {
+  for (let i = 1; i < words.length && words[i].startsWith("-") && !out.some((e) => e[1] === null); i++) {
     const a = words[i], m = /^(--git-dir|--work-tree)=(.*)$/.exec(a);
-    if (a === "-C") { d = path.resolve(d, expandPath(words[++i] || ".", d)); out.push(["-C", d]); }
-    else if (a.startsWith("-C")) { d = path.resolve(d, expandPath(a.slice(2), d)); out.push(["-C", d]); }
-    else if (m) out.push([m[1], path.resolve(d, expandPath(m[2], d))]);
-    else if (a === "--git-dir" || a === "--work-tree") out.push([a, path.resolve(d, expandPath(words[++i] || ".", d))]);
+    if (a === "-C") { const e = at("-C", words[++i], d); if (e[1]) d = e[1]; out.push(e); }
+    else if (a.startsWith("-C")) { const e = at("-C", a.slice(2), d); if (e[1]) d = e[1]; out.push(e); }
+    else if (m) out.push(at(m[1], m[2], d));
+    else if (a === "--git-dir" || a === "--work-tree") out.push(at(a, words[++i], d));
     else if (GIT_VALUE.has(a)) i++;
   }
   return out;
@@ -2690,7 +2711,8 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
         if (!wt || !allowLines(wt).includes("force-push")) return AGENT_MSG.force(force);
         Object.assign(ctx, { force: wt, forceFlag: force });
       }
-      for (const [opt, p] of gitDirs(all, words, dir)) {
+      for (const [opt, p, v] of gitDirs(all, words, dir)) {
+        if (p === null) return UNEXPANDED_MSG(opt.endsWith("=") ? opt + v : `git ${opt} ${v}`.trim());
         const root = gitRoot(p), common = root && gitCommonDir(root);
         const own = ownWorktree(ev, dir, common);
         if (!root || !own || !samePath(realOr(root), realOr(own))) return AGENT_MSG.gitDir(opt, p.split(path.sep).join("/"), own ? `yours is ${own.split(path.sep).join("/")}` : "");

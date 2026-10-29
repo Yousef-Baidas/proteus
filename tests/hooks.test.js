@@ -117,7 +117,14 @@ ok("guard: lead Monitor allowed", code(pre("Monitor", { command: "x" })) === 0);
 const sub = { agent_id: "a1", agent_type: "proteus-worker" };
 r = run(LG, pre("Bash", { command: "npm run render", run_in_background: true }, sub));
 ok("guard: subagent run_in_background denied", r.code === 2 && /never wait on a background notification/.test(r.err), r.err);
-ok("guard: subagent Monitor denied", code(pre("Monitor", { command: "x" }, sub)) === 2);
+// #219: a subagent's Monitor command gets a Bash call's checks, and passes where that call would
+ok("guard: subagent Monitor tailing a suite log, or in an until loop with sleep and grep, passes",
+  ["tail -f /tmp/x-suite", "until grep -q 'passed,' /tmp/x-suite 2>/dev/null; do sleep 5; done; tail -3 /tmp/x-suite", "while kill -0 4242 2>/dev/null; do sleep 2; done"]
+    .every((command) => code(pre("Monitor", { command }, sub)) === 0));
+const ro = ["echo x > f", "tail -f log >> out", "tail -f log | tee out", "sh -c 'tail -f log'", "node -e 1", "rm -f log", "until false; do rm x; done", "echo $(rm x)", "kill 4242", "rg --pre sh x"]
+  .flatMap((command) => { const x = run(LG, pre("Monitor", { command }, sub)); return x.code === 2 && /Monitor is read-only for subagents; run writes with Bash/.test(x.err) ? [] : [`${command} => ${x.code} ${x.err}`]; });
+ok("guard: subagent Monitor that writes or runs anything but a read refused as read-only", !ro.length, ro.join("\n"));
+ok("guard: the lead's own Monitor is not limited to reads", code(pre("Monitor", { command: "echo x > /tmp/x-out" })) === 0);
 ok("guard: subagent --edit-last denied", code(pre("Bash", { command: "gh pr comment 3 --edit-last -b y" }, sub)) === 2);
 {
   // the flag refused only on a gh call that carries it; as data (heredoc body, a quoted argument, a comment) it passes
