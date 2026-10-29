@@ -1,6 +1,6 @@
 # Flow, step by step
 
-The detail behind `SKILL.md`'s flow outline. Read a step's section when you reach it. `<hooks>` is `.claude/hooks`, `.codex/hooks` on Codex.
+The detail behind `SKILL.md`'s flow outline. Read a step's section when you reach it. `<hooks>` per `harnesses.md`.
 
 ## Session start
 
