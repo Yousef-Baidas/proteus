@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// The security job's scanners, run by proteus-trust.yml before proteus-security.js reads their findings:
+// The scanners of proteus-trust.yml's scan job, whose artifact the post job's proteus-security.js reads:
 //   node teams/templates/hooks/proteus-scan.js --dir <checkout> --out <dir> --base <sha> --head <sha> [--require]
 //   node teams/templates/hooks/proteus-scan.js --dir <checkout> --out <dir> --all
 // <checkout> is the PR head, checked out as data: the scanners read it and nothing in it runs. The changed files are
-// git diff base...head there (what the PR's files list shows), regular files only, never a symlink:
+// git diff base...head there (what the PR's files list shows), a symlink turned file included, regular files only,
+// never a symlink:
 // - semgrep, rulesets p/owasp-top-ten and p/secrets, on the changed files;
 // - gitleaks on the commits base..head, so a secret a later commit deleted is still found, read from a mirror clone of
 //   the checkout's repository (no working tree, so no .gitleaksignore the PR adds);
-// - osv-scanner on the changed lockfiles, call analysis off, so it runs no go or cargo on the head;
-// - zizmor, else actionlint, on the changed workflows under .github/workflows/.
+// - osv-scanner on the changed lockfiles (requirements-*.txt and requirements/*.txt too), call analysis off, so it
+//   runs no go or cargo on the head;
+// - zizmor on the changed workflows under .github/workflows/ and composite actions' action.yml, else actionlint on
+//   the workflows.
 // Each writes <out>/<tool>.sarif with paths relative to <checkout>; proteus-security.js --findings <out> reads them.
 // A tool with nothing to scan logs one skip line and passes, and so does one that is not installed unless --require
 // (CI installs them all, so a missing one there is a broken install, not an absent ecosystem).
@@ -17,7 +20,8 @@
 // working tree; osv-scanner's and actionlint's config from <out>; zizmor --no-config --no-ignores).
 // --all scans every tracked file, lockfile and workflow instead, for the baseline's record (enforcement.md §4);
 // gitleaks, which reads a PR's commits, is skipped there.
-// A failure that quotes git's or a scanner's output prints it between ::stop-commands:: markers (lib.fenced).
+// A failure that quotes git's or a scanner's output prints it between ::stop-commands:: markers (lib.fenced), each
+// of its lines after a fixed proteus-scan: prefix with control characters as ?, so none can start a workflow command.
 // Exit 0 every tool ran or was skipped, 1 a tool failed, git could not list the changes or the mirror lacks the
 // base or head commit, 2 bad usage.
 "use strict";
@@ -30,10 +34,20 @@ const USAGE = "usage: proteus-scan.js --dir <checkout> --out <dir> (--base <sha>
 const LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "Cargo.lock", "go.mod",
   "poetry.lock", "uv.lock", "Pipfile.lock", "pdm.lock", "requirements.txt", "Gemfile.lock", "composer.lock", "pubspec.lock", "mix.lock",
   "gradle.lockfile", "packages.lock.json", "conan.lock", "renv.lock"]);
+// pip's other spellings, requirements-dev.txt and requirements/base.txt, which osv-scanner gets typed as requirements.txt
+const PIP = /(^|\/)(requirements-[^/]*|requirements\/[^/]*)\.txt$/;
 const SHA = /^[0-9a-f]{40}$/i;
+const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+const ACTION = /(^|\/)action\.ya?ml$/;
 const say = (msg) => console.log(`proteus-scan: ${msg}`);
-// a failure, fenced (lib.fenced): it may quote git's or a scanner's output, and so a head path; quoted lines go first
-const fail = (msg, quoted = []) => { lib.fenced([...quoted, msg].map((l) => `proteus-scan: ${l}`), console.error); return 1; };
+// head text as one line: a control character becomes ?, so a \r or newline in it cannot start another
+const inert = (s) => String(s).replace(/\p{Cc}/gu, "?");
+// a failure, fenced (lib.fenced): it may quote git's or a scanner's output, and so a head path; quoted lines go first,
+// every line after the prefix
+const fail = (msg, quoted = []) => {
+  lib.fenced([...quoted, msg].flatMap((l) => String(l).split(/\r?\n/)).map((l) => `proteus-scan: ${inert(l)}`), console.error);
+  return 1;
+};
 
 // name runs from PATH: a file there, with a PATHEXT extension on win32
 const onPath = (name) => (process.env.PATH || "").split(path.delimiter).filter(Boolean).some((d) =>
@@ -63,7 +77,7 @@ function main(argv) {
   const out = path.resolve(opt.out);
   fs.mkdirSync(out, { recursive: true });
 
-  const listed = lib.spawnArgv("git", ["-C", dir, "-c", "core.quotepath=off", ...(opt.all ? ["ls-files", "-z"] : ["diff", "--name-only", "-z", "--diff-filter=ACMR", `${opt.base}...${opt.head}`])],
+  const listed = lib.spawnArgv("git", ["-C", dir, "-c", "core.quotepath=off", ...(opt.all ? ["ls-files", "-z"] : ["diff", "--name-only", "-z", "--diff-filter=ACMRT", `${opt.base}...${opt.head}`])],
     { encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true });
   if (listed.error || listed.status !== 0) return fail(`git cannot list the ${opt.all ? "tracked" : "changed"} files in ${dir}: ${(listed.stderr || (listed.error && listed.error.message) || "").trim()}`);
   const regular = (p) => { try { return fs.lstatSync(path.join(dir, p)).isFile(); } catch { return false; } };
@@ -85,10 +99,12 @@ function main(argv) {
       args: (_, report) => ["git", HEAD_GIT, `--log-opts=${opt.base}..${opt.head}`, "--config", empty("gitleaks.toml", "[extend]\nuseDefault = true\n"),
         "--gitleaks-ignore-path", empty("gitleaks.ignore"), "--ignore-gitleaks-allow", "--redact", "--no-banner", "--exit-code", "0",
         "--report-format", "sarif", "--report-path", report], ok: [0] },
-    { name: "osv-scanner", pick: files.filter((p) => LOCKFILES.has(path.posix.basename(p))), none: `no lockfile ${what}`,
-      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--no-call-analysis=all", "--format", "sarif", "--output-file", report, ...t.flatMap((p) => ["-L", p])],
+    { name: "osv-scanner", pick: files.filter((p) => LOCKFILES.has(path.posix.basename(p)) || PIP.test(p)), none: `no lockfile ${what}`,
+      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--no-call-analysis=all", "--format", "sarif", "--output-file", report,
+        ...t.flatMap((p) => ["-L", PIP.test(p) ? `requirements.txt:${p}` : p])],
       ok: [0, 1], clean: [128] },
-    { name: "zizmor", alt: "actionlint", pick: files.filter((p) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)), none: `no workflow ${what}`,
+    // zizmor also audits a composite action's action.yml; actionlint reads workflows only
+    { name: "zizmor", alt: "actionlint", pick: files.filter((p) => WORKFLOW.test(p) || ACTION.test(p)), none: `no workflow or action ${what}`,
       args: (t) => ["--offline", "--no-config", "--no-ignores", "--format", "sarif", ...t], stdout: true, ok: [0], clean: [3] },
   ];
 
@@ -103,7 +119,8 @@ function main(argv) {
     const report = path.join(out, `${name}.sarif`);
     fs.rmSync(report, { force: true });
     // every target as ./path, so a file named like a flag stays a path
-    const list = (t.pick || []).map((p) => `./${p}`);
+    const list = (t.pick || []).filter((p) => name !== "actionlint" || WORKFLOW.test(p)).map((p) => `./${p}`);
+    if (t.pick && !list.length) { say(`${name} skipped: ${t.none}`); continue; }
     const args = name === "actionlint" ? ["-no-color", "-config-file", empty("actionlint.yaml", "{}\n"), "-format", "{{json .}}", ...list] : t.args(list, report);
     if (t.bare) {
       fs.rmSync(HEAD_GIT, { recursive: true, force: true });

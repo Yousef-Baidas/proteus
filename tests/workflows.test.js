@@ -1,8 +1,9 @@
 // Workflow hardening tests: node tests/workflows.test.js. Both .github/workflows/ci.yml and the shipped
 // templates/ci/proteus-gates.yml keep ${{ }} out of run: scripts (a fork names its own head branch), hold a read-only
 // token that checkout does not persist, pin every action to a commit SHA, and install without lifecycle scripts.
-// templates/ci/proteus-trust.yml, on pull_request_target, runs only the base's code with one write scope (statuses); the
-// head is data under head/ for the pinned scanners, which run before the token reaches a step.
+// templates/ci/proteus-trust.yml, on pull_request_target, runs only the base's code in two jobs: scan, read-only and
+// tokenless, runs the pinned scanners on the head as data under head/; post, the one job with a write scope
+// (statuses), checks out only the base and reads scan's artifact.
 // Also checks the anti-slop plugin's provenance record. Reads files only; no temp dir.
 // Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
@@ -92,42 +93,70 @@ for (const [name, p] of Object.entries(FILES)) {
   ok(`${name}: npm installs skip lifecycle scripts`,
     /npm ci --ignore-scripts/.test(yml) && !/npm ci(?! --ignore-scripts)/.test(yml), (yml.match(/.*npm ci\b.*/g) || []).join(" | "));
 }
-// proteus-trust.yml runs on pull_request_target with a token that may post statuses: the base's code only, the
-// one write scope on the one job, the same hardening as the gates
+// proteus-trust.yml runs on pull_request_target with a token that may post statuses: the base's code only, two jobs
+// on two VMs (steps of one job share a VM and a uid, so step order isolates nothing): scan reads the head with no
+// write scope and no token in any step, post holds the one write scope, never checks out the head and reads the
+// scan's artifact as data
 const trust = read("templates", "ci", "proteus-trust.yml");
 const tLines = trust.split("\n");
-const tScripts = runScripts(trust);
 ok("trust: runs on pull_request_target into proteus/** only, no pull_request or push trigger",
   /^on:\n {2}pull_request_target:\n {4}branches: \["proteus\/\*\*"\]\npermissions:/m.test(trust) && !/^\s+(pull_request|push|workflow_run):/m.test(trust));
-ok("trust: no run: script interpolates ${{ }}", tScripts.length > 0 && !interpolated(trust).length, interpolated(trust).map((s) => s.text.trim()).join(" | "));
-ok("trust: top-level contents: read; the only write scope is statuses, on the one job",
+ok("trust: no run: script interpolates ${{ }}", runScripts(trust).length > 0 && !interpolated(trust).length, interpolated(trust).map((s) => s.text.trim()).join(" | "));
+// the jobs, each as its own text: from its key under jobs: to the next
+const jobs = {};
+{
+  const at = tLines.indexOf("jobs:");
+  let name = null;
+  for (const l of tLines.slice(at + 1)) {
+    const m = /^ {2}([\w-]+):$/.exec(l);
+    if (m) { name = m[1]; jobs[name] = ""; } else if (name) jobs[name] += l + "\n";
+    if (/^\S/.test(l)) break;
+  }
+}
+const { scan = "", post = "" } = jobs;
+ok("trust: exactly two jobs, scan then post, and post needs scan", Object.keys(jobs).join() === "scan,post" && /^ {4}needs: scan$/m.test(post) && !/needs:/.test(scan), Object.keys(jobs).join());
+ok("trust: top-level contents: read; scan holds contents: read only; the only write scope is statuses, on post",
   /^permissions:\n {2}contents: read\n(?! )/m.test(trust) && (trust.match(/^\s*[\w-]+: write\b/gm) || []).map((l) => l.trim()).join() === "statuses: write"
-  && /^jobs:\n {2}security:\n {4}runs-on: [\w.-]+\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {6}statuses: write\n/m.test(trust) && !/write-all/.test(trust));
-const tUses = tLines.map((l, i) => ({ l, i })).filter(({ l }) => /^\s*- uses:/.test(l));
-ok("trust: every action, commented ones included, pinned to the gates' checkout commit",
-  tUses.length === 2 && tLines.filter((l) => /\buses:/.test(l)).every((l) => /uses: actions\/checkout@([0-9a-f]{40}) # v\d+(\.\d+)*$/.test(l) && checkoutShas.has(/@([0-9a-f]{40})/.exec(l)[1])), tLines.filter((l) => /\buses:/.test(l)).join(" | "));
-// the workspace is the base; the head is data under head/, the only place its sha is checked out
-const tSteps = tUses.map(({ i }) => stepAt(tLines, i));
-ok("trust: the workspace checkout is the base sha, the head only under head/, neither with a persisted token",
-  /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(tSteps[0]) && !/\bpath:/.test(tSteps[0])
-  && /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/.test(tSteps[1]) && /\n\s+path: head\n/.test(tSteps[1])
-  && tSteps.every((st) => /\n\s+persist-credentials: false(\s|$)/.test(st))
-  && tLines.filter((l) => /^[^#]*head\.(sha|ref)/.test(l)).every((l) => /^\s*(HEAD_SHA: |ref: )\$\{\{ github\.event\.pull_request\.head\.sha \}\}(\s|$)/.test(l)), tSteps.join("\n---\n"));
-const tText = tScripts.map((s) => s.text.replace(/^\s*[|>]-?[ \t]*\n/, "").replace(/^ +/gm, "").trim()); // a block's lines, dedented
-ok("trust: three scripts, install, scan and the base's proteus-security.js with the findings, values through env",
-  tScripts.length === 3 && tText[0].startsWith("set -euo pipefail\n")
-  && tText[1] === 'node teams/templates/hooks/proteus-scan.js --require --dir head --out "$RUNNER_TEMP/scan" --base "$BASE_SHA" --head "$HEAD_SHA"'
-  && tText[2] === 'node teams/templates/hooks/proteus-security.js --ci "$PR_NUMBER" "$HEAD_SHA" --findings "$RUNNER_TEMP/scan"'
-  && /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/.test(trust) && /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(trust), tText.join(" | "));
+  && /^ {4}permissions:\n {6}contents: read\n(?! {6})/m.test(scan)
+  && /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {6}statuses: write\n/m.test(post) && !/write-all/.test(trust), JSON.stringify(jobs));
+ok("trust: no secret and no token in the scan job; github.token appears once, in post",
+  !/secrets\.|github\.token/.test(scan) && (trust.match(/github\.token/g) || []).length === 1 && /GH_TOKEN: \$\{\{ github\.token \}\}/.test(post), scan);
+const usesOf = (job) => job.split("\n").map((l, i, a) => ({ l, i, a })).filter(({ l }) => /^\s*- uses:/.test(l)).map(({ l, i, a }) => ({ l: l.trim(), step: stepAt(a, i) }));
+const sUses = usesOf(scan), pUses = usesOf(post);
+const pin = (name) => new RegExp(`^- uses: actions/${name}@[0-9a-f]{40} # v\\d+(\\.\\d+)*$`);
+ok("trust: every action, commented ones included, pinned to a full commit; checkout to the gates' commit",
+  sUses.map(({ l }) => /actions\/([\w-]+)@/.exec(l)[1]).join() === "checkout,checkout,upload-artifact"
+  && pUses.map(({ l }) => /actions\/([\w-]+)@/.exec(l)[1]).join() === "checkout,download-artifact"
+  && [...sUses, ...pUses].every(({ l }) => ["checkout", "upload-artifact", "download-artifact"].some((n) => pin(n).test(l)))
+  && tLines.filter((l) => /\buses:/.test(l)).length === 5
+  && [...sUses, ...pUses].filter(({ l }) => /checkout@/.test(l)).every(({ l }) => checkoutShas.has(/@([0-9a-f]{40})/.exec(l)[1])), tLines.filter((l) => /\buses:/.test(l)).join(" | "));
+ok("trust: scan checks out the base sha as its workspace and the head only under head/, neither with a persisted token",
+  /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(sUses[0].step) && !/\bpath:/.test(sUses[0].step)
+  && /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/.test(sUses[1].step) && /\n\s+path: head\n/.test(sUses[1].step)
+  && sUses.slice(0, 2).every(({ step }) => /\n\s+persist-credentials: false(\s|$)/.test(step)), sUses.map(({ step }) => step).join("\n---\n"));
+ok("trust: post checks out the base only: its one checkout is the base sha, no head ref, no head/ path",
+  /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(pUses[0].step) && !/\bpath:/.test(pUses[0].step) && /\n\s+persist-credentials: false(\s|$)/.test(pUses[0].step)
+  && !/^\s*ref: [^#]*head\b/m.test(post) && !/\bpath: head\b/.test(post), post);
+ok("trust: head.sha appears only as a checkout ref in scan or as HEAD_SHA in env",
+  tLines.filter((l) => /^[^#]*head\.(sha|ref)/.test(l)).every((l) => /^\s*(HEAD_SHA: |ref: )\$\{\{ github\.event\.pull_request\.head\.sha \}\}(\s|$)/.test(l)));
+ok("trust: scan uploads $RUNNER_TEMP/scan as the proteus-scan artifact; post downloads it there",
+  /\n\s+name: proteus-scan\n\s+path: \$\{\{ runner\.temp \}\}\/scan\n/.test(sUses[2].step) && /\n\s+name: proteus-scan\n\s+path: \$\{\{ runner\.temp \}\}\/scan(\n|$)/.test(pUses[1].step),
+  sUses[2].step + "\n---\n" + pUses[1].step);
+const dedent = (job) => runScripts(job).map((s) => s.text.replace(/^\s*[|>]-?[ \t]*\n/, "").replace(/^ +/gm, "").trim()); // a block's lines, dedented
+const sText = dedent(scan), pText = dedent(post);
+ok("trust: scan runs install and proteus-scan.js; post runs only the base's proteus-security.js on the artifact; values through env",
+  sText.length === 2 && sText[0].startsWith("set -euo pipefail\n")
+  && sText[1] === 'node teams/templates/hooks/proteus-scan.js --require --dir head --out "$RUNNER_TEMP/scan" --base "$BASE_SHA" --head "$HEAD_SHA"'
+  && pText.length === 1 && pText[0] === 'node teams/templates/hooks/proteus-security.js --ci "$PR_NUMBER" "$HEAD_SHA" --findings "$RUNNER_TEMP/scan"'
+  && /PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \}\}/.test(post) && /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/.test(scan), [...sText, ...pText].join(" | "));
 ok("trust: no script enters or runs anything under head/; the scan reads it with --dir head",
-  tText.map((t) => t.replace(/--dir head /, "").replace(/--head "\$HEAD_SHA"|\$HEAD_SHA/g, "")).every((t) => !/\bhead\b/.test(t)) && /--dir head /.test(tText[1]), tText.join(" | "));
+  [...sText, ...pText].map((t) => t.replace(/--dir head /, "").replace(/--head "\$HEAD_SHA"|\$HEAD_SHA/g, "")).every((t) => !/\bhead\b/.test(t)) && /--dir head /.test(sText[1]), sText.join(" | "));
 ok("trust: every scanner pinned: no package-manager install, every image by digest, every download checked against a sha256",
-  !/\b(pipx|pip|npm|uv|brew) install\b/.test(tText[0]) && (tText[0].match(/semgrep\/semgrep@sha256:[0-9a-f]{64}\b/g) || []).length === 2 && !/semgrep\/semgrep(:|\s)/.test(tText[0])
-  && (tText[0].match(/\bcurl /g) || []).length === 3 && (tText[0].match(/ {2}[\w.-]+" \| sha256sum -c -$/gm) || []).length === 3
-  && (tText[0].match(/echo "[0-9a-f]{64} {2}/g) || []).length === 3 && !/curl [^\n]*\|/.test(tText[0]), tText[0]);
-ok("trust: the token reaches only the last step, after the scanners ran",
-  (trust.match(/github\.token/g) || []).length === 1 && /GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*proteus-security\.js/.test(trust)
-  && trust.indexOf("github.token") > trust.indexOf("proteus-scan.js"));
+  !/\b(pipx|pip|npm|uv|brew) install\b/.test(sText[0]) && (sText[0].match(/semgrep\/semgrep@sha256:[0-9a-f]{64}\b/g) || []).length === 2 && !/semgrep\/semgrep(:|\s)/.test(sText[0])
+  && (sText[0].match(/\bcurl /g) || []).length === 3 && (sText[0].match(/ {2}[\w.-]+" \| sha256sum -c -$/gm) || []).length === 3
+  && (sText[0].match(/echo "[0-9a-f]{64} {2}/g) || []).length === 3 && !/curl [^\n]*\|/.test(sText[0]), sText[0]);
+ok("trust: the header no longer claims step order isolates the scanners from the token",
+  !/before any step holds the token/.test(trust) && /two VMs/.test(trust));
 ok("gates template: no longer calls MERGE a review comment, and names the statuses the ruleset requires",
   !/MERGE is a review comment/.test(read(...FILES.template)) && /proteus\/verdict/.test(read(...FILES.template)) && /proteus-trust\.yml/.test(read(...FILES.template)));
 

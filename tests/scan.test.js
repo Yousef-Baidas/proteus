@@ -76,6 +76,14 @@ const fencedIn = (out, ...texts) => {
     && f.inside.every((x) => !x.lines.some((l) => l.toLowerCase().includes(x.token)));
 };
 
+// no line, once the runner trims its leading spaces, opens with :: except a fence's markers, and every line holding
+// text (want) starts with the script's fixed prefix
+const prefixed = (out, prefix, ...want) => {
+  const lines = String(out).split(/\r\n|\r|\n/);
+  return lines.every((l) => !l.trimStart().startsWith("::") || /^::(stop-commands::)?[0-9a-f]{32,}(::)?$/.test(l))
+    && want.every((t) => lines.some((l) => l.includes(t)) && lines.filter((l) => l.includes(t)).every((l) => l.startsWith(prefix)));
+};
+
 // a token shaped like a GitHub PAT, made at run time so no secret sits in this file
 const token = () => "ghp_" + [...crypto.randomBytes(36)].map((b) => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[b % 62]).join("");
 
@@ -109,7 +117,7 @@ ok("scan: semgrep scans the changed files as ./paths with OWASP and secrets rule
   sg.args.slice(-2).join() === "./.gitleaks.toml,./src/cfg.js" && sg.args.includes("p/owasp-top-ten") && sg.args.includes("p/secrets")
   && sg.args.includes("--disable-nosem") && sg.args.includes("--x-ignore-semgrepignore-files") && sg.args.join(" ").includes("--metrics off"), JSON.stringify(sg));
 ok("scan: no lockfile and no workflow changed: osv-scanner and zizmor each log one skip line and are not run",
-  r.out.split("\n").filter((l) => l.endsWith("osv-scanner skipped: no lockfile changed")).length === 1 && /zizmor skipped: no workflow changed$/m.test(r.out)
+  r.out.split("\n").filter((l) => l.endsWith("osv-scanner skipped: no lockfile changed")).length === 1 && /zizmor skipped: no workflow or action changed$/m.test(r.out)
   && !call("osv-scanner") && !call("zizmor") && !fs.existsSync(path.join(OUT, "osv-scanner.sarif")), r.out);
 ok("scan: the gitleaks finding lands in gitleaks.sarif", sarif("gitleaks").runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri === "src/cfg.js"
   && /gitleaks: 1 finding in [0-9a-f]{12}\.\.[0-9a-f]{12}/.test(r.out), r.out);
@@ -146,15 +154,16 @@ fs.writeFileSync(path.join(OUT, "extra.sarif"), JSON.stringify({ runs: [{ tool: 
 r = sec(["src/cfg.js", "src/x.js"], "--findings", OUT);
 ok("security: a new finding beside a recorded one is red", r.status.state === "failure" && /src\/x\.js \(semgrep js\.eval\)/.test(r.status.description), r.out + r.err);
 fs.rmSync(path.join(OUT, "extra.sarif"));
-fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "gitleaks" } }, results: [{ ruleId: "r\n::stop-commands::x", locations: [{ physicalLocation: { artifactLocation: { uri: "a\n::error::spoof.js" } } }] }] }] }));
+fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "gitleaks" } }, results: [{ ruleId: "r\n::stop-commands::x", locations: [{ physicalLocation: { artifactLocation: { uri: "a\n::stop-commands::x" } } }] }] }] }));
 r = sec(["src/cfg.js"], "--findings", OUT);
-ok("security: a path or rule from the head prints and posts as one inert line, never a workflow command",
-  r.status.state === "failure" && fencedIn(r.out, "a?::error::spoof.js") && /a\?::error::spoof\.js \(gitleaks r\?::stop-commands::x\)/.test(r.out), r.out + r.err);
+ok("security: a uri or rule with a newline then ::stop-commands::x prints and posts as one line after the prefix",
+  r.status.state === "failure" && fencedIn(r.out, "a?::stop-commands::x") && /^proteus-security: {3}a\?::stop-commands::x \(gitleaks r\?::stop-commands::x\)$/m.test(r.out)
+  && prefixed(r.out, "proteus-security: ", "::stop-commands::x"), r.out + r.err);
 fs.rmSync(path.join(OUT, "evil.sarif"));
 r = sec(["::warning::x/auth/y.js"]);
-ok("security: a changed path that itself starts with :: prints as an inert line",
-  r.status.state === "failure" && /^ {2}\?:warning::x\/auth\/y\.js \(\*\*\/auth\/\*\*\)$/m.test(r.out)
-  && fencedIn(r.out, ":warning::x/auth/y.js"), r.out + r.err);
+ok("security: a changed path that itself begins with ::warning:: prints after the prefix, never at a line's start",
+  r.status.state === "failure" && /^proteus-security: {3}::warning::x\/auth\/y\.js \(\*\*\/auth\/\*\*\)$/m.test(r.out)
+  && prefixed(r.out, "proteus-security: ", "::warning::x/auth/y.js") && fencedIn(r.out, "::warning::x/auth/y.js"), r.out + r.err);
 fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "semgrep" } }, results: [{ ruleId: "r", locations: [{ physicalLocation: { artifactLocation: { uri: "src/##[add-mask]x.js" } } }] }] }] }));
 r = sec(["src/auth/##[warning]x.js"], "--findings", OUT);
 const r2 = sec(["src/auth/##[warning]x.js"], "--findings", OUT);
@@ -173,7 +182,7 @@ fs.rmSync(path.join(OUT, "evil.sarif"));
 }
 fs.writeFileSync(path.join(OUT, "semgrep.json"), JSON.stringify({ results: [{ check_id: "js.eval", path: "::x.js" }] }));
 r = sec(["::x.js"], "--findings", OUT);
-ok("security: a semgrep finding in a changed file named ::x.js still counts", r.status.state === "failure" && /\?:x\.js \(semgrep js\.eval\)/.test(r.out), r.out + r.err);
+ok("security: a semgrep finding in a changed file named ::x.js still counts", r.status.state === "failure" && /^proteus-security: {3}::x\.js \(semgrep js\.eval\)$/m.test(r.out), r.out + r.err);
 fs.rmSync(path.join(OUT, "semgrep.json"));
 fs.rmSync(BL);
 
@@ -202,7 +211,22 @@ ok("security: --list prints one line per finding and exits 1; an empty directory
   list.code === 1 && list.out.split(/\r?\n/).filter((l) => l.startsWith("finding ")).join() === "finding gitleaks github-pat src/cfg.js" && fencedIn(list.out, "finding gitleaks") && lib.run(SEC, "", { cwd: BASEDIR, args: ["--list", BIN] }).code === 0, list.out + list.err);
 fs.writeFileSync(path.join(W, "bad.json"), JSON.stringify({ nope: 1 }));
 r = sec(["src/cfg.js"], "--findings", path.join(W, "bad.json"));
-ok("security: a report that is neither SARIF nor semgrep JSON exits 1 with nothing posted", r.code === 1 && /neither SARIF nor a semgrep JSON report/.test(r.err) && !r.status.state, r.err);
+ok("security: a report that is neither SARIF nor semgrep JSON exits 1 with nothing posted", r.code === 1 && /neither SARIF nor a semgrep JSON report/.test(r.out) && !r.status.state, r.out + r.err);
+
+// the post job reads the scan job's artifact as data: regular files only, each under a size cap, a bounded count
+const ART = path.join(W, "artifact");
+const artifact = (files) => { fs.rmSync(ART, { recursive: true, force: true }); fs.mkdirSync(ART); for (const [n, t] of Object.entries(files)) fs.writeFileSync(path.join(ART, n), t); };
+artifact({ "big.sarif": JSON.stringify({ runs: [] }) + " ".repeat((64 << 20) + 1) });
+r = sec(["src/cfg.js"], "--findings", ART);
+ok("security: a report over 64 MiB exits 1 unread, nothing posted", r.code === 1 && /big\.sarif is \d+ bytes, more than/.test(r.out) && !r.status.state, r.out + r.err);
+artifact(Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`r${i}.sarif`, JSON.stringify({ runs: [] })])));
+r = sec(["src/cfg.js"], "--findings", ART);
+ok("security: more than 64 reports exits 1, nothing posted", r.code === 1 && /65 reports, more than 64/.test(r.out) && !r.status.state, r.out + r.err);
+artifact({});
+fs.mkdirSync(path.join(ART, "dir.sarif"));
+r = sec(["src/cfg.js"], "--findings", ART);
+ok("security: a report that is not a regular file exits 1, nothing posted", r.code === 1 && /dir\.sarif is not a regular file/.test(r.out) && !r.status.state, r.out + r.err);
+fs.rmSync(ART, { recursive: true, force: true });
 
 // no security block: CI used to check nothing; the scanners' findings still count
 fs.writeFileSync(path.join(BASEDIR, "teams", "ROUTING.md"), "# Routing\n");
@@ -259,6 +283,9 @@ ok("scan: a scanner that errors fails the scan", r.code === 1 && /semgrep exited
 r = scan(pr(), { FAKE_SCAN_EXIT_SEMGREP: "2", FAKE_SCAN_STDERR_SEMGREP: "bad file src/x.js\r::error::x\n::warning::y\nsrc/##[add-mask]z.js\n" });
 ok("scan: a failing scanner's stderr, a bare \\r, a :: line and a ##[cmd] in it, prints only between stop-commands markers",
   r.code === 1 && fencedIn(r.err, "::error::x", "::warning::y", "##[add-mask]z.js", "semgrep exited 2") && fencedIn(r.out), r.out + r.err);
+ok("scan: each of its lines starts with the proteus-scan: prefix, the \\r as ?, so none starts a line with ::",
+  /^proteus-scan: semgrep: bad file src\/x\.js\?::error::x$/m.test(r.err) && /^proteus-scan: semgrep: ::warning::y$/m.test(r.err)
+  && prefixed(r.err, "proteus-scan: ", "::error::x", "::warning::y", "##[add-mask]z.js"), r.out + r.err);
 
 // gitleaks reports no leaks for a commit it cannot find, so a head the mirror lacks fails the scan
 const LOST = path.join(W, "lost");
@@ -273,6 +300,10 @@ g(LOST, "reset", "-q", "--hard", lostBase);
 r = scan(["--dir", LOST, "--out", OUT, "--base", lostBase, "--head", lostHead]);
 ok("scan: a head commit the gitleaks mirror lacks fails the scan, gitleaks not run",
   r.code === 1 && new RegExp(`lacks the commit ${lostHead}; its findings are unknown`).test(r.err) && !call("gitleaks") && !fs.existsSync(path.join(OUT, "gitleaks-head.git")), r.out + r.err);
+// the unreachable commit as the base instead: base...head still lists, from their merge base
+r = scan(["--dir", LOST, "--out", OUT, "--base", lostHead, "--head", lostBase]);
+ok("scan: a base commit the gitleaks mirror lacks fails the scan too, gitleaks not run",
+  r.code === 1 && new RegExp(`lacks the commit ${lostHead}; its findings are unknown`).test(r.err) && !call("gitleaks"), r.out + r.err);
 r = scan(pr("b".repeat(40), HEAD_SHA));
 ok("scan: a base the checkout lacks fails before any scanner runs", r.code === 1 && /git cannot list the changed files/.test(r.err) && !calls().length, r.err);
 
@@ -287,6 +318,35 @@ if (process.platform !== "win32") {
   g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "link");
   r = scan(pr(DEPS, g(REPO, "rev-parse", "HEAD")));
   ok("scan: a symlink in the PR is not handed to a scanner", r.code === 0 && /semgrep skipped: no changed file/.test(r.out) && !call("semgrep"), r.out + r.err);
+}
+
+// ---- coverage: pip's other requirement files, a composite action, and a symlink that became a file
+const TIP = g(REPO, "rev-parse", "HEAD");
+fs.mkdirSync(path.join(REPO, "requirements"));
+fs.writeFileSync(path.join(REPO, "requirements-dev.txt"), "requests==2.0.0\n");
+fs.writeFileSync(path.join(REPO, "requirements", "base.txt"), "flask==0.1\n");
+fs.mkdirSync(path.join(REPO, ".github", "actions", "setup"), { recursive: true });
+fs.writeFileSync(path.join(REPO, ".github", "actions", "setup", "action.yml"), "runs:\n  using: composite\n  steps: []\n");
+g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "coverage");
+const COV = g(REPO, "rev-parse", "HEAD");
+r = scan(pr(TIP, COV, ["--require"]));
+const osv2 = call("osv-scanner") || { args: [] }, zz2 = call("zizmor") || { args: [] };
+ok("scan: requirements-*.txt and requirements/*.txt go to osv-scanner, typed as requirements.txt",
+  r.code === 0 && osv2.args.filter((a, i) => osv2.args[i - 1] === "-L").sort().join() === "requirements.txt:./requirements-dev.txt,requirements.txt:./requirements/base.txt", r.out + r.err + JSON.stringify(osv2));
+ok("scan: a composite action's action.yml goes to zizmor", r.code === 0 && zz2.args[zz2.args.length - 1] === "./.github/actions/setup/action.yml", r.out + r.err + JSON.stringify(zz2));
+uninstall("zizmor");
+install("actionlint");
+r = scan(pr(TIP, COV));
+ok("scan: without zizmor an action.yml alone is not handed to actionlint, which reads workflows only",
+  r.code === 0 && !call("actionlint") && /actionlint skipped: no workflow or action changed$/m.test(r.out), r.out + r.err);
+uninstall("actionlint");
+install("zizmor");
+if (process.platform !== "win32") {
+  fs.rmSync(path.join(REPO, "src", "link.js"));
+  fs.writeFileSync(path.join(REPO, "src", "link.js"), "eval(process.argv[2]);\n");
+  g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "unlink");
+  r = scan(pr(COV, g(REPO, "rev-parse", "HEAD")));
+  ok("scan: a symlink the PR turns into a regular file (a type change) is scanned", r.code === 0 && (call("semgrep") || { args: [] }).args.slice(-1)[0] === "./src/link.js", r.out + r.err);
 }
 
 // ---- the real gitleaks, when installed: a secret planted then deleted inside the PR is still caught
