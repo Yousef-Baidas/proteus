@@ -5,15 +5,16 @@
 // <checkout> is the PR head, checked out as data: the scanners read it and nothing in it runs. The changed files are
 // git diff base...head there (what the PR's files list shows), regular files only, never a symlink:
 // - semgrep, rulesets p/owasp-top-ten and p/secrets, on the changed files;
-// - gitleaks on the commits base..head, so a secret a later commit deleted is still found;
-// - osv-scanner on the changed lockfiles;
+// - gitleaks on the commits base..head, so a secret a later commit deleted is still found, read from a mirror clone of
+//   the checkout's repository (no working tree, so no .gitleaksignore the PR adds);
+// - osv-scanner on the changed lockfiles, call analysis off, so it runs no go or cargo on the head;
 // - zizmor, else actionlint, on the changed workflows under .github/workflows/.
 // Each writes <out>/<tool>.sarif with paths relative to <checkout>; proteus-security.js --findings <out> reads them.
 // A tool with nothing to scan logs one skip line and passes, and so does one that is not installed unless --require
 // (CI installs them all, so a missing one there is a broken install, not an absent ecosystem).
 // The PR cannot quiet a scanner: nothing it can write is read as config, ignore list or inline suppression (semgrep
-// --disable-nosem and no .semgrepignore; gitleaks's config and ignore file from <out> and --ignore-gitleaks-allow;
-// osv-scanner's and actionlint's config from <out>; zizmor --no-config --no-ignores).
+// --disable-nosem and no .semgrepignore; gitleaks's config and ignore file from <out>, --ignore-gitleaks-allow and no
+// working tree; osv-scanner's and actionlint's config from <out>; zizmor --no-config --no-ignores).
 // --all scans every tracked file, lockfile and workflow instead, for the baseline's record (enforcement.md §4);
 // gitleaks, which reads a PR's commits, is skipped there.
 // Exit 0 every tool ran or was skipped, 1 a tool failed or git could not list the changes, 2 bad usage.
@@ -69,17 +70,20 @@ function main(argv) {
   // the empty config and ignore files the scanners get instead of any in the checkout
   const empty = (name, text = "") => { const f = path.join(out, name); fs.writeFileSync(f, text); return f; };
 
+  // gitleaks's source: a mirror of the checkout's repository, no working tree, so it has no .gitleaksignore of the PR's to read
+  const HEAD_GIT = path.join(out, "gitleaks-head.git");
+
   // pick: the files a tool scans (gitleaks scans the commit range instead); clean: the exits that mean nothing to check
   const tools = [
     { name: "semgrep", pick: files, none: `no ${what} file`,
       args: (t, report) => ["scan", "--config", "p/owasp-top-ten", "--config", "p/secrets", "--metrics", "off", "--disable-version-check", "--disable-nosem",
         "--x-ignore-semgrepignore-files", "--quiet", "--sarif-output", report, ...t], ok: [0, 1] },
-    { name: "gitleaks", range: !opt.all, none: "it reads a PR's commits, and --all has none",
-      args: (_, report) => ["git", ".", `--log-opts=${opt.base}..${opt.head}`, "--config", empty("gitleaks.toml", "[extend]\nuseDefault = true\n"),
+    { name: "gitleaks", range: !opt.all, none: "it reads a PR's commits, and --all has none", bare: true,
+      args: (_, report) => ["git", HEAD_GIT, `--log-opts=${opt.base}..${opt.head}`, "--config", empty("gitleaks.toml", "[extend]\nuseDefault = true\n"),
         "--gitleaks-ignore-path", empty("gitleaks.ignore"), "--ignore-gitleaks-allow", "--redact", "--no-banner", "--exit-code", "0",
         "--report-format", "sarif", "--report-path", report], ok: [0] },
     { name: "osv-scanner", pick: files.filter((p) => LOCKFILES.has(path.posix.basename(p))), none: `no lockfile ${what}`,
-      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--format", "sarif", "--output-file", report, ...t.flatMap((p) => ["-L", p])],
+      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--no-call-analysis=all", "--format", "sarif", "--output-file", report, ...t.flatMap((p) => ["-L", p])],
       ok: [0, 1], clean: [128] },
     { name: "zizmor", alt: "actionlint", pick: files.filter((p) => /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p)), none: `no workflow ${what}`,
       args: (t) => ["--offline", "--no-config", "--no-ignores", "--format", "sarif", ...t], stdout: true, ok: [0], clean: [3] },
@@ -98,11 +102,18 @@ function main(argv) {
     // every target as ./path, so a file named like a flag stays a path
     const list = (t.pick || []).map((p) => `./${p}`);
     const args = name === "actionlint" ? ["-no-color", "-config-file", empty("actionlint.yaml", "{}\n"), "-format", "{{json .}}", ...list] : t.args(list, report);
-    const r = lib.spawnArgv(name, args, { cwd: dir, encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_SCAN_TIMEOUT", 1800000) });
+    if (t.bare) {
+      fs.rmSync(HEAD_GIT, { recursive: true, force: true });
+      const c = lib.spawnArgv("git", ["clone", "-q", "--mirror", "--no-local", dir, HEAD_GIT], { encoding: "utf8", windowsHide: true });
+      if (c.error || c.status !== 0) return fail(`git cannot copy ${dir} for ${name}: ${(c.stderr || (c.error && c.error.message) || "").trim()}`);
+    }
+    const r = lib.spawnArgv(name, args, { cwd: t.bare ? out : dir, encoding: "utf8", maxBuffer: 256 << 20, windowsHide: true, timeout: lib.envInt("PROTEUS_SCAN_TIMEOUT", 1800000) });
+    if (t.bare) fs.rmSync(HEAD_GIT, { recursive: true, force: true });
     const why = `${name} exited ${r.status === null ? (r.error && r.error.message) || r.signal : r.status}`;
     if ((t.clean || []).includes(r.status)) { say(`${name}: nothing to check in ${list.length} ${what} file(s)`); continue; }
     if (r.error || !(name === "actionlint" ? [0, 1] : t.ok).includes(r.status)) {
-      process.stderr.write(r.stderr || "");
+      // its stderr may quote a head path; each line prefixed, so none starts a workflow command
+      for (const l of String(r.stderr || "").split(/\r?\n/).filter(Boolean)) console.error(`proteus-scan: ${name}: ${l}`);
       return fail(`${why}; its findings are unknown`);
     }
     let sarif;

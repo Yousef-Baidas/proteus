@@ -2,7 +2,8 @@
 // head checked out as data, skipping with one logged line each tool whose ecosystem the PR does not touch; their
 // SARIF goes to proteus-security.js --findings, where a finding turns proteus/security red unless teams/baseline.json
 // records it. The scanners are fakes on PATH that log their arguments, so this runs offline and on win32; when a real
-// gitleaks is installed, a planted secret is also caught end to end, else that check logs a skip line.
+// gitleaks is installed, a planted secret is also caught end to end, a .gitleaksignore in the PR notwithstanding, else
+// that check logs a skip line.
 // Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
 const fs = require("fs");
@@ -35,7 +36,14 @@ const at = args.findIndex((a) => ["--report-path", "--sarif-output", "--output-f
 if (at >= 0) fs.writeFileSync(args[at + 1], JSON.stringify(sarif)); else process.stdout.write(JSON.stringify(sarif));
 process.exit(exit);
 `;
-const install = (...tools) => { for (const t of tools) lib.fakeCli(BIN, t, fake(t)); };
+// on win32 a .cmd shim: lib.fakeCli's copy of node.exe would read zizmor's and actionlint's leading flags as its own
+const install = (...tools) => {
+  for (const t of tools) {
+    if (process.platform !== "win32") { lib.fakeCli(BIN, t, fake(t)); continue; }
+    fs.writeFileSync(path.join(BIN, `${t}.fake`), fake(t));
+    fs.writeFileSync(path.join(BIN, `${t}.cmd`), `@"${process.execPath}" "${path.join(BIN, `${t}.fake`)}" %*\r\n`);
+  }
+};
 const uninstall = (...tools) => { for (const t of tools) for (const f of fs.readdirSync(BIN)) if (f === t || f.startsWith(`${t}.`)) fs.rmSync(path.join(BIN, f)); };
 install("semgrep", "gitleaks", "osv-scanner", "zizmor");
 
@@ -72,8 +80,8 @@ ok("scan: bad usage exits 2", [[], ["--dir", REPO], ["--dir", REPO, "--out", OUT
 const found = JSON.stringify([["github-pat", "src/cfg.js"]]);
 let r = scan(pr(undefined, undefined, ["--require"]), { FAKE_SCAN_GITLEAKS: found });
 const gl = call("gitleaks") || { args: [] };
-ok("scan: gitleaks reads the PR's commits base..head in the checkout, with its config and ignore file from --out and inline allows ignored",
-  r.code === 0 && gl.cwd === REPO && gl.args[0] === "git" && gl.args.includes(`--log-opts=${BASE_SHA}..${HEAD_SHA}`) && gl.args.includes("--ignore-gitleaks-allow")
+ok("scan: gitleaks reads the PR's commits base..head from a mirror in --out, run there, with its config and ignore file from --out and inline allows ignored",
+  r.code === 0 && gl.cwd === OUT && gl.args.slice(0, 2).join() === `git,${path.join(OUT, "gitleaks-head.git")}` && !fs.existsSync(path.join(OUT, "gitleaks-head.git")) && gl.args.includes(`--log-opts=${BASE_SHA}..${HEAD_SHA}`) && gl.args.includes("--ignore-gitleaks-allow")
   && gl.args[gl.args.indexOf("--config") + 1] === path.join(OUT, "gitleaks.toml") && gl.args[gl.args.indexOf("--gitleaks-ignore-path") + 1] === path.join(OUT, "gitleaks.ignore")
   && /useDefault = true/.test(fs.readFileSync(path.join(OUT, "gitleaks.toml"), "utf8")) && gl.args.includes("--redact"), r.out + r.err + JSON.stringify(gl));
 const sg = call("semgrep") || { args: [] };
@@ -118,6 +126,39 @@ fs.writeFileSync(path.join(OUT, "extra.sarif"), JSON.stringify({ runs: [{ tool: 
 r = sec(["src/cfg.js", "src/x.js"], "--findings", OUT);
 ok("security: a new finding beside a recorded one is red", r.status.state === "failure" && /src\/x\.js \(semgrep js\.eval\)/.test(r.status.description), r.out + r.err);
 fs.rmSync(path.join(OUT, "extra.sarif"));
+fs.writeFileSync(path.join(OUT, "evil.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "gitleaks" } }, results: [{ ruleId: "r\n::stop-commands::x", locations: [{ physicalLocation: { artifactLocation: { uri: "a\n::error::spoof.js" } } }] }] }] }));
+r = sec(["src/cfg.js"], "--findings", OUT);
+ok("security: a path or rule from the head prints and posts as one inert line, never a workflow command",
+  r.status.state === "failure" && !/^\s*::/m.test(r.out) && /a\?::error::spoof\.js \(gitleaks r\?::stop-commands::x\)/.test(r.out), r.out + r.err);
+fs.rmSync(path.join(OUT, "evil.sarif"));
+r = sec(["::warning::x/auth/y.js"]);
+ok("security: a changed path that itself starts with :: prints as an inert line",
+  r.status.state === "failure" && !/^\s*::/m.test(r.out) && /^ {2}\?:warning::x\/auth\/y\.js \(\*\*\/auth\/\*\*\)$/m.test(r.out), r.out + r.err);
+fs.writeFileSync(path.join(OUT, "semgrep.json"), JSON.stringify({ results: [{ check_id: "js.eval", path: "::x.js" }] }));
+r = sec(["::x.js"], "--findings", OUT);
+ok("security: a semgrep finding in a changed file named ::x.js still counts", r.status.state === "failure" && /\?:x\.js \(semgrep js\.eval\)/.test(r.out), r.out + r.err);
+fs.rmSync(path.join(OUT, "semgrep.json"));
+fs.rmSync(BL);
+
+// the gate security matches exactly: a new CVE in a lockfile whose old CVE the baseline records is a new finding
+const CVES = path.join(W, "cves");
+const cve = (id) => {
+  fs.rmSync(CVES, { recursive: true, force: true });
+  fs.mkdirSync(CVES);
+  fs.writeFileSync(path.join(CVES, "osv-scanner.sarif"), JSON.stringify({ runs: [{ tool: { driver: { name: "osv-scanner" } }, results: [{ ruleId: id, locations: [{ physicalLocation: { artifactLocation: { uri: "go.mod" } } }] }] }] }));
+};
+cve("CVE-2020-14040");
+const recCve = lib.run(BASELINE, "", { cwd: BASEDIR, args: ["security", "--record", "--match", "^finding ", "--file", BL, "--", process.execPath, SEC, "--list", CVES] });
+ok("baseline: the gate security records a finding with its digits", recCve.code === 0
+  && JSON.stringify(JSON.parse(fs.readFileSync(BL, "utf8")).gates.security.findings) === JSON.stringify(["finding osv-scanner CVE-2020-14040 go.mod"]), recCve.out + recCve.err);
+r = sec(["go.mod"], "--findings", CVES);
+ok("security: the recorded CVE does not block", r.status.state === "success", r.out + r.err);
+cve("CVE-2026-99999");
+r = sec(["go.mod"], "--findings", CVES);
+ok("security: CVE-2026-99999 in place of the recorded CVE-2020-14040 in the same lockfile is a new finding",
+  r.status.state === "failure" && /go\.mod \(osv-scanner CVE-2026-99999\)/.test(r.status.description), r.out + r.err);
+const cmpCve = lib.run(BASELINE, "", { cwd: BASEDIR, args: ["security", "--file", BL, "--", process.execPath, SEC, "--list", CVES] });
+ok("baseline: and the ratchet sees it as new too", cmpCve.code === 1, cmpCve.out + cmpCve.err);
 fs.rmSync(BL);
 const list = lib.run(SEC, "", { cwd: BASEDIR, args: ["--list", OUT] });
 ok("security: --list prints one line per finding and exits 1; an empty directory exits 0",
@@ -147,6 +188,7 @@ const osv = call("osv-scanner") || { args: [] }, zz = call("zizmor") || { args: 
 ok("scan: a changed lockfile runs osv-scanner on it with the config from --out; its exit 1 (vulns) is a result, not a failure",
   r.code === 0 && osv.args.slice(0, 2).join() === "scan,source" && osv.args[osv.args.indexOf("-L") + 1] === "./app/package-lock.json" && osv.args.filter((a) => a === "-L").length === 1
   && osv.args[osv.args.indexOf("--config") + 1] === path.join(OUT, "osv-scanner.toml"), r.out + r.err + JSON.stringify(osv));
+ok("scan: osv-scanner runs with call analysis off, so no go or cargo build runs on the head", osv.args.includes("--no-call-analysis=all"), JSON.stringify(osv));
 ok("scan: osv-scanner's file:// location becomes the path in the checkout",
   sarif("osv-scanner").runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri === "app/package-lock.json", JSON.stringify(sarif("osv-scanner")));
 ok("scan: a changed workflow runs zizmor offline with config and ignores off, its SARIF from stdout",
@@ -212,6 +254,21 @@ else {
   fs.writeFileSync(path.join(BASEDIR, "teams", "ROUTING.md"), fs.readFileSync(path.join(ROOT, "templates", "teams", "ROUTING.md"), "utf8"));
   r = sec(["README.md"], "--findings", OUT);
   ok("real gitleaks: and turns proteus/security red", r.status.state === "failure" && /cfg\.js \(gitleaks /.test(r.status.description), r.out + r.err);
+
+  // a .gitleaksignore the PR commits, listing the planted secret's fingerprint, quiets nothing
+  const R3 = path.join(W, "ignored");
+  g(W, "init", "-q", "-b", "main", R3);
+  fs.writeFileSync(path.join(R3, "README.md"), "# app\n");
+  g(R3, "add", "-A"); g(R3, "commit", "-qm", "init");
+  const b3 = g(R3, "rev-parse", "HEAD");
+  fs.writeFileSync(path.join(R3, "cfg.js"), `const key = "${token()}";\n`);
+  g(R3, "add", "-A"); g(R3, "commit", "-qm", "leak");
+  fs.writeFileSync(path.join(R3, ".gitleaksignore"), `${g(R3, "rev-parse", "HEAD")}:cfg.js:github-pat:1\n`);
+  g(R3, "add", "-A"); g(R3, "commit", "-qm", "ignore it");
+  r = scan(["--dir", R3, "--out", OUT, "--base", b3, "--head", g(R3, "rev-parse", "HEAD")], { PATH: [real, path.dirname(process.execPath), ...lib.SYS_PATH].join(path.delimiter) });
+  const kept = fs.existsSync(path.join(OUT, "gitleaks.sarif")) ? sarif("gitleaks").runs[0].results : [];
+  ok("real gitleaks: a .gitleaksignore in the PR listing the secret's fingerprint does not hide it",
+    r.code === 0 && kept.some((h) => h.ruleId === "github-pat" && h.locations[0].physicalLocation.artifactLocation.uri === "cfg.js"), r.out + r.err + JSON.stringify(kept));
 }
 
 lib.summary();
