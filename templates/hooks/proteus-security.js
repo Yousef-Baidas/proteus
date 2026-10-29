@@ -2,11 +2,12 @@
 // The security trigger, judged by CI instead of the lead: does this PR need the security verifier?
 //   node teams/templates/hooks/proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>]
 //   node teams/templates/hooks/proteus-security.js --list <report or dir>
-// Run from a checkout of the PR's base (proteus-trust.yml, on pull_request_target: the base's workflow and
-// this script as the base has them, never the PR's). The globs are the ```security block of the base's
+// Run from a checkout of the PR's base (proteus-trust.yml's post job, on pull_request_target: the base's workflow
+// and this script as the base has them, never the PR's; the scan job's findings arrive as an artifact). The globs are the ```security block of the base's
 // teams/ROUTING.md (lib.parseSecurity, matched like the tiers block); the PR's paths come from the API
 // (repos/<repo>/pulls/<pr>/files, both ends of a rename), so no PR code is run. --findings adds the scanners'
-// findings: a SARIF report, or every .sarif and .json in a directory (proteus-scan.js's output). Every finding counts
+// findings: a SARIF report, or every .sarif and .json in a directory (proteus-scan.js's output), each a regular file
+// read as size-capped JSON and nothing else. Every finding counts
 // except those the base's teams/baseline.json records under the gate `security` (lines mode, matched
 // exactly, digits included, as proteus-baseline.js records that gate); a semgrep JSON report (`semgrep --json`, from the head's root) counts only
 // its findings in a changed file.
@@ -18,6 +19,7 @@
 // No security block and no --findings: success saying nothing was checked, the pipeline before either existed.
 // --list prints each finding as a line `finding <tool> <rule> <path>` and exits 1 when there is one, so the
 // baseline ratchet can record them (enforcement.md §4).
+// Every line that holds head text opens with a fixed prefix, proteus-security: (finding, for --list).
 // The repo is env GITHUB_REPOSITORY, else gh's {owner}/{repo}. Exit 0 a status posted or kept (--list: no
 // finding), 1 gh failed or a report is unreadable (--list: a finding), 2 bad usage.
 "use strict";
@@ -30,16 +32,22 @@ const NONE = "no security path touched";
 const NO_BLOCK = "no security block in teams/ROUTING.md; nothing checked";
 const USAGE = "usage: proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>] | --list <report or dir>";
 // every line that can hold head text (a path, a rule id, a report's parse error) prints between ::stop-commands::
-// markers (lib.fenced), so the runner runs none of it as a workflow command
-const fail = (msg) => { lib.fenced([`proteus-security: ${msg}`], console.error); return 1; };
-// and, a second layer, head text as one inert line: neither a newline in a filename nor a filename starting with
-// :: (the runner trims leading spaces) can start a workflow command
-const inert = (s) => String(s).replace(/\p{Cc}/gu, "?").replace(/^(\s*):/u, "$1?");
+// markers (lib.fenced), so the runner runs none of it as a workflow command, and all on stdout: the runner shares
+// the stop state across streams, so fences on two streams could interleave
+const fail = (msg) => { lib.fenced([`proteus-security: ${inert(msg)}`]); return 1; };
+// and, a second layer, head text inside one line that opens with a fixed prefix: a control character becomes ?, so
+// a newline in a filename cannot start a line, and the prefix keeps a filename starting with :: off the line's start
+// (the runner trims leading spaces)
+const inert = (s) => String(s).replace(/\p{Cc}/gu, "?");
+// the scan job's artifact is data from a VM that read the head: a report is read only as a regular file under a cap
+const MAX_REPORTS = 64;
+const MAX_REPORT_BYTES = 64 << 20;
 
 // the findings in a report, or in every .sarif and .json of a directory: [{ tool, rule, path, changedOnly }]
 function readFindings(report) {
   const files = fs.statSync(report).isDirectory()
     ? fs.readdirSync(report).filter((f) => /\.(sarif|json)$/i.test(f)).sort().map((f) => path.join(report, f)) : [report];
+  if (files.length > MAX_REPORTS) throw new Error(`${files.length} reports, more than ${MAX_REPORTS}`);
   const rel = (p) => {
     let s = String(p || "");
     try { s = decodeURI(s); } catch {}
@@ -47,6 +55,9 @@ function readFindings(report) {
   };
   const found = [];
   for (const f of files) {
+    const st = fs.lstatSync(f);
+    if (!st.isFile()) throw new Error(`${path.basename(f)} is not a regular file`);
+    if (st.size > MAX_REPORT_BYTES) throw new Error(`${path.basename(f)} is ${st.size} bytes, more than ${MAX_REPORT_BYTES}`);
     const j = JSON.parse(fs.readFileSync(f, "utf8"));
     if (j && Array.isArray(j.runs)) {
       for (const run of j.runs) for (const r of (run && run.results) || []) {
@@ -126,7 +137,7 @@ function main(argv) {
     lib.fenced([`proteus-security: ${hits.length} security path(s) touched, and ${CONTEXT} is already signed off: ${inert(mine.description)}`]);
     return 0;
   }
-  lib.fenced(["proteus-security: security paths touched:", ...hits.map((h) => `  ${h}`)]);
+  lib.fenced(["proteus-security: security paths touched:", ...hits.map((h) => `proteus-security:   ${h}`)]);
   const more = hits.length > 1 ? ` and ${hits.length - 1} more` : "";
   return post("failure", `needs the security verifier: ${hits[0]}${more}`);
 }

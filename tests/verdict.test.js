@@ -98,13 +98,17 @@ ok("security: a finding in a file the PR does not change does not", secState().s
 fs.writeFileSync(REPORT, "{not json");
 setPr({ files: ["README.md"] });
 r = sec("--findings", REPORT);
-ok("security: an unreadable semgrep report exits 1, nothing posted", r.code === 1 && /cannot read the findings .*semgrep\.json/.test(r.err) && !posts().length, r.err);
+ok("security: an unreadable semgrep report exits 1, nothing posted", r.code === 1 && /cannot read the findings .*semgrep\.json/.test(r.out) && !posts().length, r.out + r.err);
 
 setPr({ files: ["src/auth/session.ts"], fail: "files" });
 r = sec();
-ok("security: the file list failing exits 1 with no status posted", r.code === 1 && /cannot list PR #5's files/.test(r.err) && !posts().length, r.err);
+ok("security: the file list failing exits 1 with no status posted", r.code === 1 && /cannot list PR #5's files/.test(r.out) && !posts().length, r.out + r.err);
 setPr({ files: ["src/auth/session.ts"], fail: "post" });
-ok("security: a failed post exits 1", sec().code === 1);
+r = sec();
+// the runner shares stop-commands state across stdout and stderr, so both fences go to one stream, in order
+ok("security: a failed post exits 1, its fence on stdout after the paths' fence, none on stderr",
+  r.code === 1 && (r.out.match(/^::stop-commands::[0-9a-f]{32}$/gm) || []).length === 2 && /security paths touched:[\s\S]*posting proteus\/security=failure .* failed/.test(r.out)
+  && !/::stop-commands::/.test(r.err), r.out + r.err);
 ok("security: bad usage exits 2", [["--ci", "5"], ["--ci", "x", HEAD], ["--staged", "5", HEAD], ["--ci", "5", HEAD, "--findings"]].every((a) => lib.run(SEC, "", { cwd: BASE, args: a, env }).code === 2));
 fs.writeFileSync(path.join(BASE, "teams", "ROUTING.md"), "# Routing\n");
 setPr({ files: ["src/auth/session.ts"] });
