@@ -2799,6 +2799,22 @@ function inlineCode(words) {
   }
   return out.length ? out : null;
 }
+// whether an interpreter runs a script file (python -m a module): its first operand past the options that take a
+// value, unless that is - or stdin; with one, its code is on disk, not on stdin (#270)
+const VALUE_OPTS = [[/^python[\d.]*$/, /^-[WX]$|^--check-hash-based-pycs$/], [/^(?:node|nodejs)$/, /^(?:-[rC]|--(?:require|import|loader|experimental-loader|conditions|input-type|env-file|title))$/],
+  [/^perl[\d.]*$/, /^-[IMm]$/], [/^ruby[\d.]*$/, /^-[rICEF]$/]];
+const STDIN_FILE = /^(?:-|<.*|\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0)$/;
+function scriptOperand(words) {
+  const prog = progName(words[0]), takes = VALUE_OPTS.find(([p]) => p.test(prog))?.[1] || /^$/;
+  for (let k = 1; k < words.length; k++) {
+    const w = words[k];
+    if (w === "--") return words[k + 1] !== undefined && !STDIN_FILE.test(words[k + 1]);
+    if (prog.startsWith("python") && /^-[bBdEhiIOqsSuvx]*m/.test(w)) return true;
+    if (w === "-" || !w.startsWith("-")) return !STDIN_FILE.test(w);
+    if (takes.test(w)) k++;
+  }
+  return false;
+}
 // what code names: its string literals, and its bare words that look like a path
 const CODE_STRING = /"((?:[^"\\\n]|\\.)*)"|'((?:[^'\\\n]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g;
 function codeNames(code) {
@@ -2986,7 +3002,7 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
       // a file in the worktree runs like any script there; stdin, /dev/stdin or <( ) is judged as it is read
       if (depth >= 3) throw tooComplex();
       const f = words[1];
-      if (f === undefined || /^(?:-|<.*|\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0)$/.test(f)) return fromStdin();
+      if (f === undefined || STDIN_FILE.test(f)) return fromStdin();
       return null;
     }
     if (prog === "eval" && depth < 3) return agentShellDenial(ev, words.slice(1).join(" "), dir, depth + 1, ctx);
@@ -2994,7 +3010,7 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
     if (prog === "patch") return patchDenial("patch", words.slice(1), dir, written, ev);
     if (ctx.worker && (interpreter(prog) || AWK.test(prog))) {
       const wt = workerTree(ev, dir);
-      const code = AWK.test(prog) ? awkProgram(words) : inlineCode(words) || stdin(all, false);
+      const code = AWK.test(prog) ? awkProgram(words) : inlineCode(words) || (scriptOperand(words) ? [] : stdin(all, false));
       if (!wt && code.length) return AGENT_MSG.noTree(prog);
       for (const text of code) {
         const why = inlineDenial(ev, text, dir, wt, prog, ctx.clock);
