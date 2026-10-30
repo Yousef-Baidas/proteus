@@ -24,6 +24,8 @@ Fires after the last ticket of a milestone merges into `proteus/<run>` and QA sa
    - `CHANGES` → every following line is a ticket via step 2 (contract, check, team, difficulty), one wave, milestone `<name>-r2`. Back to step 3; the gate fires again. When every line is a small tweak inside one team's paths, or the human asks to go faster, use revision mode instead (`operations.md`): same gate at the end, no improvised scripts outside git.
    - anything else is not a verdict; keep waiting.
 
+A hook holds the gate (#254): `proteus-lead-guard.js` refuses the review issue's `gh issue create`, and `proteus-verdict.js` counts no `ACCEPT` or `AUTO-ACCEPT` on it, while its milestone has an open ticket (`WAVE-RED` or unmerged) or the tracker cannot say. `CHANGES` still counts.
+
 ## Channels
 
 Any of these produce the verdict comment; the lead does not care which.

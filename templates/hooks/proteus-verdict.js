@@ -7,6 +7,8 @@
 // The human is "human" in ~/.claude/proteus.json, else the login gh is authenticated as. The agents are the login of their own
 // gh config ("agentGh", install.js --agent-login), else that same login: identity=shared, where an agent's ACCEPT counts too
 // and the warning on stderr says so.
+// ACCEPT or AUTO-ACCEPT on a review issue is not counted while its milestone has open tickets or the tracker cannot
+// say (lib.reviewGateShut, #254): stderr says why, and --wait keeps waiting. CHANGES still counts.
 // Exits 0 with a verdict printed, 1 without one (gh unreachable included), 2 on bad usage.
 //   node .claude/hooks/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>
 // posts the human's verdict: the file's bytes, if their sha256 is still <sha256> and the first line opens with ACCEPT,
@@ -23,6 +25,14 @@ lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hook
 
 const HUMAN_ONLY = /^(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const AUTO = /^(AUTO-ACCEPT|AUTO-HOLD)(?=\s|$)/;
+const ACCEPTS = /^(ACCEPT|AUTO-ACCEPT)(?=\s|$)/;
+
+// why an accept on this issue does not count yet: on a review issue, the gate's reason; null otherwise
+function gateShut(body, view, root) {
+  if (!ACCEPTS.test(body.split(/\r?\n/, 1)[0].trim())) return null;
+  if (!(view.labels || []).some((l) => /^(proteus|hive)-review$/.test(String((l && l.name) || "")))) return null;
+  return lib.reviewGateShut(view.milestone && view.milestone.title, root);
+}
 
 // the newest comment a trusted author opened with a verdict keyword; null when there is none
 function pick(comments, human, agent) {
@@ -85,10 +95,13 @@ function main() {
   if (!human) { console.error(`proteus-verdict: no human login (${own ? "agentGh is set but" : "gh not logged in and"} no "human" in ~/.claude/proteus.json; install.js --agent-login writes it)`); return 1; }
   if (human === agent) console.error(`proteus-verdict: identity=shared: agents post as ${human}, so an agent's ACCEPT would count too`);
   const pollMs = lib.envInt("PROTEUS_VERDICT_POLL_S", 30) * 1000;
+  let said = "";
   for (;;) {
-    const view = JSON.parse(lib.gh(["issue", "view", issue, "--json", "comments"], root) || "null");
+    const view = JSON.parse(lib.gh(["issue", "view", issue, "--json", "comments,labels,milestone"], root) || "null");
     const v = view && Array.isArray(view.comments) ? pick(view.comments, human, agent) : null;
-    if (v) { console.log(v); return 0; }
+    const shut = v && gateShut(v, view, root);
+    if (v && !shut) { console.log(v); return 0; }
+    if (shut && shut !== said) console.error(`proteus-verdict: ${v.split(/\r?\n/, 1)[0].trim()} not counted: ${(said = shut)}`);
     if (!args.includes("--wait")) return 1;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollMs);
   }
