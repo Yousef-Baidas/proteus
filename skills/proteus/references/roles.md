@@ -32,7 +32,7 @@ You own: <paths>. Edit only these, and commit through the hook.
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
 Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 ```
-With `isolation=container` the lead writes this brief to `<git-common-dir>/proteus/scratch/brief-<id>.md` and passes it to `proteus-container.js run` instead of the Agent tool (`flow.md` step 4); the container worker writes the report to a file and the runner posts it.
+With `isolation=container` the lead writes this brief to `<scratch>/brief-<id>.md` (`proteus-scratch.js --path <run>`) and passes it to `proteus-container.js run` instead of the Agent tool (`flow.md` step 4); the container worker writes the report to a file and the runner posts it.
 
 ## Direct helper (Direct tier, `helper`)
 ```

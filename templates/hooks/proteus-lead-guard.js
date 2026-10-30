@@ -2,8 +2,8 @@
 // PreToolUse hook for the lead's session (main checkout); tools are the agents' (edit, read, shell,
 // monitor, spawn), mapped from the CLI's by the harness adapter.
 // Main thread:
-// 1. The lead writes no code: Edit/Write inside the repo is refused except the docs it owns and the tickets'
-//    owned-path records (.proteus/owned/<id>).
+// 1. The lead writes no code: Edit/Write inside the repo is refused except the docs it owns, the tickets'
+//    owned-path records (.proteus/owned/<id>) and its scratch, <git-common-dir>/proteus/scratch/<key>/ (leadScratch).
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
 //    floor (Sonnet by default, so Haiku) is refused. So is a `proteus-container.js run` (the lead's shell)
@@ -132,6 +132,7 @@ else lib.run((ev, ad) => {
   if (ev.tool !== "edit") return;
   const guest = lib.guestDir(root), extra = lib.leadEdits(root);
   for (const p of ev.paths) {
+    if (leadScratch(root, p)) continue; // briefs and bodies in the run's scratch dir (flow.md, #271)
     const rel = lib.relPath(root, p), mine = (r) => LEAD_MAY_WRITE.some((re) => re.test(r));
     // the human's lead-edits globs (AGENTS.md) name repo files, in guest mode too; never the guards (lib.leadEditDenial)
     if (rel && extra.some((g) => lib.ownedMatch(g, rel))) {
@@ -146,6 +147,25 @@ else lib.run((ev, ad) => {
     if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
   } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps
 });
+
+// the lead's scratch (#271): a file under <git-common-dir>/proteus/scratch/<key>/, the dir proteus-scratch.js --path
+// prints, judged on its real path so no symlink leads out; nothing else under .git
+const SCRATCH_KEY = /^\w[\w.-]*\/./;
+function leadScratch(root, p) {
+  const common = lib.gitCommonDir(path.resolve(root)), real = realTarget(path.resolve(root, String(p)));
+  const rel = common && real ? lib.relPath(lib.realOr(lib.scratchDir(common)), real) : null;
+  return !!rel && SCRATCH_KEY.test(rel);
+}
+// abs with its existing part resolved: a file Write creates has no real path yet; null for a dangling link
+function realTarget(abs) {
+  const rest = [];
+  for (let d = abs; ; d = path.dirname(d)) {
+    try { return path.join(fs.realpathSync(d), ...rest); } catch {}
+    try { fs.lstatSync(d); return null; } catch {}
+    if (path.dirname(d) === d) return null;
+    rest.unshift(path.basename(d));
+  }
+}
 
 // the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
 function modelDenial(c, name) {

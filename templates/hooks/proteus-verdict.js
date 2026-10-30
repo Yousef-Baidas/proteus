@@ -23,7 +23,6 @@ const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
-const HUMAN_ONLY = /^(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
 const AUTO = /^(AUTO-ACCEPT|AUTO-HOLD)(?=\s|$)/;
 const ACCEPTS = /^(ACCEPT|AUTO-ACCEPT)(?=\s|$)/;
 
@@ -41,7 +40,7 @@ function pick(comments, human, agent) {
     const who = c.author && c.author.login;
     const body = String(c.body || "").trim();
     const first = body.split(/\r?\n/, 1)[0].trim();
-    if (who === human && (HUMAN_ONLY.test(first) || AUTO.test(first))) return body;
+    if (who === human && (lib.isVerdict(body) || AUTO.test(first))) return body; // the guards refuse exactly lib.isVerdict from an agent
     if (who && who === agent && AUTO.test(first)) return body;
   }
   return null;
