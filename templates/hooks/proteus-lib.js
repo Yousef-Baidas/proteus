@@ -510,6 +510,61 @@ function agentsLine(root, key) {
 // globs relative to the repo root (ownedMatch syntax). In guest mode the line is read from the guest dir's AGENTS.md
 // and its globs still name the repo's own files.
 const leadEdits = (root) => (agentsLine(root, "lead-edits") || "").split(/\s+/).filter(Boolean);
+
+// ---- local pentest scope (#201): a scanner's target is localhost (localhost, 127.0.0.0/8, [::1]) or one of the
+// origins (scheme, host, port) on AGENTS.md's `pentest-targets: <url>, <url>` line. No DNS: the host is judged as
+// written, and one the URL parser would rewrite (127.1, decimal, hex or octal forms, [::ffff:7f00:1], %-escapes,
+// IDN) is refused, as are userinfo, a backslash and whitespace, so a scanner that parses the URL another way
+// cannot land on a host this check did not see. proteus-pentest.js and agentShellDenial both judge with it.
+const pentestTargets = (root) => (agentsLine(root, "pentest-targets") || "").split(",").map((s) => s.trim()).filter(Boolean);
+function pentestURL(url) {
+  const s = String(url), m = /^https?:\/\/([^/?#]*)/i.exec(s);
+  if (!m || /[\s\\\p{Cc}]/u.test(s) || m[1].includes("@")) return null;
+  let u;
+  try { u = new URL(s); } catch { return null; }
+  return m[1].toLowerCase().replace(/:\d*$/, "") === u.hostname ? u : null;
+}
+function pentestInScope(url, targets = []) {
+  const u = pentestURL(url);
+  if (!u) return false;
+  // a hostname the parser left as written is canonical: an IPv4 one is a plain dotted quad
+  if (u.hostname === "localhost" || u.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(u.hostname)) return true;
+  return targets.some((t) => { const v = pentestURL(t); return !!v && v.origin === u.origin; });
+}
+// a subagent's scanner run (strix, ZAP's scripts, under python, docker or any wrapper): every word holding :// (an env
+// assignment or wrapper option before the scanner too) and every -t / --target value (-t<v>, --target=<v>, --tar)
+// must be in scope, a bare value judged as http://<v> unless it starts ./, ../ or /. A word the shell builds at run
+// time ($VAR, $( ), backticks, find's or xargs's {}) or xargs before the scanner cannot be judged, so it is refused.
+// Defence in depth, not the boundary (enforcement.md §10c).
+const PENTEST_TOOLS = /^(strix|zap-baseline\.py|zap\.sh|zap-full-scan\.py)$/;
+const PENTEST_MSG = (url) => `pentest target out of scope: ${url} (localhost or ## Learned pentest-targets only)`;
+const PENTEST_BUILT = (what) => `proteus: \`${what}\` names a target the shell builds when it runs ($VAR, $( ), backticks, {} or xargs), so the guard cannot judge its scope: spell the target out; the guard can't expand shell variables.`;
+const TARGET_OPT = /^--t(?:a(?:r(?:g(?:e(?:t)?)?)?)?)?$/;
+function pentestDenial(root, words, line = "") {
+  const i = words.findIndex((w) => PENTEST_TOOLS.test(progName(w)));
+  if (i < 0) return "";
+  const built = words.find((w) => /[$`]|\{\}/.test(String(w))) ?? (String(line).includes("`") ? "`…`" : undefined);
+  if (built !== undefined) return PENTEST_BUILT(`${progName(words[i])} ${built}`);
+  if (words.slice(0, i).some((w) => progName(w) === "xargs")) return PENTEST_BUILT(`xargs ${progName(words[i])}`);
+  let targets = null;
+  for (let k = 0; k < words.length; k++) {
+    if (k === i) continue;
+    const w = String(words[k]), prev = k > i + 1 ? String(words[k - 1]) : "";
+    const value = prev === "-t" || TARGET_OPT.test(prev), eq = !value && /^--?[\w-]+=|^[A-Za-z_]\w*=/.exec(w);
+    let v = eq ? w.slice(eq[0].length) : w, named = value;
+    if (k > i && !value) {
+      if (eq) named = /^(?:-t|--t(?:a(?:r(?:g(?:e(?:t)?)?)?)?)?)=$/.test(eq[0]);
+      else if (/^-t./.test(w)) { v = w.slice(2); named = true; }
+    }
+    let url = null;
+    if (v.includes("://")) url = v;
+    else if (named && !/^(?:\.{0,2}\/)/.test(v)) url = `http://${v}`;
+    if (url === null) continue;
+    if (!targets) targets = pentestTargets(root);
+    if (!pentestInScope(url, targets)) return PENTEST_MSG(v);
+  }
+  return "";
+}
 // Never the lead's, whatever the line says: the CLIs' hooks, settings and owned lists (.claude, .codex), Codex's
 // linked skills (.agents), git's own hooks, config and Proteus state (.git), teams/ (the commit-msg gate and the
 // gate scripts under teams/templates/hooks, the lock, the team files), lefthook's config and scripts in every
@@ -2823,6 +2878,8 @@ function agentShellDenial(ev, command = ev.command, cwd = shellCwd(ev), depth = 
       for (const p of spellings(t, dir)) written.add(p);
     }
     if (!words.length) return null;
+    const scan = pentestDenial(projectRoot(ev), all, command);
+    if (scan) return scan;
     if (prog === "node" && /(^|[\\/])proteus-worktree\.js$/.test(words[1] || "") && words.some((w) => /^--allow(?:=|$)/.test(w))) return AGENT_MSG.selfAllow;
     if (prog === "cd" || prog === "pushd") {
       const to = words.slice(1).find((w) => !w.startsWith("-") || w === "-");
@@ -3301,7 +3358,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
