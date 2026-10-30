@@ -73,6 +73,13 @@ ok("security verifier: close mode names its input and the scout-picked audit ski
 ok("security verifier: both modes answer WAVE-GREEN or WAVE-RED", /`WAVE-GREEN <run>` or `WAVE-RED <run> sent`/.test(modes), modes);
 ok("flow.md points to §10b at the QA milestone pass and at close", /word `milestone`.*`proteus-security-verifier` in `milestone` mode.*§10b/.test(flow) && /word `close`.*`proteus-security-verifier` in `close` mode.*§10b/.test(flow));
 
+// lefthook install writes the shared git hooks, which agents may not do (#269): workers prove the hook, the human installs it
+const boot = read("skills", "proteus", "references", "bootstrap.md");
+const sec3 = (/^## 3\. lefthook[^\n]*\n[\s\S]*?(?=\n## )/m.exec(enf) || [""])[0];
+ok("scaffold: the worker proves commit-msg with lefthook run on a bad and a good message", /`lefthook run commit-msg <file>` fails on a bad message and passes a good one/.test(sec3), sec3);
+ok("scaffold: no instruction tells a worker to run lefthook install", /Never `lefthook install`/.test(sec3) && !/fill the `EDIT` lines, `lefthook install`/.test(sec3), sec3);
+ok("bootstrap: the lead tells the human once to run lefthook install after the scaffold or stabilise merge", /After the merge \(scaffold or stabilise\), tell the human once, in one line: run `lefthook install` in the main checkout[^\n]*never the lead's or a worker's/.test(boot), boot);
+
 // the prose points to --help for the scripts' flags, so --help must explain them and exit 0
 const { spawnSync } = require("child_process");
 ok("SKILL.md points to the scripts' --help for their flags", /--help/.test(skill));
