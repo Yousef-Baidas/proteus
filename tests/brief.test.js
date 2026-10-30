@@ -162,5 +162,15 @@ for (const role of ["Worker", "Verifier"]) {
   ok(`slots: every slot in the ${role} block has a source`, uncovered(block).length === 0, uncovered(block).join(", "));
   ok(`slots: a new slot in the ${role} block is caught`, uncovered(`${block}\nAlso <new slot>.\n<rare: a line>`).join() === "new slot,rare");
 }
+// and at run time: the project's skill copy is read first, and a slot with no filler there is a DECIDE
+const LOCAL = path.join(REPO, ".claude", "skills", "proteus", "references", "roles.md");
+fs.mkdirSync(path.dirname(LOCAL), { recursive: true });
+fs.writeFileSync(LOCAL, ROLES.replace("Hooks: <hooks>.\nGates:", "Hooks: <hooks>.\nAlso <new slot>.\nGates:"));
+r = run(["brief", "worker", "5"]);
+ok("slots: a slot with no filler in the roles.md read is DECIDE at run time", r.code === 1 && lines(r).join("|") === "DECIDE #5 brief: no source for new slot", r.out + r.err);
+fs.writeFileSync(LOCAL, ROLES.replace("Hooks: <hooks>.\nGates:", "Hooks: <hooks>.\n<rare: a line>\nGates:"));
+r = run(["brief", "worker", "5"]);
+ok("slots: a conditional line with no condition is DECIDE at run time", r.code === 1 && lines(r).join("|") === "DECIDE #5 brief: no source for rare", r.out + r.err);
+fs.rmSync(path.join(REPO, ".claude"), { recursive: true, force: true });
 
 lib.summary();
