@@ -155,6 +155,17 @@ ok("trust: every scanner pinned: no package-manager install, every image by dige
   !/\b(pipx|pip|npm|uv|brew) install\b/.test(sText[0]) && (sText[0].match(/semgrep\/semgrep@sha256:[0-9a-f]{64}\b/g) || []).length === 2 && !/semgrep\/semgrep(:|\s)/.test(sText[0])
   && (sText[0].match(/\bcurl /g) || []).length === 3 && (sText[0].match(/ {2}[\w.-]+" \| sha256sum -c -$/gm) || []).length === 3
   && (sText[0].match(/echo "[0-9a-f]{64} {2}/g) || []).length === 3 && !/curl [^\n]*\|/.test(sText[0]), sText[0]);
+ok("trust: both jobs run only for a PR whose base is proteus/*, so PRs into the default branch are untouched",
+  [scan, post].every((j) => /^ {4}if: startsWith\(github\.base_ref, 'proteus\/'\)$/m.test(j)), JSON.stringify(jobs));
+ok("trust: the header puts the file on the default branch through --protect, not the run branch",
+  /default branch only/.test(trust) && /--protect opens a PR/.test(trust) && !/copy it as is|from\s+(#\s+)?the PR's base branch|A run branch cut before/.test(trust));
+const enf = read("skills", "proteus", "references", "enforcement.md");
+ok("enforcement §1: the scaffold does not copy proteus-trust.yml; --protect puts it on the default branch and the lead tells the human once",
+  /The scaffold does not copy `teams\/templates\/ci\/proteus-trust\.yml`/.test(enf) && /`install\.js --protect` opens a PR \(`proteus-setup\/trust`\)/.test(enf)
+  && /when `--doctor` warns .*tell the human once/.test(enf) && !/same ticket copies `teams\/templates\/ci\/proteus-trust\.yml`/.test(enf) && !/come from the PR's base/.test(enf));
+const ghDoc = read("docs", "github.md");
+ok("docs/github.md: proteus-trust.yml goes on the default branch by --protect's PR, and runs from there",
+  /`proteus-setup\/trust` that adds `\.github\/workflows\/proteus-trust\.yml` to the default branch/.test(ghDoc) && /runs from the default branch/.test(ghDoc) && !/proteus-trust\.yml` runs from the base branch/.test(ghDoc));
 ok("trust: the header no longer claims step order isolates the scanners from the token",
   !/before any step holds the token/.test(trust) && /two VMs/.test(trust));
 ok("gates template: no longer calls MERGE a review comment, and names the statuses the ruleset requires",

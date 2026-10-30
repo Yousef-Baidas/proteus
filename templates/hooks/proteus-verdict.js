@@ -16,11 +16,13 @@
 // dropped, or "humanGh" in proteus.json), and only when that login is the human. In a session the PreToolUse hook asks
 // the human first and denies agents (proteus-lib humanPost); in the human's own terminal it just runs.
 // Exits 0 posted, 1 refused or failed (nothing posted), 2 on bad usage.
+// Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
 const fs = require("fs");
 const crypto = require("crypto");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.hooksRootOnly(__filename); // #277: never a copy but the session's hooks dir
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 const AUTO = /^(AUTO-ACCEPT|AUTO-HOLD)(?=\s|$)/;

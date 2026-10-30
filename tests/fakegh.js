@@ -2,7 +2,8 @@
 // fake gh for the hook tests: canned JSON by argument pattern; FAKE_GH=fail → exit 1. FAKE_GH_LOGIN is the authenticated
 // login (default human), FAKE_GH_COMMENTS the comments of issue 30; with FAKE_GH_COUNTER (a file) its first view has none.
 // Under GH_CONFIG_DIR the login is the one `auth login` wrote there (FAKE_GH_BOT_LOGIN, default bot), else none.
-// FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets;
+// FAKE_GH_STATE (a JSON file) holds repo o/r for --protect: the bot's permission, its invitation, the rulesets,
+// proteus-trust.yml per branch, the setup branch and its PR;
 // FAKE_GH_REPO names another repo to `repo view -q .nameWithOwner` there.
 // FAKE_GH_VISIBILITY answers `repo view --json visibility`; FAKE_GH_LOG (a file) gets every call's arguments.
 // FAKE_GH_RUN (a JSON file) holds a run's issues, PRs and run logs for the close report.
@@ -96,6 +97,40 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   if (a === "api repos/o/r/rulesets") out(s.rulesets || []);
   if (a === "api -X POST repos/o/r/rulesets --input -") { s.rulesets = [...(s.rulesets || []), { id: 9, ...body() }]; save(); out({ id: 9 }); }
   if ((m = /^api -X PUT repos\/o\/r\/rulesets\/(\d+) --input -$/.exec(a))) { s.rulesets = (s.rulesets || []).map((r) => (r.id === +m[1] ? { id: r.id, ...body() } : r)); s.puts = (s.puts || 0) + 1; save(); out({ id: +m[1] }); }
+  // the trust workflow per branch (s.trust: { <branch>: text }), the default branch s.default (main), refs, PRs (s.prs)
+  const files = (s.trust = s.trust || {}), dflt = s.default || "main";
+  if (a === "api repos/o/r --jq .default_branch") { process.stdout.write(dflt + "\n"); process.exit(0); }
+  if ((m = /^api repos\/o\/r\/contents\/\.github\/workflows\/proteus-trust\.yml\?ref=(\S+)$/.exec(a))) {
+    const t = files[decodeURIComponent(m[1])];
+    if (typeof t !== "string") { process.stderr.write("gh: Not Found (HTTP 404)\n"); process.exit(1); }
+    out({ sha: `f-${m[1]}`, content: Buffer.from(t).toString("base64") });
+  }
+  if ((m = /^api repos\/o\/r\/git\/ref\/heads\/(\S+)$/.exec(a))) out({ object: { sha: `h-${m[1]}` } });
+  if (a === "api -X POST repos/o/r/git/refs --input -") {
+    const name = body().ref.replace(/^refs\/heads\//, "");
+    s.refs = s.refs || [];
+    if (s.refs.includes(name)) { process.stderr.write("gh: Reference already exists (HTTP 422)\n"); process.exit(1); }
+    s.refs.push(name);
+    if (dflt in files) files[name] = files[dflt];
+    save(); out({});
+  }
+  if ((m = /^api -X PATCH repos\/o\/r\/git\/refs\/heads\/(\S+) --input -$/.exec(a))) { body(); if (dflt in files) files[m[1]] = files[dflt]; else delete files[m[1]]; s.resets = (s.resets || 0) + 1; save(); out({}); }
+  if (a === "api -X PUT repos/o/r/contents/.github/workflows/proteus-trust.yml --input -") {
+    if (s.noWorkflowScope) { process.stderr.write("gh: refusing to allow an OAuth App to create or update workflow without `workflow` scope (HTTP 404)\n"); process.exit(1); }
+    const b = body();
+    files[b.branch] = Buffer.from(b.content, "base64").toString("utf8");
+    s.trustPuts = (s.trustPuts || 0) + 1;
+    save(); out({});
+  }
+  if ((m = /^pr list --head (\S+) --state open --json number -q \.\[\]\.number$/.exec(a))) { process.stdout.write((s.prs || []).filter((p) => p.head === m[1]).map((p) => `${p.number}\n`).join("")); process.exit(0); }
+  if ((m = /^pr create --base (\S+) --head (\S+) --title (.+) --body-file -$/.exec(a))) {
+    s.prs = s.prs || [];
+    const number = 200 + s.prs.length;
+    s.prs.push({ number, base: m[1], head: m[2], title: m[3], body: fs.readFileSync(0, "utf8") });
+    save();
+    process.stdout.write(`https://github.com/o/r/pull/${number}\n`);
+    process.exit(0);
+  }
   if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
 }
 // FAKE_GH_PR (a JSON file {head, branch, base, files, routing, statuses: {<sha>: [...]}, fail}) answers a PR's head, its branch and

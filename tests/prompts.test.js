@@ -89,4 +89,24 @@ for (const [name, flags] of [["worktree", ["--tier", "--human"]], ["tier", ["--s
   ok(`proteus-${name}.js --help: exits 0 and explains ${flags.join(", ")}`, r.status === 0 && r.stdout.startsWith("usage: ") && r.stdout.split("\n").length > 2 && flags.every((f) => r.stdout.includes(f)), r.stdout + r.stderr);
 }
 
+// #278: a red contract commit cannot pass the pre-push hook, so it stays local
+const contracts = block("Contracts worker[^\\n]*");
+ok("contracts worker brief: commits the contract and says not to push", /Do not push/.test(contracts) && !/git push/.test(contracts), contracts);
+ok("flow.md: the contracts worker does not push; the commit reaches origin with the worker's first green push", /It does not push[^\n]*first green push/.test(read("skills", "proteus", "references", "flow.md")));
+// milestone QA has a fixed bar (#280)
+{
+  const flow = read("skills", "proteus", "references", "flow.md");
+  const review = read("skills", "proteus", "references", "review.md");
+  const qaAgent = read("agents", "proteus-qa-verifier.md");
+  const qa = block("QA \\(wave \\| milestone \\| close\\)");
+  ok("QA prompt: a recheck mode checks the listed items plus the suite and CI", /`recheck`/.test(qa) && /only those items plus the suite and CI/.test(qa), qa);
+  ok("QA prompt: a recheck may not widen the sample", /Do not widen: no new hand-mutant sample, no extra files/.test(qa), qa);
+  ok("QA prompt: a finding outside the list goes to debt, never WAVE-RED", /outside the list goes to the debt issue[^\n]*never `WAVE-RED`/.test(qa), qa);
+  ok("qa verifier agent: knows recheck, no widening, new findings to debt", /`recheck`/.test(qaAgent) && /never widen the sample/.test(qaAgent) && /outside the list to the debt issue, never `WAVE-RED`/.test(qaAgent), qaAgent);
+  ok("flow: the first pass sets the QA list and there is at most one fix cycle", /first milestone QA pass sets a fixed bar/.test(flow) && /one list, the milestone's QA list/.test(flow) && /At most one fix cycle per milestone/.test(flow), flow);
+  ok("flow: a still-red recheck opens the gate with the open items first, the human decides", /opens the review gate with the open items first[^.]*the human decides/.test(flow), flow);
+  ok("flow: non-blocker security findings follow the rule, a security blocker still blocks", /same rule for non-blockers; a security blocker still blocks/.test(flow), flow);
+  ok("review: the gate opens over a red recheck with the open items first", /After one fix cycle with a listed QA item still red[^\n]*opens anyway[^\n]*first/.test(review), review);
+}
+
 summary();

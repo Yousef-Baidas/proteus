@@ -1,19 +1,21 @@
-# .github/workflows/proteus-trust.yml — written by the Proteus scaffold ticket; copy it as is.
+# .github/workflows/proteus-trust.yml on the default branch: install.js --protect opens a PR that puts this file
+# there unchanged, and --doctor warns while the copy differs. GitHub reads a pull_request_target workflow from
+# the default branch only, whatever the PR's base, so a copy on a run branch never runs.
 # The security trigger for every PR into proteus/*: proteus-security.js posts the commit status
 # proteus/security on the PR head, success when no changed path matches the ```security block
 # of teams/ROUTING.md and the scanners found nothing new, failure naming the paths until the
 # security verifier signs off (proteus-signoff.js --security). The ruleset on proteus/* (install.js
 # --protect) requires proteus/security, proteus/verdict (the verifier's MERGE) and gates.
-# It runs on pull_request_target, so GitHub takes this file, the checkout and the scripts from
-# the PR's base branch, never from the PR: a worker's PR cannot change what judges it. Never
+# It runs on pull_request_target, so GitHub takes this file from the default branch and the jobs
+# check out the scripts at the PR's base sha, never the PR's: a worker's PR cannot change what judges it. Never
 # run the PR's code in this file. The paths come from the API; the head is checked out under
 # head/ as data, which proteus-scan.js hands to the scanners and nothing executes:
 # semgrep (OWASP, secrets) on the changed files, gitleaks on the PR's commits, osv-scanner when
 # a lockfile changed, zizmor when a workflow or composite action changed. A scanner with
 # nothing to scan logs a skip line. No config, ignore file or inline suppression in the PR is read, and a finding the base's
 # teams/baseline.json records under `security` does not count (enforcement.md §4).
-# A run branch cut before this file existed has no copy, so its PRs get no proteus/security
-# from CI; finish such runs before the ruleset requires it (enforcement.md §1).
+# Each job runs only for a PR whose base is proteus/*, so PRs into the default branch are untouched
+# and the default branch needs none of the scripts the jobs run; the run branch holds them (enforcement.md §1).
 # Same hardening as proteus-gates.yml: ${{ }} reaches scripts only through env:, actions are
 # pinned to a commit SHA, scanners to an image digest or a download's sha256, and checkout does
 # not persist the token. Two jobs on two VMs, because steps of one job share a VM and a uid and
@@ -31,6 +33,7 @@ permissions:
   contents: read
 jobs:
   scan:
+    if: startsWith(github.base_ref, 'proteus/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -78,6 +81,7 @@ jobs:
           retention-days: 1
   post:
     needs: scan
+    if: startsWith(github.base_ref, 'proteus/')
     runs-on: ubuntu-latest
     permissions:
       contents: read

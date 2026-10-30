@@ -70,6 +70,7 @@
       "3c704beb83beb1eef4c892d65a4bbab00d583f39",
       "478c2bd97ccea894ff6e39dfa162e5d87f99dda8",
       "62a9546a7f39045a5a270fc3b09763ebed467c32",
+      "805a2b0ae724ade35ab5ceb87441d3512554b733",
       "a4bc35d7b38c214382b468071ddd9a506bf5cf0d",
       "ac52df927a94f5e5fa04e8dc9e27bded2c6e0c8a",
       "af3458bd67c01da60c029fa88ee0911b6d97d994",
@@ -82,6 +83,7 @@
     ],
     "agents/proteus-backend-worker.md": [
       "06677e9d339590f220f6ed1d31b1ef4378d8edab",
+      "1f9499996ed09aeea8499d63a6d13b491f77c142",
       "3c7db010d5a7bb0442fec3a0e1d5d5923f3721f7",
       "475201567b975c9ea2f91702a8edeba5d32b03bc",
       "749510d6a95eb68559001cde4c47f9daf461a6fb",
@@ -99,6 +101,7 @@
       "1f984d50f63ec804299753540f0bd0a57e6d2837",
       "53d06e91dfc0763633b02e097b676a594b59f953",
       "7c622b06191d318d05cf4487dde864c54f77197a",
+      "7f27caa5d7e5ccc8f87eec4c8861dcef830e18e8",
       "8944dd36b51ab68a6ad02ef7aee55c225fa54cdf",
       "9c5c6242b9c16f5b9c2928694f6ce72b66c65f35",
       "b31c85bdd059ad15c0272ec216876de0180be50a",
@@ -115,6 +118,7 @@
       "717c7a89a8c0d69b6642bde95322e043420bde91",
       "83006ca2df0160c773fbe7108665c383fdc5bd4c",
       "84a249f1670b9ff9d1024f3e55114cec67e9c29a",
+      "876bf19ced3b14b28a473eaf28297e8e7af6b3ba",
       "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
       "ad5ae7682864958f2bcee67f19f22515e38a45bf",
       "bce00894e6501b6e8ec8a42f26fb8f72abe239d1",
@@ -129,6 +133,7 @@
       "1c9f5372bf9123c6a458f1f539c2fccb9cf4ff0d",
       "540c211d23e4563baa97d5e9399b77e2dcf306be",
       "6197f5b7461e849256b2e46d3b0e13b2adb2d902",
+      "6478f3d4c39e37566de7b8a6d4b69fff50b4dab6",
       "8de24922eab05c824a60477785241f9ae0a69c7e",
       "a0f61b1613c11854bfb7d3173171187b43109721",
       "b368b6710cc9f760a297c12a54536f264a4ff549",
@@ -139,6 +144,7 @@
       "0ad4fa654e2b166eed755a658656ad2039db9092",
       "23e50af7a841236311165344663882b546f70c18",
       "32a561d826490a30f14a9425c2d9688d9c82125c",
+      "3be2396923712073a4021f209875282917c18c10",
       "537123bc82f78da1c50cee22503acd465e7c0e3c",
       "7a42f06bb015b79c4b7e58f8e92dee5fd0bd05ac",
       "820c553ca8da6970179609bf1db5785051273927",
@@ -151,6 +157,7 @@
       "f7552cefe19bb783999101e6ba4c48ec7ec4c00a"
     ],
     "agents/proteus-qa-verifier.md": [
+      "14fe8b1697ae2ed873bddc9b8eee33348d2fd1f2",
       "3b608ec2c734b140a740ab7d7e718f0d00087f80",
       "4cd63f48f22283359ff05c80de37051e18438cf5",
       "536ddb74acaf1016349d4c1df12d390d94d567a6",
@@ -160,7 +167,9 @@
       "8b92fa663002db8b3dec78bc597aee6629eb07aa",
       "97aaed644754fcdce4a9a300498906b49d9f080f",
       "a06f10c940116428fee80e213c49dd73e554dd7d",
+      "a6974add5ae227085189b5e941652845e37839d0",
       "e9ab1b34c0d2b00f4273693fe0cf63ad8ca48217",
+      "fbedc1a7d21e90af0d2b82d5fd4352ac8fbdb8ef",
       "fd4ceb0669d0c21ce1138936cb01a99846060ce2"
     ],
     "agents/proteus-scout.md": [
@@ -171,7 +180,8 @@
       "67ad6d32f70e35a8c157c1c79a5ac8c9cc6c2ac3",
       "d255df67c50f65e04b25d5ac316bba514631ae1c",
       "d57160119f820e6ed2f06018cae8f727c8ebc421",
-      "d70061c1ec453ee757d0a7f2e1a03282cc707e1c"
+      "d70061c1ec453ee757d0a7f2e1a03282cc707e1c",
+      "fb0711346f07ed7853f64950604ea54b8167cfcd"
     ],
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
@@ -180,6 +190,7 @@
       "214e2e9f1cdb2bb16c91dc7b8807df562045bb76",
       "27062af8eeb49a3c06b48e8b6d7ab1c13d19a0c2",
       "2ed1cad13cafc76ae43992cca8001e1ba0c75997",
+      "3b13154e5916f951e2defa56025da0f81582c9b7",
       "3f65e82b4bff91542424eee83bec5f5e64d96e9a",
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
@@ -206,6 +217,7 @@
       "b805215a0408d2bdc26cf2ba746b8d1489b4ceb8",
       "b9ae6e35b344fb3b777ea1303ef63fe6e1eabe92",
       "c3683bf23cab2e0c142887e64ca81719604c3cdb",
+      "d6bd1b1f8844005a496790753785c6b275063ed2",
       "d718f34d496e67ccce3bd92907acaedac9063a6c"
     ],
     "agents/proteus-worker.md": [
@@ -214,6 +226,7 @@
       "5b6bbfe4da605c94faf1dfdcfbfb1bbab28af103",
       "5cfb9ee081cda56e1e189e013efb77b6babebb0e",
       "5d123461716d152e9d8472c5824366957371b2a3",
+      "7674c7233fec953bf3a3c24af4d484d1afd9578d",
       "8262186937f1219d773c8ffc478a48b754b5e01c",
       "94eb0754ed34791d83cd11666aef52bbdc111844",
       "dae64d247cab1e8fdce1466aba1128d15f046eee",
@@ -240,6 +253,7 @@
     ],
     "templates/ci/proteus-trust.yml": [
       "3dba19876d0bd621c894e1da26f42380152889e7",
+      "79a5ab7500e3785c032f09a4808be815f461affb",
       "afece5ca13c153ca6e62683c85dfedeea3cb2d8d",
       "e1cbe45daa85d8cf4dcbe434aa41f85f7ed359f3"
     ],
@@ -350,6 +364,7 @@
     ],
     "templates/hooks/proteus-autostart.js": [
       "01f1119743ff16a4e8c571a7434ecfe8d8c1be16",
+      "03c641432018162e3edced70bef76a002f62af8b",
       "114996488dd8319062d30ef7eb59f5d4737b74d7",
       "1dfc03881a53a16b23f93cfb8894c5629dd3d80c",
       "283a117eec9d0241032e41947313890eb28f10c8",
@@ -438,6 +453,9 @@
       "91466d27ca379f1f1e6c17d160981d9416719506",
       "9305ad7457d16e30c359da90c8be2b0332681ebb",
       "9c8481535010e2146a3c6ce92b887a02b21c0188"
+    ],
+    "templates/hooks/proteus-gh.js": [
+      "35b48ab8f4cbd5e86590d74a34817bb393b4f13d"
     ],
     "templates/hooks/proteus-goal.js": [
       "b30c789dacb8d897b68265b6b2fc4068caccfdf7"
@@ -634,6 +652,7 @@
       "07c171f501a77bf4fcb80db60945c2f002bc1705",
       "0865ec9a15625b898509a5763b03befa3bbcdaa2",
       "0f0d9007badacdfdd2afe8ec58b51b35e5839221",
+      "0f57b99b0436514ee1243ae5bfad40e9556bd143",
       "1362c493f0095bc89114a99491810343fd238c52",
       "14436f213c41a4f0fd02de012879605dbb29a95f",
       "19661de36f71b1d0ecb64ac855a83a7af15df936",
@@ -800,6 +819,7 @@
     ],
     "templates/hooks/proteus-security.js": [
       "0a599cfa143be35446301bb3a2bfa07c7072d6ff",
+      "45073bfdee749488185df542c40abf59ed9b719e",
       "54b55e4897468e7fe1935a8eff0bed2bfee70043",
       "b36a95997b7cd1d1604b9f6e4d29f0f600ba09b4",
       "d46aedf93c9fcd2678c5c6d6b62087c2557ae72c"
@@ -827,6 +847,7 @@
     "templates/hooks/proteus-signoff.js": [
       "1d5a1920f954c2eeb75f2f7263cf5b4b6b37580c",
       "2e609df56dc710c35196481be324c90a191d6617",
+      "4be4dc7c1db8d45eb2b982008ef3718d5b9ca0e3",
       "ec14d370f4b5d90f4ad67b05d77f25d827f2648d",
       "fbc6f1cf9cafe15c97b7c7ad8119fe09e856d4dc"
     ],
@@ -874,7 +895,8 @@
       "7ec48fdd43a14ba8110e3b443a7b30e08dbd5d22",
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",
       "d933e1c90cdadc199825184be5f268c77e4b2f75",
-      "db69a02f3bb29c8941b637ab40b6fe73d04926f1"
+      "db69a02f3bb29c8941b637ab40b6fe73d04926f1",
+      "dda2473cf3f84afa1c6f9cac64f8a0aad1b21fa7"
     ],
     "templates/hooks/proteus-watchdog.js": [
       "0bf47261edf974464bf4a9d62ca87d8f1be20bfc",
@@ -938,6 +960,7 @@
     "templates/teams/ROUTING.md": [
       "24dede5e4f8d1139191f5823fde12f2f5e467649",
       "58e451a504074b098e467103c9b1f49e9ec48ecb",
+      "c81d17816f08682c3494b42ef4cf7328e2464ba4",
       "cdf8953d8debe6fbd73b3ccf95aedf0adbdd5d49",
       "edb2d5bcf15b92cb4e636c7cf44fee2353eb190b"
     ],
@@ -1035,6 +1058,7 @@
     "templates/teams/ROUTING.md": {
       "24dede5e4f8d1139191f5823fde12f2f5e467649": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are never routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n",
       "58e451a504074b098e467103c9b1f49e9ec48ecb": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are not routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, not by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n",
+      "c81d17816f08682c3494b42ef4cf7328e2464ba4": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are not routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, not by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n\n## Security\n\nA PR into the run branch that changes a path one of these globs matches needs the security verifier's signoff: CI (`.github/workflows/proteus-trust.yml`, from the base branch) posts the commit status `proteus/security` as failure naming the paths, and only the security verifier's `MERGE` (`proteus-signoff.js --security`) turns it green; the ruleset on `proteus/*` requires it. One glob per line, matched like the tiers block. Cover auth, input parsing, secrets, file and network I/O, money, personal data, anything published, and CI itself. Edit the patterns to this repo's layout at bootstrap; the lead may still add the security verifier to any ticket. The same job's scanners (semgrep, gitleaks, osv-scanner, zizmor) mark a PR on any finding `teams/baseline.json` does not record. Delete the block and CI checks the scanners' findings only.\n\n```security\n**/auth/**\n**/*auth*.*\n**/session*/**\n**/login*.*\n**/*token*.*\n**/*secret*.*\n**/*crypt*.*\n**/.env*\n**/*parse*.*\n**/*upload*.*\n**/payment*/**\n**/billing/**\n**/*payment*.*\n**/migrations/**\n**/user*/**\n**/publish*.*\n.github/**\nDockerfile\n**/Dockerfile\ninfra/**\n**/package.json\n**/package-lock.json\n**/pnpm-lock.yaml\n**/yarn.lock\n**/requirements*.txt\n**/pyproject.toml\n**/uv.lock\n**/Cargo.toml\n**/Cargo.lock\n```\n",
       "cdf8953d8debe6fbd73b3ccf95aedf0adbdd5d49": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are not routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, not by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n\n## Security\n\nA PR into the run branch that changes a path one of these globs matches needs the security verifier's signoff: CI (`.github/workflows/proteus-trust.yml`, from the base branch) posts the commit status `proteus/security` as failure naming the paths, and only the security verifier's `MERGE` (`proteus-signoff.js --security`) turns it green; the ruleset on `proteus/*` requires it. One glob per line, matched like the tiers block. Cover auth, input parsing, secrets, file and network I/O, money, personal data, anything published, and CI itself. Edit the patterns to this repo's layout at bootstrap; the lead may still add the security verifier to any ticket. Delete the block and CI checks nothing, the pipeline before the block existed.\n\n```security\n**/auth/**\n**/*auth*.*\n**/session*/**\n**/login*.*\n**/*token*.*\n**/*secret*.*\n**/*crypt*.*\n**/.env*\n**/*parse*.*\n**/*upload*.*\n**/payment*/**\n**/billing/**\n**/*payment*.*\n**/migrations/**\n**/user*/**\n**/publish*.*\n.github/**\nDockerfile\n**/Dockerfile\ninfra/**\n**/package.json\n**/package-lock.json\n**/pnpm-lock.yaml\n**/yarn.lock\n**/requirements*.txt\n**/pyproject.toml\n**/uv.lock\n**/Cargo.toml\n**/Cargo.lock\n```\n",
       "edb2d5bcf15b92cb4e636c7cf44fee2353eb190b": "# Routing\n\nOne row per deliverable type or path pattern → the one team that owns it. The lead routes every ticket by this table; a ticket with no row is a question for the human, and the answer becomes a row. Edit the patterns to this repo's layout at bootstrap. `security` and `qa` are never routed to; they verify.\n\n| Deliverable or path | Team |\n|---|---|\n| UI components, pages, styles, client state, `src/app/**`, `src/components/**`, `apps/web/**` | frontend |\n| API routes, handlers, data models, migrations, auth, jobs, `src/server/**`, `apps/server/**`, `packages/db/**` | backend |\n| CI workflows, containers, deploy and environment config, `.github/**`, `Dockerfile`, `infra/**` | devops |\n| tests for a path | the team that owns the path |\n| docs for a path | the team that owns the path |\n| root docs (`CLAUDE.md`, `AGENTS.md`), docs-diet tickets | devops |\n\n## Tiers\n\nThe tier decides which pipeline steps a change runs (`SKILL.md` rule 3). One rule per line: `<glob> <tier> [lines=<n>] [files=<n>]`, tier `direct`, `quick`, `standard` or `full`. A changed path takes the first rule whose glob matches (owned-path globs; a leading `**/` also matches at the root), else `standard`; the change runs at the highest tier its paths take, and a rule whose paths together pass its `lines=` or `files=` limit costs one tier more. Match by path, never by extension: in a skill or docs-site repo the markdown is the product, and API specs, tested examples and `CONVENTIONS.md` are not typos. Edit the patterns to this repo's layout at bootstrap; delete the block and every change is `standard`.\n\n```tiers\nCONVENTIONS.md          full\nteams/**                full\n.github/**              full\n**/migrations/**        full\n**/auth/**              full\n**/package-lock.json    full\n**/pnpm-lock.yaml       full\n**/yarn.lock            full\n**/uv.lock              full\n**/Cargo.lock           full\ndocs/api/**             standard\ndocs/**                 direct  lines=60 files=6\nREADME.md               direct  lines=30 files=1\nCHANGELOG.md            direct  lines=30 files=1\n# small single-team code changes, once CI's gates cover them:\n# src/**                quick   lines=80 files=3\n```\n"
     },

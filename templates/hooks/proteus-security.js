@@ -2,7 +2,7 @@
 // The security trigger, judged by CI instead of the lead: does this PR need the security verifier?
 //   node teams/templates/hooks/proteus-security.js --ci <pr> <head-sha> [--findings <report or dir>]
 //   node teams/templates/hooks/proteus-security.js --list <report or dir>
-// Run from a checkout of the PR's base (proteus-trust.yml's post job, on pull_request_target: the base's workflow
+// Run from a checkout of the PR's base (proteus-trust.yml's post job, on pull_request_target: the default branch's workflow
 // and this script as the base has them, never the PR's; the scan job's findings arrive as an artifact). The globs are the ```security block of the base's
 // teams/ROUTING.md (lib.parseSecurity, matched like the tiers block); the PR's paths come from the API
 // (repos/<repo>/pulls/<pr>/files, both ends of a rename), so no PR code is run. --findings adds the scanners'
