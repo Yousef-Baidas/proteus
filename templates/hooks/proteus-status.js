@@ -22,14 +22,13 @@ const arg = process.argv[2] || "";
 const run = lib.runName(arg || runBranches[0] || "");
 if (!run) { console.log(`no open run (no ${lib.CURRENT.branch}<run> branch)`); return; }
 const names = lib.schemeOf(arg) || lib.schemeOf(runBranches.find((b) => lib.runName(b) === run) || "") || lib.CURRENT;
-const NOT_TICKET = new Set([names.review, names.log, names.debt]);
 
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,state,createdAt,closedAt,milestone,labels", "--limit", "500"], root, 10000));
 if (!Array.isArray(issues)) { console.log(`run ${run} · tracker unreachable (gh issue list failed)`); return; }
 const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "open", "--json", "number,headRefName,reviews,comments", "--limit", "100"], root, 10000)) || [];
 
-const tickets = issues.filter((i) => i.milestone && String(i.milestone.title).startsWith(run + "/") && !(i.labels || []).some((l) => NOT_TICKET.has(l.name)));
+const tickets = lib.runTickets(issues, run, names);
 const isOpen = (i) => String(i.state).toUpperCase() === "OPEN";
 const openMs = tickets.filter(isOpen).map((i) => i.milestone);
 const ms = openMs.sort((a, b) => a.number - b.number)[0] || tickets.map((i) => i.milestone).sort((a, b) => b.number - a.number)[0];
@@ -38,7 +37,7 @@ const parts = [`run ${run}`];
 let remaining = 0;
 if (ms) {
   const inMs = tickets.filter((i) => i.milestone.number === ms.number);
-  remaining = inMs.filter(isOpen).length;
+  remaining = lib.milestoneOpen(run, ms.title, { issues: tickets, names }).length;
   parts.push(`milestone ${ms.title} ${inMs.length - remaining}/${inMs.length} closed`);
 } else parts.push("no milestone yet");
 
