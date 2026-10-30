@@ -69,7 +69,13 @@ ok("push: a bare push or `git push origin` of a branch tracking main passes, fro
 ok("push: a bare push of main checked out in a worktree still denied", denied(inWt(WTM, "git push"), /never push to trunk/, sub) && denied(inWt(WTM, "git push origin"), /never push to trunk/));
 ok("push: a bare push from a detached HEAD, or after a cd the guard cannot follow, names `git push origin <branch>`",
   !all((c) => denied(c, /git push origin <branch>/, sub), [inWt(WTD, "git push"), inWt(WTD, "git push origin"), "cd $T && git push", "cd - && git push origin"]).length);
-ok("push: an explicit refspec keeps its own rules", denied(inWt(WTF, "git push origin HEAD:trunk"), /never push to/, sub) && allowed(inWt(WTF, "git push origin fix/x"), sub) && allowed(inWt(WTD, "git push origin HEAD:proteus-work/r1/8"), sub));
+// #231 D9: a clone outside the project has no checkout the guard reads, so the lead's bare push there is refused too
+const OUT = path.join(W, "outside");
+g(W, "clone", "-q", BARE, OUT);
+ok("push: the lead's bare push in a clone outside the project, on its main, names `git push origin <branch>` (#231)",
+  !all((c) => denied(c, /git push origin <branch>/), [`git -C ${JSON.stringify(OUT.split(path.sep).join("/"))} push`, inWt(OUT, "git push"), inWt(OUT, "git push origin")]).length &&
+  lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: OUT, tool_name: "Bash", tool_input: { command: "git push" } }, { cwd: OUT, env: { CLAUDE_PROJECT_DIR: REPO } }).code === 2);
+ok("push: an explicit refspec keeps its own rules",denied(inWt(WTF, "git push origin HEAD:trunk"), /never push to/, sub) && allowed(inWt(WTF, "git push origin fix/x"), sub) && allowed(inWt(WTD, "git push origin HEAD:proteus-work/r1/8"), sub));
 
 // merges and protection
 ok("gh: pr merge --admin denied, a plain merge allowed", denied("gh pr merge 4 --merge --admin", /--admin/) && allowed("gh pr merge 4 --merge --delete-branch"));
