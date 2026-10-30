@@ -96,6 +96,7 @@ Grade the evidence against the frozen checks per your agent instructions, commen
 Hooks: <hooks>.
 Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
 Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. Fix nothing.
+Recheck: when the lead's prompt says `recheck` and gives the milestone's QA list (the first pass's `WAVE-RED` findings), check only those items plus the suite and CI green. Do not widen: no new hand-mutant sample, no extra files. A finding outside the list goes to the debt issue #<d>, never `WAVE-RED`; a still-red listed item is reported as such, and the lead does not rerun you.
 <safety>
 One verdict line; findings as issue comments or new issues per the profile.
 ```
@@ -107,7 +108,7 @@ Run <run>, milestone <name>, tip <sha>. Service: <port> <start command> (## Lear
 Run `node <hooks>/proteus-run-tree.js <sha>`, then start the service from .worktrees/_run on localhost:<port>, in the background with its PID noted, and stop it when done.
 Targets: localhost, 127.0.0.0/8, [::1], and the origins on ## Learned `pentest-targets:` only. Check each with `node <hooks>/proteus-pentest.js scope <url>` before you aim anything at it; never follow the app or a scan to another host.
 Report only what you proved: write $(node <hooks>/proteus-scratch.js --path <run>-pentest)/report.jsonl, one {"title","severity","target","poc"} per line, the poc the exact request and the response that shows the exploit. Then `node <hooks>/proteus-pentest.js findings <report.jsonl>`.
-Fix nothing; file nothing.
+Fix nothing; file nothing. On a recheck (`flow.md`), report only the listed findings plus any new blocker; a new non-blocker is debt.
 <safety>
 Final turn text: `DONE pentest <kept count>` followed by the printed ticket bodies, or `BLOCKED <why>`. Then stop.
 ```
