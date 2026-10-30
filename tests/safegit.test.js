@@ -184,6 +184,8 @@ function verdict(route, name, target, ran) {
   g(X, "config", "core.fsmonitor", cmd("outside-prep"));
   const res = lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: r.R, env: { CLAUDE_PROJECT_DIR: r.R }, args: [Y, "src/**"] });
   ok("proteus-worktree.js refuses a worktree the project does not register", res.code === 1 && res.err.includes("is not a worktree of this project") && !fs.existsSync(path.join(Y, ".claude")), res.out + res.err);
+  // git config never asks fsmonitor, so the plant check alone passes whatever ran; the hooksPath write would land here
+  ok("proteus-worktree.js wrote no config.worktree in the outside repo (#231)", !fs.existsSync(path.join(X, ".git", "worktrees", "y", "config.worktree")));
   verdict("proteus-worktree.js on a repo outside the project", "outside-prep", Y, [["worktree", res]]);
 }
 
