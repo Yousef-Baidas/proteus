@@ -54,6 +54,19 @@ for (const s of Object.keys(SCRIPTS)) {
   ok(`${s}: runs from the recorded dir`, !NOT_OURS.test(r.err) && (s === "proteus-gh.js" ? r.code === 0 : r.code === 2), `${r.code} ${r.err}`);
 }
 
+// the session's --sandbox bin copy (confine's sandboxBin for this repo) passes: the container publish runs
+// proteus-gh.js from it; a copy in another repo's bin dir is still refused
+const C = require(path.join(SRC, "proteus-confine.js"));
+const binOf = (common) => path.join(lib.HOME, ".claude", "proteus-sandbox", "bin", C.sandboxKey(common));
+const BINCOPY = copy(binOf(path.join(REPO, ".git")));
+const NOTBIN = copy(path.join(lib.HOME, ".claude", "proteus-sandbox", "bin", "00000000"));
+for (const s of Object.keys(SCRIPTS)) {
+  r = runIn(BINCOPY, s, REPO);
+  ok(`${s}: runs from the session's sandbox bin copy`, !NOT_OURS.test(r.err) && (s === "proteus-gh.js" ? r.code === 0 : r.code === 2), `${r.code} ${r.err}`);
+  r = runIn(NOTBIN, s, REPO);
+  ok(`${s}: refused from another repo's sandbox bin dir`, r.code === 1 && NOT_OURS.test(r.err), `${r.code} ${r.err}`);
+}
+
 // a worktree of the same repo reads the same record
 g(REPO, "commit", "-q", "--allow-empty", "--no-verify", "-m", "a");
 const WT = path.join(REPO, ".worktrees", "t1");

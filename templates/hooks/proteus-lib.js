@@ -6,7 +6,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { execFile, execFileSync, spawnSync } = require("child_process");
-const { claudeDir, pluginRoot, samePath } = require(path.join(__dirname, "proteus-confine.js"));
+const { claudeDir, pluginRoot, samePath, sandboxBin } = require(path.join(__dirname, "proteus-confine.js"));
 
 // the harness adapter. The adapter requires this file too: it is loaded at the end, once this
 // file's exports are complete, and taken again on use if a load that began at the adapter left it partial.
@@ -865,7 +865,8 @@ function anchorCommon() {
 // ---- one hooks dir per session (#277): the autostart records the realpath of the dir its proteus-lib.js runs from in
 // proteus-lead/hooks-root, and the scripts that post or record for the human's gate run only from that dir, so a
 // stale copy (the project's teams/templates/hooks, CI's; an old plugin cache) never signs. No record (no session,
-// CI): no check
+// CI): no check. The session's --sandbox bin copy (confine's sandboxBin, which no agent can write) also passes: the
+// container's publish runs proteus-gh.js from there
 const HOOKS_ROOT = "hooks-root";
 const hooksRoot = () => realNative(__dirname);
 const recordHooksRoot = (common) => leadWrite(common, leadPath(common, HOOKS_ROOT), hooksRoot() + "\n");
@@ -875,7 +876,7 @@ function hooksRootDenial(dir, script) {
   let rec = "";
   try { rec = common ? readUntrusted(leadPath(common, HOOKS_ROOT), 4096).trim() : ""; } catch {}
   const own = realNative(dir);
-  return !rec || samePath(own, rec) ? null : `proteus: this is not the session's Proteus (${own}); use ${path.join(rec, script)}`;
+  return !rec || samePath(own, rec) || samePath(own, realNative(sandboxBin(common))) ? null : `proteus: this is not the session's Proteus (${own}); use ${path.join(rec, script)}`;
 }
 // called first by each such script: unless it may run from its dir, the refusal on stderr and exit 1
 function hooksRootOnly(file) {
