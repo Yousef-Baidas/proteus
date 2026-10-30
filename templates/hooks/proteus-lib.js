@@ -2107,8 +2107,10 @@ function bound(common, agent) {
 // record carries the spawn's time: the watchdog tracks only agents with a lead spawn record (spawnRecord, #179).
 const spawnFile = (common, name) => leadPath(common, "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
 // a verifier spawn's PR and head, from the tokens proteus-cli.js next prints (PR#<n>, head=<sha12>; the first of each),
-// for next to know which head a verifier was spawned for (#79); {} unless the type is a verifier's and both are there
+// for next to know which head a verifier was spawned for (#79); {} unless the type is a verifier's and both are there.
+// A worker spawn's ticket, from its SPAWN worker line's `worker #<n>`, for the STOP lines once that ticket merges
 function spawnTarget(type, prompt) {
+  if (WORKER.test(agentName(type))) { const t = /\bworker #(\d+)\b/.exec(String(prompt || "")); return t ? { ticket: +t[1] } : {}; }
   if (!isVerifier(type)) return {};
   const p = /\bPR#(\d+)\b/.exec(String(prompt || "")), h = /\bhead=(\S*)/.exec(String(prompt || ""));
   return p && h && /^[0-9a-f]{12}$/.test(h[1]) ? { pr: +p[1], head: h[1] } : {};
