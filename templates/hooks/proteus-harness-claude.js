@@ -57,6 +57,7 @@ function event(raw) {
     spawnModel: typeof ti.model === "string" ? ti.model : "",
     spawnType: typeof ti.subagent_type === "string" ? ti.subagent_type : "",
     spawnName: typeof ti.name === "string" ? ti.name : "",
+    spawnPrompt: typeof ti.prompt === "string" ? ti.prompt : "",
     prompt: typeof r.prompt === "string" ? r.prompt : "",
     // a prompt from anything but the human: task notifications, loop wakeups, peer messages
     fromHuman: !r.source || r.source === "user" || r.source === "sdk",

@@ -30,53 +30,29 @@ const MIN = 60000;
 const DAY = 24 * 60 * MIN;
 const USAGE = "usage: node proteus-watchdog.js [--wait] [--idle <min>] [--ended <min>] [--grace <min>] [--every <s>] [--max <min>] | --forget <agent>... | --forget all";
 
-const opt = { wait: false, idle: 40, ended: 10, grace: 20, every: 60, max: 1440, forget: null };
-const argv = process.argv.slice(2);
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  const key = a.replace(/^--/, "");
-  if (a === "--wait") opt.wait = true;
-  else if (a === "--forget") { opt.forget = argv.slice(i + 1); break; }
-  else if (["--idle", "--ended", "--grace", "--every", "--max"].includes(a) && +argv[i + 1] > 0) opt[key] = +argv[++i];
-  else { console.error(USAGE); process.exit(2); }
-}
+const DEFAULTS = { idle: 40, ended: 10, grace: 20 };
+const ms = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? t : 0; };
+const mins = (d) => `${Math.round(d / MIN)}m`;
 
-const common = lib.gitCommonDir(lib.projectRoot());
-if (!common) { console.error("watchdog: not in a git repo"); process.exit(2); }
-const dir = lib.beatsDir(common);
-const fileOf = (agent) => path.join(dir, `${String(agent).replace(/[^\w.-]/g, "_")}.json`);
-const beats = () => {
+// the tracked beats, each { file, rec }, the forgotten agents' left out
+function beats(common) {
+  const dir = lib.beatsDir(common);
   let names = [];
   try { names = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch {}
   return names.map((f) => ({ file: path.join(dir, f), rec: lib.readJSON(path.join(dir, f), null) }))
     .filter((b) => b.rec && b.rec.agent && !lib.forgotten(common, b.rec.agent, b.rec.spawn || b.rec.first));
-};
-const drop = (file) => { try { lib.leadRemove(common, file); } catch {} };
-
-if (opt.forget) {
-  if (!opt.forget.length) { console.error(USAGE); process.exit(2); }
-  const all = opt.forget.includes("all");
-  const gone = all ? beats().map((b) => ({ file: b.file, agent: b.rec.agent })) : opt.forget.map((a) => ({ file: fileOf(a), agent: a }));
-  // remembered, so a stop hook that fires after this does not track the agent again (#179)
-  lib.forget(common, gone.map((g) => g.agent), all);
-  const files = gone.map((g) => g.file);
-  for (const f of files) drop(f);
-  console.log(`watchdog: forgot ${files.length} agent${files.length === 1 ? "" : "s"}`);
-  return;
 }
 
-const ms = (iso) => { const t = Date.parse(iso || ""); return Number.isFinite(t) ? t : 0; };
-const mins = (d) => `${Math.round(d / MIN)}m`;
-
-// one pass: the lines to print; flags each newly stalled agent so the next pass stays quiet for --grace
-function check(now) {
-  const out = [];
+// one read of the beats, writing nothing: the agents stalled at now, each { again, agent, type, why, cwd, file, rec },
+// an agent flagged less than opt.grace minutes ago left out; with active (beats under a day old) and newest tool call
+function stalls(common, now, opt = DEFAULTS) {
+  const out = [], old = [];
   let active = 0;
   let newest = 0;
-  for (const { file, rec } of beats()) {
+  for (const { file, rec } of beats(common)) {
     const last = ms(rec.last);
     const ended = ms(rec.ended);
-    if (now - Math.max(last, ended) > DAY) { drop(file); continue; }
+    if (now - Math.max(last, ended) > DAY) { old.push(file); continue; }
     active++;
     newest = Math.max(newest, last);
     let why = "";
@@ -85,29 +61,74 @@ function check(now) {
     if (!why) continue;
     const flagged = ms(rec.flagged);
     if (flagged && now - flagged < opt.grace * MIN) continue;
-    out.push(`${flagged ? "STALL-AGAIN" : "STALL"} ${rec.agent} ${rec.type || "agent"} ${why}, cwd ${rec.cwd || "?"}`);
-    try { lib.leadJSON(common, file, { ...rec, flagged: new Date(now).toISOString() }); } catch {}
+    out.push({ again: !!flagged, agent: rec.agent, type: rec.type || "agent", why, cwd: rec.cwd || "?", file, rec });
   }
-  return { out, active, newest };
+  return { stalled: out, old, active, newest };
 }
 
-const report = (out) => {
-  for (const l of out) console.log(l);
-  console.log("STALL: message the agent (status? report DONE/RED/NEEDS now, or continue in the foreground). STALL-AGAIN: stop it, `--forget` it, and dispatch a fresh worker on the same worktree.");
-  process.exitCode = 1;
-};
+function main() {
+  const opt = { wait: false, ...DEFAULTS, every: 60, max: 1440, forget: null };
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const key = a.replace(/^--/, "");
+    if (a === "--wait") opt.wait = true;
+    else if (a === "--forget") { opt.forget = argv.slice(i + 1); break; }
+    else if (["--idle", "--ended", "--grace", "--every", "--max"].includes(a) && +argv[i + 1] > 0) opt[key] = +argv[++i];
+    else { console.error(USAGE); process.exit(2); }
+  }
 
-if (!opt.wait) {
-  const { out, active, newest } = check(Date.now());
-  if (out.length) report(out);
-  else console.log(active ? `watchdog: ok, ${active} agent${active === 1 ? "" : "s"} tracked, newest tool call ${mins(Date.now() - newest)} ago` : "watchdog: ok, no agent tracked");
-  return;
+  const common = lib.gitCommonDir(lib.projectRoot());
+  if (!common) { console.error("watchdog: not in a git repo"); process.exit(2); }
+  const dir = lib.beatsDir(common);
+  const fileOf = (agent) => path.join(dir, `${String(agent).replace(/[^\w.-]/g, "_")}.json`);
+  const drop = (file) => { try { lib.leadRemove(common, file); } catch {} };
+
+  if (opt.forget) {
+    if (!opt.forget.length) { console.error(USAGE); process.exit(2); }
+    const all = opt.forget.includes("all");
+    const gone = all ? beats(common).map((b) => ({ file: b.file, agent: b.rec.agent })) : opt.forget.map((a) => ({ file: fileOf(a), agent: a }));
+    // remembered, so a stop hook that fires after this does not track the agent again (#179)
+    lib.forget(common, gone.map((g) => g.agent), all);
+    const files = gone.map((g) => g.file);
+    for (const f of files) drop(f);
+    console.log(`watchdog: forgot ${files.length} agent${files.length === 1 ? "" : "s"}`);
+    return;
+  }
+
+  // one pass: the lines to print; flags each newly stalled agent so the next pass stays quiet for --grace
+  function check(now) {
+    const { stalled, old, active, newest } = stalls(common, now, opt);
+    for (const f of old) drop(f);
+    const out = [];
+    for (const s of stalled) {
+      out.push(`${s.again ? "STALL-AGAIN" : "STALL"} ${s.agent} ${s.type} ${s.why}, cwd ${s.cwd}`);
+      try { lib.leadJSON(common, s.file, { ...s.rec, flagged: new Date(now).toISOString() }); } catch {}
+    }
+    return { out, active, newest };
+  }
+
+  const report = (out) => {
+    for (const l of out) console.log(l);
+    console.log("STALL: message the agent (status? report DONE/RED/NEEDS now, or continue in the foreground). STALL-AGAIN: stop it, `--forget` it, and dispatch a fresh worker on the same worktree.");
+    process.exitCode = 1;
+  };
+
+  if (!opt.wait) {
+    const { out, active, newest } = check(Date.now());
+    if (out.length) report(out);
+    else console.log(active ? `watchdog: ok, ${active} agent${active === 1 ? "" : "s"} tracked, newest tool call ${mins(Date.now() - newest)} ago` : "watchdog: ok, no agent tracked");
+    return;
+  }
+
+  const until = Date.now() + opt.max * MIN;
+  (function tick() {
+    const { out } = check(Date.now());
+    if (out.length) return report(out);
+    if (Date.now() >= until) return console.log(`watchdog: nothing stalled in ${opt.max} minutes; run it again while agents are out`);
+    setTimeout(tick, opt.every * 1000);
+  })();
 }
 
-const until = Date.now() + opt.max * MIN;
-(function tick() {
-  const { out } = check(Date.now());
-  if (out.length) return report(out);
-  if (Date.now() >= until) return console.log(`watchdog: nothing stalled in ${opt.max} minutes; run it again while agents are out`);
-  setTimeout(tick, opt.every * 1000);
-})();
+module.exports = { stalls, DEFAULTS };
+if (require.main === module) main();

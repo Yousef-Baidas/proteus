@@ -142,6 +142,17 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
+// FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, statuses: {<sha>: [status]}}) answers proteus.js next: the run's
+// issues, the open PRs into the run branch, the open review issues, the open needs-human issues and a commit's statuses
+if (process.env.FAKE_GH_NEXT) {
+  const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));
+  let m;
+  if (a.startsWith("issue list --label proteus --state all --json ")) out(s.issues || []);
+  if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs || []);
+  if (a.startsWith("issue list --label proteus-review --state open --json milestone ")) out(s.reviews || []);
+  if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
+  if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
+}
 // FAKE_GH_MERGE (a JSON file {origin, issues, prs: [{number, headRefName, baseRefName, body, statusCheckRollup}]}) answers
 // proteus-merge.js: the open PRs, the run's issues, and `pr merge` as a real merge commit in the origin repo (git merge-tree);
 // a conflicting one fails and its `mergeable` turns CONFLICTING; `pr view --json headRefName,state` is MERGED once merged
