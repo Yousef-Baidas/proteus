@@ -133,14 +133,14 @@ Each line is `ok`, `WARN`, or `FIX`; the exit code is 1 while a `FIX` remains. I
 
 Auto mode's classifier judges every tool call and every subagent's task description before it runs. It does not know Proteus, so a worker spawn whose brief talks about hooks and guards can look like an attempt to get around a denial, and it gets blocked. Proteus keeps its briefs short (the standing rules live in the agent files) and never retries a denied call, but only you can tell the classifier that Proteus is your own tooling: it reads `autoMode` from `~/.claude/settings.json` or managed settings only, never from a repo or a plugin.
 
-`install.js` and `--doctor` print this snippet when no `autoMode.environment` entry names Proteus. Add the entry with `/auto-mode-setup` or `/permissions` → Auto mode, or by hand, keeping `"$defaults"` and any entries you already have:
+`install.js` and `--doctor` print this snippet when no `autoMode.environment` entry names Proteus, or when the one that does predates `proteus-cli.js` (whose `next` merges green PRs into the run branch). Add the entry with `/auto-mode-setup` or `/permissions` → Auto mode, or by hand, keeping `"$defaults"` and any entries you already have:
 
 ```json
 {
   "autoMode": {
     "environment": [
       "$defaults",
-      "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails"
+      "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js next and result is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch"
     ]
   }
 }
