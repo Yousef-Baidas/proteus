@@ -330,8 +330,8 @@ function next(arg) {
   }
 
   // a ticket's worker branch counts as in flight; but one this script prepared, whose worker is not spawned yet, with
-  // no PR and nothing but the ticket's contract committed past the base its owned list records, leaves the ticket the
-  // lead's to spawn
+  // nothing but the ticket's contract committed past the base its owned list records, leaves the ticket the lead's to
+  // spawn (an open PR keeps it in flight through fromTracker)
   const workers = new Set(recs.filter((r) => isWorker(r.type) && Number.isInteger(r.ticket)).map((r) => r.ticket));
   const wtOf = (n) => path.join(root, ".worktrees", String(n));
   const branchOf = (n) => `${lib.CURRENT.work}${run}/${n}`;
@@ -340,7 +340,7 @@ function next(arg) {
     try { list = fs.readFileSync(lib.ownedFile(wtOf(n)), "utf8"); } catch { return false; }
     const at = /^# tier \S+(?: human)? ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m.exec(list);
     const past = at && commitsPast(common, b, n, [at[1]]);
-    return !!past && past.every((c) => c.contract) && !prs.some((p) => p.headRefName === b);
+    return !!past && past.every((c) => c.contract);
   };
   const refs = w.refs.filter((b) => {
     const n = ticketOf(run, names, b);
