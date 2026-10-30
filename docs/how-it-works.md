@@ -224,7 +224,7 @@ templates/teams/             the shipped roster, copied into your repo's teams/ 
   baseline.json              per-gate findings recorded by proteus-baseline.js (only when a gate started red)
 templates/
   ci/proteus-gates.yml  lefthook.yml   the gates run teams/templates/hooks/commit-msg.js
-  ci/proteus-trust.yml                 the security trigger, run from the base branch
+  ci/proteus-trust.yml                 the security trigger, run from the default branch
   hooks/                     copied to .claude/hooks/ by install-lead-hooks.js:
     proteus-autostart.js    SessionStart: makes the session the lead, prints proteus-state
     proteus-lead-guard.js   the lead never edits deliverables
