@@ -493,6 +493,7 @@
       "64d1c70dd3fec6de54cea490b364d10b4aaf79fd",
       "64ed8260b0218c9103968fb8e754c7fcf9f0f7ce",
       "653303a989fe3408b2fc42ca1ddf3a983f3742c3",
+      "744a6dbae97df5212bea0505817d963672c41b50",
       "7992ffcfc93ae72ffe5dbf6310fd928b332506f6",
       "7b0432a353d0b779eac06873ceed2f1c59f30a55",
       "7ebb9bfd067d5b7cf265087b775a5155949b29a3",
@@ -643,6 +644,7 @@
       "2be489b65243f77f4da6df8438b1e20a58d3637d",
       "30fbb98f511dcf65bb844eda422af9fd0021a4e8",
       "3162c6d97a09c9ac58f38a058e7e1542be8f8d5c",
+      "31ab4554dbf38284439a25016bf8224daa96ea9f",
       "3285e36918ed400d93e016fedf4ae274fb01412a",
       "32a9c7d0a3f66cb7fa0d297c849d89ef8f9d961b",
       "375113c1459bb8b6ccd821249e7cf588cb3371e6",
@@ -902,6 +904,9 @@
       "c4c7c2fc3944b7df0a59fcd83f4e57a85caf984d",
       "c5a59d465fd5ea7ff156a24a59473bc4efccef77",
       "e5194759c4140be6b9dbf7abd1ff41b0f70f87dc"
+    ],
+    "templates/hooks/proteus.js": [
+      "b9d3325a4425b841877a61cfcfe667dd93ed2562"
     ],
     "templates/hooks/settings.local.json": [
       "7161b4435ed0e31c560a8dc25f5a63c5513878f7"
