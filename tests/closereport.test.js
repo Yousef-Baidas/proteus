@@ -115,7 +115,7 @@ ok("re-scout: one team just past half (4 of 7) is skew", s.length === 1 && s[0] 
 s = signals(runOf(["backend", 4], ["frontend", 1]));
 ok("re-scout: no skew below 6 tickets in the run, even at 4 of 5", !s.length, s.join("\n"));
 s = signals(runOf(["backend", 4], ["frontend", 2]));
-ok("re-scout: skew counts from 6 tickets (4 of 6)", s.length === 1 && /team backend holds 4 of 6 tickets \(67%, over 50%\)$/.test(s[0]), s.join("\n"));
+ok("re-scout: skew counts from 6 tickets (4 of 6)", s.length === 1 && s[0] === "SUGGEST re-scout: team backend holds 4 of 6 tickets (67%, over 50%)", s.join("\n"));
 s = signals(runOf(["backend", 5, 2], ["frontend", 5]));
 ok("re-scout: a team at exactly 40% bounces per ticket (2 over 5) is no hit", !s.length, s.join("\n"));
 s = signals(runOf(["backend", 3, 2], ["frontend", 3]));
