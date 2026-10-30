@@ -487,7 +487,7 @@ function exportEnv(root, vars) {
   const refuse = (why) => ({ file, error: `${file} ${why}; set ${Object.keys(vars).join(", ")} under [shell_environment_policy.set] in $CODEX_HOME/config.toml yourself` });
   let text;
   try { text = fs.readFileSync(file, "utf8"); } catch { return Object.values(vars).some(Boolean) ? refuse("is missing (install.js --project --harness codex makes it)") : { file, changed: false }; }
-  const co = checkoutOf(root, root);
+  const co = checkoutOf(root);
   if (co && gitIn(co.common, ["ls-files", "--", ".codex/config.toml"], 3000, { cwd: path.resolve(root), workTree: co.root, index: co.index })) return refuse("is tracked by git, and a path on this machine does not belong in it");
   if (/"""|'''/.test(text)) return refuse("has a multi-line string");
   const t = tomlTables(text);
