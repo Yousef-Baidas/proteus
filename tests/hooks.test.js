@@ -173,13 +173,16 @@ ok("guard: other words, other commands and the keyword past line 1 pass", !said(
     "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"ACCEPT\"}){clientMutationId}}'", "gh issue comment 22 -bACCEPT", "gh issue comment 22 --body=ACCEPT",
     "gh issue comment 22 --body $'ACCEPT\\nok'", "gh issue comment $(cat n) --body ACCEPT", "gh issue comment `cat n` --body ACCEPT", "gh issue comment 22 --body $(cat <<'EOF'\nACCEPT\nEOF\n)",
     "sh -c 'gh issue comment 1 --body ACCEPT'", "bash -c \"sh -c 'gh issue comment 1 --body ACCEPT'\"", "bash <<'EOF'\ngh issue comment 1 --body ACCEPT\nEOF",
-    "echo 'gh issue comment 1 --body ACCEPT' | sh", "node -e \"require('child_process').execSync('gh issue comment 1 --body ACCEPT')\"", "find . -exec gh issue comment 1 --body ACCEPT ';'"];
+    "echo 'gh issue comment 1 --body ACCEPT' | sh", "find . -exec gh issue comment 1 --body ACCEPT ';'"];
   const missed = posts.filter((c) => !said(c, sub));
   ok("guard: every real post spelling is still refused: stdin, -F body=@, api fields, nested sh -c", !missed.length, missed.join("\n---\n"));
   const blind = ["eval 'gh issue comment 1 --body ACCEPT'", "eval \"$X\"; gh issue comment 1 --body ACCEPTED", "echo 1 | xargs gh issue comment --body-file -",
-    "$(which gh) issue comment 1 --body ACCEPT", "`which gh` issue comment 1 --body ACCEPT", "X=gh; $X issue comment 1 --body ACCEPT", "sh -c \"$S\" # gh issue comment 1 -F f"];
-  const open = blind.filter((c) => !said(c, sub));
-  ok("guard: what it cannot judge stays refused: eval, xargs into gh, a $( ) or $VAR program, sh -c with a variable", !open.length, open.join("\n---\n"));
+    "$(which gh) issue comment 1 --body ACCEPT", "`which gh` issue comment 1 --body ACCEPT", "X=gh; $X issue comment 1 --body ACCEPT", "sh -c \"$S\" # gh issue comment 1 -F f",
+    "node -e \"require('child_process').execSync('gh issue comment 1 --body ACCEPT')\""];
+  // refused for what it is, not as a verdict post (#271)
+  const unjudged = (c) => { const res = run(LG, pre("Bash", { command: c }, sub)); return res.code === 2 && /this guard cannot read what the command posts/.test(res.err) && !said(c, sub); };
+  const open = blind.filter((c) => !unjudged(c));
+  ok("guard: what it cannot judge stays refused with its own reason: eval, xargs into gh, a $( ) or $VAR program, sh -c with a variable, inline code", !open.length, open.join("\n---\n"));
 }
 ok("guard: subagent foreground Bash allowed", code(pre("Bash", { command: "npm test" }, sub)) === 0);
 { // only the lead runs proteus-container.js (#80): it runs outside the sandbox with the host's git and gh
