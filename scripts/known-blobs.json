@@ -619,6 +619,7 @@
       "c1d5867a87b490bd6a5973e353913626cd7a6292"
     ],
     "templates/hooks/proteus-lib.js": [
+      "01fbad5a32b10779c409df0686f4afb2b8145fda",
       "036f5601fa8828a3f2bf4df43fc3fab35d872632",
       "0461db01e1d197f3a4752da269c0a6818cde9db6",
       "0465a135f1b7f89fcced70b7c97daa7ee56d9fda",
@@ -854,6 +855,7 @@
       "b2dbfe792cb64223e64f8129729cd6e0f2d65abb"
     ],
     "templates/hooks/proteus-verdict.js": [
+      "5717c3f868dfea581efb7b8062fe1a26e2e43e73",
       "7ec48fdd43a14ba8110e3b443a7b30e08dbd5d22",
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",
       "d933e1c90cdadc199825184be5f268c77e4b2f75",
