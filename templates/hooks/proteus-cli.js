@@ -207,7 +207,7 @@ function next(arg) {
   // under install.js --sandbox the in-repo proteus-worktree.js runs inside the sandbox and its copy outside it
   // (flow.md step 3): the prep is a RUN line then
   const copy = common ? path.join(C.sandboxBin(common), "proteus-worktree.js") : "";
-  const profile = !!copy && fs.existsSync(copy);
+  const profile = false;
   const base = [`refs/remotes/origin/${names.branch}${run}`, `refs/heads/${names.branch}${run}`]
     .map((r) => lib.gitTry(common, ["rev-parse", "--verify", "-q", `${r}^{commit}`]).out).find((x) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(x)) || "";
   const failed = [];

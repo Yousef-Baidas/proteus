@@ -208,7 +208,11 @@ ok("prep: no SPAWN worker #5 once its branch has a commit", !lines(r).some((l) =
 const PROFILE = path.join(lib.HOME, ".claude", "proteus-sandbox", "bin", require(path.join(path.dirname(SCRIPT), "proteus-confine.js")).sandboxKey(COMMON), "proteus-worktree.js");
 fs.mkdirSync(path.dirname(PROFILE), { recursive: true });
 fs.writeFileSync(PROFILE, "process.exit(0);\n");
-r = next({ ...PREP, issues: [issue(8, { body: "Owned: src/t8.js\nTier: quick" })] });
+const PLOG = path.join(W, "profile-spawns.jsonl");
+r = next({ ...PREP, issues: [issue(8, { body: "Owned: src/t8.js\nTier: quick" })] }, [], { SPAWN_LOG: PLOG, NODE_OPTIONS: [lib.ENV.NODE_OPTIONS, `--require "${path.join(__dirname, "fixtures", "spawn-log.js").replace(/\\/g, "/")}"`].filter(Boolean).join(" ") });
+const pkids = fs.existsSync(PLOG) ? fs.readFileSync(PLOG, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+ok("profile: nothing of the prep runs (no proteus-worktree.js, no git worktree add)", !pkids.some((c) => /proteus-worktree\.js|\bworktree add\b/.test([c.file, ...(c.args || [])].join(" "))), JSON.stringify(pkids));
+ok("profile: the log saw next's children", pkids.length > 0, pkids.length);
 const runLine = lines(r).find((l) => l.startsWith("RUN ")) || "";
 ok("profile: the prep is one RUN line: worktree add, proteus-worktree.js with the tier and owned list, then the copy",
   runLine.includes(`git worktree add -b 'proteus-work/r1/8' '${WT(8)}' `) && runLine.includes(`proteus-worktree.js' '${WT(8)}' --tier quick 'src/t8.js' && node '${PROFILE}' '${REPO}'`), r.out);
