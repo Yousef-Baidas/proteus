@@ -476,6 +476,7 @@ const ALLOW = {
   "proteus-merge.js:writeState": "the merge batch's state in <common>/proteus/merge: a lead CLI run outside the sandbox, never a hook; merge/ and the file never written through a link (#226)",
   "proteus-merge.js:dropState": "unlinks the merge batch's state in <common>/proteus/merge: a lead CLI, never a hook; unlink removes a link, never its target",
   "proteus-run-tree.js:main": ".worktrees/_run in the checkout, run from the lead's own (sandboxed) shell (#226)",
+  "proteus-cli.js:brief": "brief-<n>.md or verify-<pr>.md in <common>/proteus/scratch/<run>: a lead CLI run from the lead's own (sandboxed) shell, never a hook; an old file or link unlinked first, then created with wx",
   "proteus-container.js:prepare": "a fresh mkdtemp dir under <common>/proteus/scratch, its parents lstat'd real dirs: a lead CLI, never a hook (#80)",
   "proteus-container.js:dropBundles": "unlinks the two bundles in that fresh dir; unlink removes a link, never its target",
   "proteus-container.js:buildCmd": "a fresh mkdtemp build context in os.tmpdir(), removed after",

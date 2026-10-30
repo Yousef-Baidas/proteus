@@ -177,8 +177,8 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
-// FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, statuses: {<sha>: [status]}}) answers proteus-cli.js next: the run's
-// issues, the open PRs into the run branch, the open review issues, the open needs-human issues and a commit's statuses.
+// FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, debt, statuses: {<sha>: [status]}}) answers proteus-cli.js next and
+// brief: the run's issues, the open PRs into the run branch, the open review, needs-human and debt issues and a commit's statuses.
 // Set FAKE_GH_MERGE to the same file for its merge: what that merged is no longer an open PR here
 if (process.env.FAKE_GH_NEXT) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));
@@ -187,6 +187,7 @@ if (process.env.FAKE_GH_NEXT) {
   if (/^pr list --base \S+ --state open --json /.test(a)) out((s.prs || []).filter((p) => !p.merged));
   if (a.startsWith("issue list --label proteus-review --state open --json milestone ")) out(s.reviews || []);
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
+  if (a.startsWith("issue list --label proteus-debt --state open --json ")) out(s.debt || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
   // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
   if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {
