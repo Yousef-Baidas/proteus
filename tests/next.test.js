@@ -203,12 +203,29 @@ ok("prep: the worker's spawn record carries its ticket", rec("w5") && rec("w5").
 r = next(PREP);
 ok("prep: no SPAWN worker #5 once its worker is spawned", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
 fs.rmSync(path.join(LEAD, "spawns", "spawn-w5.json"), { force: true });
-// or once something is committed on its branch past the base, spawn record or not
-fs.writeFileSync(path.join(WT(5), "t5.txt"), "work\n");
-g(WT(5), "add", "-A");
-g(WT(5), "-c", "core.hooksPath=/dev/null", "commit", "-qm", "work");
+// the contracts worker's commit alone leaves the ticket the lead's to spawn, until a worker is spawned or a PR opens
+const commit = (file, msg) => {
+  fs.writeFileSync(path.join(WT(5), file), `${msg}\n`);
+  g(WT(5), "add", "-A");
+  g(WT(5), "-c", "core.hooksPath=/dev/null", "commit", "-qm", msg);
+};
+commit("t5.test.txt", "test(api): contract for #5");
 r = next(PREP);
-ok("prep: no SPAWN worker #5 once its branch has a commit", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
+ok("contract: SPAWN worker #5 with only its contract committed and no spawn record", lines(r).includes(`SPAWN worker #5 team=backend difficulty=standard worktree=${WT(5)} brief: node ${SCRIPT} brief worker 5`), r.out);
+spawn("proteus-backend-worker", "w5", "You are worker #5 of run r1.");
+r = next(PREP);
+ok("contract: no SPAWN worker #5 once its worker is spawned", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
+fs.rmSync(path.join(LEAD, "spawns", "spawn-w5.json"), { force: true });
+r = next({ ...PREP, prs: [pr(14, 5, g(WT(5), "rev-parse", "HEAD"), [])] });
+ok("contract: no SPAWN worker #5 once its branch has a PR", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
+commit("t9.test.txt", "test(api): contract for #9");
+r = next(PREP);
+ok("contract: another ticket's contract counts as work, no SPAWN worker #5", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
+g(WT(5), "reset", "-q", "--hard", "HEAD~1");
+// or once anything else is committed on its branch past the base, spawn record or not
+commit("t5.txt", "work");
+r = next(PREP);
+ok("prep: no SPAWN worker #5 once its branch has a work commit past the contract", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
 
 // under install.js --sandbox the prep runs in the sandbox: a RUN line with both steps and the copy, nothing made
 const PROFILE = path.join(lib.HOME, ".claude", "proteus-sandbox", "bin", require(path.join(path.dirname(SCRIPT), "proteus-confine.js")).sandboxKey(COMMON), "proteus-worktree.js");
