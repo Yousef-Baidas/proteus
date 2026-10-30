@@ -27,7 +27,7 @@ Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every sess
 
 ## Session start
 
-`proteus-autostart.js` (or `/proteus`, `$proteus` on Codex) prints a `proteus-state` line from local files: trust a `yes`, act on a `NO`, redo nothing it reports present. Under the plugin the command is `/proteus:proteus`, and every agent name takes the `agent-prefix` from `proteus-state`. Then, in order (`flow.md`):
+`proteus-autostart.js` (or `/proteus`, `$proteus` on Codex) prints a `proteus-state` line from local files: trust a `yes`, act on a `NO`, redo nothing it reports present. Under the plugin the command is `/proteus:proteus`, and every agent name takes the `agent-prefix` from `proteus-state`. No `proteus-state` line in context → never run `proteus-autostart.js` by hand (a hand run has no `CLAUDE_ENV_FILE`, so agents would post as the human); tell the human in one line that this repo is not set up for Proteus or the session started before setup, so run `/proteus:setup` if not done, then start a new session; stop. Then, in order (`flow.md`):
 1. Tracker preflight (`tracker.md`). Fails → stop.
 2. An open review issue on an attended run → you are at step 7½.
 3. An open `proteus/<run>` → resume it at the position the tracker shows.

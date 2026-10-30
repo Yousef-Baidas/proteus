@@ -18,6 +18,9 @@ ok("rule 3: before the spec is approved the lead may add exploratory steps", /Un
 ok("rule 3: exploration output is thrown away, so it is no deliverable", /thrown away/.test(rule3) && /no deliverable/.test(rule3), rule3);
 ok("rule 3: after approval no step is skipped without an exit and a run-log line", /After approval/.test(rule3) && /none skipped/.test(rule3) && /run-log line/.test(rule3) && !/none added/.test(rule3), rule3);
 
+const start = (/^## Session start\n[\s\S]*?(?=\n## )/m.exec(skill) || [""])[0];
+ok("session start: no proteus-state line means no hand-run autostart; send the human to setup and a new session", /No `proteus-state` line[^\n]*never run `proteus-autostart\.js` by hand/.test(start) && /no `CLAUDE_ENV_FILE`[^\n]*post as the human/.test(start) && /`\/proteus:setup`[^\n]*new session; stop/.test(start), start);
+
 const worker = block("Worker");
 ok("worker prompt: ponytail is not unconditional", !/Ponytail full\.\s*$/m.test(worker.split("\n").find((l) => l.startsWith("Long jobs")) || ""), worker);
 ok("worker prompt: ponytail full on Quick or mechanical tickets, lite on standard and hard", /<Quick or mechanical: Ponytail full[^>]*\| standard or hard: Ponytail lite;[^>]*the design is yours[^>]*>/.test(worker) && !/fewest lines/.test(worker), worker);
