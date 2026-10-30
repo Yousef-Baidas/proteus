@@ -281,12 +281,17 @@ function setAttribution(dry = false) {
 
 // auto mode's classifier reads autoMode from user or managed settings only, and treats an agent
 // editing them as self-modification: Proteus suggests an environment entry and never writes it
-const AUTO_MODE_ENTRY = "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails";
+const AUTO_MODE_ENTRY = "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js (any subcommand) is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch";
 const claudeCode = () => isDir(CLAUDE) || has("claude") !== null;
-function autoModeHint() {
+// "ok" when an entry names Proteus and proteus-cli.js, "old" when one names Proteus only, "none" otherwise
+function autoModeState() {
   const s = readJson(path.join(CLAUDE, "settings.json")) || {};
-  const env = s.autoMode && Array.isArray(s.autoMode.environment) ? s.autoMode.environment : [];
-  if (env.some((e) => /proteus/i.test(String(e)))) return "";
+  const env = s.autoMode && Array.isArray(s.autoMode.environment) ? s.autoMode.environment.map(String) : [];
+  const named = env.filter((e) => /proteus/i.test(e));
+  return named.some((e) => e.includes("proteus-cli.js")) ? "ok" : named.length ? "old" : "none";
+}
+function autoModeHint() {
+  if (autoModeState() === "ok") return "";
   const snippet = JSON.stringify({ autoMode: { environment: ["$defaults", AUTO_MODE_ENTRY] } }, null, 2);
   return `in Claude Code run /auto-mode-setup, or /permissions → Auto mode, and add this entry to ${path.join(CLAUDE, "settings.json")}, keeping "$defaults" and any entries you have (docs/install.md, Auto mode):\n${snippet}`;
 }
@@ -1977,8 +1982,9 @@ async function doctor(fix) {
         : ["WARN", `${CTX_PLUGIN} plugin (optional; agents fall back to a scratch file and grep) ${c.installed ? "disabled" : "missing"}`, contextModeSteps(c).map((a) => `claude ${a.join(" ")}`).join(" && ")];
     }, () => installContextMode(), true);
     if (claudeCode()) check(() => {
-      const hint = autoModeHint();
-      return hint ? ["WARN", "auto mode: no autoMode.environment entry in ~/.claude/settings.json names Proteus, so the classifier may block worker spawns", hint]
+      const st = autoModeState();
+      if (st === "old") return ["WARN", "auto mode entry predates proteus-cli.js; `next`'s merges may be blocked", autoModeHint()];
+      return st === "none" ? ["WARN", "auto mode: no autoMode.environment entry in ~/.claude/settings.json names Proteus, so the classifier may block worker spawns", autoModeHint()]
         : ["ok", "auto mode: autoMode.environment describes Proteus"];
     });
     if (plug) check(() => {
