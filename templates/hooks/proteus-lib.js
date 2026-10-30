@@ -2106,7 +2106,7 @@ function bound(common, agent) {
 // An unnamed spawn is recorded under its subagent_type (Claude Code reports that as its agent_type), and each
 // record carries the spawn's time: the watchdog tracks only agents with a lead spawn record (spawnRecord, #179).
 const spawnFile = (common, name) => leadPath(common, "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
-// a verifier spawn's PR and head, from the tokens proteus.js next prints (PR#<n>, head=<sha12>; the first of each),
+// a verifier spawn's PR and head, from the tokens proteus-cli.js next prints (PR#<n>, head=<sha12>; the first of each),
 // for next to know which head a verifier was spawned for (#79); {} unless the type is a verifier's and both are there
 function spawnTarget(type, prompt) {
   if (!isVerifier(type)) return {};

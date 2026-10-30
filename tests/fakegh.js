@@ -142,7 +142,7 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
-// FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, statuses: {<sha>: [status]}}) answers proteus.js next: the run's
+// FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, statuses: {<sha>: [status]}}) answers proteus-cli.js next: the run's
 // issues, the open PRs into the run branch, the open review issues, the open needs-human issues and a commit's statuses
 if (process.env.FAKE_GH_NEXT) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));

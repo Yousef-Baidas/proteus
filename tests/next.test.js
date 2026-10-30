@@ -1,4 +1,4 @@
-// proteus.js next tests: node tests/next.test.js (needs git). A repo with a proteus/r1 branch, the fake gh
+// proteus-cli.js next tests: node tests/next.test.js (needs git). A repo with a proteus/r1 branch, the fake gh
 // (FAKE_GH_NEXT) answering the tracker, and beat files and an inbox cache written into the lead's state dir. Each line
 // kind for its case, their order, WAIT only when idle, the verifier line per head, nothing written, the exit codes and
 // --json. No network.
@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "lib.js"));
 const { ok, g } = lib;
-const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus.js");
+const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-cli.js");
 const W = lib.workdir("next");
 
 const REPO = path.join(W, "repo");

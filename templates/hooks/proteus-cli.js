@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The lead's loop: node <hooks>/proteus.js next [run] [--json]
+// The lead's loop: node <hooks>/proteus-cli.js next [run] [--json]
 // Reads the tracker and the lead's local state and prints what is due, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
 //   STOP <agent> <reason> / NUDGE <agent> <reason>            a STALL-AGAIN / STALL agent (the watchdog's read)
@@ -21,7 +21,7 @@ const { fromTracker, ticketOf } = require(path.join(__dirname, "proteus-ready.js
 const { pick } = require(path.join(__dirname, "proteus-merge.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 
-const USAGE = "usage: node proteus.js next [run] [--json]";
+const USAGE = "usage: node proteus-cli.js next [run] [--json]";
 const HELP = `${USAGE}
 Prints the lead's next actions, one line each: ASK, STOP, NUDGE, MERGE, SPAWN verifier, SPAWN worker,
 BLOCKED, then WAIT when nothing but BLOCKED is due. Executes none of them and writes nothing.

@@ -1,6 +1,6 @@
 ### Added
 
-- `proteus.js next [run] [--json]` prints the lead's due actions, one line each, from the tracker and the lead's
+- `proteus-cli.js next [run] [--json]` prints the lead's due actions, one line each, from the tracker and the lead's
   local state: `ASK` for an open needs-human issue, `STOP` and `NUDGE` for stalled agents, `MERGE` for a PR
   `proteus-merge.js` would pick (with its head, verdict and who posted it), `SPAWN verifier` for a PR with no verdict
   and no verifier spawned for its head, `SPAWN worker` for a ready ticket, `BLOCKED` with the reason, then `WAIT`
