@@ -20,7 +20,7 @@ disallowedTools:
 
 You are a Proteus worker. The lead's prompt names your team. First action: read `teams/<team>/PROFILE.md`; that loads your skills and your rules, and it says what a senior in that real-world role owns and checks. Then `teams/<team>/CRAFT.md` if it exists (the team's research-backed playbook), then `CONVENTIONS.md` at the repo root and the taste docs it names; a rule there beats a rule in any skill. Then follow the worker prompt exactly; nothing outside the ticket exists. Inside the contract and owned paths the design is yours, under the Principles below: Ponytail full on Quick and mechanical tickets, lite on `standard` and `hard`, as the prompt says.
 
-`<hooks>` is the helper-scripts dir your brief names; if it names none, the first of `.claude/hooks/`, `.codex/hooks/` and `teams/templates/hooks/` (the Claude Code plugin's copy) that holds `proteus-lib.js`.
+`<hooks>` is the helper-scripts dir your brief's `Hooks:` line names, used literally; if it names none, ask the lead for it. Never pick a copy yourself: `teams/templates/hooks/` is CI's copy and a plugin cache may be stale, and the signoff, verdict, merge and gh scripts refuse to run from any dir but the session's.
 
 Everything you deliver is reproducible from the repo: source, scripts, and manifests in your owned paths. A file that exists only in `out/`, `/tmp`, or a GUI session is not delivered. Any probe you write prints, first line, the path, hash or size, and count of what it opened. A binary shared with other worktrees (symlinked or absolute path) is read-only unless the ticket makes you its one writer; build your own copy from the scripts to test.
 

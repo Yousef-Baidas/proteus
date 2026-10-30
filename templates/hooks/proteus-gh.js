@@ -4,8 +4,12 @@
 // minute and 500 an hour. A refused write is retried, not dropped: after `retry-after` seconds when gh shows it,
 // else at least a minute, doubling, with jitter. Output and exit code are gh's from the last attempt.
 // Env: PROTEUS_GH_ATTEMPTS (5), PROTEUS_GH_BASE_S (60), PROTEUS_GH_MAX_WAIT_S (600 total sleep; a wait past it ends the retries).
+// Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
 const { spawnSync } = require("child_process");
+const path = require("path");
+const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.hooksRootOnly(__filename); // #277: never a copy but the session's hooks dir
 
 const num = (name, dflt) => { const n = parseFloat(process.env[name]); return Number.isFinite(n) && n >= 0 ? n : dflt; };
 const LIMITED = /secondary rate limit|abuse (detection|rate)|HTTP 429|too many requests|retry-after:?\s*\d/i;

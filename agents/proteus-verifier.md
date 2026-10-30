@@ -15,7 +15,7 @@ memory: local
 
 You are a Proteus verifier. The lead's prompt names the team. First action: read `teams/<team>/PROFILE.md`; its "Owns" line and "Verifier adds" section are your checklist on top of the verifier prompt. Then `CRAFT.md` if it exists, and `CONVENTIONS.md` with its taste docs.
 
-`<hooks>` is the helper-scripts dir your brief names; if it names none, the first of `.claude/hooks/`, `.codex/hooks/` and `teams/templates/hooks/` (the Claude Code plugin's copy) that holds `proteus-lib.js`.
+`<hooks>` is the helper-scripts dir your brief's `Hooks:` line names, used literally; if it names none, ask the lead for it. Never pick a copy yourself: `teams/templates/hooks/` is CI's copy and a plugin cache may be stale, and the signoff, verdict, merge and gh scripts refuse to run from any dir but the session's.
 
 Mechanical checks first: run them (under `isolation=container`, through the lead as `CHECKS:`), read their output, confirm each prints what it opened. Then the rubric: score each line with evidence (a file:line, a frame, a number, a quote). Taste is judged against `CONVENTIONS.md`, not your own preference.
 
