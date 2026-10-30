@@ -20,6 +20,8 @@
 // isolation=container-unready plus a note naming the failed row (on a harness other than Claude Code, always unready).
 // Adds sandbox=on|off|unavailable (lib.sandboxState) and stores it for this session under proteus-lead (#189): the lead
 // guard refuses worker and verifier spawns under bypassPermissions unless it is on.
+// Records the realpath of this hooks dir in proteus-lead/hooks-root and names it as hooks=<dir> (#277): the gate
+// scripts refuse to run from any other copy.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -49,6 +51,8 @@ lib.run(async (ev, ad) => {
   // what these write is the lead's: a lead window for proteus-shell-check.js, so an agent's shell call in flight
   // (a compact mid-run) gets a notice, not a block, and compares against the state after
   const writes = () => {
+    // the one hooks dir this session's agents use (#277): the state line names it, the gate scripts check it
+    safe(() => lib.recordHooksRoot(lib.gitCommonDir(root)));
     if (pluginRoot()) safe(() => lib.releaseCheck(root, notes, pluginRoot(), process.env.CLAUDE_PLUGIN_DATA));
     // a 1.x checkout proteus.json still names syncs nothing under the plugin: its copies would run beside the plugin's
     // a home agents can write (self-hosted in the project, #212 B6) is never fetched, merged, synced or run from,
@@ -472,6 +476,7 @@ function localState(ad, root, runs, home, pending, drift) {
       ...(scratch > 1024 ? [`scratch=${scratch}MB`] : []),
       ...(ad.contextModeOn() ? [] : ["context-mode=missing"]),
       `proteus-src=${home || "none"}`,
+      `hooks=${lib.hooksRoot()}`,
       ...(lib.agentPrefix() ? [`agent-prefix=${lib.agentPrefix()}`] : []),
       ...(pending ? [`proteus-update=${pending} (node ${path.join(home, "install.js")} --update)`] : []),
     ].join(" ")

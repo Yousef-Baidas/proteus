@@ -862,6 +862,26 @@ function anchorCommon() {
   if (!anchors.has(p)) anchors.set(p, trustedCommon(p));
   return anchors.get(p);
 }
+// ---- one hooks dir per session (#277): the autostart records the realpath of the dir its proteus-lib.js runs from in
+// proteus-lead/hooks-root, and the scripts that post or record for the human's gate run only from that dir, so a
+// stale copy (the project's teams/templates/hooks, CI's; an old plugin cache) never signs. No record (no session,
+// CI): no check
+const HOOKS_ROOT = "hooks-root";
+const hooksRoot = () => realNative(__dirname);
+const recordHooksRoot = (common) => leadWrite(common, leadPath(common, HOOKS_ROOT), hooksRoot() + "\n");
+// null when script may run from dir, else the refusal
+function hooksRootDenial(dir, script) {
+  const common = anchorCommon();
+  let rec = "";
+  try { rec = common ? readUntrusted(leadPath(common, HOOKS_ROOT), 4096).trim() : ""; } catch {}
+  const own = realNative(dir);
+  return !rec || samePath(own, rec) ? null : `proteus: this is not the session's Proteus (${own}); use ${path.join(rec, script)}`;
+}
+// called first by each such script: unless it may run from its dir, the refusal on stderr and exit 1
+function hooksRootOnly(file) {
+  const no = hooksRootDenial(path.dirname(file), path.basename(file));
+  if (no) { process.stderr.write(no + "\n"); process.exit(1); }
+}
 // dir's checkout of the repo whose common dir is common: { common, root, gitDir, index, headFile }, the innermost
 // registered worktree holding dir, else the main checkout; null when neither holds it
 function checkoutAt(common, dir) {
@@ -3435,7 +3455,7 @@ function verifyInstalled(bare, sha) {
 }
 
 module.exports = {
-  LEAD, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
+  LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,

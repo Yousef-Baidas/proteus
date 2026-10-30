@@ -18,9 +18,11 @@
 // guard); without the App that is a guard, not a boundary: a worker sharing the agents' token can post a status
 // with its own script (#69).
 // Exit 0 posted, 1 refused or gh failed (the message says which), 2 bad usage.
+// Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.hooksRootOnly(__filename); // #277: never a copy but the session's hooks dir
 
 const WORDS = { MERGE: "success", "BACK-TO-WORKER": "failure", "CONTRACT-WRONG": "failure" };
 const USAGE = "usage: proteus-signoff.js <pr> <reviewed-sha> MERGE|BACK-TO-WORKER|CONTRACT-WRONG [--security]";

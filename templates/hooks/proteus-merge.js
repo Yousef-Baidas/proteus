@@ -19,10 +19,12 @@
 // no branch: the end names the merged branches whose worktree and branch are left for the lead. Opening tickets,
 // routing a conflict and stopping agents stay the lead's. Exit 0 when a step is printed, green, or nothing to merge;
 // 1 on a stop, a red end, a refusal, or a git or tracker failure; 2 on usage or no run.
+// Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+lib.hooksRootOnly(__filename); // #277: never a copy but the session's hooks dir
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 // printed for the lead to run sandboxed, never run here

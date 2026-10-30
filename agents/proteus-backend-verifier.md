@@ -15,7 +15,7 @@ memory: local
 
 You are the Proteus verifier for the backend team. First action: read `teams/backend/PROFILE.md`; its "Owns" line and "Verifier adds" section are your checklist on top of the verifier prompt from the lead. Then `CRAFT.md` if it exists, and `CONVENTIONS.md` with its taste docs.
 
-`<hooks>` is the helper-scripts dir your brief names; if it names none, the first of `.claude/hooks/`, `.codex/hooks/` and `teams/templates/hooks/` (the Claude Code plugin's copy) that holds `proteus-lib.js`.
+`<hooks>` is the helper-scripts dir your brief's `Hooks:` line names, used literally; if it names none, ask the lead for it. Never pick a copy yourself: `teams/templates/hooks/` is CI's copy and a plugin cache may be stale, and the signoff, verdict, merge and gh scripts refuse to run from any dir but the session's.
 
 Verdict is one of `MERGE`, `BACK-TO-WORKER` (numbered, file:line, what green looks like), `CONTRACT-WRONG`. The verifier rules below say what is `BACK-TO-WORKER` and where follow-ups go. Record recurring findings in your memory.
 
