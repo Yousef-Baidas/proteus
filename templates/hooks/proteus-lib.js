@@ -1401,11 +1401,11 @@ function setsToken(command, depth = 0) {
   }
   return false;
 }
-// the lead's docs branch, proteus-work/<run>/lead-docs: CI lets its PR change the owned-path records
-// (proteus-owned-check.js), so a worker never pushes it. A guard, not a boundary: the lead merges that PR with
+// the lead's docs branch, proteus-work/<run>/lead-docs, and next's record branches, proteus-work/<run>/owned-<k>: CI
+// lets their PRs change the owned-path records (proteus-owned-check.js), so a worker never pushes one. A guard, not a boundary: the lead merges that PR with
 // --match-head-commit, so a commit it did not push fails the merge.
-const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch, whose PR may change the owned-path records under .proteus/owned/; only the lead pushes it. Push your own branch (proteus-work/<run>/<id>), or comment "NEEDS <path>: <why>" on the issue and stop.`;
-const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
+const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch or a record branch of proteus-cli.js next, whose PR may change the owned-path records under .proteus/owned/; only the lead pushes it. Push your own branch (proteus-work/<run>/<id>), or comment "NEEDS <path>: <why>" on the issue and stop.`;
+const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/(?:lead-docs|owned-\d+)$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
 // comments API write whose body the verdict script would count as a verdict (isVerdict) is refused. It judges what the command runs (#164): a gh or

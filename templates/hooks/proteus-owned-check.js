@@ -9,6 +9,8 @@
 //                     changes; never the PR's own copy, and never the PR body, which the worker writes
 //                   - the lead's docs PR (head proteus-work/<run>/lead-docs): the lead's docs, teams/, the
 //                     records under .proteus/owned/, and the lead-edits: globs of <base>'s AGENTS.md
+//                   - the wave's record PR (head proteus-work/<run>/owned-<k>, opened by proteus-cli.js next):
+//                     new records under .proteus/owned/ only; a record <base> has is never changed (add-only)
 //                   - a PR into main (Quick, Direct; the human merges those) or a run whose <base> has no
 //                     .proteus/owned/ yet (cut before the records, until its close PR merges): the "Owned:"
 //                     line of the PR body (env PR_BODY), entries separated by commas or spaces
@@ -21,7 +23,7 @@
 //   a merge against that parent, any other commit against its first parent; without one, the range since <base>
 // Matching is proteus-lib's ownedMatch, the same rule the edit hooks apply. The owned-path list file itself is
 // refused in every mode whatever the globs (lib.isOwnedList), and so is any record under .proteus/owned/ outside
-// the lead's docs PR. Exit 1 lists the paths outside the list, or says the list is missing; exit 2 is bad usage.
+// the lead's docs PR and the record PR. Exit 1 lists the paths outside the list, or says the list is missing; exit 2 is bad usage.
 "use strict";
 const path = require("path");
 const { execFileSync } = require("child_process");
@@ -87,8 +89,12 @@ if (mode === "--staged") {
   const w = /^proteus-work\/[^/]+\/([A-Za-z0-9][\w.-]*)$/.exec(head);
   const runPr = Boolean(w) && baseName.startsWith("proteus/");
   const recorded = runPr && (tryGit(["cat-file", "-t", `${base}:${RECORDS}`]) || "").trim() === "tree";
-  let owned, records = false;
-  if (recorded && w[1] === "lead-docs") {
+  let owned, records = false, addOnly = false;
+  if (recorded && /^owned-\d+$/.test(w[1])) {
+    owned = [`${RECORDS}/`];
+    from = `the new records of a record PR (a record on ${base} never changes)`;
+    records = addOnly = true;
+  } else if (recorded && w[1] === "lead-docs") {
     const leadEdits = /^lead-edits:(.*)$/m.exec(tryGit(["show", `${base}:AGENTS.md`]) || "");
     owned = [...LEAD_DOCS, ...(leadEdits ? leadEdits[1].split(/\s+/).filter(Boolean) : [])];
     from = "the lead's docs (lead-docs PR)";
@@ -105,7 +111,8 @@ if (mode === "--staged") {
   }
   // the owned-path list itself fails whatever the list says, as ownedDenial refuses it for --staged; so does a
   // record, which would widen a later check, outside the lead's docs PR
-  bad = changedSince(base).filter((p) => lib.isOwnedList(process.cwd(), p) || (!records && lib.isOwnedRecord(p)) || !owned.some((g) => lib.ownedMatch(g, p)));
+  bad = changedSince(base).filter((p) => lib.isOwnedList(process.cwd(), p) || (!records && lib.isOwnedRecord(p)) || !owned.some((g) => lib.ownedMatch(g, p)) ||
+    (addOnly && tryGit(["cat-file", "-e", `${base}:${p}`]) !== null));
 } else {
   console.error("usage: node proteus-owned-check.js --staged | --ci <base-ref>");
   process.exit(2);

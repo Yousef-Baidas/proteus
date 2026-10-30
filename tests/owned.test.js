@@ -187,6 +187,27 @@ put(WL, "src/e.txt", "e\n");
 commitAll(WL, "feat: sneak");
 r = rci(WL, "proteus/r1", "proteus-work/r1/lead-docs", "Owned: **");
 ok("lead-docs: code on the lead's docs branch fails whatever the body says", r.status === 1 && /not in the lead's docs[\s\S]*src\/e\.txt/.test(r.stderr), r.stderr);
+// the wave's record PR from proteus-cli.js next: new records only, and none the base has changes (add-only)
+const WR = branchWt("owned-1", "proteus-work/r1/owned-1", "proteus/r1");
+put(WR, ".proteus/owned/10", "src/x.txt\n"); put(WR, ".proteus/owned/11", "lib/\n");
+commitAll(WR, "chore(proteus): record owned paths for #10, #11");
+r = rci(WR, "proteus/r1", "proteus-work/r1/owned-1", "Tier: full");
+ok("record PR: new records pass with no Owned: line", r.status === 0, r.stderr);
+const WR2 = branchWt("owned-2", "proteus-work/r1/owned-2", "proteus/r1");
+put(WR2, ".proteus/owned/12", "src/y.txt\n"); put(WR2, ".proteus/owned/7", "**\n");
+commitAll(WR2, "chore(proteus): record owned paths for #12");
+r = rci(WR2, "proteus/r1", "proteus-work/r1/owned-2", "Owned: **");
+ok("record PR: rewriting a record the base has fails and names it, the new one does not", r.status === 1 && /\.proteus\/owned\/7/.test(r.stderr) && !/owned\/12/.test(r.stderr), r.stderr);
+const WR3 = branchWt("owned-3", "proteus-work/r1/owned-3", "proteus/r1");
+put(WR3, ".proteus/owned/13", "src/\n"); put(WR3, "CONTEXT.md", "c\n");
+commitAll(WR3, "chore(proteus): record owned paths for #13");
+r = rci(WR3, "proteus/r1", "proteus-work/r1/owned-3", "Owned: **");
+ok("record PR: anything but a record fails, even a lead doc", r.status === 1 && /CONTEXT\.md/.test(r.stderr) && !/owned\/13/.test(r.stderr), r.stderr);
+const WR4 = branchWt("owned-x", "proteus-work/r1/owned-x", "proteus/r1");
+put(WR4, ".proteus/owned/14", "src/\n");
+commitAll(WR4, "chore(proteus): record owned paths for #14");
+r = rci(WR4, "proteus/r1", "proteus-work/r1/owned-x", "Owned: **");
+ok("record PR: only owned-<number> is a record branch; owned-x is a ticket with no record", r.status === 1 && /has no \.proteus\/owned\/owned-x/.test(r.stderr), r.stderr);
 // fallback: a run cut before the records reads the PR body, with a warning, until it closes
 const WO = branchWt("legacy", "proteus-work/old/3", "proteus/old");
 put(WO, "src/f.txt", "f\n");
