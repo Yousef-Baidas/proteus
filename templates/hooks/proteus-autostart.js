@@ -445,7 +445,9 @@ function localState(ad, root, runs, home, pending, drift) {
   const agents = read("AGENTS.md") + "\n" + read("CLAUDE.md"); // older installs keep ## Learned in CLAUDE.md
   const profiles = (() => { try { return fs.readdirSync(path.join(base, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory() && fs.existsSync(path.join(base, "teams", e.name, "skills.txt"))).map((e) => e.name); } catch { return []; } })();
   const shipped = profiles.filter((p) => /shipped default/.test(read(`teams/${p}/skills.txt`).split("\n")[0]));
-  const unlinked = profiles.filter((p) => ls(ad.teamSkills(path.join("teams", p))).length === 0);
+  // a team whose lists name no skill (the scout may pick zero) has nothing to link
+  const lists = (p) => ["skills.txt", "required.txt"].some((f) => read(`teams/${p}/${f}`).split("\n").some((l) => l.trim() && !l.trim().startsWith("#")));
+  const unlinked = profiles.filter((p) => lists(p) && ls(ad.teamSkills(path.join("teams", p))).length === 0);
   // root agent docs over budget, and any CLAUDE_*.md / CLAUDE-*.md split at all
   const bloat = guest ? [] : ls(".").filter((f) => /^(CLAUDE|AGENTS).*\.md$/.test(f)).map((f) => {
     const text = read(f);

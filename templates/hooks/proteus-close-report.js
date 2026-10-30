@@ -5,7 +5,8 @@
 //   escalations   RED reports and CONTRACT-WRONG verdicts on the ticket or its PRs: each moved it up a rung
 //   wall-clock    issue created → closed (open tickets: so far, marked open)
 // Bounce and escalation rate: share of tickets with at least one. The team rows (profile:<team>, difficulty:<d>)
-// are what tunes ROUTING.md and the difficulty call.
+// are what tunes ROUTING.md and the difficulty call. A `SUGGEST re-scout: <reason>` line follows per signal that the
+// teams themselves need a redesign: routing misses, one team over half of 6+ tickets, a team of 3+ tickets bouncing over 40%.
 // --save <file> also writes what it read from the tracker, as {run, issues, prs, logs} with each PR's checks and the
 // run log's comments, for proteus-retro.js, which reads files only.
 // Cost comes from ccusage at the version enforcement.md §5 pins (Codex: @ccusage/codex), summed over the
@@ -26,7 +27,8 @@ const USAGE = "usage: node proteus-close-report.js [run] [--no-cost | --cost-jso
 let arg = "";
 const HELP = `${USAGE}
 Markdown for the run-log issue and the close PR body: one row per ticket, one per team, and a summary
-(bounces, escalations, wall-clock, cost). The team rows are what tunes ROUTING.md and the difficulty call.
+(bounces, escalations, wall-clock, cost). The team rows are what tunes ROUTING.md and the difficulty call;
+a SUGGEST re-scout line names a sign the teams need a redesign.
   [run]               the run; default the open proteus/<run> branch
   --no-cost           skip the ccusage cost columns
   --cost-json <file>  read a saved \`ccusage session --json\` instead of running ccusage
@@ -112,6 +114,17 @@ const closed = rows.filter((r) => !r.open).length;
 const count = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const c = costLine(closed);
 out.push("", `Run: ${rows.length} tickets, ${closed} closed · bounce rate ${all.bounce} (${count(rows.reduce((s, r) => s + r.bounces, 0), "bounce")}) · escalation rate ${all.escalation} (${count(rows.reduce((s, r) => s + r.escalations, 0), "escalation")}) · median wall-clock ${all.wall} · ${c}`);
+
+// re-scout signals (#82). A routing miss is a ticket with no profile: label: the tracker shows each ticket's labels,
+// not when a ROUTING.md row was added
+const unrouted = rows.filter((r) => r.team === "?");
+if (unrouted.length) out.push(`SUGGEST re-scout: ${count(unrouted.length, "ticket")} of ${rows.length} with no profile: label (routing misses ${unrouted.map((r) => `#${r.n}`).join(", ")})`);
+for (const team of [...new Set(rows.map((r) => r.team))].filter((t) => t !== "?").sort()) {
+  const rs = rows.filter((r) => r.team === team);
+  const b = rs.reduce((s, r) => s + r.bounces, 0);
+  if (rows.length >= 6 && rs.length * 2 > rows.length) out.push(`SUGGEST re-scout: team ${team} holds ${rs.length} of ${rows.length} tickets (${pct(rs.length, rows.length)}, over 50%)`);
+  if (rs.length >= 3 && b * 10 > rs.length * 4) out.push(`SUGGEST re-scout: team ${team} bounced ${count(b, "time")} over ${rs.length} tickets (${pct(b, rs.length)} BACK-TO-WORKER per ticket, over 40%)`);
+}
 console.log(out.join("\n"));
 
 // --save: what the tracker gave, for proteus-retro.js, at the path the retro helper names (its scratch dir)

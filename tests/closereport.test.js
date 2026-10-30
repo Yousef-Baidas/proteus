@@ -69,6 +69,7 @@ ok("team rows: per team and difficulty, rates over tickets, median wall-clock ov
   line(/^\| frontend \| standard /) === "| frontend | standard | 2 | 0% | 0% | 1h |", r.out);
 ok("summary: rates, totals, median wall-clock, cost over the journal's sessions in the window, average per closed ticket",
   line(/^Run: /) === "Run: 4 tickets, 3 closed · bounce rate 50% (2 bounces) · escalation rate 25% (1 escalation) · median wall-clock 2h · cost $4.00 over 2 sessions, $1.33 per closed ticket (average; ccusage does not split by ticket)", line(/^Run: /));
+ok("re-scout: no routing miss, 4 tickets, no team of 3+ tickets: no SUGGEST line", !/SUGGEST/.test(r.out), r.out);
 
 fs.writeFileSync(COST, JSON.stringify({ sessions: [{ sessionId: "s2", totalCost: 0.5 }] }));
 r = report(["r9", "--cost-json", COST]);
@@ -96,6 +97,33 @@ fs.renameSync(JOURNAL, JOURNAL + ".off");
 r = report(["--cost-json", COST]);
 ok("cost: no journal entry in the window is n/a, not the whole report", r.code === 0 && /cost n\/a \(no journal entry inside the run's window\)/.test(r.out), line(/^Run: /));
 fs.renameSync(JOURNAL + ".off", JOURNAL);
+
+// re-scout signals (#82): a run of tickets given as [team or null, bounces]; each ticket has one PR
+const signals = (spec) => {
+  const f = path.join(W, "signals.json");
+  fs.writeFileSync(f, JSON.stringify({ logs: [], issues: spec.map(([team], k) => ({ number: 100 + k, title: `t${k}`, state: "CLOSED", createdAt: iso(0), closedAt: iso(1), milestone: ms, labels: lab("proteus", ...(team ? [`profile:${team}`] : [])), comments: [] })),
+    prs: spec.map(([, b], k) => ({ number: 200 + k, headRefName: `proteus-work/r9/${100 + k}`, body: "", reviews: Array.from({ length: b }, () => ({ body: "BACK-TO-WORKER 1. x" })), comments: [] })) }));
+  return report(["--no-cost"], { FAKE_GH_RUN: f }).out.split("\n").filter((l) => l.startsWith("SUGGEST re-scout: "));
+};
+const runOf = (...groups) => groups.flatMap(([team, n, b = 0]) => Array.from({ length: n }, (_, k) => [team, k < b ? 1 : 0]));
+let s = signals(runOf(["backend", 2], ["frontend", 2], [null, 1]));
+ok("re-scout: a ticket with no profile: label is a routing miss, named with the count", s.length === 1 && s[0] === "SUGGEST re-scout: 1 ticket of 5 with no profile: label (routing misses #104)", s.join("\n"));
+s = signals(runOf(["backend", 3], ["frontend", 3]));
+ok("re-scout: one team at exactly half of 6 tickets is no skew", !s.length, s.join("\n"));
+s = signals(runOf(["backend", 4], ["frontend", 3]));
+ok("re-scout: one team just past half (4 of 7) is skew", s.length === 1 && s[0] === "SUGGEST re-scout: team backend holds 4 of 7 tickets (57%, over 50%)", s.join("\n"));
+s = signals(runOf(["backend", 4], ["frontend", 1]));
+ok("re-scout: no skew below 6 tickets in the run, even at 4 of 5", !s.length, s.join("\n"));
+s = signals(runOf(["backend", 4], ["frontend", 2]));
+ok("re-scout: skew counts from 6 tickets (4 of 6)", s.length === 1 && /team backend holds 4 of 6 tickets \(67%, over 50%\)$/.test(s[0]), s.join("\n"));
+s = signals(runOf(["backend", 5, 2], ["frontend", 5]));
+ok("re-scout: a team at exactly 40% bounces per ticket (2 over 5) is no hit", !s.length, s.join("\n"));
+s = signals(runOf(["backend", 3, 2], ["frontend", 3]));
+ok("re-scout: a team just past 40% (2 bounces over 3 tickets) is a hit, with its numbers", s.length === 1 && s[0] === "SUGGEST re-scout: team backend bounced 2 times over 3 tickets (67% BACK-TO-WORKER per ticket, over 40%)", s.join("\n"));
+s = signals(runOf(["backend", 2, 2], ["frontend", 3]));
+ok("re-scout: a team under 3 tickets is no bounce hit, even at 100%", !s.length, s.join("\n"));
+s = signals(runOf(["backend", 5], [null, 2], ["qa", 3, 3]));
+ok("re-scout: every hit prints its own line", s.length === 2 && /2 tickets of 10 .*#105, #106\)$/.test(s[0]) && /team qa bounced 3 times over 3 tickets \(100%/.test(s[1]), s.join("\n"));
 
 r = report(["--no-cost"], { FAKE_GH: "fail" });
 ok("tracker unreachable: exit 1, says so", r.code === 1 && /tracker unreachable/.test(r.err), r.err);
