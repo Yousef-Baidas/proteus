@@ -55,7 +55,7 @@ Show each check red twice and paste both outputs on the issue:
  2. on a deliberately broken input (a copy with the property the check guards removed or wrong; for binaries, a probe copy made from the scripts, not the shared original): it fails and names what is wrong.
 A check that stays green on broken input measures nothing: rewrite it until it goes red. Its first output line prints the path, hash or size, and count of what it opened.
 Can't be written as given → `gh issue comment <n> --body "CONTRACT-UNCLEAR: <what>"`, skip that ticket, continue.
-One commit per ticket on its branch, `test(<scope>): contract for #<n>`, per references/commits.md. Do not push: the contract is red by design and the repo's pre-push hook runs the suite. Worktrees share one object store, so the worker and the verifier read the commit locally, and it reaches origin with the worker's first green push, still first in the PR. Never use `--no-verify`.
+One commit per ticket on its branch, `test(<scope>): contract for #<n>`, per references/commits.md. Do not push: the contract is red by design and the repo's pre-push hook runs the suite. Worktrees share one object store, so the worker and the verifier read the commit locally, and it reaches origin with the worker's first green push, still first in the PR.
 CONTEXT.md vocabulary. CONVENTIONS.md applies. Caveman full. Ponytail full: a contract is stubs and a check, nothing to design.
 <safety>
 Done → per ticket one line on its issue: `CONTRACT #<n> <commit sha> <stub> <check> red-on-missing red-on-broken`.

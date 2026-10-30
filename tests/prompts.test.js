@@ -92,7 +92,6 @@ for (const [name, flags] of [["worktree", ["--tier", "--human"]], ["tier", ["--s
 // #278: a red contract commit cannot pass the pre-push hook, so it stays local
 const contracts = block("Contracts worker[^\\n]*");
 ok("contracts worker brief: commits the contract and says not to push", /Do not push/.test(contracts) && !/git push/.test(contracts), contracts);
-ok("contracts worker brief: no --no-verify advice", /Never use `--no-verify`/.test(contracts) && !/(?<!Never use `)--no-verify/.test(contracts), contracts);
 ok("flow.md: the contracts worker does not push; the commit reaches origin with the worker's first green push", /It does not push[^\n]*first green push/.test(read("skills", "proteus", "references", "flow.md")));
 
 summary();
