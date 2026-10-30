@@ -100,6 +100,7 @@ const want5 = [
 for (const l of want5) ok(`worker: the brief has "${l.slice(0, 40)}"`, b.split("\n").includes(l), b);
 ok("worker: standard difficulty gets the Ponytail lite line, not the Quick one", /^Ponytail lite; inside the contract/m.test(b) && !/Ponytail full/.test(b), b);
 ok("worker: no Codex line off Codex, no research line without the label", !/\.agents\/skills|Codex/.test(b) && !/\/research/.test(b), b);
+ok("worker: no slice line without a slice: label", !/^Also (read|check) /m.test(b), b);
 ok("worker: no slot is left and no Quick alternative", !/<[^<>\n]+>/.test(b) && !/\(Quick:/.test(b), b);
 ok("worker: the brief starts with the Hooks line and ends with the report line", b.startsWith("Hooks: ") && b.trimEnd().endsWith("one-line note."), b);
 
@@ -151,6 +152,16 @@ for (const l of [`Hooks: ${real}.`, "Team backend, debt issue #40, dupes tool fa
   ok(`verifier: the brief has "${l.slice(0, 40)}"`, b.split("\n").includes(l), b);
 ok("verifier: the report's own placeholders are kept", b.includes("1. <file:line> wrong") && b.includes("<one paragraph>"), b);
 ok("verifier: no isolation line without isolation: container", !/CHECKS:/.test(b), b);
+ok("verifier: no slice line without a slice: label", !/^Also (read|check) /m.test(b), b);
+
+// a slice ticket (teams.md): both briefs name every slice team's PROFILE.md
+const SLICED = { ...STATEJSON, issues: [{ ...ISSUES[0], labels: labels("difficulty:standard", "slice:frontend,devops") }, ...ISSUES.slice(1)] };
+r = run(["brief", "worker", "5"], {}, SLICED);
+b = read(briefFile("brief-5.md"));
+ok("slice: the worker brief names each slice team's profile", r.code === 0 && b.split("\n").includes("Also read teams/frontend/PROFILE.md, teams/devops/PROFILE.md."), r.out + r.err + b);
+r = run(["brief", "verifier", "12"], {}, SLICED);
+b = read(briefFile("verify-12.md"));
+ok("slice: the verifier brief names each slice team's profile and checklist", r.code === 0 && b.split("\n").includes("Also check teams/frontend/PROFILE.md, teams/devops/PROFILE.md."), r.out + r.err + b);
 fs.writeFileSync(path.join(REPO, "AGENTS.md"), `${LEARNED}isolation: container\n`);
 r = run(["brief", "verifier", "12"]);
 b = read(briefFile("verify-12.md"));

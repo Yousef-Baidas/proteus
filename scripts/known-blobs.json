@@ -79,7 +79,8 @@
       "dfa387d013959ccaf38a9ea4204af6d4d566ebd8",
       "e29cbdb03965ce3c8e9c0b1ad6c86cceadc5933b",
       "e7b06b76b30950f8ffcfe003f2d93331a6d670ec",
-      "e8c9c8003208360ad8c4d4656b8355d91b63a980"
+      "e8c9c8003208360ad8c4d4656b8355d91b63a980",
+      "fc50847c93937ab93fc56c335b1ca8568bd5a6c9"
     ],
     "agents/proteus-backend-worker.md": [
       "06677e9d339590f220f6ed1d31b1ef4378d8edab",
@@ -122,6 +123,7 @@
       "8de4484700c8dd7aaa1aba9ae5a1750238c3fee2",
       "ad5ae7682864958f2bcee67f19f22515e38a45bf",
       "bce00894e6501b6e8ec8a42f26fb8f72abe239d1",
+      "cc95a830d7d78c7a3450c1ee115ffed2b87b27d2",
       "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2",
       "d6e4aa16ae4577f1f053ae2f1c9e8c82bd9f88c9",
       "e83eab959f58de1de73ff7f9004199f68f5027e7"
@@ -196,6 +198,7 @@
       "60265c32d0419903cef11f46416ec0690058e6e6",
       "63e9bb666d39bffa2ae8760e00dc55e3c35e3e30",
       "6c5c813fbb659629df1d313b33dee14f7972f243",
+      "8234e5dd317b833e9f9651aa9840dbae59461f97",
       "8e9addb182414c3e4ec675d8b465d8ba3ad92bce",
       "998eec07b55be6b8e65f510a1472738a584824ae",
       "b28d8cecf81a5e282749c4056984369ff1f6bce4",
@@ -206,6 +209,7 @@
     ],
     "agents/proteus-verifier.md": [
       "261b9eb5c4a85e6e91612d2829fe0605ad93c4df",
+      "298945cbd89efabcbb4059a96f7c44d2e42eb0ef",
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
       "3cceddc42e540b2b3bf6c63ae15f1ec4949b2037",
       "3dc1038aa88d531fac67399b2ef24b20ba011748",
@@ -418,10 +422,12 @@
       "0ef620617b0aa9bc7b9781d39fe1b8f65711ae27",
       "538f0791bbe3c04dea95fa4bc538400ca2765bbf",
       "6b473d20cb276843738adae5c6c8176dbde3ab48",
+      "953ca5d1245f06729d2313115149b32d518edb92",
       "acf07914f10bac774ebe71d8ed9d5fad252779ed",
       "bf2aa3e18bcce485a2ab2eced2ec867dd2933030",
       "c8c284993521f89b0e4fbb014f370908f1e63839",
       "cf7ad8d3926babb1d1a7ff2019c377537189cb1d",
+      "d2426c0fa257712259b9c2a3d68b3095d794ac93",
       "d2d687b75b7e916ec4be4197c8dc9de39c3f56cd",
       "e8735ab9b3deb8ee55a6e8bff63dc81eeb740a55"
     ],
