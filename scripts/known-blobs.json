@@ -413,7 +413,8 @@
       "fded8f31fe51f9d80ab76f4043d6c7c0d7beb90a"
     ],
     "templates/hooks/proteus-cli.js": [
-      "c8c284993521f89b0e4fbb014f370908f1e63839"
+      "c8c284993521f89b0e4fbb014f370908f1e63839",
+      "d2d687b75b7e916ec4be4197c8dc9de39c3f56cd"
     ],
     "templates/hooks/proteus-close-report.js": [
       "6a04590bcc97b3b611589fd7dad7e0c5686ed17f",
