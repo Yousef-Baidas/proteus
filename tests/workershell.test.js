@@ -141,6 +141,23 @@ bad = each(passes(), [
   "node -e \"console.log(require('./package.json').name)\"", "node scripts/build.js", "python3 tools/gen.py", "node -e \"process.stdout.write('\\n')\"",
 ]);
 ok("inline: code on worktree paths, regex literals, URLs and scripts on disk pass", !bad.length, bad.join("\n"));
+// #270: an interpreter given a script file reads no code on stdin, so the line's other words are not its code
+const PLUG = path.join(W, "plugin"), SKILL = path.join(PLUG, "teams", "devops", ".claude", "skills", "install-anti-slop");
+fs.mkdirSync(path.join(SKILL, "scripts"), { recursive: true });
+fs.writeFileSync(path.join(SKILL, "scripts", "install.mjs"), "\n");
+const plug = { env: { CLAUDE_PLUGIN_ROOT: PLUG } }, inPlug = slash(path.join(PLUG, "hooks", "x"));
+bad = each(passes(plug), [
+  `S=${q(SKILL)} && node $S/scripts/install.mjs && ls tools/oxlint/anti-slop && npm view oxlint version`,
+  "python3 tools/gen.py; cat .claude/settings.json", "python3 -m json.tool src/a.js && ls .claude/hooks",
+  "node -r ./src/a.js scripts/build.js && ls .claude/hooks", "perl -I lib tools/gen.pl > src/b.js; ls .claude/hooks",
+]);
+ok("inline: #270 an interpreter on a script file is not judged by the line's other words", !bad.length, bad.join("\n"));
+bad = each(refused(GUARDED, plug), [
+  `node -e "require('fs').writeFileSync('${inPlug}','')"`, `echo "require('fs').writeFileSync('${inPlug}','')" | node`,
+  `node - <<EOF\nrequire('fs').writeFileSync('${inPlug}','')\nEOF`, `node /dev/stdin <<EOF\nrequire('fs').writeFileSync('${inPlug}','')\nEOF`,
+  `python3 -- - <<EOF\nopen('${inPlug}','w')\nEOF`,
+]);
+ok("inline: #270 -e, piped, - and /dev/stdin code naming the plugin root is still refused", !bad.length, bad.join("\n"));
 
 // #151 review (F1-F11): the probes that got through, and what must still pass
 const PLAIN = path.join(W, "plain");
