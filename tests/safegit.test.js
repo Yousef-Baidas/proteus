@@ -226,7 +226,21 @@ function verdict(route, name, target, ran) {
   verdict("proteus-merge.js and proteus-run-tree.js in the lead's checkout", "merge-lead", R, [["merge", res], ["run-tree", tree], ["result", red]]);
 }
 
-// 10. #231 D4: gh resolves the repo with its own unpinned `git remote -v`, which follows a planted <common>/commondir
+// 10. #231 D10: the lead re-runs proteus-worktree.js on a registered worktree whose .git file the worker aimed at a
+// dir it chose; the info/exclude lines go to the project's common dir, and the chosen dir gets nothing
+{
+  const r = repo();
+  const X = path.join(W, "agent-gitdir");
+  fs.mkdirSync(X);
+  put(path.join(r.WT1, ".git"), `gitdir: ${X}\n`);
+  const res = lib.run(path.join(SRC, "proteus-worktree.js"), "", { cwd: r.R, env: { CLAUDE_PROJECT_DIR: r.R }, args: [r.WT1, "src/**"] });
+  let ex = "";
+  try { ex = fs.readFileSync(path.join(r.common, "info", "exclude"), "utf8"); } catch {}
+  ok("proteus-worktree.js re-run on a worktree whose .git file names another dir writes no info/exclude there (#231)",
+    res.code === 0 && !fs.existsSync(path.join(X, "info")) && ex.includes("# proteus: machine-local worker files"), res.out + res.err + fs.readdirSync(X).join(","));
+}
+
+// 11. #231 D4: gh resolves the repo with its own unpinned `git remote -v`, which follows a planted <common>/commondir
 // to another repo's origin. The hooks' gh calls (lib.gh, lib.ghTry, proteus-intake.js) get GH_REPO from the pinned
 // <common>/config instead; a fake gh records the GH_REPO each call saw
 {
