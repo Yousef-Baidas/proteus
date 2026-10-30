@@ -109,4 +109,17 @@ ok("flow.md: the contracts worker does not push; the commit reaches origin with 
   ok("review: the gate opens over a red recheck with the open items first", /After one fix cycle with a listed QA item still red[^\n]*opens anyway[^\n]*first/.test(review), review);
 }
 
+// The loop (#79): every line kind `next`, `result` or `brief` can print has a row in SKILL.md's loop table,
+// so the lead never meets a line the skill does not say how to handle.
+{
+  const cli = read("templates", "hooks", "proteus-cli.js");
+  const kinds = new Set([...cli.matchAll(/kind: "([A-Z]+)"|case "([A-Z]+)"|out: \[`([A-Z]+) /g)].map((m) => m[1] || m[2] || m[3]));
+  const loop = (/^## The loop\n[\s\S]*?(?=\n## )/m.exec(skill) || [""])[0];
+  const rows = new Set([...loop.matchAll(/^\| `([A-Z]+)` \|/gm)].map((m) => m[1]));
+  const known = ["ASK", "STOP", "NUDGE", "MERGE", "MERGED", "RUN", "DECIDE", "SPAWN", "PROMPT", "BLOCKED", "WAIT"];
+  ok("loop: every known line kind is found in proteus-cli.js", known.every((k) => kinds.has(k)), [...kinds].join(" "));
+  const missing = [...kinds].filter((k) => !rows.has(k));
+  ok("loop: every line kind proteus-cli.js prints has a row in SKILL.md's loop table", missing.length === 0, missing.join(" "));
+}
+
 summary();
