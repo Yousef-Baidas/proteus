@@ -72,8 +72,10 @@ function render(n) {
   return out.join("\n") + "\n";
 }
 
-const gh = (args) => spawnSync("gh", args, { encoding: "utf8", maxBuffer: 64 << 20 });
-const ghWrite = (args, input) => spawnSync(process.execPath, [path.join(__dirname, "proteus-gh.js"), ...args], { input, encoding: "utf8", maxBuffer: 64 << 20 });
+// reads through lib.ghTry and writes with its GH_REPO, so gh names the repo from the pinned config, never its own git (#231)
+const lib = () => require(path.join(__dirname, "proteus-lib.js"));
+const gh = (args) => { const r = lib().ghTry(args, process.cwd(), 60000); return { status: r.ok ? 0 : 1, stdout: r.out, stderr: r.err }; };
+const ghWrite = (args, input) => spawnSync(process.execPath, [path.join(__dirname, "proteus-gh.js"), ...args], { input, encoding: "utf8", maxBuffer: 64 << 20, env: lib().ghEnv(process.cwd()) });
 const fail = (msg) => { console.error(`proteus-intake: ${msg}`); return 1; };
 
 function open(date) {
@@ -128,7 +130,7 @@ function main(args) {
 }
 
 if (require.main === module) {
-  require(path.join(__dirname, "proteus-lib.js")).homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
+  lib().homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
   process.exitCode = main(process.argv.slice(2));
 }
 module.exports = { check, render, one, findingId };

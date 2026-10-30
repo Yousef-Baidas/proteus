@@ -226,4 +226,40 @@ function verdict(route, name, target, ran) {
   verdict("proteus-merge.js and proteus-run-tree.js in the lead's checkout", "merge-lead", R, [["merge", res], ["run-tree", tree], ["result", red]]);
 }
 
+// 10. #231 D4: gh resolves the repo with its own unpinned `git remote -v`, which follows a planted <common>/commondir
+// to another repo's origin. The hooks' gh calls (lib.gh, lib.ghTry, proteus-intake.js) get GH_REPO from the pinned
+// <common>/config instead; a fake gh records the GH_REPO each call saw
+{
+  const r = repo();
+  g(r.R, "remote", "add", "origin", "git@github.com:own/proj.git");
+  const E = evilRepo("gh-commondir");
+  g(E, "remote", "add", "origin", "https://github.com/evil/x.git");
+  fs.writeFileSync(path.join(r.common, "commondir"), path.join(E, ".git") + "\n");
+  const BIN = path.join(W, "gh-env-bin"), SEEN = path.join(W, "gh-env.jsonl");
+  fs.mkdirSync(BIN);
+  lib.fakeCli(BIN, "gh", `const a = process.argv.slice(2);
+require("fs").appendFileSync(${JSON.stringify(SEEN)}, JSON.stringify({ a: a.slice(0, 2).join(" "), repo: process.env.GH_REPO || "" }) + "\\n");
+process.stdout.write(a[1] === "create" ? "https://github.com/own/proj/issues/7\\n" : "[]\\n");\n`);
+  const env = { CLAUDE_PROJECT_DIR: r.R, PATH: [BIN, path.dirname(process.execPath), ...lib.SYS_PATH].join(path.delimiter), GH_REPO: "" };
+  const seen = () => { try { return fs.readFileSync(SEEN, "utf8").trim().split("\n").map((l) => JSON.parse(l)); } catch { return []; } };
+  const LIBJS = JSON.stringify(path.join(SRC, "proteus-lib.js"));
+  const res = lib.run("-", `const l = require(${LIBJS}); l.gh(["issue", "list"], ${JSON.stringify(r.R)}); l.ghTry(["pr", "list"], ${JSON.stringify(r.WT1)});`, { cwd: r.R, env });
+  const calls = seen();
+  ok("lib.gh and lib.ghTry give gh GH_REPO from the pinned config, not the planted commondir's origin (#231)",
+    calls.length === 2 && calls.every((c) => c.repo === "own/proj"), res.err + JSON.stringify(calls));
+  fs.rmSync(SEEN, { force: true });
+  const intake = lib.run(path.join(SRC, "proteus-intake.js"), "", { cwd: r.R, env, args: ["--open", "2026-10-30"] });
+  ok("proteus-intake.js reads and writes through gh with the pinned GH_REPO (#231)",
+    intake.code === 0 && intake.out.trim() === "7" && seen().map((c) => `${c.a}=${c.repo}`).join(",") === "issue list=own/proj,issue create=own/proj", intake.out + intake.err + JSON.stringify(seen()));
+  ok("gh calls: no hook ran the planted command", !fired("gh-commondir"));
+  const repoFor = (url, dir = r.R) => {
+    g(r.R, "config", "--file", path.join(r.common, "config"), "remote.origin.url", url);
+    return lib.run("-", `process.stdout.write(require(${LIBJS}).ghRepo(${JSON.stringify(dir)}))`, { cwd: r.R, env }).out;
+  };
+  ok("ghRepo: https and ssh github.com, an enterprise host, an ssh alias, a local path and a dir outside the project",
+    repoFor("https://github.com/own/proj") === "own/proj" && repoFor("ssh://git@github.com:22/own/proj.git") === "own/proj" &&
+    repoFor("https://git.corp.example/team/app.git") === "git.corp.example/team/app" && repoFor("work:own/proj.git") === "own/proj" &&
+    repoFor(path.join(W, "remote.git")) === "" && repoFor("https://github.com/own/proj", W) === "");
+}
+
 lib.summary();

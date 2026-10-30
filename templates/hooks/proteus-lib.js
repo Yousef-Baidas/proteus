@@ -1203,18 +1203,32 @@ function changelog(home, commit, from, to, max = 8) {
 
 // configDir: a GH_CONFIG_DIR to run under (agentGhDir() runs it as the agents), else this process's login;
 // token: a GH_TOKEN for this one call (the verifier App's), in the env only, never on the command line
-const ghEnv = () => ({ ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" });
+// GH_REPO: the project's origin from <common>/config (#231 D4), so gh never resolves the repo with its own unpinned
+// `git remote -v`, which follows a planted commondir. Kept unset outside the project or for a remote gh cannot name
+const ghRepos = new Map();
+function ghRepo(cwd) {
+  const c = anchorCommon();
+  if (!c || (cwd && !checkoutAt(c, cwd))) return "";
+  if (!ghRepos.has(c)) {
+    const url = gitIn(c, ["config", "--file", path.join(c, "config"), "--get", "remote.origin.url"]);
+    const m = /^(?:[a-z][\w+.-]*:\/\/)?(?:[^@/\s]+@)?([\w.-]+)(?::\d+)?[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i.exec(url);
+    // an ssh alias (no dot) or github.com: owner/repo on gh's default host
+    ghRepos.set(c, !m ? "" : !m[1].includes(".") || /^(?:ssh\.)?github\.com$/i.test(m[1]) ? `${m[2]}/${m[3]}` : `${m[1]}/${m[2]}/${m[3]}`);
+  }
+  return ghRepos.get(c);
+}
+const ghEnv = (cwd) => { const repo = ghRepo(cwd); return { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1", ...(repo && { GH_REPO: repo }) }; };
 function gh(args, cwd, timeout = 6000, configDir = "", token = "") {
-  const env = ghEnv();
+  const env = ghEnv(cwd);
   if (configDir) env.GH_CONFIG_DIR = configDir;
   if (token) env.GH_TOKEN = token;
   try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
 // gh as { ok, out, err }; configDir as gh() takes it, else this process's login
 function ghTry(args, cwd, timeout = 6000, configDir = "") {
-  const env = ghEnv();
+  const env = ghEnv(cwd);
   if (configDir) env.GH_CONFIG_DIR = configDir;
-  return attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"] }));
+  return attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 }));
 }
 
 const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); return Number.isFinite(n) && n > 0 ? n : dflt; };
@@ -3359,7 +3373,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
