@@ -11,7 +11,8 @@ const { ok, g } = lib;
 const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-cli.js");
 const HOOKS = path.dirname(SCRIPT);
 const cli = require(SCRIPT);
-const { spawnTarget } = require(path.join(HOOKS, "proteus-lib.js"));
+const lib2 = require(path.join(HOOKS, "proteus-lib.js"));
+const { spawnTarget } = lib2;
 const W = lib.workdir("brief");
 
 const REPO = path.join(W, "repo");
@@ -81,7 +82,9 @@ const real = fs.realpathSync.native(HOOKS);
 // a standard ticket, in full
 r = run(["brief", "worker", "5"]);
 let b = read(briefFile("brief-5.md"));
-ok("worker: exits 0 with one PROMPT line naming the brief file", r.code === 0 && lines(r).join("|") === `PROMPT Your brief is ${briefFile("brief-5.md")}; read it first. worker #5`, r.out + r.err);
+ok("worker: exits 0 with one PROMPT line naming the brief file", r.code === 0 && lines(r).join("|") === `PROMPT Your brief is ${briefFile("brief-5.md")}; read it first. worker #5 worktree ${WT(5)}`, r.out + r.err);
+const COMMON = path.join(REPO, ".git");
+ok("worker: the PROMPT line binds the worker to its worktree (lib.briefWorktree)", lib2.realOr(lib2.briefWorktree(lines(r)[0], COMMON) || "") === lib2.realOr(WT(5)), r.out);
 ok("worker: the PROMPT line carries the worker's spawn token", JSON.stringify(spawnTarget("proteus-backend-worker", lines(r)[0])) === JSON.stringify({ ticket: 5 }), r.out);
 const want5 = [
   `Hooks: ${real}.`,
@@ -143,6 +146,7 @@ r = run(["brief", "verifier", "12"]);
 b = read(briefFile("verify-12.md"));
 ok("verifier: exits 0 with the PROMPT line", r.code === 0 && lines(r).join("|") === `PROMPT Your brief is ${briefFile("verify-12.md")}; read it first. verifier PR#12 head=${SHA("b").slice(0, 12)}`, r.out + r.err);
 ok("verifier: the PROMPT line carries the PR and head next's spawn matching parses", JSON.stringify(spawnTarget("proteus-backend-verifier", lines(r)[0])) === JSON.stringify({ pr: 12, head: SHA("b").slice(0, 12) }), r.out);
+ok("verifier: the PROMPT line names no worktree, so no guard binds the verifier to one", lib2.briefWorktree(lines(r)[0], COMMON) === null, r.out);
 for (const l of [`Hooks: ${real}.`, "Team backend, debt issue #40, dupes tool fallow dupes. Caveman lite.", "Safety: run migrations only against the test database.", "Ticket #5, PR #12, scratch key r1-5.", `Then sign it on the head you read: proteus-signoff.js 12 ${SHA("b")} <WORD> (security verifier: --security).`, "MERGE #5"])
   ok(`verifier: the brief has "${l.slice(0, 40)}"`, b.split("\n").includes(l), b);
 ok("verifier: the report's own placeholders are kept", b.includes("1. <file:line> wrong") && b.includes("<one paragraph>"), b);

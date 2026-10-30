@@ -567,7 +567,11 @@ function brief(role, target, arg) {
     prompt = `worker #${n}`;
   }
   let text;
-  try { text = render(block, ctx); } catch (e) {
+  try {
+    text = render(block, ctx);
+    // the worker's guards bind it to the worktree its spawn prompt names (lib.briefWorktree); a verifier names none
+    if (role === "worker") prompt += ` worktree ${FILL["absolute path"](ctx)}`;
+  } catch (e) {
     if (!(e instanceof Decide)) throw e;
     return { code: 1, out: [`DECIDE ${n ? `#${n}` : `PR#${ctx.pr}`} brief: no source for ${e.message}`] };
   }
