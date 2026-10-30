@@ -51,7 +51,6 @@ const WORK = (run) => new RegExp(`^${literal(`${lib.CURRENT.work}${run}/`)}\\d+$
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // what reaches the lead's output: no control character (terminal escapes, a second line)
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
-const say = (s) => console.log(plain(s));
 const last = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop() || "";
 // a statusCheckRollup entry: a commit status (StatusContext) or a check run
 const green = (c) => (c.__typename === "StatusContext"
@@ -166,15 +165,24 @@ function main() {
   if (!suite.trim()) { console.error(`${USAGE}\n--suite is required (--help explains it)`); return 2; }
   if (result && !["pass", "fail"].includes(result)) { console.error(`${USAGE}\n--result is pass or fail`); return 2; }
   if (at && !result) { console.error(`${USAGE}\n--at goes with --result`); return 2; }
+  return batch({ arg, suite, result, at });
+}
+
+// the batch's step for { arg, suite, result, at }, checked as main checks them; its exit code. io.say and io.err take
+// its stdout and stderr lines (default the console's); out gets what proteus-cli.js reads back: merged, the PRs this
+// call merged ({ n, ticket?, sha }), at, the commit the lead tests next, and done, the batch's PRs once a pass ends it
+function batch({ arg, suite, result, at }, io = {}, out = {}) {
+  const say = io.say || ((s) => console.log(plain(s)));
+  const warn = io.err || ((s) => console.error(s));
 
   // git runs on the project's common dir, pinned (#215), and never with a working tree (#226)
   const common = lib.repoCommon();
   const root = common && lib.mainRoot(common);
-  if (!root) { console.error("not in a project checkout"); return 2; }
+  if (!root) { warn("not in a project checkout"); return 2; }
   const runBranches = common ? lib.runBranches(common) : [];
   const run = lib.runName(arg || runBranches[0] || "");
-  if (!run) { console.error(`no run named and no open ${lib.CURRENT.branch}<run> branch`); return 2; }
-  if (!RUN.test(run)) { console.error(`run ${plain(run)}: not a run name (a letter or digit, then letters, digits, _ . -)`); return 2; }
+  if (!run) { warn(`no run named and no open ${lib.CURRENT.branch}<run> branch`); return 2; }
+  if (!RUN.test(run)) { warn(`run ${plain(run)}: not a run name (a letter or digit, then letters, digits, _ . -)`); return 2; }
   const work = WORK(run);
   const names = lib.schemeOf(arg) || lib.schemeOf(runBranches.find((b) => lib.runName(b) === run) || "") || lib.CURRENT;
   const base = `${names.branch}${run}`;
@@ -221,7 +229,7 @@ function main() {
   if (result) {
     try {
       const st = readState(common, run);
-      if (!st) { console.error(`run ${plain(run)}: no batch awaits a result (run it without --result first)`); return 2; }
+      if (!st) { warn(`run ${plain(run)}: no batch awaits a result (run it without --result first)`); return 2; }
       // the result is for the commit the lead tested, named by the lead: a state an agent rewrote between the print
       // and the result (a bisect collapsed back to the tip, #226) names another, and is refused, printing no sha
       if (!at) return fail("refused: --result needs --at <sha>, the commit the suite ran on, as printed");
@@ -230,6 +238,7 @@ function main() {
         // the state is an agent's to write: the sha printed for the lead's fast-forward is origin's tip, never the state's
         if (result === "pass") {
           dropState(common, run);
+          out.done = st.merged.map((p) => p.n);
           if (lsTip() !== st.head) return fail("refused: origin's run branch is not the commit the state names (the branch moved or the state changed); no commit to fast-forward to");
           say(`run ${run}: suite green at ${st.head}${leftFor(st)}`);
           return 0;
@@ -243,6 +252,7 @@ function main() {
         st.mid = (st.lo + st.hi) >> 1;
         st.at = st.merged[st.mid].sha;
         writeState(common, run, st);
+        out.at = st.at;
         say(`run ${run}: bisecting, ${st.hi - st.lo - 1} merge(s) left to test; ${next(st.at)}`);
         return 0;
       }
@@ -261,8 +271,8 @@ function main() {
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,state,body", "--limit", "500"], root, 30000));
   if (!Array.isArray(issues)) return fail("tracker unreachable (gh issue list failed)");
 
-  const batch = pick(prs, issues, run, names);
-  if (!batch.length) { say("merged none; suite not run"); return 0; }
+  const picked = pick(prs, issues, run, names);
+  if (!picked.length) { say("merged none; suite not run"); return 0; }
 
   if (!url) return fail("refused: <common>/config names no remote.origin.url");
   if (!tip()) return fail(`cannot fetch origin/${base}`);
@@ -273,7 +283,7 @@ function main() {
   // no worktree is removed here (#226): the merged branches that still have one are named for the lead to remove
   const merged = [];
   let stop = "";
-  for (const p of batch) {
+  for (const p of picked) {
     const m = lib.ghTry(["pr", "merge", String(p.n), "--merge"], root, 120000);
     if (!m.ok) {
       const state = lib.gh(["pr", "view", String(p.n), "--json", "mergeable", "-q", ".mergeable"], root, 30000);
@@ -285,6 +295,7 @@ function main() {
     merged.push({ n: p.n, ...(p.ticket && { ticket: p.ticket }), ...(worktrees[p.head] && work.test(p.head) && { head: p.head }), sha });
   }
   const line = `merged ${merged.length ? merged.map(name).join(", ") : "none"}${stop ? `; ${stop}` : ""}`;
+  out.merged = merged.map((p) => ({ n: p.n, ...(p.ticket && { ticket: p.ticket }), sha: p.sha }));
   if (!merged.length) { say(`${line}; suite not run`); return 1; }
   const head = merged[merged.length - 1].sha;
   try {
@@ -293,9 +304,10 @@ function main() {
     say(`${line}; suite not run: ${e.message}`);
     return 1;
   }
+  out.at = head;
   say(`${line}; ${next(head)}`);
   return stop ? 1 : 0;
 }
 
-module.exports = { mergeOrder, green, writeState, checkState, pick };
+module.exports = { mergeOrder, green, writeState, checkState, readState, pick, batch };
 if (require.main === module) process.exitCode = main();

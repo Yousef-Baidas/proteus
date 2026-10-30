@@ -17,7 +17,7 @@ lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hook
 const overlaps = (a, b) => lib.ownedMatch(a, b) || lib.ownedMatch(b, a);
 
 // tickets: [{ n, team, difficulty, open, milestone, deps: [n], owned: [glob], inFlight }]; reviewing: milestone
-// titles under review. Returns { ready: [{ n, team, difficulty, speculative }], blocked: [{ n, reason }] }.
+// titles under review. Returns { ready: [{ n, team, difficulty, speculative, owned }], blocked: [{ n, reason }] }.
 function readySet(tickets, reviewing = []) {
   const byN = new Map(tickets.map((t) => [t.n, t]));
   const flying = tickets.filter((t) => t.open && t.inFlight);
@@ -39,7 +39,7 @@ function readySet(tickets, reviewing = []) {
       clash(t, flying, () => "in flight") ||
       (speculative && clash(t, held, (o) => `in ${o.milestone} under review`));
     if (reason) blocked.push({ n: t.n, reason });
-    else ready.push({ n: t.n, team: t.team, difficulty: t.difficulty, speculative });
+    else ready.push({ n: t.n, team: t.team, difficulty: t.difficulty, speculative, owned: t.owned });
   }
   return { ready, blocked };
 }

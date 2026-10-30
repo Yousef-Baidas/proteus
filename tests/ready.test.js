@@ -10,7 +10,7 @@ const show = (r) => JSON.stringify(r);
 
 // dependency chain 1 → 2 → 3: only the head is ready until 1 merges
 let r = readySet([t(1), t(2, { deps: [1] }), t(3, { deps: [2], team: "frontend", difficulty: "hard" })]);
-ok("chain: only the ticket with no open depends-on is ready", show(r.ready) === show([{ n: 1, team: "backend", difficulty: "standard", speculative: false }]), show(r));
+ok("chain: only the ticket with no open depends-on is ready", show(r.ready) === show([{ n: 1, team: "backend", difficulty: "standard", speculative: false, owned: ["src/t1.js"] }]), show(r));
 ok("chain: the rest wait on the ticket before them", show(r.blocked) === show([{ n: 2, reason: "waits on #1" }, { n: 3, reason: "waits on #2" }]), show(r));
 r = readySet([t(1, { open: false }), t(2, { deps: [1] }), t(3, { deps: [2], team: "frontend", difficulty: "hard" })]);
 ok("chain: #1 merged makes #2 ready, #3 still waits", r.ready.map((x) => x.n).join() === "2" && show(r.blocked) === show([{ n: 3, reason: "waits on #2" }]), show(r));
@@ -27,7 +27,7 @@ ok("overlaps: globs both ways, disjoint extensions do not", overlaps("src/*", "s
 // speculative during review: r1/core is under review, its tickets merged; r1/next tickets are speculative
 const review = [t(1, { open: false, owned: ["src/core/**"] }), t(6, { milestone: "r1/next", owned: ["src/core/util.js"] }), t(7, { milestone: "r1/next", owned: ["docs/"], deps: [1] })];
 r = readySet(review, ["r1/core"]);
-ok("review: a next-milestone ticket missing the reviewed paths is ready and marked speculative", show(r.ready) === show([{ n: 7, team: "backend", difficulty: "standard", speculative: true }]), show(r));
+ok("review: a next-milestone ticket missing the reviewed paths is ready and marked speculative", show(r.ready) === show([{ n: 7, team: "backend", difficulty: "standard", speculative: true, owned: ["docs/"] }]), show(r));
 ok("review: one touching the milestone under review is blocked", show(r.blocked) === show([{ n: 6, reason: "src/core/util.js overlaps src/core/** of #1 in r1/core under review" }]), show(r));
 r = readySet(review);
 ok("no review: the same ticket is ready and not speculative", r.ready.map((x) => `${x.n}${x.speculative}`).join() === "6false,7false", show(r));

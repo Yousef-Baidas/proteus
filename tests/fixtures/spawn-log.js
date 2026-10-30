@@ -1,11 +1,12 @@
-// Preloaded through NODE_OPTIONS by tests/merge.test.js: in a process whose script is proteus-merge.js, every child
-// process it starts is appended to SPAWN_LOG as one JSON line { file, args, cwd, workTree, index } before it runs.
+// Preloaded through NODE_OPTIONS by tests/merge.test.js and tests/next.test.js: in a process whose script is
+// proteus-merge.js or proteus-cli.js, every child process it starts is appended to SPAWN_LOG as one JSON line
+// { file, args, cwd, workTree, index } before it runs.
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const cp = require("child_process");
 
-if (process.env.SPAWN_LOG && path.basename(process.argv[1] || "") === "proteus-merge.js") {
+if (process.env.SPAWN_LOG && ["proteus-merge.js", "proteus-cli.js"].includes(path.basename(process.argv[1] || ""))) {
   const log = (file, args, o) => {
     const opts = (Array.isArray(args) ? o : args) || {};
     const env = opts.env || process.env;
