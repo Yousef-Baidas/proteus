@@ -61,7 +61,7 @@ ok("enforcement.md §10b sits right after §10", /^## 10\. [^\n]*\n(?:(?!## )[^\
 ok("§10b: milestone mode on the milestone diff checks authz, input reaching I/O and the abuse cases", /`milestone`/.test(s10b) && /milestone diff/.test(s10b) && /authorization on every new route/.test(s10b) && /input that reaches .*I\/O/.test(s10b) && /abuse cases/.test(s10b), s10b);
 ok("§10b: close mode audits the whole repo with the scout-picked audit skill", /`close` over the whole repo/.test(s10b) && /audit skill the scout picked/.test(s10b), s10b);
 ok("§10b: blockers are WAVE-RED tickets as in §10, and the gate does not open over them", /Blockers become `WAVE-RED` tickets exactly as §10/.test(s10b) && /gate does not open over a security blocker/.test(s10b), s10b);
-ok("§10b: says the lead's instructions hold the gate and no hook enforces it yet", /lead's instructions hold the gate/.test(s10b) && /no hook enforces it yet/.test(s10b), s10b);
+ok("§10b: names the hook that holds the gate (#254)", /`proteus-lead-guard\.js` holds the gate/.test(s10b) && /`proteus-verdict\.js` counts no `ACCEPT` or `AUTO-ACCEPT`/.test(s10b) && !/no hook enforces/.test(s10b), s10b);
 ok("§10b: no security path skips both modes with the logged line", /skipped/.test(s10b) && s10b.includes("`security-pass: skipped (no security path)` on the run log"), s10b);
 const secv = read("agents", "proteus-security-verifier.md");
 const modes = (/^## Milestone and close modes\n([\s\S]*?)\n## /m.exec(secv) || [])[1] || "";

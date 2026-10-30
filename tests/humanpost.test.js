@@ -31,7 +31,7 @@ for (const [d, login] of [[BOT, "bot"], [HUMAN_GH, "human"]]) { fs.mkdirSync(d, 
 const config = (o) => fs.writeFileSync(PJ, JSON.stringify(o));
 config({ agentGh: BOT, human: "human" });
 const issues = (o) => fs.writeFileSync(ISSUES, JSON.stringify(o || {
-  30: { title: "Review: m1", labels: ["proteus-review", "needs-human"], comments: [] },
+  30: { title: "Review: m1", labels: ["proteus-review", "needs-human"], milestone: "r1/m1", comments: [] },
   31: { title: "Fix the thing", labels: ["bug"], comments: [] },
 }));
 const comments = (n) => JSON.parse(fs.readFileSync(ISSUES, "utf8"))[n].comments;

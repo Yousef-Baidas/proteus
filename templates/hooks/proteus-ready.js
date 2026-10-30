@@ -57,7 +57,6 @@ function main() {
   const run = lib.runName(arg || runBranches[0] || "");
   if (!run) { console.error(`no run named and no open ${lib.CURRENT.branch}<run> branch`); return 2; }
   const names = lib.schemeOf(arg) || lib.schemeOf(runBranches.find((b) => lib.runName(b) === run) || "") || lib.CURRENT;
-  const NOT_TICKET = new Set([names.review, names.log, names.debt, names.question]);
   const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,milestone,labels,body", "--limit", "500"], root, 30000));
@@ -86,8 +85,7 @@ function main() {
     return m ? [...m[1].matchAll(/#(\d+)/g)].map((d) => +d[1]) : [];
   };
 
-  const tickets = issues.filter((i) => i.milestone && String(i.milestone.title).startsWith(run + "/") && !String(i.title || "").startsWith("Revision ") &&
-    !(i.labels || []).some((l) => NOT_TICKET.has(l.name))).sort((a, b) => a.number - b.number).map((i) => ({
+  const tickets = lib.runTickets(issues, run, names).map((i) => ({
     n: i.number, team: label(i, "profile:") || "?", difficulty: label(i, "difficulty:") || "?", open: String(i.state).toUpperCase() === "OPEN",
     milestone: i.milestone.title, deps: deps(i.body), owned: owned(i), inFlight: flying.has(i.number),
   }));

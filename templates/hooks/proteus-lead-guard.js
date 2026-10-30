@@ -28,6 +28,8 @@
 //    latest prompt names the file.
 // 8. Under bypassPermissions, a worker or verifier spawn and a `proteus-container.js run` need sandbox=on, as the autostart
 //    recorded it for this session (bypassDenial); the refusal names the sandbox profile's launch command.
+// 9. Lead and subagents: no `gh issue create` labelled proteus-review while its milestone has open tickets or the
+//    tracker cannot say (lib.reviewOpenDenial, #254).
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
 //   no background Bash, a Monitor command only where a Bash call would pass and only reads (monitorDenial), no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
@@ -76,6 +78,8 @@ if (process.env.PROTEUS === "0") lib.run((ev, ad) => { humanSide(ev, ad); });
 else lib.run((ev, ad) => {
   const BYPASS = ` ${ad.bypass} opens a session without this guard.`;
   if (humanSide(ev, ad)) return;
+  const gate = ev.tool === "shell" && lib.reviewOpenDenial(ev.command, lib.shellCwd(ev));
+  if (gate) ad.deny(gate);
   if (ev.agent) {
     lib.beat(ev, "tool"); // liveness for proteus-watchdog.js, refused calls included
     // Monitor runs a shell command: read-only, and judged as the agent's Bash call would be (#219)

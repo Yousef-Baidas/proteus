@@ -47,9 +47,11 @@ if (process.env.FAKE_GH_PRS) {
     process.exit(0);
   }
 }
-// FAKE_GH_ISSUES (a JSON file {<n>: {title, labels: [name], comments: [{author: {login}, body}]}}) answers an issue's title,
-// labels and comments; `issue comment <n> --body-file -` appends stdin as a comment by the current login and prints its URL;
-// `issue list --state all --search <q> in:title` matches titles containing <q>, `issue create --title` adds the next number
+// FAKE_GH_ISSUES (a JSON file {<n>: {title, labels: [name], comments: [{author: {login}, body}], milestone, state}}) answers an
+// issue's title, labels, comments and milestone (a title; state defaults to OPEN); `issue comment <n> --body-file -` appends
+// stdin as a comment by the current login and prints its URL; `issue list --state all --search <q> in:title` matches titles
+// containing <q>, `issue list --label <l> --state open --milestone <m>` an open milestone's issues so labelled, and
+// `issue create --title` adds the next number
 if (process.env.FAKE_GH_ISSUES) {
   const fs = require("fs"), path = require("path"), file = process.env.FAKE_GH_ISSUES;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -65,6 +67,11 @@ if (process.env.FAKE_GH_ISSUES) {
   if ((m = /^issue view (\d+) --json title -q \.title$/.exec(a)) && s[m[1]]) say(s[m[1]].title || "");
   if ((m = /^issue view (\d+) --json labels -q \.labels\[\]\.name$/.exec(a)) && s[m[1]]) say((s[m[1]].labels || []).join("\n"));
   if ((m = /^issue view (\d+) --json comments$/.exec(a)) && s[m[1]]) out({ comments: s[m[1]].comments || [] });
+  const asGh = (n) => ({ number: +n, title: s[n].title || "", state: s[n].state || "OPEN", labels: (s[n].labels || []).map((name) => ({ name })), milestone: s[n].milestone ? { title: s[n].milestone } : null });
+  if ((m = /^issue view (\d+) --json comments,labels,milestone$/.exec(a)) && s[m[1]]) { const { labels, milestone } = asGh(m[1]); out({ comments: s[m[1]].comments || [], labels, milestone }); }
+  if ((m = /^issue list --label (\S+) --state open --milestone (.+) --json number,title,state,milestone,labels --limit 500$/.exec(a))) {
+    out(Object.keys(s).map(asGh).filter((i) => i.state === "OPEN" && i.milestone && i.milestone.title === m[2] && i.labels.some((l) => l.name === m[1])));
+  }
   if ((m = /^issue comment (\d+) --body-file -$/.exec(a)) && s[m[1]]) {
     const login = CD ? fs.readFileSync(path.join(CD, "hosts.yml"), "utf8").trim() : process.env.FAKE_GH_LOGIN || "human";
     const c = s[m[1]].comments = s[m[1]].comments || [];

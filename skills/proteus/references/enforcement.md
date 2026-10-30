@@ -126,7 +126,7 @@ A security verifier sees one ticket's diff, so an access path built across three
 - Milestone mode: the QA milestone pass (§10) also spawns `proteus-security-verifier` on `judge` with the word `milestone` and the milestone diff, `git diff <merge-base>..proteus/<run>`. It checks the flows across tickets: authorization on every new route or handler, every input that reaches file, network, database or shell I/O, and each of the milestone's gate (g) abuse cases (`flow.md` step 1).
 - Close mode: at close the same agent runs with the word `close` over the whole repo at the tip of `proteus/<run>`, applying the audit skill the scout picked for `teams/security` (a line of `teams/security/skills.txt`), read from its `SKILL.md`.
 - Blockers become `WAVE-RED` tickets exactly as §10's do: numbered, mapped to the ticket that introduced them, fixed by tickets, never by the verifier. Non-blockers go to the milestone's debt issue.
-- The human gate does not open over a security blocker. Like §10, the lead's instructions hold the gate (`flow.md` step 7, `review.md`); no hook enforces it yet.
+- The human gate does not open over a security blocker. Like §10, `proteus-lead-guard.js` holds the gate (`review.md`): no `proteus-review` issue opens, and `proteus-verdict.js` counts no `ACCEPT` or `AUTO-ACCEPT` on one, while the milestone has an open ticket or the tracker cannot say.
 - No path the run touched matches the `security` block of `teams/ROUTING.md` → both modes are skipped, and the lead writes `security-pass: skipped (no security path)` on the run log.
 
 ## 10c. Local pentest

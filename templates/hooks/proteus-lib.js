@@ -194,6 +194,21 @@ function runTickets(issues, run, names = CURRENT) {
   return (issues || []).filter((i) => i && i.milestone && String(i.milestone.title).startsWith(run + "/") && !String(i.title || "").startsWith("Revision ") &&
     !(i.labels || []).some((l) => not.has(l.name))).sort((a, b) => a.number - b.number);
 }
+// the open tickets of a milestone (its title, <run>/<m>) as numbers, among issues when given, else read from the
+// tracker; null when gh fails, which the review gate reads as not clear (#254)
+function milestoneOpen(run, milestone, { root = projectRoot(), issues = null, names = CURRENT } = {}) {
+  let list = issues;
+  if (!list) { try { list = JSON.parse(gh(["issue", "list", "--label", names.label, "--state", "open", "--milestone", milestone, "--json", "number,title,state,milestone,labels", "--limit", "500"], root, 10000)); } catch { return null; } }
+  if (!Array.isArray(list)) return null;
+  return runTickets(list, run, names).filter((i) => i.milestone.title === milestone && String(i.state).toUpperCase() === "OPEN").map((i) => i.number);
+}
+// the human review gate (#254): why a review of milestone may not open or be accepted yet, null when it may
+function reviewGateShut(milestone, root) {
+  const m = String(milestone || ""), run = m.includes("/") ? m.slice(0, m.indexOf("/")) : "";
+  const open = run ? milestoneOpen(run, m, { root }) : null;
+  if (!open) return `review gate shut: could not read milestone ${m || "(none given)"}`;
+  return open.length ? `review gate shut: milestone ${m} has open tickets ${open.map((n) => `#${n}`).join(", ")} (WAVE-RED or unmerged)` : null;
+}
 // a PR's ticket: the number its head ends in (proteus-work/<run>/<id>, or <run>-<id> before the rename), else Closes #n
 function prTicket(pr, run, names = CURRENT) {
   const head = String((pr && pr.headRefName) || "");
@@ -1482,6 +1497,34 @@ function verdictPost(command, cwd) {
   const cmd = String(command || "");
   if (!/\b(?:gh|proteus-gh\.js)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F|--field|--input|@|\$\(|`/.test(cmd)) return null;
   return postsWords(cmd, cwd, 0) ? VERDICT_MSG : null;
+}
+// opening a review issue (#254): `gh issue create` (or through proteus-gh.js, or inside sh -c '<literal>') with a
+// review label is refused while reviewGateShut says so for its --milestone. A guard, not a boundary.
+const REVIEW_LABELS = new Set(SCHEMES.map((s) => s.review));
+function reviewOpenDenial(command, cwd, depth = 0) {
+  const cmd = String(command || "");
+  if (depth > 3 || !/\bcreate\b/.test(cmd) || ![...REVIEW_LABELS].some((l) => cmd.includes(l))) return null;
+  for (const all of shellCommands(cmd)) {
+    const words = unwrap(all), prog = progName(words[0]);
+    const c = NESTED_SHELLS.has(prog) ? words.findIndex((w, k) => k > 0 && /^-[a-z]*c$/.test(w)) : -1;
+    const nested = c > 0 && words[c + 1] !== undefined ? reviewOpenDenial(words[c + 1], cwd, depth + 1) : null;
+    if (nested) return nested;
+    for (let k = 0; k < words.length; k++) {
+      const args = isGh(words[k]) ? words.slice(k + 1) : [];
+      if (args[0] !== "issue" || args[1] !== "create") continue;
+      const labels = [];
+      let ms = "";
+      for (let j = 2; j < args.length; j++) {
+        const m = /^(--label|-l|--milestone|-m)(?:=([\s\S]*))?$/.exec(args[j]) || /^(-l|-m)([\s\S]+)$/.exec(args[j]);
+        if (!m) continue;
+        const v = m[2] !== undefined ? m[2] : args[++j] || "";
+        if (m[1] === "--label" || m[1] === "-l") labels.push(...v.split(",").map((l) => l.trim()));
+        else ms = v;
+      }
+      if (labels.some((l) => REVIEW_LABELS.has(l))) return reviewGateShut(ms, cwd);
+    }
+  }
+  return null;
 }
 
 // ---- the human's verdict post (#157): `node <hooks>/proteus-verdict.js <issue> --post --body-file <f> --sha <sha256>`
@@ -3370,7 +3413,7 @@ module.exports = {
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
-  CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
+  CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
