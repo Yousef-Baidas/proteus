@@ -122,6 +122,33 @@ function mergeOrder(prs, open) {
   return out;
 }
 
+// the merge batch from the tracker's answers: the open PRs into the run branch (number,headRefName,body,isDraft,
+// statusCheckRollup) whose checks are all green with proteus/verdict among them, in mergeOrder over issues
+// (number,state,body). Each [{ n, head, ticket, deps }]
+function pick(prs, issues, run, names) {
+  // a PR's ticket: the number its head ends in, else the body's Closes #n (as proteus-ready.js)
+  const heads = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`];
+  const ticketOf = (head, body = "") => {
+    const pre = heads.find((p) => head.startsWith(p));
+    const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec(body);
+    return m ? +m[1] : 0;
+  };
+  const deps = (body) => {
+    const m = /^[\s*_>-]*depends[- ]on\b[*_:\s]*(.*)$/im.exec(body || "");
+    return m ? [...m[1].matchAll(/#(\d+)/g)].map((d) => +d[1]) : [];
+  };
+  const byN = new Map(issues.map((i) => [i.number, i]));
+  const open = new Set(issues.filter((i) => String(i.state).toUpperCase() === "OPEN").map((i) => i.number));
+  const ready = prs.filter((p) => {
+    const checks = p.statusCheckRollup || [];
+    return Number.isInteger(p.number) && p.number > 0 && !p.isDraft && checks.length && checks.every(green) && checks.some((c) => (c.context || c.name) === "proteus/verdict");
+  }).map((p) => {
+    const ticket = ticketOf(String(p.headRefName || ""), p.body || "");
+    return { n: p.number, head: String(p.headRefName || ""), ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
+  });
+  return mergeOrder(ready, open);
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes("--help") || argv.includes("-h")) { console.log(HELP); return 0; }
@@ -234,27 +261,7 @@ function main() {
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,state,body", "--limit", "500"], root, 30000));
   if (!Array.isArray(issues)) return fail("tracker unreachable (gh issue list failed)");
 
-  // a PR's ticket: the number its head ends in, else the body's Closes #n (as proteus-ready.js)
-  const heads = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`];
-  const ticketOf = (head, body = "") => {
-    const pre = heads.find((p) => head.startsWith(p));
-    const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec(body);
-    return m ? +m[1] : 0;
-  };
-  const deps = (body) => {
-    const m = /^[\s*_>-]*depends[- ]on\b[*_:\s]*(.*)$/im.exec(body || "");
-    return m ? [...m[1].matchAll(/#(\d+)/g)].map((d) => +d[1]) : [];
-  };
-  const byN = new Map(issues.map((i) => [i.number, i]));
-  const open = new Set(issues.filter((i) => String(i.state).toUpperCase() === "OPEN").map((i) => i.number));
-  const ready = prs.filter((p) => {
-    const checks = p.statusCheckRollup || [];
-    return Number.isInteger(p.number) && p.number > 0 && !p.isDraft && checks.length && checks.every(green) && checks.some((c) => (c.context || c.name) === "proteus/verdict");
-  }).map((p) => {
-    const ticket = ticketOf(String(p.headRefName || ""), p.body || "");
-    return { n: p.number, head: String(p.headRefName || ""), ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
-  });
-  const batch = mergeOrder(ready, open);
+  const batch = pick(prs, issues, run, names);
   if (!batch.length) { say("merged none; suite not run"); return 0; }
 
   if (!url) return fail("refused: <common>/config names no remote.origin.url");
@@ -290,5 +297,5 @@ function main() {
   return stop ? 1 : 0;
 }
 
-module.exports = { mergeOrder, green, writeState, checkState };
+module.exports = { mergeOrder, green, writeState, checkState, pick };
 if (require.main === module) process.exitCode = main();

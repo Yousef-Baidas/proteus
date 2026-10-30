@@ -2127,13 +2127,20 @@ function bound(common, agent) {
 // An unnamed spawn is recorded under its subagent_type (Claude Code reports that as its agent_type), and each
 // record carries the spawn's time: the watchdog tracks only agents with a lead spawn record (spawnRecord, #179).
 const spawnFile = (common, name) => leadPath(common, "spawns", "spawn-" + String(name).replace(/[^\w.-]/g, "_") + ".json");
+// a verifier spawn's PR and head, from the tokens proteus-cli.js next prints (PR#<n>, head=<sha12>; the first of each),
+// for next to know which head a verifier was spawned for (#79); {} unless the type is a verifier's and both are there
+function spawnTarget(type, prompt) {
+  if (!isVerifier(type)) return {};
+  const p = /\bPR#(\d+)\b/.exec(String(prompt || "")), h = /\bhead=(\S*)/.exec(String(prompt || ""));
+  return p && h && /^[0-9a-f]{12}$/.test(h[1]) ? { pr: +p[1], head: h[1] } : {};
+}
 function recordSpawn(ev) {
   const name = ev.spawnName || ev.spawnType;
   if (ev.agent || !name || !ev.spawnType) return;
   const common = gitCommonDir(path.resolve(projectRoot(ev)));
   if (!common) return;
   const file = spawnFile(common, name);
-  try { leadWrite(common, file, JSON.stringify({ name, type: ev.spawnType, at: new Date().toISOString() }) + "\n"); } catch {}
+  try { leadWrite(common, file, JSON.stringify({ name, type: ev.spawnType, at: new Date().toISOString(), ...spawnTarget(ev.spawnType, ev.spawnPrompt) }) + "\n"); } catch {}
 }
 // the lead's record of this subagent's spawn, found by the agent_type its harness reports, else null
 function spawnRecord(ev) {
@@ -3327,14 +3334,19 @@ function beat(ev, state) {
   } catch {}
 }
 
-// gh query → cache; on any gh failure the old cache stays and null is returned
-function refreshInbox(root, common, timeout = 10000) {
+// the inbox as gh answers it now, writing nothing; null on any gh failure
+function queryInbox(root, timeout = 10000) {
   let list;
   try { list = JSON.parse(gh(["issue", "list", "--label", "needs-human", "--state", "open", "--json", "number,title,labels", "--limit", "100"], root, timeout)); } catch { return null; }
   if (!Array.isArray(list)) return null;
   const has = (i, name) => (i.labels || []).some((l) => l && l.name === name);
   const item = (i) => ({ n: i.number, title: String(i.title || "") });
-  const inbox = { at: new Date().toISOString(), questions: list.filter((i) => SCHEMES.some((s) => has(i, s.question))).map(item), reviews: list.filter((i) => SCHEMES.some((s) => has(i, s.review))).map(item) };
+  return { at: new Date().toISOString(), questions: list.filter((i) => SCHEMES.some((s) => has(i, s.question))).map(item), reviews: list.filter((i) => SCHEMES.some((s) => has(i, s.review))).map(item) };
+}
+// gh query → cache; on any gh failure the old cache stays and null is returned
+function refreshInbox(root, common, timeout = 10000) {
+  const inbox = queryInbox(root, timeout);
+  if (!inbox) return null;
   try { leadJSON(common, inboxFile(common), inbox); } catch {}
   return inbox;
 }
@@ -3458,7 +3470,7 @@ function verifyInstalled(bare, sha) {
 module.exports = {
   LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
-  readInbox, refreshInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
+  readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
@@ -3468,6 +3480,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

@@ -1,0 +1,171 @@
+// proteus-cli.js next tests: node tests/next.test.js (needs git). A repo with a proteus/r1 branch, the fake gh
+// (FAKE_GH_NEXT) answering the tracker, and beat files and an inbox cache written into the lead's state dir. Each line
+// kind for its case, their order, WAIT only when idle, the verifier line per head, nothing written, the exit codes and
+// --json. No network.
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const lib = require(path.join(__dirname, "lib.js"));
+const { ok, g } = lib;
+const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-cli.js");
+const W = lib.workdir("next");
+
+const REPO = path.join(W, "repo");
+g(W, "init", "-q", "-b", "main", REPO);
+fs.writeFileSync(path.join(REPO, "a.txt"), "a\n");
+g(REPO, "add", "-A");
+g(REPO, "commit", "-qm", "init");
+g(REPO, "branch", "proteus/r1");
+g(REPO, "remote", "add", "origin", "https://github.com/o/r.git");
+const COMMON = path.join(REPO, ".git");
+const LEAD = path.join(COMMON, "proteus-lead");
+const STATE = path.join(W, "gh.json");
+const ago = (m) => new Date(Date.now() - m * 60000).toISOString();
+const SHA = (c) => c.repeat(40);
+
+const ms = { title: "r1/core", number: 1 };
+const issue = (n, o = {}) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js`, ...o });
+const VERDICT = { __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" };
+const CI = { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" };
+const pr = (n, ticket, sha, checks) => ({ number: n, headRefName: `proteus-work/r1/${ticket}`, headRefOid: sha, body: `Closes #${ticket}`, isDraft: false, statusCheckRollup: checks });
+
+// the busy case: #1 has a green PR (12), #2 a PR with no verdict (13), #3 ready, #4 waits on #3
+const BUSY = {
+  issues: [issue(1), issue(2), issue(3), issue(4, { body: "Owned: src/t4.js\nDepends on: #3" })],
+  prs: [pr(12, 1, SHA("a"), [VERDICT, CI]), pr(13, 2, SHA("b"), [CI])],
+  reviews: [],
+  inbox: [{ number: 30, title: "which db?", labels: [{ name: "needs-human" }, { name: "proteus-question" }] }],
+  statuses: { [SHA("a")]: [{ context: "proteus/verdict", state: "success", creator: { login: "verifier-app[bot]" } }] },
+};
+const IDLE = { issues: [issue(1, { state: "CLOSED" }), issue(4, { body: "Owned: src/t4.js\nDepends on: #3" })], prs: [], reviews: [], inbox: [] };
+
+const next = (state, args = [], env = {}) => {
+  fs.writeFileSync(STATE, JSON.stringify(state));
+  return lib.run(SCRIPT, "", { cwd: REPO, args: ["next", ...args], env: { FAKE_GH_NEXT: STATE, ...env } });
+};
+const lines = (r) => r.out.trim().split("\n").filter(Boolean);
+const kinds = (r) => lines(r).map((l) => (l.startsWith("SPAWN ") ? l.split(" ").slice(0, 2).join(" ") : l.split(" ")[0]));
+const beat = (agent, rec) => {
+  fs.mkdirSync(path.join(LEAD, "beats"), { recursive: true });
+  fs.writeFileSync(path.join(LEAD, "beats", `${agent}.json`), JSON.stringify({ agent, type: "proteus-worker", spawn: ago(120), first: ago(120), cwd: "/w", ...rec }));
+};
+const clearBeats = () => fs.rmSync(path.join(LEAD, "beats"), { recursive: true, force: true });
+
+// each line kind, in order
+beat("w-stalled", { last: ago(60) });
+beat("w-again", { last: ago(90), flagged: ago(30) });
+beat("w-fine", { last: ago(1) });
+let r = next(BUSY);
+const L = lines(r);
+ok("busy: exits 0", r.code === 0, r.err);
+ok("busy: ASK names the needs-human issue's URL and title", L.includes("ASK https://github.com/o/r/issues/30 which db?"), r.out);
+ok("busy: STOP for the agent still stalled after its STALL", L.some((l) => /^STOP w-again no tool call for 90m, cwd \/w$/.test(l)), r.out);
+ok("busy: NUDGE for the newly stalled agent, none for the active one", L.some((l) => l.startsWith("NUDGE w-stalled no tool call for 60m")) && !r.out.includes("w-fine"), r.out);
+ok("busy: MERGE for the green PR with its head, verdict and poster", L.includes(`MERGE PR#12 ${SHA("a").slice(0, 12)} verdict=success by=verifier-app[bot]`), r.out);
+ok("busy: SPAWN verifier for the PR with no verdict, not for the green one", L.includes(`SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)}`) && !L.some((l) => l.startsWith("SPAWN verifier PR#12")), r.out);
+ok("busy: SPAWN worker for the ready ticket only", L.includes("SPAWN worker #3 team=backend difficulty=standard") && !L.some((l) => /^SPAWN worker #(1|2|4)\b/.test(l)), r.out);
+ok("busy: BLOCKED for the ticket waiting on another", L.includes("BLOCKED #4 waits on #3"), r.out);
+ok("busy: the lines come in order ASK, STOP, NUDGE, MERGE, SPAWN verifier, SPAWN worker, BLOCKED, no WAIT",
+  kinds(r).join() === "ASK,STOP,NUDGE,MERGE,SPAWN verifier,SPAWN worker,BLOCKED", kinds(r).join());
+
+// the inbox cache, when there is one, is what ASK reads
+fs.writeFileSync(path.join(LEAD, "inbox.json"), JSON.stringify({ at: ago(5), questions: [{ n: 31, title: "cached q" }], reviews: [{ n: 32, title: "review r1/core" }] }));
+r = next(BUSY);
+ok("inbox: ASK lines come from the cache, questions then reviews", lines(r).filter((l) => l.startsWith("ASK ")).join("|") === "ASK https://github.com/o/r/issues/31 cached q|ASK https://github.com/o/r/issues/32 review r1/core", r.out);
+fs.rmSync(path.join(LEAD, "inbox.json"));
+
+// WAIT only when nothing but BLOCKED is due
+clearBeats();
+r = next(IDLE);
+ok("idle: BLOCKED then WAIT with the watchdog's command from this script's dir",
+  r.code === 0 && lines(r).join("|") === `BLOCKED #4 waits on #3|WAIT node ${path.join(path.dirname(SCRIPT), "proteus-watchdog.js")} --wait`, r.out + r.err);
+beat("w-stalled", { last: ago(60) });
+r = next(IDLE);
+ok("idle: a NUDGE is due, so no WAIT", kinds(r).join() === "NUDGE,BLOCKED", r.out);
+clearBeats();
+r = next({ ...IDLE, issues: [issue(1, { state: "CLOSED" })] });
+ok("idle: nothing at all due prints WAIT alone", kinds(r).join() === "WAIT", r.out);
+
+// a verifier spawn recorded for the head: not listed again; a new head: listed again. The record is the lead guard's,
+// from a spawn whose prompt carries the tokens next printed
+const TP = path.join(W, "lead.jsonl");
+fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
+const spawn = (type, name, prompt) => lib.run(path.join(path.dirname(SCRIPT), "proteus-lead-guard.js"), { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "opus", subagent_type: type, name, prompt } }, { cwd: REPO });
+let s = spawn("proteus-verifier", "verify-13", `Review SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)} against its contract.`);
+const rec = (name) => { try { return JSON.parse(fs.readFileSync(path.join(LEAD, "spawns", `spawn-${name}.json`), "utf8")); } catch { return null; } };
+ok("verifier: the lead guard records the spawn's PR and head", s.code === 0 && rec("verify-13") && rec("verify-13").pr === 13 && rec("verify-13").head === SHA("b").slice(0, 12), JSON.stringify(rec("verify-13")) + s.err);
+r = next(BUSY);
+ok("verifier: a spawn recorded for the PR's head is not listed again", !lines(r).some((l) => l.startsWith("SPAWN verifier PR#13")), r.out);
+r = next({ ...BUSY, prs: [BUSY.prs[0], pr(13, 2, SHA("c"), [CI])] });
+ok("verifier: a new head on the same PR is listed again", lines(r).includes(`SPAWN verifier PR#13 #2 head=${SHA("c").slice(0, 12)}`), r.out);
+fs.rmSync(path.join(LEAD, "spawns"), { recursive: true, force: true });
+s = spawn("proteus-verifier", "verify-13b", "Review PR#13 against its contract.");
+r = next(BUSY);
+ok("verifier: a spawn without head= records neither field and matches nothing", s.code === 0 && rec("verify-13b") && !("pr" in rec("verify-13b")) && !("head" in rec("verify-13b")) && lines(r).some((l) => l.startsWith("SPAWN verifier PR#13")), JSON.stringify(rec("verify-13b")) + r.out);
+fs.rmSync(path.join(LEAD, "spawns"), { recursive: true, force: true });
+
+// the prompt's tokens, parsed only for a verifier's spawn
+const { spawnTarget } = require(path.join(path.dirname(SCRIPT), "proteus-lib.js"));
+const show = (x) => JSON.stringify(x);
+ok("spawn tokens: both, the first of each", show(spawnTarget("proteus-verifier", "PR#13 #2 head=bbbbbbbbbbbb then PR#14 head=cccccccccccc")) === show({ pr: 13, head: "bbbbbbbbbbbb" }));
+ok("spawn tokens: a team verifier counts", show(spawnTarget("proteus:proteus-backend-verifier", "PR#7 head=0123456789ab")) === show({ pr: 7, head: "0123456789ab" }));
+ok("spawn tokens: PR# missing records neither", show(spawnTarget("proteus-verifier", "head=bbbbbbbbbbbb")) === "{}");
+ok("spawn tokens: head= missing records neither", show(spawnTarget("proteus-verifier", "PR#13 #2")) === "{}");
+ok("spawn tokens: a worker's spawn records neither", show(spawnTarget("proteus-worker", "PR#13 head=bbbbbbbbbbbb")) === "{}");
+ok("spawn tokens: a malformed sha records neither (short, long, not hex)",
+  ["head=bbbbbbbbbbb", `head=${SHA("b")}`, "head=bbbbbbbbbbbz", "head=BBBBBBBBBBBB"].every((h) => show(spawnTarget("proteus-verifier", `PR#13 ${h}`)) === "{}"));
+
+// read-only: refs and the lead's state dir unchanged
+beat("w-stalled", { last: ago(60) });
+beat("w-again", { last: ago(90), flagged: ago(30) });
+beat("w-old", { last: ago(2 * 24 * 60) });
+fs.writeFileSync(path.join(LEAD, "inbox.json"), JSON.stringify({ at: ago(5), questions: [], reviews: [] }));
+const snap = (d) => fs.readdirSync(d, { recursive: true }).sort().map((f) => { const st = fs.lstatSync(path.join(d, f)); return `${f}:${st.size}:${st.mtimeMs}:${st.isFile() ? fs.readFileSync(path.join(d, f), "utf8") : ""}`; }).join("\n");
+const refs = () => g(REPO, "for-each-ref", "--format=%(refname) %(objectname)");
+const before = { refs: refs(), lead: snap(LEAD), state: fs.existsSync(path.join(COMMON, "proteus")) ? snap(path.join(COMMON, "proteus")) : "" };
+r = next(BUSY);
+next(BUSY, ["--json"]);
+next(IDLE);
+ok("read-only: the run had something to say", r.code === 0 && lines(r).length > 3, r.out);
+ok("read-only: no ref changed", refs() === before.refs);
+ok("read-only: the lead's state dir is unchanged (no STALL flag, no old beat dropped, no inbox write)", snap(LEAD) === before.lead);
+ok("read-only: <common>/proteus is unchanged", (fs.existsSync(path.join(COMMON, "proteus")) ? snap(path.join(COMMON, "proteus")) : "") === before.state);
+fs.rmSync(path.join(LEAD, "inbox.json"));
+clearBeats();
+
+// exit codes
+r = next(BUSY, [], { FAKE_GH: "fail" });
+ok("exit 1 when the tracker cannot be read, nothing on stdout", r.code === 1 && !r.out.trim() && /tracker unreachable/.test(r.err), `${r.code} ${r.out} ${r.err}`);
+const BARE = path.join(W, "bare");
+g(W, "init", "-q", "-b", "main", BARE);
+g(BARE, "commit", "-q", "--allow-empty", "-m", "init");
+r = lib.run(SCRIPT, "", { cwd: BARE, args: ["next"], env: { FAKE_GH_NEXT: STATE } });
+ok("exit 2 when there is no run", r.code === 2 && /no run named/.test(r.err), `${r.code} ${r.err}`);
+r = next(BUSY, ["--bogus"]);
+ok("exit 2 on an unknown argument", r.code === 2, `${r.code} ${r.err}`);
+r = lib.run(SCRIPT, "", { cwd: REPO, args: ["later"] });
+ok("exit 2 on an unknown command", r.code === 2 && /unknown command/.test(r.err), `${r.code} ${r.err}`);
+
+// --json: the same actions as an array of { kind, ... }
+beat("w-stalled", { last: ago(60) });
+r = next(BUSY, ["--json"]);
+let j = null;
+try { j = JSON.parse(r.out); } catch {}
+ok("json: an array of objects each with a kind", Array.isArray(j) && j.every((a) => a && typeof a.kind === "string"), r.out);
+const find = (pred) => (j || []).find(pred) || {};
+ok("json: ASK carries n, url and title", find((a) => a.kind === "ASK").url === "https://github.com/o/r/issues/30" && find((a) => a.kind === "ASK").title === "which db?");
+ok("json: NUDGE carries agent and reason", find((a) => a.kind === "NUDGE").agent === "w-stalled" && /no tool call/.test(find((a) => a.kind === "NUDGE").reason));
+const m = find((a) => a.kind === "MERGE");
+ok("json: MERGE carries pr, the full head, verdict and by", m.pr === 12 && m.head === SHA("a") && m.verdict === "success" && m.by === "verifier-app[bot]", JSON.stringify(m));
+const v = find((a) => a.kind === "SPAWN" && a.role === "verifier");
+ok("json: SPAWN verifier carries pr, ticket and head", v.pr === 13 && v.ticket === 2 && v.head === SHA("b"), JSON.stringify(v));
+const w = find((a) => a.kind === "SPAWN" && a.role === "worker");
+ok("json: SPAWN worker carries ticket, team, difficulty, speculative", w.ticket === 3 && w.team === "backend" && w.difficulty === "standard" && w.speculative === false, JSON.stringify(w));
+ok("json: BLOCKED carries ticket and reason", find((a) => a.kind === "BLOCKED").ticket === 4 && find((a) => a.kind === "BLOCKED").reason === "waits on #3");
+ok("json: the same kinds in the same order as the lines", j && j.map((a) => (a.kind === "SPAWN" ? `SPAWN ${a.role}` : a.kind)).join() === kinds(next(BUSY)).join(), r.out);
+clearBeats();
+r = next(IDLE, ["--json"]);
+try { j = JSON.parse(r.out); } catch { j = null; }
+ok("json: WAIT carries the command", j && j[j.length - 1].kind === "WAIT" && j[j.length - 1].command.endsWith("proteus-watchdog.js --wait"), r.out);
+
+lib.summary();

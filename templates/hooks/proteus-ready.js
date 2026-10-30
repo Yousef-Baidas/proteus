@@ -44,6 +44,38 @@ function readySet(tickets, reviewing = []) {
   return { ready, blocked };
 }
 
+// a PR's or branch's ticket: the number its head ends in, else the PR body's Closes #n (as the close report)
+function ticketOf(run, names, head, body = "") {
+  const pre = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`].find((p) => head.startsWith(p));
+  const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec(body);
+  return m ? +m[1] : 0;
+}
+
+// the ready set from the tracker's answers: issues (number,title,state,milestone,labels,body), the open PRs into the
+// run branch (headRefName,body), the open review issues (milestone), and the local branch refs
+function fromTracker(root, run, names, { issues, prs, reviews, refs }) {
+  const flying = new Set([...prs.map((p) => ticketOf(run, names, String(p.headRefName || ""), p.body || "")), ...refs.map((b) => ticketOf(run, names, b))]);
+  const runRef = [`origin/${names.branch}${run}`, `${names.branch}${run}`].find((r) => lib.git(["rev-parse", "--verify", "-q", r], root)) || "";
+  const label = (i, prefix) => ((i.labels || []).map((l) => l.name).find((n) => n.startsWith(prefix)) || "").slice(prefix.length);
+  const lines = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  const owned = (i) => {
+    const rec = runRef ? lines(lib.git(["show", `${runRef}:${lib.OWNED_RECORDS}/${i.number}`], root)) : [];
+    const m = /^Owned:[ \t]*(.+)$/im.exec(i.body || "");
+    return rec.length ? rec : m ? m[1].split(/[,\s]+/).filter(Boolean) : [];
+  };
+  const deps = (body) => {
+    const m = /^[\s*_>-]*depends[- ]on\b[*_:\s]*(.*)$/im.exec(body || "");
+    return m ? [...m[1].matchAll(/#(\d+)/g)].map((d) => +d[1]) : [];
+  };
+
+  const tickets = lib.runTickets(issues, run, names).map((i) => ({
+    n: i.number, team: label(i, "profile:") || "?", difficulty: label(i, "difficulty:") || "?", open: String(i.state).toUpperCase() === "OPEN",
+    milestone: i.milestone.title, deps: deps(i.body), owned: owned(i), inFlight: flying.has(i.number),
+  }));
+  const reviewing = reviews.map((r) => r.milestone && r.milestone.title).filter((t) => t && t.startsWith(run + "/"));
+  return readySet(tickets, reviewing);
+}
+
 function main() {
   const arg = process.argv[2] || "";
   if (arg === "--help" || arg === "-h") {
@@ -63,38 +95,11 @@ function main() {
   if (!Array.isArray(issues)) { console.error(`run ${run}: tracker unreachable (gh issue list failed)`); return 1; }
   const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "open", "--json", "headRefName,body", "--limit", "200"], root, 30000)) || [];
   const reviews = parse(lib.gh(["issue", "list", "--label", names.review, "--state", "open", "--json", "milestone", "--limit", "50"], root, 10000)) || [];
-
-  // a PR's or branch's ticket: the number its head ends in, else the PR body's Closes #n (as the close report)
-  const heads = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`];
-  const ticketOf = (head, body = "") => {
-    const pre = heads.find((p) => head.startsWith(p));
-    const m = (pre && /^(\d+)$/.exec(head.slice(pre.length))) || /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?) #(\d+)\b/i.exec(body);
-    return m ? +m[1] : 0;
-  };
-  const flying = new Set([...prs.map((p) => ticketOf(String(p.headRefName || ""), p.body || "")), ...refs.map((b) => ticketOf(b))]);
-  const runRef = [`origin/${names.branch}${run}`, `${names.branch}${run}`].find((r) => lib.git(["rev-parse", "--verify", "-q", r], root)) || "";
-  const label = (i, prefix) => ((i.labels || []).map((l) => l.name).find((n) => n.startsWith(prefix)) || "").slice(prefix.length);
-  const lines = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
-  const owned = (i) => {
-    const rec = runRef ? lines(lib.git(["show", `${runRef}:${lib.OWNED_RECORDS}/${i.number}`], root)) : [];
-    const m = /^Owned:[ \t]*(.+)$/im.exec(i.body || "");
-    return rec.length ? rec : m ? m[1].split(/[,\s]+/).filter(Boolean) : [];
-  };
-  const deps = (body) => {
-    const m = /^[\s*_>-]*depends[- ]on\b[*_:\s]*(.*)$/im.exec(body || "");
-    return m ? [...m[1].matchAll(/#(\d+)/g)].map((d) => +d[1]) : [];
-  };
-
-  const tickets = lib.runTickets(issues, run, names).map((i) => ({
-    n: i.number, team: label(i, "profile:") || "?", difficulty: label(i, "difficulty:") || "?", open: String(i.state).toUpperCase() === "OPEN",
-    milestone: i.milestone.title, deps: deps(i.body), owned: owned(i), inFlight: flying.has(i.number),
-  }));
-  const reviewing = reviews.map((r) => r.milestone && r.milestone.title).filter((t) => t && t.startsWith(run + "/"));
-  const { ready, blocked } = readySet(tickets, reviewing);
+  const { ready, blocked } = fromTracker(root, run, names, { issues, prs, reviews, refs });
   for (const t of ready) console.log(`#${t.n} ${t.team} ${t.difficulty}${t.speculative ? " speculative" : ""}`);
   for (const b of blocked) console.log(`blocked #${b.n}: ${b.reason}`);
   return 0;
 }
 
-module.exports = { readySet, overlaps };
+module.exports = { readySet, overlaps, ticketOf, fromTracker };
 if (require.main === module) process.exitCode = main();
