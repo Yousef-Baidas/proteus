@@ -65,16 +65,20 @@ ACCEPTANCE $R/flags
   ok("lead scratch: a worker's own scratch rule is unchanged", hook("Write", { file_path: path.join(SCR, "w.md"), content: "x" }, sub).code === 0);
 }
 
-// fix 3: a verdict is the whole first line; prose opening with the word passes
+// fix 3: the guard refuses exactly what proteus-verdict.js counts, one shared definition (lib.isVerdict)
 {
+  const hl = require(path.join(SRC, "proteus-lib.js"));
   const said = (body, who) => VERDICT.test(hook("Bash", { command: `gh issue comment 7 --body-file - <<'EOF'\n${body}\nEOF` }, who).err);
-  const prose = ["CHANGES since the last push: the parser takes --top.", "ACCEPT criteria met: all eight checks pass.", "CHANGES revision done, see the diff", "CHANGES: none"];
-  const verdicts = ["ACCEPT", "ANSWER", "ACCEPT  \nall good", "CHANGES\n- too dark", "CHANGES revision", "  CHANGES revision\n- faster", "ANSWER 2", "ANSWER use the second option"];
-  const shut = prose.filter((b) => said(b) || said(b, sub)), open = verdicts.filter((b) => !said(b) || !said(b, sub));
-  ok("verdict line: prose opening with ACCEPT, CHANGES or ANSWER passes, lead and subagent (#271)", !shut.length, shut.join("\n---\n"));
-  ok("verdict line: a real verdict line is still refused, bare, with revision or an ANSWER pick", !open.length, open.join("\n---\n"));
-  ok("verdict line: a graphql body is judged on its first line too", !VERDICT.test(hook("Bash", { command: "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"CHANGES since then\"}){clientMutationId}}'" }).err) &&
-    VERDICT.test(hook("Bash", { command: "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"CHANGES\\n- x\"}){clientMutationId}}'" }).err));
+  const prose = ["Changes since the last push: the parser takes --top.", "Accept criteria: all eight checks pass.", "ACCEPTED", "CHANGES: none", "DONE #12\nACCEPT criteria met"];
+  const counted = ["ACCEPT", "ANSWER", "ACCEPT criteria met", "CHANGES\n- too dark", "CHANGES revision", "  CHANGES revision\n- faster", "ANSWER 2", "\n\nACCEPT"];
+  ok("verdict line: the definitions agree: what the reader counts is refused, what it does not passes", ![...prose, ...counted].some((b) => hl.isVerdict(b) !== counted.includes(b)));
+  const shut = prose.filter((b) => said(b) || said(b, sub)), open = counted.filter((b) => !said(b) || !said(b, sub));
+  ok("verdict line: prose that the verdict reader does not count passes, lead and subagent (#271)", !shut.length, shut.join("\n---\n"));
+  ok("verdict line: each form the verdict reader counts is refused, lead and subagent", !open.length, open.join("\n---\n"));
+  // drift: the reader and the guard read the same export, so redefining it moves both
+  const src = (f) => fs.readFileSync(path.join(SRC, f), "utf8");
+  ok("verdict line: proteus-verdict.js and the guard both use lib.isVerdict, no copy of the regex",
+    /lib\.isVerdict\(/.test(src("proteus-verdict.js")) && !/\(ACCEPT\|CHANGES\|ANSWER\)/.test(src("proteus-verdict.js")) && /isVerdict\(t\)/.test(src("proteus-lib.js")));
 }
 
 lib.summary();

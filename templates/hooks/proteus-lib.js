@@ -1387,20 +1387,18 @@ const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch, whose PR 
 const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
-// comments API write whose first line is a verdict is refused. It judges what the command runs (#164): a gh or
+// comments API write whose body the verdict script would count as a verdict (isVerdict) is refused. It judges what the command runs (#164): a gh or
 // proteus-gh.js call that posts, its body from --body/-b, --body-file/-F, a body= field, --input, or stdin (a
 // heredoc, a here-string, or echo/printf/cat piped in). Text carried elsewhere (a heredoc written to a file, a
 // commit message, a quoted argument) is no post. What it cannot judge is refused with its own reason, never as a
 // verdict (#271): eval, a $( ) or $VAR as the program, xargs into gh, inline code calling gh, nesting past 3;
 // sh -c '<literal>' is parsed and judged. A guard, not a boundary: the verdict script's author check is.
-// a verdict is its whole first line (#271): ACCEPT, CHANGES, CHANGES revision or ANSWER <pick>; "CHANGES since the
-// last push: ..." is prose and passes
-const HUMAN_WORD = /^\s*(?:ACCEPT|CHANGES(?:[ \t]+revision)?|ANSWER(?:[ \t][^\r\n]*)?)[ \t]*(?:\r?\n|$)/;
 const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`. The human's own verdict goes out as `node <hooks>/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>` from their review session, which asks them first.";
 const UNJUDGED_MSG = (why) => `proteus: ${why}, so this guard cannot read what the command posts to GitHub (it refuses agents' ACCEPT, CHANGES and ANSWER). Name gh or proteus-gh.js literally, not through a variable, $( ), eval or xargs, and pass the body with --body, --body-file or a heredoc.`;
 const EVALS = new Set(["eval", "iex", "invoke-expression"]);
 const isGh = (w) => { const p = progName(w); return p === "gh" || p === "proteus-gh.js"; };
-const humanWord = (b) => { const t = String(b).replace(/^\$(?=[A-Z])/, ""); return HUMAN_WORD.test(t) || HUMAN_WORD.test(t.replace(/\\n/g, "\n")); };
+// what proteus-verdict.js would count (isVerdict, #271), on the text as written or with its \n escapes read
+const humanWord = (b) => { const t = String(b).replace(/^\$(?=[A-Z])/, ""); return isVerdict(t) || isVerdict(t.replace(/\\n/g, "\n")); };
 // a command's words with the words an unquoted $( ) or ` ` split off after it; its stdin texts likewise
 const fullWords = (cmds, c) => [...c, ...cmds.filter((x) => x.resumes === c).flatMap((x) => fullWords(cmds, x))];
 const fullDocs = (cmds, c) => [...(c.stdin || []), ...cmds.filter((x) => x.resumes === c).flatMap((x) => fullDocs(cmds, x))];
@@ -1461,7 +1459,7 @@ function ghBodies(args, all, cmds, i, cwd) {
     const eq = v.indexOf("="), key = eq < 0 ? v : v.slice(0, eq), val = eq < 0 ? "" : v.slice(eq + 1);
     const typed = m.flag === "-F" || m.flag === "--field";
     if (key === "body") out.push(...(typed && val.startsWith("@") ? file(val.slice(1)) : value(val)));
-    else if (key === "query") { const q = /\bbody\s*:\s*\\?"{1,3}\s*((?:ACCEPT|CHANGES|ANSWER)[^"\\\n]*)/.exec(val); if (q) out.push(q[1]); }
+    else if (key === "query") { const q = /\bbody\s*:\s*\\?"{1,3}\s*(ACCEPT|CHANGES|ANSWER)(?=[\s"\\]|$)/.exec(val); if (q) out.push(q[1]); }
   }
   return out;
 }
@@ -1666,6 +1664,9 @@ function humanGhDenial(ev) {
 const POST_SCRIPT = path.join(__dirname, "proteus-verdict.js");
 const POST_MAX = 65536; // GitHub's comment limit, in characters; bytes here, a little stricter
 const VERDICT_LINE = /^(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
+// a body proteus-verdict.js counts as the human's verdict: its first non-blank line opens with the word, case-sensitive;
+// the guards refuse exactly this from an agent (#271), so the two never drift apart
+const isVerdict = (body) => VERDICT_LINE.test(String(body).trim().split(/\r?\n/, 1)[0].trim());
 const POST_MSG = {
   agent: "proteus-verdict.js --post posts the human's verdict under the human's own login; only the human's main session runs it, after the human approves. Report the verdict text to the lead or the human instead.",
   worker: "proteus-verdict.js --post never runs from a worker's worktree: workers never post verdicts. The human's review session posts it.",
@@ -3429,7 +3430,7 @@ module.exports = {
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
-  ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE,
+  ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict,
   workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

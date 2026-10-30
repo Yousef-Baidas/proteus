@@ -169,7 +169,7 @@ ok("guard: other words, other commands and the keyword past line 1 pass", !said(
   ok("guard: a heredoc doc edit, a commit message, a grep and other text naming a verdict post pass", !passed.length, passed.join("\n---\n"));
   const posts = ["echo ACCEPT | gh issue comment 22 --body-file -", "printf 'ACCEPT\\nall good' | gh issue comment 22 -F -", "cat verdict.md | gh issue comment 22 --body-file -",
     "gh issue comment 22 --body-file - <<< 'ACCEPT'", "gh api repos/o/r/issues/22/comments -f body=ACCEPT", "gh api repos/o/r/issues/22/comments -F body=@verdict.md",
-    "gh api repos/o/r/issues/22/comments -F body=@- <<< ACCEPT", "gh api -X POST repos/o/r/pulls/4/reviews -f body='CHANGES\\nx'", "gh api repos/o/r/issues/comments/9 -X PATCH -f body=ACCEPT",
+    "gh api repos/o/r/issues/22/comments -F body=@- <<< ACCEPT", "gh api -X POST repos/o/r/pulls/4/reviews -f body='CHANGES x'", "gh api repos/o/r/issues/comments/9 -X PATCH -f body=ACCEPT",
     "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"ACCEPT\"}){clientMutationId}}'", "gh issue comment 22 -bACCEPT", "gh issue comment 22 --body=ACCEPT",
     "gh issue comment 22 --body $'ACCEPT\\nok'", "gh issue comment $(cat n) --body ACCEPT", "gh issue comment `cat n` --body ACCEPT", "gh issue comment 22 --body $(cat <<'EOF'\nACCEPT\nEOF\n)",
     "sh -c 'gh issue comment 1 --body ACCEPT'", "bash -c \"sh -c 'gh issue comment 1 --body ACCEPT'\"", "bash <<'EOF'\ngh issue comment 1 --body ACCEPT\nEOF",
