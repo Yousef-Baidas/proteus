@@ -78,7 +78,7 @@ function world(name, installer = INSTALL) {
   // a machine set up for Proteus already: the agent teams env above, context-mode and mattpocock-skills installed
   fs.writeFileSync(w.env.FAKE_GH_STATE, "{}");
   fs.mkdirSync(path.join(w.CL, "plugins", "cache", "claude-plugins-official", "mattpocock-skills", "1.0.0", "skills"), { recursive: true });
-  fs.writeFileSync(path.join(w.CL, "settings.json"), JSON.stringify({ enabledPlugins: { "context-mode@context-mode": true }, autoMode: { environment: ["$defaults", "Proteus runs agent teams here"] } }));
+  fs.writeFileSync(path.join(w.CL, "settings.json"), JSON.stringify({ enabledPlugins: { "context-mode@context-mode": true }, autoMode: { environment: ["$defaults", "Proteus runs agent teams here via node .claude/hooks/proteus-cli.js"] } }));
   // the release check's cached result for the pin the fake installs carry, fetched now: no fetch
   w.data = path.join(w.CL, "plugins", "data", "proteus-proteus");
   fs.mkdirSync(w.data, { recursive: true });
