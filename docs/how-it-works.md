@@ -234,7 +234,8 @@ templates/
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
-    proteus-worktree.js     prepares a worker worktree and its hooks
+    proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls
+    proteus-worktree.js     prepares a worker worktree and its hooks (`next` runs it)
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)

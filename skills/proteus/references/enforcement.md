@@ -41,15 +41,15 @@ At close, if the PUT set the protection, the human deletes it before deleting th
 
 ## 2. Path ownership hook
 
-Before spawning a worker, from the repo root (`<hooks>` and other names per `harnesses.md`):
+`next` runs this before `SPAWN worker` (a `RUN` line under a sandbox profile); by hand, from the repo root (`<hooks>` per `harnesses.md`):
 
 ```
 node <hooks>/proteus-worktree.js <wt> [--tier <tier> [--human]] <owned paths and globs…>
 ```
 
-It writes the owned-paths file `<wt>/.claude/proteus-owned` (`.codex/proteus-owned` on Codex; one path or glob per line, each owning what it matches and everything below a folder it matches; re-running replaces the list), copies the worker hooks and their settings into the worktree as a backup, and adds those files and `/.worktrees/` to `info/exclude`. No list file → allowed, so verifiers and bootstrap are unaffected.
+It writes the owned-paths file `<wt>/.claude/proteus-owned` (`.codex/proteus-owned` on Codex; one path or glob per line, each owning what it matches and everything below a folder it matches; re-running replaces the list), copies the worker hooks and settings into the worktree as a backup, and adds those files and `/.worktrees/` to `info/exclude`. No list file → allowed, so verifiers and bootstrap are unaffected.
 
-The lead guard refuses a subagent's edit outside its worktree's owned paths, in another worker's worktree, or in the main checkout while a run is open; the scratch dir (`proteus-scratch.js --path`) is open to every agent, and to the lead only below a key's dir, judged on its real path. No glob covers the owned-paths file itself, in any spelling NTFS or a case-insensitive filesystem resolves to it. A subagent's worktree is its cwd's when that is a prepared worktree; else, on Claude Code, the one its brief names (`worktree <absolute path>`, `roles.md`), read from its transcript's first message. With no worktree in the brief (helpers, the scout, the guide), several (a contracts worker), or on Codex, its first edit in a prepared worktree binds it there, even another worker's, so the brief still names each worker's worktree by absolute path. That binding moves only once the own worktree's changes are committed, which is how a contracts worker goes from ticket to ticket. Bindings are recorded per agent id in `<git-common-dir>/proteus-lead/agents/`.
+The lead guard refuses a subagent's edit outside its worktree's owned paths, in another worker's worktree, or in the main checkout while a run is open; the scratch dir (`proteus-scratch.js --path`) is open to every agent, and to the lead only below a key's dir, judged on its real path. No glob covers the owned-paths file itself, in any spelling NTFS or a case-insensitive filesystem resolves to it. A subagent's worktree is its cwd's when that is a prepared worktree; else, on Claude Code, the one its brief names (`worktree <absolute path>`, `roles.md`), read from its transcript's first message. With no worktree in the brief (helpers, the scout, the guide), several (a contracts worker), or on Codex, its first edit in a prepared worktree binds it there, even another worker's, so the brief names each worker's worktree by absolute path. That binding moves only once the own worktree's changes are committed. Bindings are recorded per agent id in `<git-common-dir>/proteus-lead/agents/`.
 
 Shell writes skip those hooks, so two more checks run `proteus-owned-check.js`, and both refuse the owned-paths file itself:
 
