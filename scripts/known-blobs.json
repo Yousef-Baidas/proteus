@@ -461,6 +461,7 @@
       "b2650fcb1d25e8ed116fcdb76466bb45de5ff4b0",
       "c0cbfaee17895e9669b20dbe759581ca8536a1e2",
       "c6d445e55c36f649cac3373fb03e45833c588406",
+      "d16c8d96b8923a543b32202ab3a8a4bfab556a34",
       "d5a90f4512532fbcff04c99eec51c652f8cfcb42",
       "d5d75407eb8e974a54ca56a8743287b0fff31b3c",
       "e608b10e93e6f79dde3b2caad43c1e0131afe767",
@@ -512,6 +513,7 @@
       "d9da67a3c1fd802fbdd66f3704b699c113eb23f9",
       "e1a9e83d6e529598281c2d843bd311480c8b7491",
       "e5c05a87769caf4d7048585151c2f271b2109da8",
+      "e71c54993c4a9d9581dea0bf11a3a1bd2ee11980",
       "e8befa8213e5179098a276e638afd26fdf761b36",
       "e8f8c778c271ae663ed147a54788f0e3a449431a",
       "e9f9a329f9684032448686343eea3d09bf010259",
@@ -729,6 +731,7 @@
       "eecf0a1087de0fb67fde9f62b711f873833c8b93",
       "efb2de8b1523b191ba29ee9e190e6deba0eac361",
       "f184e60cc673f8fc29bdebb037ae6c9a6bdd3de1",
+      "f3ae2b77c267b7c3a2f99fbf6978180d7a2b2ec4",
       "f4b1ac1050c761af488a19168ba25d0bc98b5f86",
       "fa6979d3c6617ac970264b36fcdda2789f3cddb4",
       "fabdc8b2a8326ee4a64c04edae8c4609f5533997",
@@ -744,6 +747,7 @@
       "33b609db87f00ade92e2f0af9f5c998eff2f190d",
       "3ed6c76bac8c3ad4a106564e1792008ea4bc9bec",
       "48656c77ad2f94c5ab95d4e948d4e863a18c3879",
+      "7283a520352d21759ec7bf67c5e092b2b601e93d",
       "8fa9ceae1e1131255dd819a479d2c87d18ccc685",
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b"
     ],
@@ -762,6 +766,7 @@
     ],
     "templates/hooks/proteus-ready.js": [
       "20cc287fcb01e630c2d007c9e0efc0a8ced8e490",
+      "c0994ffa0f7b4a55b9e505fd748e3b81c30a406d",
       "d4eacb2eaa10b229075761dd6e6334752ce336b2"
     ],
     "templates/hooks/proteus-run-tree.js": [
@@ -864,6 +869,7 @@
       "db69a02f3bb29c8941b637ab40b6fe73d04926f1"
     ],
     "templates/hooks/proteus-watchdog.js": [
+      "0bf47261edf974464bf4a9d62ca87d8f1be20bfc",
       "484da3b2a9fc7bc36ec50397f757ec6091f365f0",
       "b7bcae7d93391066a3d27082b1f6f609e8b0dc34",
       "e73af240861d0543ca655407bf409b5eb70e25cb"
