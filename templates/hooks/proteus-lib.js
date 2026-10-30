@@ -1387,14 +1387,17 @@ const LEAD_DOCS_MSG = (b) => `proteus: ${b} is the lead's docs branch, whose PR 
 const leadDocsPush = (dst) => (/^proteus-work\/[^/]+\/lead-docs$/i.test(dst) ? LEAD_DOCS_MSG(dst) : null);
 
 // ACCEPT, CHANGES and ANSWER are the human's words (proteus-verdict.js): an agent's gh comment, PR review or
-// comments API write whose body opens with one is refused. It judges what the command runs (#164): a gh or
+// comments API write whose first line is a verdict is refused. It judges what the command runs (#164): a gh or
 // proteus-gh.js call that posts, its body from --body/-b, --body-file/-F, a body= field, --input, or stdin (a
 // heredoc, a here-string, or echo/printf/cat piped in). Text carried elsewhere (a heredoc written to a file, a
-// commit message, a quoted argument) is no post. What it cannot judge is refused: eval, a $( ) or $VAR as the
-// program, xargs into gh, nesting past 3; sh -c '<literal>' is parsed and judged. A guard, not a boundary: the
-// verdict script's author check is.
-const HUMAN_WORD = /^\s*(ACCEPT|CHANGES|ANSWER)(?=\s|$)/;
+// commit message, a quoted argument) is no post. What it cannot judge is refused with its own reason, never as a
+// verdict (#271): eval, a $( ) or $VAR as the program, xargs into gh, inline code calling gh, nesting past 3;
+// sh -c '<literal>' is parsed and judged. A guard, not a boundary: the verdict script's author check is.
+// a verdict is its whole first line (#271): ACCEPT, CHANGES, CHANGES revision or ANSWER <pick>; "CHANGES since the
+// last push: ..." is prose and passes
+const HUMAN_WORD = /^\s*(?:ACCEPT|CHANGES(?:[ \t]+revision)?|ANSWER(?:[ \t][^\r\n]*)?)[ \t]*(?:\r?\n|$)/;
 const VERDICT_MSG = "proteus: ACCEPT, CHANGES and ANSWER are the human's words; agents never post them. Report to the lead, word the comment differently, or record a pick the human made in this session as `Answered in session: <pick>`. The human's own verdict goes out as `node <hooks>/proteus-verdict.js <issue> --post --body-file <file> --sha <sha256>` from their review session, which asks them first.";
+const UNJUDGED_MSG = (why) => `proteus: ${why}, so this guard cannot read what the command posts to GitHub (it refuses agents' ACCEPT, CHANGES and ANSWER). Name gh or proteus-gh.js literally, not through a variable, $( ), eval or xargs, and pass the body with --body, --body-file or a heredoc.`;
 const EVALS = new Set(["eval", "iex", "invoke-expression"]);
 const isGh = (w) => { const p = progName(w); return p === "gh" || p === "proteus-gh.js"; };
 const humanWord = (b) => { const t = String(b).replace(/^\$(?=[A-Z])/, ""); return HUMAN_WORD.test(t) || HUMAN_WORD.test(t.replace(/\\n/g, "\n")); };
@@ -1458,45 +1461,51 @@ function ghBodies(args, all, cmds, i, cwd) {
     const eq = v.indexOf("="), key = eq < 0 ? v : v.slice(0, eq), val = eq < 0 ? "" : v.slice(eq + 1);
     const typed = m.flag === "-F" || m.flag === "--field";
     if (key === "body") out.push(...(typed && val.startsWith("@") ? file(val.slice(1)) : value(val)));
-    else if (key === "query") { const q = /\bbody\s*:\s*\\?"{1,3}\s*(ACCEPT|CHANGES|ANSWER)(?=[\s"\\]|$)/.exec(val); if (q) out.push(q[1]); }
+    else if (key === "query") { const q = /\bbody\s*:\s*\\?"{1,3}\s*((?:ACCEPT|CHANGES|ANSWER)[^"\\\n]*)/.exec(val); if (q) out.push(q[1]); }
   }
   return out;
 }
-// true when the command (or one it nests) posts the human's words, or cannot be judged
+// VERDICT_MSG when the command (or one it nests) posts the human's words, an UNJUDGED_MSG when it cannot be judged, else ""
 function postsWords(cmd, cwd, depth) {
-  if (depth > 3) return true;
+  if (depth > 3) return UNJUDGED_MSG("shells nest more than 3 deep");
   const cmds = shellCommands(cmd);
-  if (cmds.dynamic) return true;
+  if (cmds.dynamic) return UNJUDGED_MSG("a $( ) or backtick runs as a program");
   for (let i = 0; i < cmds.length; i++) {
     const all = cmds[i];
     if (all.resumes) continue; // judged with the command it goes on
     const words = unwrap(fullWords(cmds, all)), prog = progName(words[0]);
     if (!words.length) continue;
-    if (words[0].startsWith("$") || EVALS.has(prog)) return true;
+    if (words[0].startsWith("$")) return UNJUDGED_MSG(`${words[0]} runs a program through a variable`);
+    if (EVALS.has(prog)) return UNJUDGED_MSG(`${prog} runs text as a command`);
     const pre = all.slice(0, all.length - unwrap(all).length);
-    if (pre.some((w) => progName(w) === "xargs") && words.some(isGh)) return true;
+    if (pre.some((w) => progName(w) === "xargs") && words.some(isGh)) return UNJUDGED_MSG("xargs builds the gh call");
     // inline code (node -e, python -c) cannot be parsed here: read as text, as before #164
-    if ((inlineCode(words) || []).some((t) => /\b(?:gh|proteus-gh\.js)\b/.test(t) && /ACCEPT|CHANGES|ANSWER/.test(t))) return true;
+    if ((inlineCode(words) || []).some((t) => /\b(?:gh|proteus-gh\.js)\b/.test(t) && /ACCEPT|CHANGES|ANSWER/.test(t))) return UNJUDGED_MSG(`inline ${prog} code calls gh`);
     if (NESTED_SHELLS.has(prog)) {
       const c = words.findIndex((w, k) => k > 0 && /^-[a-z]*c$/.test(w));
-      if (c > 0) { if (words[c + 1] !== undefined && postsWords(words[c + 1], cwd, depth + 1)) return true; }
+      const nest = (t) => postsWords(t, cwd, depth + 1);
+      if (c > 0) { const why = words[c + 1] !== undefined && nest(words[c + 1]); if (why) return why; }
       else {
-        for (const d of fullDocs(cmds, all)) if (postsWords(d.text, cwd, depth + 1)) return true;
-        if (all.piped) { const p = printed(all.piped, cwd); if (p === null || p.some((t) => postsWords(t, cwd, depth + 1))) return true; }
+        for (const d of fullDocs(cmds, all)) { const why = nest(d.text); if (why) return why; }
+        if (all.piped) {
+          const p = printed(all.piped, cwd);
+          if (p === null) return UNJUDGED_MSG(`${prog} runs what another program prints`);
+          for (const t of p) { const why = nest(t); if (why) return why; }
+        }
       }
     }
     for (let k = 0; k < words.length; k++) {
       if (!isGh(words[k])) continue;
       const bodies = ghBodies(words.slice(k + 1), all, cmds, i, cwd);
-      if (bodies && bodies.some(humanWord)) return true;
+      if (bodies && bodies.some(humanWord)) return VERDICT_MSG;
     }
   }
-  return false;
+  return "";
 }
 function verdictPost(command, cwd) {
   const cmd = String(command || "");
   if (!/\b(?:gh|proteus-gh\.js)\b/.test(cmd) || !/ACCEPT|CHANGES|ANSWER|--body-file|-F|--field|--input|@|\$\(|`/.test(cmd)) return null;
-  return postsWords(cmd, cwd, 0) ? VERDICT_MSG : null;
+  return postsWords(cmd, cwd, 0) || null;
 }
 // opening a review issue (#254): `gh issue create` (or through proteus-gh.js, or inside sh -c '<literal>') with a
 // review label is refused while reviewGateShut says so for its --milestone. A guard, not a boundary.
