@@ -39,7 +39,7 @@
 // is checked before it is shown (seq a positive integer, times numbers, each string printable and capped): one that
 // fails is dropped and named on stderr, as an agent could have written it before the import.
 //   node <hooks>/proteus-shell-check.js --list | --clear <seq>|all   (the lead reads and clears the notices)
-// Accepted residuals: see enforcement.md (layer 2).
+// Accepted residuals: see references/hooks.md (Tamper check).
 "use strict";
 const fs = require("fs");
 const os = require("os");

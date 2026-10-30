@@ -2347,7 +2347,7 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         // in the repo: what Claude Code or git would run outside the sandbox (settings, hooks, git config); the git
         // rules exact or ending in /**, the only ones Linux honours, per submodule (the copy of proteus-worktree.js
         // adds a new one's). A worktree's own config.worktree and hooks are the worker's, not a boundary
-        // (enforcement.md)
+        // (hooks.md)
         slashRule("Edit", path.join(root, "**", ".claude", "**")),
         // the root's and the guest dir's whole .claude/, by a rule Linux honours too: a planted hook or a flipped gate
         // runs install.js outside the sandbox at the next SessionStart (#237 r2), a planted SKILL.md's hooks: run
