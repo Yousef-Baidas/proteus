@@ -575,7 +575,8 @@ function brief(role, target, arg) {
   const dir = r.status === 0 ? last(r.stdout) : "";
   if (!dir) return { code: 1, err: `proteus-scratch.js --path ${run} failed: ${last(r.stderr) || `exit ${r.status}`}` };
   const out = path.join(dir, name);
-  fs.writeFileSync(out, text);
+  // scratch is agent-writable: unlink what is there (a link goes, never its target), then create, never through a link
+  try { fs.rmSync(out, { force: true }); fs.writeFileSync(out, text, { flag: "wx" }); } catch (e) { return { code: 1, err: `${out} not written: ${e.message}` }; }
   return { code: 0, out: [`PROMPT Your brief is ${out}; read it first. ${prompt}`] };
 }
 

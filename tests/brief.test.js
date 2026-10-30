@@ -100,6 +100,17 @@ ok("worker: no Codex line off Codex, no research line without the label", !/\.ag
 ok("worker: no slot is left and no Quick alternative", !/<[^<>\n]+>/.test(b) && !/\(Quick:/.test(b), b);
 ok("worker: the brief starts with the Hooks line and ends with the report line", b.startsWith("Hooks: ") && b.trimEnd().endsWith("one-line note."), b);
 
+// a link planted where the brief goes is replaced, never written through
+const TARGET = path.join(W, "outside.txt");
+fs.writeFileSync(TARGET, "keep\n");
+fs.rmSync(briefFile("brief-5.md"));
+let linked = true;
+try { fs.symlinkSync(TARGET, briefFile("brief-5.md")); } catch { linked = false; }
+if (linked) {
+  r = run(["brief", "worker", "5"]);
+  ok("link: the brief replaces a link at its path and leaves the target alone", r.code === 0 && read(TARGET) === "keep\n" && !fs.lstatSync(briefFile("brief-5.md")).isSymbolicLink() && read(briefFile("brief-5.md")).startsWith("Hooks: "), r.out + r.err);
+}
+
 // a quick ticket: the Quick line from the tier alone, the research line from its label
 r = run(["brief", "worker", "6"]);
 b = read(briefFile("brief-6.md"));
