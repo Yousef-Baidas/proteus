@@ -327,7 +327,7 @@ function next(arg) {
   // under install.js --sandbox the in-repo proteus-worktree.js runs inside the sandbox and its copy outside it
   // (flow.md step 3): the prep is a RUN line then
   const copy = common ? path.join(C.sandboxBin(common), "proteus-worktree.js") : "";
-  const profile = false;
+  const profile = !!copy && fs.existsSync(copy);
   const base = owned.at;
   const failed = [];
   for (const t of ready) {

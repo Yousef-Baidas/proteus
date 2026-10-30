@@ -415,6 +415,7 @@
     "templates/hooks/proteus-cli.js": [
       "acf07914f10bac774ebe71d8ed9d5fad252779ed",
       "c8c284993521f89b0e4fbb014f370908f1e63839",
+      "cf7ad8d3926babb1d1a7ff2019c377537189cb1d",
       "d2d687b75b7e916ec4be4197c8dc9de39c3f56cd"
     ],
     "templates/hooks/proteus-close-report.js": [
