@@ -140,7 +140,7 @@ Auto mode's classifier judges every tool call and every subagent's task descript
   "autoMode": {
     "environment": [
       "$defaults",
-      "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js next and result is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch"
+      "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js (any subcommand) is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch"
     ]
   }
 }

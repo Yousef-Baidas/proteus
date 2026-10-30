@@ -281,7 +281,7 @@ function setAttribution(dry = false) {
 
 // auto mode's classifier reads autoMode from user or managed settings only, and treats an agent
 // editing them as self-modification: Proteus suggests an environment entry and never writes it
-const AUTO_MODE_ENTRY = "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js next and result is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch";
+const AUTO_MODE_ENTRY = "Proteus is my own multi-agent tooling: the /proteus lead spawns proteus-* worker, verifier, QA, guide and scout subagents, their task descriptions are ticket briefs I asked for, and the .claude/hooks/proteus-*.js hooks are my own guardrails; node <hooks>/proteus-cli.js (any subcommand) is my own orchestration script, and the merges next performs go into proteus/<run> run branches only, after the verifier's signed proteus/verdict status, never into the default branch";
 const claudeCode = () => isDir(CLAUDE) || has("claude") !== null;
 // "ok" when an entry names Proteus and proteus-cli.js, "old" when one names Proteus only, "none" otherwise
 function autoModeState() {

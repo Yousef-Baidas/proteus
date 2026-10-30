@@ -105,13 +105,13 @@ h = home("other", { autoMode: { environment: ["$defaults", "Source control: gith
 r = run(INST, "", { cwd, env: lib.homeEnv(h), args: ["--doctor"] });
 ok("doctor: entries that do not name Proteus → the hint", HINT.test(r.out), r.out);
 
-ok("doctor: the hint's entry names proteus-cli.js and keeps next's merges to proteus/<run>", /proteus-cli\.js next/.test(entry) && /proteus\/<run> run branches only/.test(entry) && /never into the default branch/.test(entry), entry);
+ok("doctor: the hint's entry names proteus-cli.js and keeps next's merges to proteus/<run>", /proteus-cli\.js \(any subcommand\)/.test(entry) && /proteus\/<run> run branches only/.test(entry) && /never into the default branch/.test(entry), entry);
 
 const OLD = /WARN\s+auto mode entry predates proteus-cli\.js; `next`'s merges may be blocked/;
 h = home("old", { autoMode: { environment: ["$defaults", "Proteus multi-agent runs are mine"] } });
 before = settings(h);
 r = run(INST, "", { cwd, env: lib.homeEnv(h), args: ["--doctor"] });
-ok("doctor: an entry naming Proteus without proteus-cli.js → WARN predates, with the hint", OLD.test(r.out) && !HINT.test(r.out) && r.out.includes("\"$defaults\"") && /proteus-cli\.js next/.test(r.out), r.out);
+ok("doctor: an entry naming Proteus without proteus-cli.js → WARN predates, with the hint", OLD.test(r.out) && !HINT.test(r.out) && r.out.includes("\"$defaults\"") && /proteus-cli\.js \(any subcommand\)/.test(r.out), r.out);
 ok("doctor: settings.json with the old entry is left as it was", settings(h) === before);
 
 const CURRENT = "Proteus runs are mine, and node .claude/hooks/proteus-cli.js is my own script";
@@ -131,7 +131,7 @@ ok("install: the closing message suggests the entry when none names Proteus", /A
 ok("install: no autoMode block is written", !("autoMode" in JSON.parse(settings(h))), settings(h));
 h = home("install-old", { autoMode: { environment: ["$defaults", "Proteus multi-agent runs are mine"] } });
 r = run(INST, "", { cwd, env: lib.homeEnv(h) });
-ok("install: the closing message suggests the entry when the Proteus one predates proteus-cli.js", /Auto mode: its classifier/.test(r.out) && /proteus-cli\.js next/.test(r.out), r.out + r.err);
+ok("install: the closing message suggests the entry when the Proteus one predates proteus-cli.js", /Auto mode: its classifier/.test(r.out) && /proteus-cli\.js \(any subcommand\)/.test(r.out), r.out + r.err);
 ok("install: the old autoMode block is kept as it was", JSON.stringify(JSON.parse(settings(h)).autoMode) === JSON.stringify({ environment: ["$defaults", "Proteus multi-agent runs are mine"] }));
 h = home("install-has", { autoMode: { environment: ["$defaults", CURRENT] } });
 r = run(INST, "", { cwd, env: lib.homeEnv(h) });
