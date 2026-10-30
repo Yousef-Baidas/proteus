@@ -158,6 +158,43 @@ fs.writeFileSync(STATE, JSON.stringify({ perm: "admin" }));
 r = run(IN, "", { cwd: repo, args: ["--protect"], env: env() });
 ok("install --protect: a bot that is an admin is named, the ruleset still goes on", r.code === 1 && /can lift the ruleset/.test(r.err) && JSON.parse(fs.readFileSync(STATE, "utf8")).rulesets.length === 1, r.err);
 
+// ---- install.js --protect: proteus-trust.yml on the default branch, by a PR the human merges (#276)
+const TRUSTYML = fs.readFileSync(path.join(SRC, "templates", "ci", "proteus-trust.yml"), "utf8").replace(/\r\n/g, "\n");
+const trustRun = (state) => { fs.writeFileSync(STATE, JSON.stringify({ perm: "write", ...state })); const x = run(IN, "", { cwd: repo, args: ["--protect"], env: env() }); return { r: x, st: JSON.parse(fs.readFileSync(STATE, "utf8")) }; };
+let tr = trustRun({ default: "trunk" });
+ok("install --protect: a default branch without proteus-trust.yml gets one PR from proteus-setup/trust carrying the template",
+  tr.r.code === 0 && tr.st.prs.length === 1 && tr.st.prs[0].base === "trunk" && tr.st.prs[0].head === "proteus-setup/trust" && tr.st.trust["proteus-setup/trust"] === TRUSTYML,
+  tr.r.out + tr.r.err + JSON.stringify(tr.st.prs));
+ok("install --protect: it never writes the default branch and prints one line to merge the PR",
+  !("trunk" in tr.st.trust) && tr.r.out.split("\n").filter((l) => /merge PR #200 \(proteus-setup\/trust into trunk\)/.test(l)).length === 1, tr.r.out);
+tr = trustRun({ trust: { main: "name: proteus-trust\n# old\n" } });
+ok("install --protect: a differing copy gets the template on the branch, replacing the old file, and a PR",
+  tr.r.code === 0 && tr.st.prs.length === 1 && tr.st.trust["proteus-setup/trust"] === TRUSTYML && tr.st.trust.main === "name: proteus-trust\n# old\n", tr.r.out + tr.r.err);
+tr = trustRun({ trust: { main: TRUSTYML.replace(/\n/g, "\r\n") } });
+ok("install --protect: a matching copy (line endings aside) is a no-op: no branch, no write, no PR",
+  tr.r.code === 0 && !tr.st.prs && !tr.st.refs && !tr.st.trustPuts && /proteus-trust\.yml on main matches the template/.test(tr.r.out), tr.r.out + tr.r.err);
+tr = trustRun({ refs: ["proteus-setup/trust"], trust: { "proteus-setup/trust": "stale\n" }, prs: [{ number: 77, base: "main", head: "proteus-setup/trust" }] });
+ok("install --protect: an open PR from proteus-setup/trust is reused, its file brought to the template",
+  tr.r.code === 0 && tr.st.prs.length === 1 && tr.st.trust["proteus-setup/trust"] === TRUSTYML && !tr.st.resets && /merge PR #77 /.test(tr.r.out), tr.r.out + tr.r.err);
+tr = trustRun({ refs: ["proteus-setup/trust"], trust: { "proteus-setup/trust": TRUSTYML }, prs: [{ number: 77, base: "main", head: "proteus-setup/trust" }] });
+ok("install --protect: run again with the PR open, nothing is written", tr.r.code === 0 && !tr.st.trustPuts && tr.st.prs.length === 1, tr.r.out + tr.r.err);
+tr = trustRun({ refs: ["proteus-setup/trust"], trust: { "proteus-setup/trust": "stale\n" } });
+ok("install --protect: a leftover branch with no open PR is reset to the default branch's head, then gets a PR",
+  tr.r.code === 0 && tr.st.resets === 1 && tr.st.prs.length === 1 && tr.st.trust["proteus-setup/trust"] === TRUSTYML, tr.r.out + tr.r.err);
+tr = trustRun({ noWorkflowScope: true });
+ok("install --protect: a token without the workflow scope fails, naming gh auth refresh -s workflow, and opens no PR",
+  tr.r.code === 1 && /gh auth refresh -s workflow/.test(tr.r.err) && !tr.st.prs, tr.r.out + tr.r.err);
+// the doctor row, in a project
+fs.mkdirSync(path.join(repo, "teams"), { recursive: true });
+const trustRow = (state) => { fs.writeFileSync(STATE, JSON.stringify(state)); return run(IN, "", { cwd: repo, args: ["--doctor"], env: env() }).out.split("\n").filter((l) => /proteus-trust\.yml/.test(l)).join("|"); };
+let row = trustRow({});
+ok("doctor: a default branch without proteus-trust.yml is a WARN naming --protect", /^WARN\s+\.github\/workflows\/proteus-trust\.yml on main, the default branch of o\/r, is missing: .* — .*--protect/.test(row), row);
+row = trustRow({ trust: { main: "old\n" } });
+ok("doctor: a copy differing from the template is a WARN naming --protect", /^WARN\s+.* differs from the template: .* — .*--protect/.test(row), row);
+row = trustRow({ trust: { main: TRUSTYML } });
+ok("doctor: a copy equal to the template is ok", /^ok\s+\.github\/workflows\/proteus-trust\.yml on main matches the template$/.test(row), row);
+fs.rmSync(path.join(repo, "teams"), { recursive: true, force: true });
+
 // ---- autostart: the state line names the identity, GH_CONFIG_DIR exported to the agents' shells
 const AP = path.join(W, "asrepo");
 fs.mkdirSync(path.join(AP, ".claude", "skills", "proteus"), { recursive: true });

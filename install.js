@@ -1723,6 +1723,59 @@ const rulesMissing = (rules) => REQUIRED.filter((c) => !required(rules).has(c));
 const rulesUnpinned = (rules, app) => REQUIRED.filter((c) => c !== "gates" && !(rules || []).some((x) => x.type === "required_status_checks"
   && ((x.parameters || {}).required_status_checks || []).some((e) => e.context === c && Number(e.integration_id) === app.appId)));
 
+// proteus-trust.yml runs on pull_request_target, which GitHub reads from the default branch only (#276): --protect
+// keeps that copy equal to the template through a one-file PR the human merges, and the doctor warns while it differs
+const TRUST = ".github/workflows/proteus-trust.yml", TRUST_BRANCH = "proteus-setup/trust";
+const lf = (s) => String(s).replace(/\r\n/g, "\n");
+const trustTemplate = () => lf(fs.readFileSync(path.join(HERE, "templates", "ci", "proteus-trust.yml"), "utf8"));
+// the workflow at a ref: { text, sha }, text "" when the ref has none, null when gh cannot say
+function trustAt(repo, ref, opts = {}) {
+  const f = ghAs("", ["api", `repos/${repo}/contents/${TRUST}?ref=${encodeURIComponent(ref)}`], opts);
+  if (!f.ok) return /HTTP 404|Not Found/.test(f.err) ? { text: "", sha: "" } : null;
+  const j = json(f.out);
+  return j && typeof j.content === "string" ? { text: lf(Buffer.from(j.content, "base64").toString("utf8")), sha: j.sha } : null;
+}
+function trustOnDefault(repo, opts = {}) {
+  const b = ghAs("", ["api", `repos/${repo}`, "--jq", ".default_branch"], opts);
+  const at = b.ok && b.out ? trustAt(repo, b.out, opts) : null;
+  return at && { branch: b.out, ...at };
+}
+// never pushes to the default branch: the template goes on TRUST_BRANCH, cut from its head, and an open PR is reused
+function syncTrust(repo) {
+  const cur = trustOnDefault(repo), want = trustTemplate();
+  if (!cur) { warn(`cannot read ${TRUST} on the default branch of ${repo}, the one copy GitHub runs`); return false; }
+  if (cur.text === want) { log(`trust    -> ${TRUST} on ${cur.branch} matches the template`); return true; }
+  const open = ghAs("", ["pr", "list", "--head", TRUST_BRANCH, "--state", "open", "--json", "number", "-q", ".[].number"]);
+  if (!open.ok) { warn(`gh pr list fails: ${open.err}`); return false; }
+  let pr = open.out.split(/\s+/)[0];
+  const scope = (e) => (/workflow/i.test(e) ? " (gh auth refresh -s workflow lets gh write workflows)" : "");
+  if (!pr) {
+    const head = json(ghAs("", ["api", `repos/${repo}/git/ref/heads/${cur.branch}`]).out);
+    const sha = head && head.object && head.object.sha;
+    if (!sha) { warn(`cannot read the head of ${cur.branch} on ${repo}`); return false; }
+    // a leftover branch without an open PR starts over from the default branch's head
+    const mk = ghAs("", ["api", "-X", "POST", `repos/${repo}/git/refs`, "--input", "-"], { input: JSON.stringify({ ref: `refs/heads/${TRUST_BRANCH}`, sha }) });
+    const reset = mk.ok ? mk : ghAs("", ["api", "-X", "PATCH", `repos/${repo}/git/refs/heads/${TRUST_BRANCH}`, "--input", "-"], { input: JSON.stringify({ sha, force: true }) });
+    if (!reset.ok) { warn(`cannot create ${TRUST_BRANCH} on ${repo}: ${reset.err}`); return false; }
+  }
+  const on = trustAt(repo, TRUST_BRANCH);
+  if (!on) { warn(`cannot read ${TRUST} on ${TRUST_BRANCH}`); return false; }
+  if (on.text !== want) {
+    const msg = `ci: ${on.text ? "update" : "add"} proteus-trust.yml on the default branch`;
+    const put = ghAs("", ["api", "-X", "PUT", `repos/${repo}/contents/${TRUST}`, "--input", "-"],
+      { input: JSON.stringify({ message: msg, content: Buffer.from(want, "utf8").toString("base64"), branch: TRUST_BRANCH, ...(on.sha && { sha: on.sha }) }) });
+    if (!put.ok) { warn(`cannot write ${TRUST} on ${TRUST_BRANCH}: ${put.err}${scope(put.err)}`); return false; }
+  }
+  if (!pr) {
+    const body = `GitHub runs a pull_request_target workflow from the default branch only, so proteus-trust (CI's proteus/security on PRs into proteus/*) runs only once this file is on ${cur.branch}. Opened by install.js --protect; the file is templates/ci/proteus-trust.yml unchanged.\n`;
+    const made = ghAs("", ["pr", "create", "--base", cur.branch, "--head", TRUST_BRANCH, "--title", "ci: proteus-trust.yml on the default branch", "--body-file", "-"], { input: body });
+    if (!made.ok) { warn(`cannot open the PR from ${TRUST_BRANCH}: ${made.err}`); return false; }
+    pr = made.out.split("/").pop();
+  }
+  log(`trust    -> merge PR #${pr} (${TRUST_BRANCH} into ${cur.branch}): GitHub runs proteus-trust.yml only from the default branch`);
+  return true;
+}
+
 function protect() {
   const human = loginOf("");
   if (!human) { warn("gh is not logged in as you: gh auth login"); return false; }
@@ -1752,6 +1805,7 @@ function protect() {
       }
     }
   }
+  if (!syncTrust(repo)) ok = false;
   const list = ghAs("", ["api", `repos/${repo}/rulesets`]);
   const found = (json(list.out) || []).find((x) => x && x.name === RULESET);
   const put = ghAs("", ["api", "-X", found ? "PUT" : "POST", `repos/${repo}/rulesets${found ? `/${found.id}` : ""}`, "--input", "-"], { input: JSON.stringify(rulesetBody()) });
@@ -2014,6 +2068,13 @@ async function doctor(fix) {
       const p = ghAs("", ["api", `repos/${repo}/collaborators/${bot}/permission`, "--jq", ".permission"], { cwd: root }).out;
       if (p === "admin") return ["WARN", `${bot} is an admin of ${repo} and can lift the ruleset`, "lower it to write in Settings > Collaborators"];
       return p === "write" || p === "maintain" ? ["ok", `${bot} has ${p} on ${repo}`] : ["FIX", `${bot} cannot push to ${repo} (${p || "unknown"})`, `${self} --protect (run by an admin of ${repo})`];
+    });
+    if (isProject) check(() => {
+      if (!repo) return ["ok", "proteus-trust.yml on the default branch not checked (no repo)"];
+      const cur = trustOnDefault(repo, { cwd: root });
+      if (!cur) return ["WARN", `${TRUST} on the default branch of ${repo} not checked (gh cannot read it)`, "gh auth status"];
+      if (cur.text === trustTemplate()) return ["ok", `${TRUST} on ${cur.branch} matches the template`];
+      return ["WARN", `${TRUST} on ${cur.branch}, the default branch of ${repo}, ${cur.text ? "differs from the template" : "is missing"}: GitHub runs it only from there, so no PR into proteus/* gets CI's proteus/security`, `${self} --protect (run by an admin of ${repo}), then merge the PR it opens`];
     });
     if (plug) pluginChecks(check, top.out, self, guest);
     if (!isProject) {
