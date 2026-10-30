@@ -199,7 +199,8 @@ skills/proteus/
   references/docs-diet.md    root-doc budget and where everything else goes
   references/tracker.md      where state lives: GitHub operations table, Jira slot
   references/stack.md        who loads which tool, context meter, worktree lifecycle
-  references/enforcement.md  CI, branch protection, hooks, lefthook, semgrep, mutation, OSV, skill lock, baseline ratchet
+  references/enforcement.md  CI, branch protection, lefthook, semgrep, mutation, OSV, skill lock, baseline ratchet
+  references/hooks.md        what each hook refuses, hook git, lead state, the human's verdict post
   references/commits.md      commit message rules
 skills/proteus-review/
   SKILL.md                   the human's inbox: questions as pickers, then milestone reviews

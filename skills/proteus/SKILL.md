@@ -23,7 +23,7 @@ Your own hands: `gh` and `git` reads capped with `--json … -q` or `| tail -5`;
 
 A mattpocock skill the Skill tool refuses (`/grill-with-docs`, `/wayfinder`, `/to-spec`, `/to-tickets`, `/handoff`) → read its `SKILL.md` (`node <hooks>/proteus-skillpath.js <skill>`) and follow it as if invoked; tell a worker the same for `/implement`.
 
-Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every session, and translate. References, read when named: `flow.md` at each step, and the references its step names; `roles.md` when spawning; `operations.md` on a command, a stall or an install; `stack.md` on a first run in a repo; `conventions.md` when `CONVENTIONS.md` is missing; `docs-diet.md` when `doc-bloat` is not `none`; `lessons.md` on a lesson; `tour.md` on `tour`. Your commits follow `commits.md`.
+Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every session, and translate. References, read when named: `flow.md` at each step, and the references its step names; `roles.md` when spawning; `operations.md` on a command, a stall or an install; `stack.md` on a first run in a repo; `conventions.md` when `CONVENTIONS.md` is missing; `docs-diet.md` when `doc-bloat` is not `none`; `lessons.md` on a lesson; `tour.md` on `tour`; `hooks.md` when a hook refuses and you need why. Your commits follow `commits.md`.
 
 ## Session start
 
