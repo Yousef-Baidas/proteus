@@ -105,6 +105,14 @@ function spawns(common) {
     return r && typeof r.name === "string" && typeof r.type === "string" ? [r] : [];
   });
 }
+// the commits on branch past the refs in not, newest first, each { sha, contract }: contract when its subject is the
+// contract's for #n (`test(<scope>): contract for #<n>`); null when git cannot read the branch
+function commitsPast(common, branch, n, not) {
+  const log = lib.gitTry(common, ["log", "--format=%H%x09%s", `refs/heads/${branch}`, "--not", ...not]);
+  if (!log.ok) return null;
+  const re = new RegExp(`^test(?:\\([^)]*\\))?: contract for #${n}$`);
+  return log.out.split("\n").filter(Boolean).map((l) => { const [sha, s] = l.split("\t"); return { sha, contract: re.test(s || "") }; });
+}
 const isWorker = (type) => /^proteus-(?:[a-z0-9-]+-)?worker$/.test(lib.agentName(type));
 
 // the gate command(s) on the gate line of AGENTS.md ## Learned (`- gate: \`<command>\``); [] when there is none
@@ -322,19 +330,21 @@ function next(arg) {
   }
 
   // a ticket's worker branch counts as in flight; but one this script prepared, whose worker is not spawned yet, with
-  // nothing committed past the base its owned list records, leaves the ticket the lead's to spawn
+  // no PR and nothing but the ticket's contract committed past the base its owned list records, leaves the ticket the
+  // lead's to spawn
   const workers = new Set(recs.filter((r) => isWorker(r.type) && Number.isInteger(r.ticket)).map((r) => r.ticket));
   const wtOf = (n) => path.join(root, ".worktrees", String(n));
   const branchOf = (n) => `${lib.CURRENT.work}${run}/${n}`;
-  const untouched = (n, b) => {
+  const unstarted = (n, b) => {
     let list = "";
     try { list = fs.readFileSync(lib.ownedFile(wtOf(n)), "utf8"); } catch { return false; }
     const at = /^# tier \S+(?: human)? ([0-9a-f]{40}(?:[0-9a-f]{24})?)$/m.exec(list);
-    return !!at && lib.gitTry(common, ["rev-parse", "--verify", "-q", `refs/heads/${b}^{commit}`]).out === at[1];
+    const past = at && commitsPast(common, b, n, [at[1]]);
+    return !!past && past.every((c) => c.contract) && !prs.some((p) => p.headRefName === b);
   };
   const refs = w.refs.filter((b) => {
     const n = ticketOf(run, names, b);
-    return !(n && b === branchOf(n) && !workers.has(n) && lib.branchOf(wtOf(n)) === b && untouched(n, b));
+    return !(n && b === branchOf(n) && !workers.has(n) && lib.branchOf(wtOf(n)) === b && unstarted(n, b));
   });
   const { ready, blocked } = fromTracker(root, run, names, { issues, prs, reviews, refs, at: owned.at });
   const byIssue = new Map(issues.map((i) => [i.number, i]));
@@ -501,9 +511,7 @@ function briefContext(w, issues, n, extra = {}) {
     worktree: () => (lib.branchOf(wt) === branch ? wt : ""),
     // the oldest commit on the worker branch, past the run branch, whose subject is the contract's
     contract: memo(() => {
-      const log = lib.gitTry(common, ["log", "--format=%H%x09%s", `refs/heads/${branch}`, "--not", ...runRefs]);
-      const re = new RegExp(`^test(?:\\([^)]*\\))?: contract for #${n}$`);
-      return (log.ok ? log.out.split("\n") : []).flatMap((l) => { const [h, s] = l.split("\t"); return re.test(s || "") ? [h] : []; }).pop() || "";
+      return (commitsPast(common, branch, n, runRefs) || []).filter((c) => c.contract).map((c) => c.sha).pop() || "";
     }),
     // the Check line's words that name a file in the contract commit's tree, each as file[:line]
     checkFiles: memo(() => {
