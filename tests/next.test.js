@@ -18,9 +18,9 @@ fs.writeFileSync(path.join(REPO, "a.txt"), "a\n");
 g(REPO, "add", "-A");
 g(REPO, "commit", "-qm", "init");
 g(REPO, "checkout", "-q", "-b", "proteus/r1");
-// the lead's records of tickets 1-8 on the run branch, so these cases never need origin (whose URL is not reachable)
+// the lead's records of tickets 1-11 on the run branch, so these cases never need origin (whose URL is not reachable)
 fs.mkdirSync(path.join(REPO, ".proteus", "owned"), { recursive: true });
-for (let n = 1; n <= 8; n++) fs.writeFileSync(path.join(REPO, ".proteus", "owned", String(n)), `src/t${n}.js\n`);
+for (let n = 1; n <= 11; n++) fs.writeFileSync(path.join(REPO, ".proteus", "owned", String(n)), `src/t${n}.js\n`);
 g(REPO, "add", "-A");
 g(REPO, "commit", "-qm", "records");
 g(REPO, "checkout", "-q", "main");
@@ -209,6 +209,14 @@ g(WT(5), "add", "-A");
 g(WT(5), "-c", "core.hooksPath=/dev/null", "commit", "-qm", "work");
 r = next(PREP);
 ok("prep: no SPAWN worker #5 once its branch has a commit", !lines(r).some((l) => l.startsWith("SPAWN worker #5")), r.out);
+
+// a slice ticket (teams.md) is Quick or Standard only: a slice: label on a hard or full one is DECIDE, no prep
+const sliced = (n, d, extra = "") => issue(n, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: `difficulty:${d}` }, { name: "slice:frontend,devops" }], body: `Owned: src/t${n}.js${extra}` });
+r = next({ issues: [sliced(9, "hard"), sliced(10, "standard", "\nTier: full"), sliced(11, "standard")], prs: [], reviews: [], inbox: [] });
+ok("slice: a hard slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #9 slice: tier hard too large") && !fs.existsSync(WT(9)) && !lines(r).some((l) => l.startsWith("SPAWN worker #9")), r.out);
+ok("slice: a full-tier slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #10 slice: tier full too large") && !fs.existsSync(WT(10)) && !lines(r).some((l) => l.startsWith("SPAWN worker #10")), r.out);
+ok("slice: a standard slice ticket is prepared and spawned", lines(r).includes(`SPAWN worker #11 team=backend difficulty=standard worktree=${WT(11)} brief: node ${SCRIPT} brief worker 11`), r.out);
+ok("slice: the label parses to its teams", JSON.stringify(require(SCRIPT).sliceTeams(["profile:backend", "slice:frontend, devops", "slice:qa"])) === JSON.stringify(["frontend", "devops", "qa"]));
 
 // under install.js --sandbox the prep runs in the sandbox: a RUN line with both steps and the copy, nothing made
 const PROFILE = path.join(lib.HOME, ".claude", "proteus-sandbox", "bin", require(path.join(path.dirname(SCRIPT), "proteus-confine.js")).sandboxKey(COMMON), "proteus-worktree.js");

@@ -55,6 +55,8 @@ Models per role follow the ladder in `SKILL.md` rule 2. On a Sonnet lead all thr
 ## Routing
 
 - Tag at `/to-tickets`: `profile:<team>` from `ROUTING.md`. A ticket needing two teams is two tickets with a contract between them.
+- Slice ticket, the one exception: when that contract would be larger than the change. Tier Quick or Standard only; labels `profile:<owning team>` plus `slice:<team>[,<team>]` naming the others; its owned paths may fall in any named team's `Owns`, nowhere else. One worker and one verifier, both from the owning team; the verifier checks every named team's checklist. The security trigger is unchanged. `next` refuses `slice:` on a hard or full ticket (`DECIDE #<n> slice`).
+- Cross-cutting change (a rename across the codebase, a dependency bump, a license header): one ticket, owned by the team that owns the mechanism (dependencies: devops), `difficulty:mechanical`. Owned is the exact file list, no globs. Its check proves the change mechanical: the same transformation in every file and nothing else.
 - `security` is not tagged; the lead attaches it as a second verifier by the rule above. Both verdicts must be `MERGE`.
 - `qa` runs once per wave, not per ticket. Per-ticket checks already are the QA.
 

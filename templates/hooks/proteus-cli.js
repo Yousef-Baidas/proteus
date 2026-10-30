@@ -13,6 +13,7 @@
 //                                                             printed again while the batch awaits its result
 //   DECIDE suite|merge: <reason>                             no gate command in ## Learned, or a batch that stopped
 //   DECIDE #<n> owned line differs from record                an open ticket whose Owned: line is not its record's
+//   DECIDE #<n> slice: tier <t> too large                     a ready slice ticket (a slice: label) that is hard or full
 //   SPAWN verifier PR#<n> #<ticket> head=<sha12> brief: <cmd>  an open PR with no proteus/verdict and no verifier
 //                                                             spawn recorded for its head
 //   SPAWN worker #<n> team=<team> difficulty=<d>[ speculative] worktree=<path> brief: <cmd>
@@ -55,7 +56,7 @@ actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN ve
 BLOCKED, then WAIT when nothing but BLOCKED is due. A RUN line is the lead's to run, sandboxed.
 Open tickets with an Owned: line and no record on proteus/<run> get one record PR per wave, from
 proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
-a changed Owned: line prints DECIDE #<n>.
+a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -254,6 +255,9 @@ function where(arg) {
   return { root, common, refs, run, names };
 }
 
+// the other teams a slice ticket's slice:<team>[,<team>] labels name, [] for any other ticket
+const sliceTeams = (labels) => [...new Set(labels.filter((l) => l.startsWith("slice:")).flatMap((l) => l.slice(6).split(",")).map((t) => t.trim()).filter(Boolean))];
+
 // the actions, in print order, after the due steps ran; { code, err } when there are none to give
 function next(arg) {
   const w = where(arg);
@@ -350,6 +354,9 @@ function next(arg) {
     if (owned.has && !owned.has.has(t.n)) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: owned.wait.get(t.n) || "owned record pending" }); continue; }
     const tierLine = /^Tier:[ \t]*(\S+)/im.exec((byIssue.get(t.n) || {}).body || "");
     const tier = tierLine ? tierLine[1].toLowerCase() : "standard";
+    // a slice ticket (teams.md, Routing) is Quick or Standard only
+    const big = t.difficulty === "hard" ? "hard" : tier === "full" ? "full" : "";
+    if (big && sliceTeams(((byIssue.get(t.n) || {}).labels || []).map((l) => l.name)).length) { out.push({ kind: "DECIDE", ticket: t.n, reason: `slice: tier ${big} too large` }); continue; }
     if (!prepared(wt, branch)) {
       const why = !lib.TIERS.includes(tier) ? `Tier: ${tier} is not one of ${lib.TIERS.join(", ")}`
         : !fs.existsSync(wt) && !base ? `no ${names.branch}${run} to cut the worktree from` : "";
@@ -441,6 +448,7 @@ const FILL = {
   pr: (c) => need("pr", c.pr && String(c.pr)),
   "absolute path": (c) => need("absolute path", c.worktree()),
   "the ticket's tier": (c) => c.tier,
+  "slice profiles": (c) => sliceTeams(c.labels).map((t) => `teams/${t}/PROFILE.md`).join(", "),
   "contract sha": (c) => need("contract sha", c.contract()),
   "file:line pointers": (c) => need("file:line pointers", c.checkFiles().join(", ")),
   "file::name or command": (c) => need("file::name or command", c.check),
@@ -455,6 +463,7 @@ const WHEN = {
   "Quick or mechanical": (c) => c.tier === "quick" || c.difficulty === "mechanical",
   "standard or hard": (c) => need("difficulty", ["standard", "hard"].includes(c.difficulty) ? c.difficulty : ""),
   "needs-research": (c) => c.labels.includes("needs-research"),
+  slice: (c) => sliceTeams(c.labels).length > 0,
   "isolation=container": (c) => c.container,
 };
 // the block with every slot filled; throws Decide(slot) for one with no source
@@ -640,5 +649,5 @@ function main() {
   return 0;
 }
 
-module.exports = { next, result, brief, gateCommand, recordMessage, roleBlock, slotsOf, FILL, WHEN, KEPT, OPTIONAL };
+module.exports = { next, result, brief, gateCommand, recordMessage, roleBlock, slotsOf, sliceTeams, FILL, WHEN, KEPT, OPTIONAL };
 if (require.main === module) process.exitCode = main();
