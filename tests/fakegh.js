@@ -188,6 +188,18 @@ if (process.env.FAKE_GH_NEXT) {
   if (a.startsWith("issue list --label proteus-review --state open --json milestone ")) out(s.reviews || []);
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
+  // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
+  if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {
+    const argv = process.argv.slice(2), opt = (f) => argv[argv.indexOf(f) + 1];
+    const head = opt("--head"), sha = s.origin ? require("child_process").spawnSync("git", ["-C", s.origin, "rev-parse", `refs/heads/${head}`], { encoding: "utf8" }).stdout.trim() : "";
+    const number = 100 + (s.created || []).length;
+    const p = { number, headRefName: head, headRefOid: sha, baseRefName: opt("--base"), title: opt("--title"), body: opt("--body"), isDraft: false, statusCheckRollup: [] };
+    s.created = [...(s.created || []), p];
+    s.prs = [...(s.prs || []), p];
+    require("fs").writeFileSync(process.env.FAKE_GH_NEXT, JSON.stringify(s));
+    process.stdout.write(`https://github.com/o/r/pull/${number}\n`);
+    process.exit(0);
+  }
 }
 // FAKE_GH_MERGE (a JSON file {origin, issues, prs: [{number, headRefName, baseRefName, body, statusCheckRollup}]}) answers
 // proteus-merge.js: the open PRs, the run's issues, and `pr merge` as a real merge commit in the origin repo (git merge-tree);

@@ -11,14 +11,19 @@
 //                                                             proteus-run-tree.js <sha> and suite in .worktrees/_run,
 //                                                             printed again while the batch awaits its result
 //   DECIDE suite|merge: <reason>                             no gate command in ## Learned, or a batch that stopped
+//   DECIDE #<n> owned line differs from record                an open ticket whose Owned: line is not its record's
 //   SPAWN verifier PR#<n> #<ticket> head=<sha12>               an open PR with no proteus/verdict and no verifier
 //                                                             spawn recorded for its head
 //   SPAWN worker #<n> team=<team> difficulty=<d>[ speculative] worktree=<path>
 //                                                             a ready ticket, its worktree prepared here; under a
 //                                                             sandbox profile a RUN line that prepares it instead
-//   BLOCKED #<n> <reason>                                     a blocked ticket, or `prep: <why>` when its prep failed
+//   BLOCKED #<n> <reason>                                     a blocked ticket, or `prep: <why>` when its prep failed,
+//                                                             or `owned record pending PR#<m>` until its record merges
 //   WAIT node <hooks>/proteus-watchdog.js --wait              when nothing but BLOCKED is due
-// What it executes: `git worktree add` and proteus-worktree.js for a ready ticket with no worktree (hooks.md: it runs
+// What it executes: the wave's owned-path record PR (#281) when an open ticket with an Owned: line has no
+// .proteus/owned/<n> on proteus/<run> and no record PR is open: one commit of git objects alone (no worktree, index or
+// checkout, #212) on proteus-work/<run>/owned-<k>, a push of that one ref and gh pr create; records are add-only.
+// `git worktree add` and proteus-worktree.js for a ready ticket with no worktree (hooks.md: it runs
 // outside the sandbox; under install.js --sandbox it runs inside it, so a profile turns the prep into a RUN line), and
 // proteus-merge.js's batch when one is due and none awaits a result. Never proteus-run-tree.js, the suite, or the
 // watchdog's --forget, which run sandboxed. result forwards to proteus-merge.js --result with the same suite and prints
@@ -32,7 +37,7 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 const { fromTracker, ticketOf } = require(path.join(__dirname, "proteus-ready.js"));
 const { spawnSync } = require("child_process");
-const { pick, batch, readState } = require(path.join(__dirname, "proteus-merge.js"));
+const { pick, batch, readState, originOf } = require(path.join(__dirname, "proteus-merge.js"));
 const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 
@@ -41,6 +46,9 @@ const HELP = `${USAGE}
 next prepares the ready tickets' worktrees and starts the merge batch, then prints the lead's next
 actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN verifier, SPAWN worker,
 BLOCKED, then WAIT when nothing but BLOCKED is due. A RUN line is the lead's to run, sandboxed.
+Open tickets with an Owned: line and no record on proteus/<run> get one record PR per wave, from
+proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
+a changed Owned: line prints DECIDE #<n>.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -116,6 +124,112 @@ function prep(root, common, base, wt, branch, tier, owned) {
 }
 const prepared = (wt, branch) => fs.existsSync(lib.ownedFile(wt)) && lib.branchOf(wt) === branch;
 
+// a ticket body's Owned: line, and a record's lines, as their entries
+const ownedLine = (body) => { const m = /^Owned:[ \t]*(.+)$/im.exec(body || ""); return m ? m[1].split(/[,\s]+/).filter(Boolean) : []; };
+const entries = (text) => String(text || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+const same = (a, b) => a.length === b.length && a.every((e) => b.includes(e));
+// a tree's entries from ls-tree -z, each { mode, type, obj, name, line }; null when spec names no tree
+function treeOf(common, spec) {
+  const r = lib.gitTry(common, ["ls-tree", "-z", spec]);
+  if (!r.ok) return null;
+  return r.out.split("\0").filter(Boolean).map((line) => {
+    const tab = line.indexOf("\t"), [mode, type, obj] = line.slice(0, tab).split(" ");
+    return { mode, type, obj, name: line.slice(tab + 1), line };
+  });
+}
+// the records on commit sha: { <ticket>: blob sha }
+function recordsAt(common, sha) {
+  const out = {};
+  for (const e of (sha && treeOf(common, `${sha}:${lib.OWNED_RECORDS}`)) || []) if (e.type === "blob" && /^\d+$/.test(e.name)) out[e.name] = e.obj;
+  return out;
+}
+// tree (a tree-ish, "" for none) with the blobs add ([name, sha]) put under dir parts, as git's objects alone: hash-object,
+// ls-tree and mktree, no index and no checkout; the new tree's sha, "" on a failure or a file where a dir should be
+function treeWith(common, tree, parts, add) {
+  const list = tree ? treeOf(common, tree) : [];
+  if (!list) return "";
+  let lines = list.map((e) => e.line);
+  if (!parts.length) lines = [...lines.filter((l) => !add.some(([n]) => l.endsWith(`\t${n}`))), ...add.map(([n, sha]) => `100644 blob ${sha}\t${n}`)];
+  else {
+    const cur = list.find((e) => e.name === parts[0]);
+    if (cur && cur.type !== "tree") return "";
+    const sub = treeWith(common, cur ? cur.obj : "", parts.slice(1), add);
+    if (!sub) return "";
+    lines = [...lines.filter((l) => l !== (cur && cur.line)), `040000 tree ${sub}\t${parts[0]}`];
+  }
+  return lib.gitIn(common, ["mktree", "-z"], 30000, { input: lines.map((l) => `${l}\0`).join("") });
+}
+// the commit message: every ticket on the subject while it fits commit-msg.js's 72, else listed in the body
+function recordMessage(ns) {
+  const tickets = ns.map((n) => `#${n}`).join(", ");
+  const subject = `chore(proteus): record owned paths for ${tickets}`;
+  if (subject.length <= 72) return subject;
+  const body = [];
+  for (const t of ns.map((n) => `#${n}`)) {
+    if (body.length && `${body[body.length - 1]}, ${t}`.length <= 72) body[body.length - 1] += `, ${t}`;
+    else body.push(t);
+  }
+  return `chore(proteus): record owned paths for ${ns.length} tickets\n\n${body.join(",\n")}`;
+}
+
+// the wave's owned-path records (#281): every open ticket with an Owned: line and no record on the run branch gets one,
+// all in one commit on proteus-work/<run>/owned-<k>, cut from origin's tip of the run branch, and one PR into it, made
+// here with git's objects alone (no worktree, checkout or index: this runs outside the sandbox, #212 r5) and one push
+// of that ref. Records are add-only, and one record PR is open at a time; a ticket added meanwhile waits for the next.
+// { at, has: Set of recorded tickets, wait: Map ticket -> why, out: [action], pr: the PR opened here or null }
+function records(root, common, run, names, issues, prs, local) {
+  const branch = `${names.branch}${run}`, prefix = `${lib.CURRENT.work}${run}/owned-`;
+  const res = { at: local, has: new Set(), wait: new Map(), out: [], pr: null };
+  const open = lib.runTickets(issues, run, names).filter((i) => String(i.state).toUpperCase() === "OPEN" && ownedLine(i.body).length);
+  let recs = recordsAt(common, local);
+  let missing = open.filter((i) => !(i.number in recs));
+  // a record the local refs lack may be on origin already: its tip, fetched, is what counts and what a batch is cut from
+  const origin = missing.length ? originOf(common) : null;
+  const tip = origin ? origin.tip(branch) : "";
+  if (tip) {
+    res.at = tip;
+    recs = recordsAt(common, tip);
+    missing = open.filter((i) => !(i.number in recs));
+  }
+  for (const n of Object.keys(recs)) res.has.add(+n);
+  for (const i of open.filter((x) => x.number in recs)) {
+    const r = lib.gitTry(common, ["cat-file", "blob", recs[i.number]]);
+    if (r.ok && !same(entries(r.out), ownedLine(i.body))) res.out.push({ kind: "DECIDE", ticket: i.number, reason: "owned line differs from record" });
+  }
+  if (!missing.length) return res;
+  const waitAll = (why) => { for (const i of missing) res.wait.set(i.number, why); return res; };
+  const pending = prs.find((p) => String(p.headRefName || "").startsWith(prefix));
+  if (pending) {
+    const listed = new Set([...String(pending.body || "").matchAll(/^- #(\d+)\b/gm)].map((m) => +m[1]));
+    for (const i of missing) res.wait.set(i.number, listed.has(i.number) ? `owned record pending PR#${pending.number}` : `owned record waits for the batch after PR#${pending.number}`);
+    return res;
+  }
+  if (!tip) return waitAll(`owned record: cannot fetch origin/${branch}`);
+  const heads = origin.refs([`refs/heads/${prefix}*`]);
+  if (!heads) return waitAll(`owned record: cannot list origin's ${prefix}* branches`);
+  const k = 1 + Math.max(0, ...Object.keys(heads).map((r) => +(/-(\d+)$/.exec(r) || [0, 0])[1]));
+  const head = `${prefix}${k}`;
+  const add = [];
+  for (const i of missing) {
+    const blob = lib.gitIn(common, ["hash-object", "-w", "--stdin"], 30000, { input: `${ownedLine(i.body).join("\n")}\n` });
+    if (!blob) return waitAll("owned record: git hash-object failed");
+    add.push([String(i.number), blob]);
+  }
+  const tree = treeWith(common, tip, lib.OWNED_RECORDS.split("/"), add);
+  if (!tree) return waitAll(`owned record: cannot add ${lib.OWNED_RECORDS}/ to ${branch}'s tree`);
+  const ns = missing.map((i) => i.number), msg = recordMessage(ns);
+  const commit = lib.gitTry(common, ["commit-tree", tree, "-p", tip, "-m", msg], { user: true, timeout: 60000 });
+  if (!commit.ok) return waitAll(`owned record: git commit-tree failed (${last(commit.err)})`);
+  const push = lib.gitTry(common, ["push", "-q", origin.url, `${commit.out}:refs/heads/${head}`], { user: true, timeout: 120000 });
+  if (!push.ok) return waitAll(`owned record: push ${head} failed (${last(push.err)})`);
+  const body = ["Tier: full", "", "The wave's owned-path records, one per ticket, add-only:", ...missing.map((i) => `- #${i.number} ${ownedLine(i.body).join(" ")}`)].join("\n");
+  const made = lib.ghTry(["pr", "create", "--base", branch, "--head", head, "--title", msg.split("\n")[0], "--body", body], root, 60000);
+  const n = made.ok ? +(/\/pull\/(\d+)\s*$/.exec(made.out) || [0, 0])[1] : 0;
+  if (!n) return waitAll(`owned record: gh pr create for ${head} failed (${last(made.err || made.out)})`);
+  res.pr = { number: n, headRefName: head, headRefOid: commit.out, body, statusCheckRollup: [] };
+  return waitAll(`owned record pending PR#${n}`);
+}
+
 // the project and the run: { root, common, refs, run, names }, or { code, err }
 function where(arg) {
   const root = path.resolve(lib.projectRoot());
@@ -179,9 +293,15 @@ function next(arg) {
     if (code !== 0) out.push({ kind: "DECIDE", about: "merge", reason: mergeSaid(said) });
   }
 
+  // the run branch's commit as the local refs have it, origin's first, by full ref name
+  const local = [`refs/remotes/origin/${names.branch}${run}`, `refs/heads/${names.branch}${run}`]
+    .map((r) => lib.gitTry(common, ["rev-parse", "--verify", "-q", `${r}^{commit}`]).out).find((x) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(x)) || "";
+  const owned = common ? records(root, common, run, names, issues, prs, local) : { at: local, has: null, wait: new Map(), out: [], pr: null };
+  out.push(...owned.out);
+
   const recs = common ? spawns(common) : [];
   const spawned = new Set(recs.filter((r) => lib.isVerifier(r.type) && Number.isInteger(r.pr) && typeof r.head === "string").map((r) => `${r.pr} ${r.head}`));
-  for (const p of prs) {
+  for (const p of owned.pr ? [...prs, owned.pr] : prs) {
     const head = String(p.headRefOid || "");
     if (merged.has(p.number) || (p.statusCheckRollup || []).some((c) => (c.context || c.name) === VERDICT) || spawned.has(`${p.number} ${head.slice(0, 12)}`)) continue;
     out.push({ kind: "SPAWN", role: "verifier", pr: p.number, ticket: ticketOf(run, names, String(p.headRefName || ""), p.body || ""), head });
@@ -202,17 +322,18 @@ function next(arg) {
     const n = ticketOf(run, names, b);
     return !(n && b === branchOf(n) && !workers.has(n) && lib.branchOf(wtOf(n)) === b && untouched(n, b));
   });
-  const { ready, blocked } = fromTracker(root, run, names, { issues, prs, reviews, refs });
+  const { ready, blocked } = fromTracker(root, run, names, { issues, prs, reviews, refs, at: owned.at });
   const byIssue = new Map(issues.map((i) => [i.number, i]));
   // under install.js --sandbox the in-repo proteus-worktree.js runs inside the sandbox and its copy outside it
   // (flow.md step 3): the prep is a RUN line then
   const copy = common ? path.join(C.sandboxBin(common), "proteus-worktree.js") : "";
   const profile = false;
-  const base = [`refs/remotes/origin/${names.branch}${run}`, `refs/heads/${names.branch}${run}`]
-    .map((r) => lib.gitTry(common, ["rev-parse", "--verify", "-q", `${r}^{commit}`]).out).find((x) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(x)) || "";
+  const base = owned.at;
   const failed = [];
   for (const t of ready) {
     const wt = wtOf(t.n), branch = branchOf(t.n);
+    // dispatched only once its record is on the run branch, which CI checks its PR against
+    if (owned.has && !owned.has.has(t.n)) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: owned.wait.get(t.n) || "owned record pending" }); continue; }
     const tierLine = /^Tier:[ \t]*(\S+)/im.exec((byIssue.get(t.n) || {}).body || "");
     const tier = tierLine ? tierLine[1].toLowerCase() : "standard";
     if (!prepared(wt, branch)) {
@@ -269,7 +390,7 @@ const line = (a) => {
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;
     case "RUN": return `RUN ${a.command}`;
-    case "DECIDE": return `DECIDE ${a.about}: ${a.reason}`;
+    case "DECIDE": return a.ticket ? `DECIDE #${a.ticket} ${a.reason}` : `DECIDE ${a.about}: ${a.reason}`;
     case "SPAWN": return a.role === "verifier"
       ? `SPAWN verifier PR#${a.pr} #${a.ticket || "?"} head=${a.head.slice(0, 12)}`
       : `SPAWN worker #${a.ticket} team=${a.team} difficulty=${a.difficulty}${a.speculative ? " speculative" : ""} worktree=${a.worktree}`;
@@ -311,5 +432,5 @@ function main() {
   return 0;
 }
 
-module.exports = { next, result, gateCommand };
+module.exports = { next, result, gateCommand, recordMessage };
 if (require.main === module) process.exitCode = main();

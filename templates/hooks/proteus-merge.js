@@ -168,6 +168,35 @@ function main() {
   return batch({ arg, suite, result, at });
 }
 
+// origin as this script reads it, for common: { url, refs, ls, tip }. The URL from the project's own config only, never
+// <common>/remotes/origin or branches/origin, which an agent can write (#226)
+function originOf(common) {
+  const url = lib.gitTry(common, ["config", "--file", path.join(common, "config"), "--get", "remote.origin.url"]).out;
+  const user = { user: true, timeout: 120000 };
+  // refs(patterns): { <ref>: sha } as origin has them (ls-remote, so no local ref can shadow one); null when it fails
+  const refs = (patterns) => {
+    if (!url || url.startsWith("-")) return null;
+    const r = lib.gitTry(common, ["ls-remote", url, ...patterns], user);
+    if (!r.ok) return null;
+    const out = {};
+    for (const [sha, ref] of r.out.split("\n").map((l) => l.split("\t"))) if (SHA.test(sha) && ref) out[ref] = sha;
+    return out;
+  };
+  // branch's tip as origin has it; "" when there is none
+  const ls = (branch) => (refs([`refs/heads/${branch}`]) || {})[`refs/heads/${branch}`] || "";
+  // then its objects fetched, with the human's config (credentials, proxy) as lib's release fetch: no ref, reflog or
+  // FETCH_HEAD written, no maintenance, no submodule fetched (git would read an agent-written <common>/.gitmodules and
+  // <common>/modules/<p>/config), and no `git for-each-ref` run in an alternate an agent lists in
+  // <common>/objects/info/alternates, which would read that repo's config without GIT_SAFE
+  const tip = (branch) => {
+    const sha = ls(branch);
+    if (!sha) return "";
+    const fetched = lib.gitTry(common, ["-c", "core.alternateRefsCommand=true", "fetch", "-q", "--no-auto-maintenance", "--no-recurse-submodules", "--no-write-fetch-head", "--refmap=", url, `refs/heads/${branch}`], user).ok;
+    return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
+  };
+  return { url, refs, ls, tip };
+}
+
 // the batch's step for { arg, suite, result, at }, checked as main checks them; its exit code. io.say and io.err take
 // its stdout and stderr lines (default the console's); out gets what proteus-cli.js reads back: merged, the PRs this
 // call merged ({ n, ticket?, sha }), at, the commit the lead tests next, and done, the batch's PRs once a pass ends it
@@ -203,27 +232,10 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
     return out.length ? `; worktree and branch left for the lead: ${out.join(", ")}` : "";
   };
 
-  // origin's URL from the project's own config only, never <common>/remotes/origin or branches/origin, which an agent
-  // can write (#226)
-  const url = lib.gitTry(common, ["config", "--file", path.join(common, "config"), "--get", "remote.origin.url"]).out;
-  // the run branch's tip as origin has it (ls-remote, so no local ref can shadow it)
-  const user = { user: true, timeout: 120000 };
-  const lsTip = () => {
-    if (!url || url.startsWith("-")) return "";
-    const ls = lib.gitTry(common, ["ls-remote", url, `refs/heads/${base}`], user);
-    const sha = ls.ok ? (ls.out.split("\n").map((l) => l.split("\t")).find((f) => f[1] === `refs/heads/${base}`) || [])[0] || "" : "";
-    return SHA.test(sha) ? sha : "";
-  };
-  // then its objects fetched, with the human's config (credentials, proxy) as lib's release fetch: no ref, reflog or
-  // FETCH_HEAD written, no maintenance, no submodule fetched (git would read an agent-written <common>/.gitmodules and
-  // <common>/modules/<p>/config), and no `git for-each-ref` run in an alternate an agent lists in
-  // <common>/objects/info/alternates, which would read that repo's config without GIT_SAFE
-  const tip = () => {
-    const sha = lsTip();
-    if (!sha) return "";
-    const fetched = lib.gitTry(common, ["-c", "core.alternateRefsCommand=true", "fetch", "-q", "--no-auto-maintenance", "--no-recurse-submodules", "--no-write-fetch-head", "--refmap=", url, `refs/heads/${base}`], user).ok;
-    return fetched && lib.gitTry(common, ["cat-file", "-t", sha]).out === "commit" ? sha : "";
-  };
+  // the run branch's tip as origin has it, and that tip with its objects fetched
+  const origin = originOf(common), url = origin.url;
+  const lsTip = () => origin.ls(base);
+  const tip = () => origin.tip(base);
 
   // --result: the lead's run of the printed suite on the commit the state names; the tip's, then each bisect step's
   if (result) {
@@ -309,5 +321,5 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   return stop ? 1 : 0;
 }
 
-module.exports = { mergeOrder, green, writeState, checkState, readState, pick, batch };
+module.exports = { mergeOrder, green, writeState, checkState, readState, pick, batch, originOf };
 if (require.main === module) process.exitCode = main();

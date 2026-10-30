@@ -52,10 +52,11 @@ function ticketOf(run, names, head, body = "") {
 }
 
 // the ready set from the tracker's answers: issues (number,title,state,milestone,labels,body), the open PRs into the
-// run branch (headRefName,body), the open review issues (milestone), and the local branch refs
-function fromTracker(root, run, names, { issues, prs, reviews, refs }) {
+// run branch (headRefName,body), the open review issues (milestone), and the local branch refs; at, the run branch's
+// commit to read the records from when the caller has a fresher one than the local refs
+function fromTracker(root, run, names, { issues, prs, reviews, refs, at = "" }) {
   const flying = new Set([...prs.map((p) => ticketOf(run, names, String(p.headRefName || ""), p.body || "")), ...refs.map((b) => ticketOf(run, names, b))]);
-  const runRef = [`origin/${names.branch}${run}`, `${names.branch}${run}`].find((r) => lib.git(["rev-parse", "--verify", "-q", r], root)) || "";
+  const runRef = at || [`origin/${names.branch}${run}`, `${names.branch}${run}`].find((r) => lib.git(["rev-parse", "--verify", "-q", r], root)) || "";
   const label = (i, prefix) => ((i.labels || []).map((l) => l.name).find((n) => n.startsWith(prefix)) || "").slice(prefix.length);
   const lines = (s) => String(s || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
   const owned = (i) => {

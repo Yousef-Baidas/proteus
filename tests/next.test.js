@@ -17,7 +17,13 @@ g(W, "init", "-q", "-b", "main", REPO);
 fs.writeFileSync(path.join(REPO, "a.txt"), "a\n");
 g(REPO, "add", "-A");
 g(REPO, "commit", "-qm", "init");
-g(REPO, "branch", "proteus/r1");
+g(REPO, "checkout", "-q", "-b", "proteus/r1");
+// the lead's records of tickets 1-8 on the run branch, so these cases never need origin (whose URL is not reachable)
+fs.mkdirSync(path.join(REPO, ".proteus", "owned"), { recursive: true });
+for (let n = 1; n <= 8; n++) fs.writeFileSync(path.join(REPO, ".proteus", "owned", String(n)), `src/t${n}.js\n`);
+g(REPO, "add", "-A");
+g(REPO, "commit", "-qm", "records");
+g(REPO, "checkout", "-q", "main");
 g(REPO, "remote", "add", "origin", "https://github.com/o/r.git");
 const COMMON = path.join(REPO, ".git");
 const LEAD = path.join(COMMON, "proteus-lead");
@@ -231,6 +237,9 @@ function batchRepo(name, tickets, gate = true) {
   g(B, "init", "-q", "--bare", "-b", "main", origin);
   g(B, "clone", "-q", origin, root);
   put(root, { "suite.js": "process.exit(require(\"fs\").existsSync(\"bad\") ? 1 : 0);\n", "a.txt": "one\n", ...(gate && { "AGENTS.md": "# Agents\n\n## Learned\n\n- gate: `node suite.js`\n" }) });
+  // each ticket's record on the run branch, so no record PR is due here
+  fs.mkdirSync(path.join(root, ".proteus", "owned"), { recursive: true });
+  for (const k of tickets) put(root, { [path.join(".proteus", "owned", String(k.t))]: `src/t${k.t}.js\n` });
   g(root, "add", "-A");
   g(root, "commit", "-q", "-m", "init");
   g(root, "push", "-q", "origin", "HEAD:main", "HEAD:proteus/r1");
@@ -307,6 +316,73 @@ r = b.cli("result", "maybe", "--at", tip0);
 ok("result: exit 2 on a verdict that is not pass or fail", r.code === 2 && /pass or fail/.test(r.err), `${r.code} ${r.err}`);
 r = b.cli("result", "pass");
 ok("result: exit 2 without --at", r.code === 2 && /--at/.test(r.err), `${r.code} ${r.err}`);
+
+// the wave's owned-path records (#281): one commit and one PR for every open ticket with no record, made with git's
+// objects alone against a real origin; one record PR at a time, add-only, BLOCKED until it merges
+const RB = lib.workdir("next-records"), RO = path.join(RB, "origin.git"), RR = path.join(RB, "root"), RS = path.join(RB, "gh.json");
+g(RB, "init", "-q", "--bare", "-b", "main", RO);
+g(RB, "clone", "-q", RO, RR);
+fs.mkdirSync(path.join(RR, ".proteus", "owned"), { recursive: true });
+put(RR, { "a.txt": "one\n", [path.join(".proteus", "owned", "1")]: "src/t1.js\n" });
+g(RR, "add", "-A");
+g(RR, "commit", "-q", "-m", "init");
+g(RR, "push", "-q", "origin", "HEAD:main", "HEAD:proteus/r1");
+g(RR, "fetch", "-q", "origin");
+g(RR, "branch", "-q", "proteus/r1", "origin/proteus/r1");
+const og = (...args) => g(RB, "--git-dir", RO, ...args);
+const RLOG = path.join(RB, "spawns.jsonl");
+let rs = { origin: RO, issues: [issue(1, { state: "CLOSED" }), issue(2), issue(3, { body: "Owned: src/t3.js lib/**" })], prs: [], reviews: [], inbox: [] };
+const rnext = (env = {}) => {
+  fs.writeFileSync(RS, JSON.stringify(rs));
+  const res = lib.run(SCRIPT, "", { cwd: RR, args: ["next"], env: { FAKE_GH_NEXT: RS, SPAWN_LOG: RLOG, NODE_OPTIONS: logged.NODE_OPTIONS, ...env } });
+  rs = JSON.parse(fs.readFileSync(RS, "utf8"));
+  return res;
+};
+const checkout = () => ({ head: fs.readFileSync(path.join(RR, ".git", "HEAD"), "utf8"), index: fs.readFileSync(path.join(RR, ".git", "index")).toString("base64"), status: g(RR, "status", "--porcelain"), refs: g(RR, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags") });
+const before0 = checkout();
+r = rnext();
+const made = rs.created || [];
+ok("records: one PR for every open ticket with no record, from owned-1 into the run branch", made.length === 1 && made[0].headRefName === "proteus-work/r1/owned-1" && made[0].baseRefName === "proteus/r1", JSON.stringify(made));
+ok("records: its body says Tier: full and lists one line per ticket", made[0] && /^Tier: full$/m.test(made[0].body) && /^- #2 src\/t2\.js$/m.test(made[0].body) && /^- #3 src\/t3\.js lib\/\*\*$/m.test(made[0].body) && !/#1\b/.test(made[0].body), made[0] && made[0].body);
+ok("records: the commit adds exactly the new records, cut from the run branch's tip",
+  og("diff", "--name-status", "proteus/r1", "proteus-work/r1/owned-1") === "A\t.proteus/owned/2\nA\t.proteus/owned/3" && og("rev-parse", "proteus-work/r1/owned-1^") === og("rev-parse", "proteus/r1") && og("rev-list", "--count", "proteus/r1..proteus-work/r1/owned-1") === "1");
+ok("records: each record is its ticket's Owned: line, one entry per line", og("show", "proteus-work/r1/owned-1:.proteus/owned/3") === "src/t3.js\nlib/**" && og("show", "proteus-work/r1/owned-1:.proteus/owned/2") === "src/t2.js");
+ok("records: the commit message names the tickets", og("log", "-1", "--format=%B", "proteus-work/r1/owned-1") === "chore(proteus): record owned paths for #2, #3");
+ok("records: the record PR gets the usual SPAWN verifier line", made[0] && lines(r).includes(`SPAWN verifier PR#100 #? head=${made[0].headRefOid.slice(0, 12)}`), r.out);
+ok("records: its tickets are BLOCKED pending it, no SPAWN worker", lines(r).includes("BLOCKED #2 owned record pending PR#100") && lines(r).includes("BLOCKED #3 owned record pending PR#100") && !lines(r).some((l) => l.startsWith("SPAWN worker")), r.out);
+ok("records: no worktree made, and the main checkout's HEAD, index, status and branches unchanged", !fs.existsSync(path.join(RR, ".worktrees")) && JSON.stringify(checkout()) === JSON.stringify(before0));
+const rkids = fs.existsSync(RLOG) ? fs.readFileSync(RLOG, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+const gitKid = (c) => [c.file, ...(c.args || [])].join(" ");
+ok("records: no git call with a work tree, an index, a checkout or a worktree", rkids.length > 0 && !rkids.some((c) => c.workTree || c.index || /\b(checkout|switch|worktree|read-tree|update-index|add|commit) /.test(` ${(c.args || []).filter((x) => !x.startsWith("-") && !x.includes("=")).join(" ")} `.replace(/ commit-tree /, " "))), JSON.stringify(rkids.filter((c) => /checkout|worktree|index/.test(gitKid(c)))));
+ok("records: one push, of that one ref", rkids.filter((c) => (c.args || []).includes("push")).length === 1 && rkids.some((c) => (c.args || []).includes("push") && c.args[c.args.length - 1] === `${made[0].headRefOid}:refs/heads/proteus-work/r1/owned-1`), JSON.stringify(rkids.filter((c) => (c.args || []).includes("push"))));
+
+// a ticket added while the PR is open waits for the next batch; no second PR
+rs.issues.push(issue(4));
+r = rnext();
+ok("records: no second PR while one is open", rs.created.length === 1 && og("for-each-ref", "--format=%(refname)", "refs/heads/proteus-work/r1/") === "refs/heads/proteus-work/r1/owned-1", r.out);
+ok("records: the later ticket waits for the next batch, the PR's still pending", lines(r).includes("BLOCKED #4 owned record waits for the batch after PR#100") && lines(r).includes("BLOCKED #2 owned record pending PR#100"), r.out);
+
+// the PR merges on origin (the local refs stay behind); #2's Owned: line changes after its record
+og("update-ref", "refs/heads/proteus/r1", og("rev-parse", "proteus-work/r1/owned-1"));
+rs.prs.find((p) => p.number === 100).merged = true;
+rs.issues.find((i) => i.number === 2).body = "Owned: src/other.js";
+r = rnext();
+ok("records: the later ticket goes into the next batch, owned-2, with exactly its record", rs.created.length === 2 && rs.created[1].headRefName === "proteus-work/r1/owned-2" &&
+  og("diff", "--name-status", "proteus/r1", "proteus-work/r1/owned-2") === "A\t.proteus/owned/4" && og("log", "-1", "--format=%s", "proteus-work/r1/owned-2") === "chore(proteus): record owned paths for #4", r.out);
+ok("records: an existing record is never rewritten, and gives DECIDE", og("show", "proteus/r1:.proteus/owned/2") === "src/t2.js" && og("diff", "--name-only", "proteus/r1", "proteus-work/r1/owned-2") === ".proteus/owned/4" && lines(r).includes("DECIDE #2 owned line differs from record"), r.out);
+ok("records: once merged on origin, its tickets are dispatched from origin's tip though the local refs are behind",
+  lines(r).some((l) => l.startsWith("SPAWN worker #3 ")) && fs.existsSync(path.join(RR, ".worktrees", "3", ".proteus", "owned", "3")) && g(RR, "rev-parse", "refs/remotes/origin/proteus/r1") !== og("rev-parse", "proteus/r1"), r.out);
+ok("records: the new batch's ticket is BLOCKED pending its PR", lines(r).includes("BLOCKED #4 owned record pending PR#101") && !lines(r).some((l) => l.startsWith("SPAWN worker #4")), r.out);
+// a record PR closed with its record not on the run branch: the next batch takes the next k; a failed
+// gh pr create is BLOCKED, never a SPAWN
+rs.prs.find((p) => p.number === 101).merged = true;
+r = rnext({ FAKE_GH_PR_CREATE: "fail" });
+ok("records: a failed gh pr create is BLOCKED with why, after pushing owned-3", lines(r).some((l) => l.startsWith("BLOCKED #4 owned record: gh pr create for proteus-work/r1/owned-3 failed")) && !lines(r).some((l) => l.startsWith("SPAWN worker #4")), r.out);
+// a long wave keeps commit-msg.js's 72 columns
+const { recordMessage } = require(SCRIPT);
+const MSG = path.join(RB, "msg");
+const msgOk = (ns) => { fs.writeFileSync(MSG, recordMessage(ns)); return lib.run(path.join(HOOKS, "commit-msg.js"), "", { cwd: RB, args: [MSG] }).code === 0; };
+ok("records: a long wave's message lists every ticket and passes commit-msg.js", msgOk(Array.from({ length: 30 }, (_, i) => 100 + i)) && Array.from({ length: 30 }, (_, i) => 100 + i).every((n) => recordMessage(Array.from({ length: 30 }, (_, i) => 100 + i)).includes(`#${n}`)) && msgOk([2, 3]));
 
 // nothing sandboxed ran: no child of proteus-cli.js (or of the proteus-merge.js code it runs) named them
 const children = fs.existsSync(LOG) ? fs.readFileSync(LOG, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
