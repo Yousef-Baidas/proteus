@@ -40,7 +40,7 @@ ok("claude: an empty value writes nothing", node(`console.log(JSON.stringify(req
 const CX = JSON.stringify(path.join(HOOKS, "proteus-harness-codex.js"));
 const PRJ = path.join(W, "codexprj");
 const TOML = path.join(PRJ, ".codex", "config.toml");
-const cxSet = (v) => JSON.parse(node(`console.log(JSON.stringify(require(${CX}).exportEnv(${JSON.stringify(PRJ)}, { GH_CONFIG_DIR: ${JSON.stringify(v)} })))`, { CODEX_HOME: path.join(HOME, ".codex") }).out || "{}");
+const cxSet = (v) => JSON.parse(node(`console.log(JSON.stringify(require(${CX}).exportEnv(${JSON.stringify(PRJ)}, { GH_CONFIG_DIR: ${JSON.stringify(v)} })))`, { CODEX_HOME: path.join(HOME, ".codex"), CLAUDE_PROJECT_DIR: PRJ }).out || "{}");
 const toml = () => fs.readFileSync(TOML, "utf8");
 fs.mkdirSync(path.dirname(TOML), { recursive: true });
 g(PRJ, "init", "-q");
@@ -71,6 +71,14 @@ fs.writeFileSync(TOML, 'model = "x"\n');
 g(PRJ, "add", ".codex/config.toml");
 r = cxSet("/gh");
 ok("codex: a config.toml git tracks is refused and left alone", /tracked by git/.test(r.error) && toml() === 'model = "x"\n', JSON.stringify(r));
+// #231 D11: the root comes from the hook event, so git runs only on the project's own repo, never on one the root names
+const OUTX = path.join(W, "codexout"), OUTT = path.join(OUTX, ".codex", "config.toml");
+fs.mkdirSync(path.dirname(OUTT), { recursive: true });
+g(W, "init", "-q", OUTX);
+fs.writeFileSync(OUTT, 'model = "x"\n');
+g(OUTX, "add", ".codex/config.toml");
+r = JSON.parse(node(`console.log(JSON.stringify(require(${CX}).exportEnv(${JSON.stringify(OUTX)}, { GH_CONFIG_DIR: "/gh" })))`, { CODEX_HOME: path.join(HOME, ".codex"), CLAUDE_PROJECT_DIR: PRJ }).out || "{}");
+ok("codex: a root outside the project gets no git run on its repo, so its tracked file is not seen (#231)", r.changed === true && !r.error, JSON.stringify(r));
 
 // ---- verdict: with a login of their own, only the config names the human
 const repo = path.join(W, "repo");
