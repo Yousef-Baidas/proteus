@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // The lead's loop: node <hooks>/proteus-cli.js next [run] [--json]
 //                  node <hooks>/proteus-cli.js result pass|fail --at <sha> [run]
+//                  node <hooks>/proteus-cli.js brief worker <n> [run] | brief verifier <pr> [run]
 // next does the mechanical steps that are due and run in this script's context, proteus-merge.js's (outside the
 // sandbox, #226), then prints what is left for the lead, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
@@ -12,9 +13,9 @@
 //                                                             printed again while the batch awaits its result
 //   DECIDE suite|merge: <reason>                             no gate command in ## Learned, or a batch that stopped
 //   DECIDE #<n> owned line differs from record                an open ticket whose Owned: line is not its record's
-//   SPAWN verifier PR#<n> #<ticket> head=<sha12>               an open PR with no proteus/verdict and no verifier
+//   SPAWN verifier PR#<n> #<ticket> head=<sha12> brief: <cmd>  an open PR with no proteus/verdict and no verifier
 //                                                             spawn recorded for its head
-//   SPAWN worker #<n> team=<team> difficulty=<d>[ speculative] worktree=<path>
+//   SPAWN worker #<n> team=<team> difficulty=<d>[ speculative] worktree=<path> brief: <cmd>
 //                                                             a ready ticket, its worktree prepared here; under a
 //                                                             sandbox profile a RUN line that prepares it instead
 //   BLOCKED #<n> <reason>                                     a blocked ticket, or `prep: <why>` when its prep failed,
@@ -29,7 +30,13 @@
 // watchdog's --forget, which run sandboxed. result forwards to proteus-merge.js --result with the same suite and prints
 // its line; a bisect step as a RUN line; on a pass, STOP <agent> for the spawn records of the merged PRs' verifiers and
 // tickets' workers, then their --forget as a RUN line. --json prints next's lines as an array of { kind, ... }.
-// Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code); 2 on usage or no run.
+// brief renders the ## Worker or ## Verifier block of references/roles.md, read at run time, every <slot> filled from
+// the tracker, the owned record, the repo and AGENTS.md ## Learned, into <scratch>/brief-<n>.md or verify-<pr>.md
+// (proteus-scratch.js --path <run>), and prints `PROMPT <the spawn prompt>`; a slot with no source prints
+// `DECIDE #<n> brief: no source for <slot>` and exits 1. It writes where agents can, so it runs in the lead's
+// sandboxed shell: a SPAWN line names its brief command and next never runs it.
+// Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code; brief: also a DECIDE);
+// 2 on usage or no run.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -41,7 +48,7 @@ const { pick, batch, readState, originOf } = require(path.join(__dirname, "prote
 const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 
-const USAGE = "usage: node proteus-cli.js next [run] [--json] | result pass|fail --at <sha> [run]";
+const USAGE = "usage: node proteus-cli.js next [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run]";
 const HELP = `${USAGE}
 next prepares the ready tickets' worktrees and starts the merge batch, then prints the lead's next
 actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN verifier, SPAWN worker,
@@ -54,6 +61,8 @@ a changed Owned: line prints DECIDE #<n>.
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
 tickets' agents; fail bisects, printing the next RUN line. --at is the sha the RUN line named.
 The suite is the gate command of AGENTS.md ## Learned.
+brief writes the worker's (or the PR's verifier's) brief from roles.md into the run's scratch dir and
+prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief: ... and exits 1.
 Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code); 2 on usage or no run.`;
 const VERDICT = "proteus/verdict";
 // what reaches the lead's output: no control character (terminal escapes, a second line)
@@ -66,6 +75,8 @@ const fw = (p) => p.split(path.sep).join("/");
 const WORKTREE = path.join(__dirname, "proteus-worktree.js");
 const RUN_TREE = path.join(__dirname, "proteus-run-tree.js");
 const WATCHDOG = path.join(__dirname, "proteus-watchdog.js");
+const SCRATCH = path.join(__dirname, "proteus-scratch.js");
+const CLI = path.join(__dirname, "proteus-cli.js");
 
 // an issue's web URL on the project's repo (lib.ghRepo: owner/name on github.com, else host/owner/name)
 function issueUrl(root, n) {
@@ -96,17 +107,18 @@ function spawns(common) {
 }
 const isWorker = (type) => /^proteus-(?:[a-z0-9-]+-)?worker$/.test(lib.agentName(type));
 
-// the suite: the gate command(s) on the gate line of AGENTS.md ## Learned (`- gate: \`<command>\``), several joined
-// with &&; "" when there is none
-function gateCommand(root) {
+// the gate command(s) on the gate line of AGENTS.md ## Learned (`- gate: \`<command>\``); [] when there is none
+function gates(root) {
   let text = "";
   try { text = fs.readFileSync(path.join(lib.docRoot(root), "AGENTS.md"), "utf8"); } catch {}
   const learned = /^##[ \t]+Learned[ \t]*$([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
   const m = learned && /^[ \t]*(?:[-*][ \t]*)?gates?:[ \t]*(.+)$/im.exec(learned[1]);
-  if (!m) return "";
+  if (!m) return [];
   const ticks = [...m[1].matchAll(/`([^`]+)`/g)].flatMap((t) => (t[1].trim() ? [t[1].trim()] : []));
-  return ticks.length ? ticks.join(" && ") : m[1].trim();
+  return ticks.length ? ticks : [m[1].trim()];
 }
+// the suite: the gate commands joined with &&; "" when there is none
+const gateCommand = (root) => gates(root).join(" && ");
 // the batch's two sandboxed commands for sha, as proteus-merge.js prints them
 const suiteRun = (root, suite, sha) => `node ${fw(path.relative(root, RUN_TREE))} ${sha}, then in .worktrees/_run: ${suite}`;
 // proteus-merge.js's line without its own suite commands, which the RUN line carries
@@ -299,12 +311,14 @@ function next(arg) {
   const owned = common ? records(root, common, run, names, issues, prs, local) : { at: local, has: null, wait: new Map(), out: [], pr: null };
   out.push(...owned.out);
 
+  // the brief's command, for the lead's sandboxed shell (it writes in scratch): printed, never run here
+  const briefCmd = (role, k) => `node ${CLI} brief ${role} ${k}${arg ? ` ${run}` : ""}`;
   const recs = common ? spawns(common) : [];
   const spawned = new Set(recs.filter((r) => lib.isVerifier(r.type) && Number.isInteger(r.pr) && typeof r.head === "string").map((r) => `${r.pr} ${r.head}`));
   for (const p of owned.pr ? [...prs, owned.pr] : prs) {
     const head = String(p.headRefOid || "");
     if (merged.has(p.number) || (p.statusCheckRollup || []).some((c) => (c.context || c.name) === VERDICT) || spawned.has(`${p.number} ${head.slice(0, 12)}`)) continue;
-    out.push({ kind: "SPAWN", role: "verifier", pr: p.number, ticket: ticketOf(run, names, String(p.headRefName || ""), p.body || ""), head });
+    out.push({ kind: "SPAWN", role: "verifier", pr: p.number, ticket: ticketOf(run, names, String(p.headRefName || ""), p.body || ""), head, brief: briefCmd("verifier", p.number) });
   }
 
   // a ticket's worker branch counts as in flight; but one this script prepared, whose worker is not spawned yet, with
@@ -348,7 +362,7 @@ function next(arg) {
       const err = prep(root, common, base, wt, branch, tier, t.owned);
       if (err) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: `prep: ${err}` }); continue; }
     }
-    out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt });
+    out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt, brief: briefCmd("worker", t.n) });
   }
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
@@ -384,6 +398,187 @@ function result(arg, verdict, at) {
   return { code, out };
 }
 
+// ---- brief worker <n> | brief verifier <pr>: the role's block of roles.md, read here at run time (never copied into
+// this script), every slot filled from the tracker, the owned record and the repo; a slot with no source is a DECIDE
+
+// roles.md: the skill dirs the harness loads (project, user, plugin), then the skill beside this hooks dir's plugin root
+function rolesFile(root) {
+  let dirs = [];
+  try { dirs = require(path.join(__dirname, "proteus-harness.js")).skillDirs(root); } catch {}
+  return [...dirs, path.join(__dirname, "..", "..", "skills", "proteus")].map((d) => path.join(d, "references", "roles.md")).find((f) => fs.existsSync(f)) || "";
+}
+// the fenced block under `## <role>`, "" when there is none
+function roleBlock(text, role) {
+  const m = new RegExp(`^## ${role}[ \\t]*\\r?\\n\`\`\`\\r?\\n([\\s\\S]*?)\\r?\\n\`\`\`[ \\t]*$`, "m").exec(String(text || "").replace(/\r\n/g, "\n"));
+  return m ? m[1] : "";
+}
+// a whole line `<label: text>` (or `<a: x | b: y>`) is conditional: its first alternative whose label holds, else dropped
+const COND = /^<([A-Za-z][\w =-]*?): (.*)>$/;
+const alts = (inner) => inner.split(/ \| (?=[A-Za-z][\w =-]*?: )/).map((a) => { const i = a.indexOf(": "); return [a.slice(0, i), a.slice(i + 2)]; });
+// a block's slots: { lines: [conditional labels], inline: [slot names] }
+function slotsOf(block) {
+  const lines = [], inline = [];
+  for (const l of block.split("\n")) {
+    const c = COND.exec(l.trim());
+    const text = c ? alts(`${c[1]}: ${c[2]}`).map(([label, t]) => (lines.push(label), t)).join(" ") : l;
+    for (const m of text.matchAll(/<([^<>\n]+)>/g)) inline.push(m[1]);
+  }
+  return { lines: [...new Set(lines)], inline: [...new Set(inline)] };
+}
+// the slots the agent fills itself (the report's own placeholders), left as they are
+const KEPT = ["name", "WORD", "file:line", "one paragraph"];
+// a whole-line slot that is dropped when its source is empty
+const OPTIONAL = ["safety"];
+class Decide extends Error {}
+const need = (slot, v) => { if (v === "" || v == null) throw new Decide(slot); return v; };
+const FILL = {
+  hooks: (c) => c.hooks,
+  "gate commands": (c) => need("gate commands", c.gates.map((g) => `\`${g}\``).join(", ")),
+  team: (c) => need("team", c.team),
+  n: (c) => need("n", c.n && String(c.n)),
+  id: (c) => need("id", c.n && String(c.n)),
+  run: (c) => c.run,
+  pr: (c) => need("pr", c.pr && String(c.pr)),
+  "absolute path": (c) => need("absolute path", c.worktree()),
+  "the ticket's tier": (c) => c.tier,
+  "contract sha": (c) => need("contract sha", c.contract()),
+  "file:line pointers": (c) => need("file:line pointers", c.checkFiles().join(", ")),
+  "file::name or command": (c) => need("file::name or command", c.check),
+  paths: (c) => need("paths", c.owned().join(" ")),
+  safety: (c) => c.safety(),
+  d: (c) => need("d", c.debt()),
+  "fallow dupes | vulture": (c) => need("dupes tool", c.dupes()),
+  sha: (c) => need("sha", c.head),
+};
+const WHEN = {
+  Codex: (c) => c.codex,
+  "Quick or mechanical": (c) => c.tier === "quick" || c.difficulty === "mechanical",
+  "standard or hard": (c) => need("difficulty", ["standard", "hard"].includes(c.difficulty) ? c.difficulty : ""),
+  "needs-research": (c) => c.labels.includes("needs-research"),
+  "isolation=container": (c) => c.container,
+};
+// the block with every slot filled; throws Decide(slot) for one with no source
+function render(block, ctx) {
+  const fill = (text) => text.replace(/<([^<>\n]+)>/g, (all, s) => {
+    if (KEPT.includes(s)) return all;
+    if (!FILL[s]) throw new Decide(s);
+    return FILL[s](ctx);
+  });
+  const out = [];
+  for (const l of block.split("\n")) {
+    const c = COND.exec(l.trim());
+    if (c) {
+      const pick = alts(`${c[1]}: ${c[2]}`).find(([label]) => { if (!WHEN[label]) throw new Decide(label); return WHEN[label](ctx); });
+      if (pick) out.push(fill(pick[1]));
+      continue;
+    }
+    const whole = /^<([^<>]+)>$/.exec(l.trim());
+    if (whole && OPTIONAL.includes(whole[1])) { const v = fill(l); if (v.trim()) out.push(v); continue; }
+    // a run ticket's branch and PR base are the run's (next cuts it from proteus/<run>), so the Quick ones go
+    out.push(fill(l.replace(/ \(Quick: [^)]*\)/g, "")));
+  }
+  return out.join("\n") + "\n";
+}
+const memo = (f) => { let v, done = false; return () => (done ? v : ((done = true), (v = f()))); };
+
+// the context the fillers read, for ticket n (and, for a verifier, PR pr with its head); lazy where it costs a call
+function briefContext(w, issues, n, extra = {}) {
+  const { root, common, run, names } = w;
+  const issue = issues.find((i) => i.number === n) || {};
+  const labels = (issue.labels || []).map((l) => l.name);
+  const label = (p) => (labels.find((l) => l.startsWith(p)) || "").slice(p.length);
+  const tierLine = /^Tier:[ \t]*(\S+)/im.exec(issue.body || "");
+  const checkLine = /^Check:[ \t]*(.+)$/im.exec(issue.body || "");
+  const branch = `${lib.CURRENT.work}${run}/${n}`, wt = path.join(root, ".worktrees", String(n));
+  const runRefs = [`refs/remotes/origin/${names.branch}${run}`, `refs/heads/${names.branch}${run}`].filter((r) => lib.gitTry(common, ["rev-parse", "--verify", "-q", r]).ok);
+  const team = label("profile:");
+  const ctx = {
+    hooks: lib.realNative(__dirname), gates: gates(root), run, n: issue.number ? n : 0, team, labels,
+    difficulty: label("difficulty:"), tier: tierLine ? tierLine[1].toLowerCase() : "standard",
+    check: checkLine ? checkLine[1].trim() : "",
+    codex: require(path.join(__dirname, "proteus-harness.js")).name === "codex",
+    container: (lib.agentsLine(root, "isolation") || "").trim() === "container",
+    worktree: () => (lib.branchOf(wt) === branch ? wt : ""),
+    // the oldest commit on the worker branch, past the run branch, whose subject is the contract's
+    contract: memo(() => {
+      const log = lib.gitTry(common, ["log", "--format=%H%x09%s", `refs/heads/${branch}`, "--not", ...runRefs]);
+      const re = new RegExp(`^test(?:\\([^)]*\\))?: contract for #${n}$`);
+      return (log.ok ? log.out.split("\n") : []).flatMap((l) => { const [h, s] = l.split("\t"); return re.test(s || "") ? [h] : []; }).pop() || "";
+    }),
+    // the Check line's words that name a file in the contract commit's tree, each as file[:line]
+    checkFiles: memo(() => {
+      const sha = ctx.contract();
+      const words = ctx.check.split(/\s+/).map((t) => t.replace(/^[`'"(]+|[`'",.;)]+$/g, "").split("::")[0]);
+      return [...new Set(sha ? words : [])].filter((t) => t && lib.gitTry(common, ["cat-file", "-e", `${sha}:${t.replace(/:\d+(?:-\d+)?$/, "")}`]).ok);
+    }),
+    // the record on the run branch, else the ticket's Owned: line
+    owned: memo(() => {
+      const at = runRefs.map((r) => lib.gitTry(common, ["rev-parse", r]).out).find(Boolean) || "";
+      const blob = recordsAt(common, at)[n];
+      const r = blob ? lib.gitTry(common, ["cat-file", "blob", blob]) : null;
+      return r && r.ok ? entries(r.out) : ownedLine(issue.body);
+    }),
+    safety: () => {
+      let text = "";
+      try { text = fs.readFileSync(path.join(lib.docRoot(root), "teams", team, "PROFILE.md"), "utf8"); } catch {}
+      return team ? text.split(/\r?\n/).filter((l) => l.startsWith("Safety:")).join("\n") : "";
+    },
+    // the open debt issue of the ticket's milestone, when there is exactly one
+    debt: memo(() => {
+      const ms = issue.milestone && issue.milestone.title;
+      const list = ms ? parse(lib.gh(["issue", "list", "--label", names.debt, "--state", "open", "--json", "number,milestone", "--limit", "50"], root, 30000)) : null;
+      const mine = (Array.isArray(list) ? list : []).filter((d) => d && d.milestone && d.milestone.title === ms);
+      return mine.length === 1 ? String(mine[0].number) : "";
+    }),
+    // stack.md's dupes tool per language the repo's manifests name
+    dupes: () => [["fallow dupes", ["package.json"]], ["vulture", ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt"]]]
+      .flatMap(([t, files]) => (files.some((f) => fs.existsSync(path.join(root, f))) ? [t] : [])).join(" and "),
+    ...extra,
+  };
+  return ctx;
+}
+
+// brief worker <n> | verifier <pr>: { code, out: [line] } or { code, err }
+function brief(role, target, arg) {
+  const w = where(arg);
+  if (w.err) return w;
+  const { root, run, names } = w;
+  const num = /^#?(\d+)$/.exec(target || "");
+  if (!num) return { code: 2, err: `${USAGE}\nbrief ${role} needs a ${role === "worker" ? "ticket" : "PR"} number` };
+  const file = rolesFile(root);
+  const block = roleBlock(file ? fs.readFileSync(file, "utf8") : "", role === "worker" ? "Worker" : "Verifier");
+  if (!block) return { code: 1, err: `no ## ${role === "worker" ? "Worker" : "Verifier"} block in ${file || "references/roles.md (not found)"}` };
+  const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,milestone,labels,body", "--limit", "500"], root, 30000));
+  if (!Array.isArray(issues)) return { code: 1, err: `run ${run}: tracker unreachable (gh issue list failed)` };
+  let ctx, name, prompt, n = +num[1];
+  if (role === "verifier") {
+    const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "open", "--json", "number,headRefName,headRefOid,body,isDraft,statusCheckRollup", "--limit", "200"], root, 30000));
+    if (!Array.isArray(prs)) return { code: 1, err: `run ${run}: tracker unreachable (gh pr list failed)` };
+    const pr = n, p = prs.find((x) => x.number === pr);
+    const head = p && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(p.headRefOid)) ? p.headRefOid : "";
+    if (!head) return { code: 1, out: [`DECIDE PR#${pr} brief: no source for ${p ? "sha" : "pr"}`] };
+    n = ticketOf(run, names, String(p.headRefName || ""), p.body || "") || 0;
+    ctx = briefContext(w, issues, n, { pr, head });
+    name = `verify-${pr}.md`;
+    prompt = `verifier PR#${pr} head=${head.slice(0, 12)}`;
+  } else {
+    ctx = briefContext(w, issues, n);
+    name = `brief-${n}.md`;
+    prompt = `worker #${n}`;
+  }
+  let text;
+  try { text = render(block, ctx); } catch (e) {
+    if (!(e instanceof Decide)) throw e;
+    return { code: 1, out: [`DECIDE ${n ? `#${n}` : `PR#${ctx.pr}`} brief: no source for ${e.message}`] };
+  }
+  const r = spawnSync(process.execPath, [SCRATCH, "--path", run], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30000 });
+  const dir = r.status === 0 ? last(r.stdout) : "";
+  if (!dir) return { code: 1, err: `proteus-scratch.js --path ${run} failed: ${last(r.stderr) || `exit ${r.status}`}` };
+  const out = path.join(dir, name);
+  fs.writeFileSync(out, text);
+  return { code: 0, out: [`PROMPT Your brief is ${out}; read it first. ${prompt}`] };
+}
+
 const line = (a) => {
   switch (a.kind) {
     case "ASK": return `ASK ${a.url} ${a.title}`;
@@ -392,8 +587,8 @@ const line = (a) => {
     case "RUN": return `RUN ${a.command}`;
     case "DECIDE": return a.ticket ? `DECIDE #${a.ticket} ${a.reason}` : `DECIDE ${a.about}: ${a.reason}`;
     case "SPAWN": return a.role === "verifier"
-      ? `SPAWN verifier PR#${a.pr} #${a.ticket || "?"} head=${a.head.slice(0, 12)}`
-      : `SPAWN worker #${a.ticket} team=${a.team} difficulty=${a.difficulty}${a.speculative ? " speculative" : ""} worktree=${a.worktree}`;
+      ? `SPAWN verifier PR#${a.pr} #${a.ticket || "?"} head=${a.head.slice(0, 12)} brief: ${a.brief}`
+      : `SPAWN worker #${a.ticket} team=${a.team} difficulty=${a.difficulty}${a.speculative ? " speculative" : ""} worktree=${a.worktree} brief: ${a.brief}`;
     case "BLOCKED": return `BLOCKED #${a.ticket} ${a.reason}`;
     default: return `WAIT ${a.command}`;
   }
@@ -418,6 +613,14 @@ function main() {
     for (const l of r.out) console.log(plain(l));
     return r.code;
   }
+  if (argv[0] === "brief") {
+    const [role, target, ...rest] = argv.slice(1);
+    if (!["worker", "verifier"].includes(role) || !target || rest.length > 1 || rest.some((a) => a.startsWith("-"))) { console.error(`${USAGE}\nbrief is worker <n> or verifier <pr>`); return 2; }
+    const r = brief(role, target, rest[0] || "");
+    if (r.err) { console.error(plain(r.err)); return r.code; }
+    for (const l of r.out) console.log(plain(l));
+    return r.code;
+  }
   if (argv[0] !== "next") { console.error(`${USAGE}\nunknown command ${plain(argv[0])}`); return 2; }
   let arg = "", json = false;
   for (const a of argv.slice(1)) {
@@ -432,5 +635,5 @@ function main() {
   return 0;
 }
 
-module.exports = { next, result, gateCommand, recordMessage };
+module.exports = { next, result, brief, gateCommand, recordMessage, roleBlock, slotsOf, FILL, WHEN, KEPT, OPTIONAL };
 if (require.main === module) process.exitCode = main();

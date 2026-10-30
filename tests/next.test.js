@@ -70,8 +70,8 @@ ok("busy: ASK names the needs-human issue's URL and title", L.includes("ASK http
 ok("busy: STOP for the agent still stalled after its STALL", L.some((l) => /^STOP w-again no tool call for 90m, cwd \/w$/.test(l)), r.out);
 ok("busy: NUDGE for the newly stalled agent, none for the active one", L.some((l) => l.startsWith("NUDGE w-stalled no tool call for 60m")) && !r.out.includes("w-fine"), r.out);
 ok("busy: MERGE for the green PR with its head, verdict and poster", L.includes(`MERGE PR#12 ${SHA("a").slice(0, 12)} verdict=success by=verifier-app[bot]`), r.out);
-ok("busy: SPAWN verifier for the PR with no verdict, not for the green one", L.includes(`SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)}`) && !L.some((l) => l.startsWith("SPAWN verifier PR#12")), r.out);
-ok("busy: SPAWN worker for the ready ticket only, with its worktree", L.includes(`SPAWN worker #3 team=backend difficulty=standard worktree=${path.join(REPO, ".worktrees", "3")}`) && !L.some((l) => /^SPAWN worker #(1|2|4)\b/.test(l)), r.out);
+ok("busy: SPAWN verifier for the PR with no verdict, not for the green one", L.includes(`SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)} brief: node ${SCRIPT} brief verifier 13`) && !L.some((l) => l.startsWith("SPAWN verifier PR#12")), r.out);
+ok("busy: SPAWN worker for the ready ticket only, with its worktree", L.includes(`SPAWN worker #3 team=backend difficulty=standard worktree=${path.join(REPO, ".worktrees", "3")} brief: node ${SCRIPT} brief worker 3`) && !L.some((l) => /^SPAWN worker #(1|2|4)\b/.test(l)), r.out);
 ok("busy: BLOCKED for the ticket waiting on another", L.includes("BLOCKED #4 waits on #3"), r.out);
 ok("busy: with no gate command, MERGE lines and DECIDE, nothing merged", L.includes("DECIDE suite: no gate command in ## Learned"), r.out);
 ok("busy: the lines come in order ASK, STOP, NUDGE, MERGE, DECIDE, SPAWN verifier, SPAWN worker, BLOCKED, no WAIT",
@@ -106,7 +106,7 @@ ok("verifier: the lead guard records the spawn's PR and head", s.code === 0 && r
 r = next(BUSY);
 ok("verifier: a spawn recorded for the PR's head is not listed again", !lines(r).some((l) => l.startsWith("SPAWN verifier PR#13")), r.out);
 r = next({ ...BUSY, prs: [BUSY.prs[0], pr(13, 2, SHA("c"), [CI])] });
-ok("verifier: a new head on the same PR is listed again", lines(r).includes(`SPAWN verifier PR#13 #2 head=${SHA("c").slice(0, 12)}`), r.out);
+ok("verifier: a new head on the same PR is listed again", lines(r).includes(`SPAWN verifier PR#13 #2 head=${SHA("c").slice(0, 12)} brief: node ${SCRIPT} brief verifier 13`), r.out);
 fs.rmSync(path.join(LEAD, "spawns"), { recursive: true, force: true });
 s = spawn("proteus-verifier", "verify-13b", "Review PR#13 against its contract.");
 r = next(BUSY);
@@ -189,13 +189,13 @@ fs.mkdirSync(WT(7), { recursive: true });
 fs.writeFileSync(path.join(WT(7), "x"), "in the way\n");
 r = next(PREP);
 ok("prep: #5's worktree has its Tier line's tier", /^# tier full [0-9a-f]{40}$/m.test(ownedText(5)) && /^src\/t5\.js$/m.test(ownedText(5)), ownedText(5));
-ok("prep: SPAWN worker #5 names its worktree", lines(r).includes(`SPAWN worker #5 team=backend difficulty=standard worktree=${WT(5)}`), r.out);
+ok("prep: SPAWN worker #5 names its worktree", lines(r).includes(`SPAWN worker #5 team=backend difficulty=standard worktree=${WT(5)} brief: node ${SCRIPT} brief worker 5`), r.out);
 ok("prep: an unknown tier is BLOCKED prep, no worktree", lines(r).some((l) => /^BLOCKED #6 prep: Tier: huge is not one of direct, quick, standard, full$/.test(l)) && !fs.existsSync(WT(6)), r.out);
 ok("prep: a dir in the way is BLOCKED prep", lines(r).some((l) => /^BLOCKED #7 prep: .*7 exists and is not a worktree on proteus-work\/r1\/7$/.test(l)), r.out);
 ok("prep: no SPAWN worker for a ticket whose prep failed", !lines(r).some((l) => /^SPAWN worker #(6|7)\b/.test(l)), r.out);
 const again = { refs: refs(), owned: ownedText(5) };
 r = next(PREP);
-ok("prep: a second call still lists SPAWN worker #5 with its worktree", lines(r).includes(`SPAWN worker #5 team=backend difficulty=standard worktree=${WT(5)}`), r.out);
+ok("prep: a second call still lists SPAWN worker #5 with its worktree", lines(r).includes(`SPAWN worker #5 team=backend difficulty=standard worktree=${WT(5)} brief: node ${SCRIPT} brief worker 5`), r.out);
 ok("prep: a second call changes no ref and no owned list", refs() === again.refs && ownedText(5) === again.owned);
 // once its worker is spawned, the branch counts as in flight: no SPAWN worker again
 spawn("proteus-backend-worker", "w5", "You are worker #5 of run r1.");
@@ -348,7 +348,7 @@ ok("records: the commit adds exactly the new records, cut from the run branch's 
   og("diff", "--name-status", "proteus/r1", "proteus-work/r1/owned-1") === "A\t.proteus/owned/2\nA\t.proteus/owned/3" && og("rev-parse", "proteus-work/r1/owned-1^") === og("rev-parse", "proteus/r1") && og("rev-list", "--count", "proteus/r1..proteus-work/r1/owned-1") === "1");
 ok("records: each record is its ticket's Owned: line, one entry per line", og("show", "proteus-work/r1/owned-1:.proteus/owned/3") === "src/t3.js\nlib/**" && og("show", "proteus-work/r1/owned-1:.proteus/owned/2") === "src/t2.js");
 ok("records: the commit message names the tickets", og("log", "-1", "--format=%B", "proteus-work/r1/owned-1") === "chore(proteus): record owned paths for #2, #3");
-ok("records: the record PR gets the usual SPAWN verifier line", made[0] && lines(r).includes(`SPAWN verifier PR#100 #? head=${made[0].headRefOid.slice(0, 12)}`), r.out);
+ok("records: the record PR gets the usual SPAWN verifier line", made[0] && lines(r).includes(`SPAWN verifier PR#100 #? head=${made[0].headRefOid.slice(0, 12)} brief: node ${SCRIPT} brief verifier 100`), r.out);
 ok("records: its tickets are BLOCKED pending it, no SPAWN worker", lines(r).includes("BLOCKED #2 owned record pending PR#100") && lines(r).includes("BLOCKED #3 owned record pending PR#100") && !lines(r).some((l) => l.startsWith("SPAWN worker")), r.out);
 ok("records: no worktree made, and the main checkout's HEAD, index, status and branches unchanged", !fs.existsSync(path.join(RR, ".worktrees")) && JSON.stringify(checkout()) === JSON.stringify(before0));
 const rkids = fs.existsSync(RLOG) ? fs.readFileSync(RLOG, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];

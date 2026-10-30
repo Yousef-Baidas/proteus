@@ -1,8 +1,8 @@
 # Role prompts. Fill <> and paste. Nothing else.
 
-`<hooks>` per `harnesses.md`; spawn, model and stop names per `harnesses.md`. Every brief opens with `Hooks: <hooks>.`, the `hooks=` path from `proteus-state` copied literally, so no agent guesses it; never `teams/templates/hooks` (CI's copy, which agents never run scripts from) or a plugin cache.
+`<hooks>`, spawn, model and stop names per `harnesses.md`. Every brief opens with `Hooks: <hooks>.`, the `hooks=` path from `proteus-state` copied literally, so no agent guesses it; never `teams/templates/hooks` (CI's copy, which agents never run scripts from) or a plugin cache.
 
-The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carry the four rules below and the standing rules at the end of this file, so a brief does not repeat them: it is the ticket brief. The hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third. An agent type without them (a project's own agent file, a generic helper) gets the matching lines pasted where its template says "as above".
+The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carry the four rules below and the standing rules at the end, so a brief does not repeat them: it is the ticket brief. The hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third. An agent type without them (a project's own agent file, a generic helper) gets the matching lines pasted where its template says "as above".
 
 - **Long jobs**: a foreground shell call with a timeout up to 10 minutes, or a detached job (`nohup … &`) whose PID or log you poll in this same turn until it ends (Codex: a command still running when the shell call returns is polled with `write_stdin` until it exits, in this same turn). Don't use a background shell or a watcher (`run_in_background`, `Monitor`), and don't end a turn waiting on a notification: nothing wakes you.
 - **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop. Caveman shortens prose, not reports: a report keeps every field its template names, in order, with output lines pasted verbatim, because the lead and verifier parse them.
@@ -11,7 +11,7 @@ The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carr
 
 A brief carries pointers (issue, `file:line`, command), not raw logs or long output; the agent reads those through context-mode, or through a scratch file and `grep` when the plugin is absent.
 
-Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes each spawn pay for the whole brief again. The report template closes every brief, after the ticket: the agent fills in what it read last, and those lines cost little outside the cache. A report missing a field its template names → the lead resends the brief once, naming the field, rather than rebuilding the report from the PR.
+Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes every spawn pay full price. The report template closes every brief, after the ticket. A report missing a field its template names → the lead resends the brief once, naming the field, rather than rebuilding the report from the PR.
 
 `<safety>` is the `Safety:` lines of the team's `PROFILE.md` (QA, guide and grader: every team in the milestone), verbatim; drop the slot when there are none. They bind every command the agent runs, checks and probes included, because on a team whose deliverables change a live system (`domains.md`) running one on the host is the harm.
 
@@ -32,7 +32,7 @@ You own: <paths>. Edit only these, and commit through the hook.
 <needs-research: run /research first; primary sources; cite each one you relied on in the report.>
 Done → one comment on the ticket: `DONE #<n>` / files / checks passed with their output lines / evidence links / one-line note.
 ```
-With `isolation=container` the lead writes this brief to `<scratch>/brief-<id>.md` (`proteus-scratch.js --path <run>`) and passes it to `proteus-container.js run` instead of the Agent tool (`flow.md` step 4); the container worker writes the report to a file and the runner posts it.
+The lead gets this brief from `node <hooks>/proteus-cli.js brief worker <n>` (on `next`'s SPAWN line): it writes `<scratch>/brief-<id>.md` and prints the spawn prompt. Under `isolation=container` the lead passes that file to `proteus-container.js run` instead of the Agent tool (`flow.md` step 4); the container worker writes the report to a file and the runner posts it.
 
 ## Direct helper (Direct tier, `helper`)
 ```
@@ -74,6 +74,7 @@ CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
 Then sign it on the head you read: proteus-signoff.js <pr> <sha> <WORD> (security verifier: --security).
 <isolation=container: never run the branch's code; reply `CHECKS:` with each command, stop, then judge from the lead's logs.>
 ```
+Its brief: `node <hooks>/proteus-cli.js brief verifier <pr>`.
 
 ## Guide (human review gate)
 ```
@@ -199,4 +200,4 @@ Each shipped agent file carries the four rules at the top and its role's block b
 - leave the touched area no worse.
 
 ## Lead pre-dispatch check
-The tier is classified with `proteus-tier.js` and each worktree prepared with `--tier`. From Standard up: every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names the role's tier from `models=` (`SKILL.md` rule 2), and so does a container run's `--model`. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open, or the ticket is `speculative` (`review.md`). `proteus/<run>` protected. Each ticket's owned paths recorded as `.proteus/owned/<id>` on `proteus/<run>`, and its worktree prepared by `proteus-worktree.js` with the same paths. Stall watchdog running. Every fix I decided went out as a ticket or a `BACK-TO-WORKER`.
+The tier is classified with `proteus-tier.js`. From Standard up: every ticket is a tracker issue with milestone, `profile:<team>` from `ROUTING.md`, difficulty. Owned paths inside the team's `Owns`. Contract and check committed per ticket, each shown red twice. No file owned by two tickets in flight, no shared binary with two writers. Hotspot tickets merged. The spawn names the role's tier from `models=` (`SKILL.md` rule 2), and so does a container run's `--model`. `CONVENTIONS.md` exists and its taste docs are in the brief. The milestone's debt issue exists. No human review open, or the ticket is `speculative` (`review.md`). `proteus/<run>` protected. Each ticket's owned paths recorded as `.proteus/owned/<id>` on `proteus/<run>`, its worktree prepared by `proteus-worktree.js` with the same paths and `--tier`. Stall watchdog running. Every fix I decided went out as a ticket or a `BACK-TO-WORKER`.
