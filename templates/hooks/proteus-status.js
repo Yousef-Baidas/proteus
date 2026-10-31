@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 // One status line for the human: node .claude/hooks/proteus-status.js [run]
-// Run (open proteus/<run> branch or the argument), current open milestone and its tickets closed,
+// Run (open proteus/<run> branch or the argument), the policy's preset (proteus-policy.js, #307), current open
+// milestone and its tickets closed,
 // open PRs into proteus/<run> and how many carry a verdict, and an ETA:
 // median ticket time (closedAt − createdAt over the run's closed tickets) × open tickets
 // in the milestone ÷ parallelism (open PRs + worker branches without a PR, min 1).
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+const Policy = require(path.join(__dirname, "proteus-policy.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
 if (process.argv[2] === "--help" || process.argv[2] === "-h") {
-  console.log("usage: node proteus-status.js [run]\nOne status line: the run (default the open proteus/<run> branch), its open milestone and\ntickets closed, open PRs and how many carry a verdict, and an ETA from the median ticket time.");
+  console.log("usage: node proteus-status.js [run]\nOne status line: the run (default the open proteus/<run> branch), the policy's preset, its open milestone and\ntickets closed, open PRs and how many carry a verdict, and an ETA from the median ticket time.");
   process.exit(0);
 }
 const root = path.resolve(lib.projectRoot());
@@ -33,7 +35,7 @@ const isOpen = (i) => String(i.state).toUpperCase() === "OPEN";
 const openMs = tickets.filter(isOpen).map((i) => i.milestone);
 const ms = openMs.sort((a, b) => a.number - b.number)[0] || tickets.map((i) => i.milestone).sort((a, b) => b.number - a.number)[0];
 
-const parts = [`run ${run}`];
+const parts = [`run ${run}`, `policy ${Policy.load({ root }).policy.preset}`];
 let remaining = 0;
 if (ms) {
   const inMs = tickets.filter((i) => i.milestone.number === ms.number);

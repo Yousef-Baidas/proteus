@@ -38,6 +38,8 @@ Any of these produce the verdict comment; the lead does not care which.
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |
 
+A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. Relay the ASK line's reply to the human. To approve in chat, write it to a file and run `proteus-verdict.js <n> --post --body-file <file> --sha <sha256>` with the PR's number: it posts through the same dialog, and refuses an `ACCEPT` for any other head.
+
 ## Unattended
 
 The human may say so in words: "going to sleep", "away until 9", "don't wait for me", "unattended". Before honouring it, print this, plain, once:

@@ -602,8 +602,15 @@ ok("stall: worker Stop in worktree", blocked(run(WH("proteus-stall.js"), { hook_
 
 // ---- status
 r = run(hook("proteus-status.js"), "");
-ok("status line", r.out.trim() === "run bl1077 · milestone bl1077/lighting 3/6 closed · 2 PRs open (1 verdict) · eta ~30m (median 30m/ticket)", r.out + r.err);
+ok("status line", r.out.trim() === "run bl1077 · policy balanced · milestone bl1077/lighting 3/6 closed · 2 PRs open (1 verdict) · eta ~30m (median 30m/ticket)", r.out + r.err);
 console.log("status: " + r.out.trim());
+// the presets as setup copies them into teams/templates, and the project's policy picking one
+fs.mkdirSync(path.join(REPO, "teams", "templates", "policy"), { recursive: true });
+fs.copyFileSync(path.join(__dirname, "..", "templates", "policy", "presets.json"), path.join(REPO, "teams", "templates", "policy", "presets.json"));
+fs.writeFileSync(path.join(REPO, "teams", "policy.json"), JSON.stringify({ version: 1, preset: "careful" }));
+r = run(hook("proteus-status.js"), "");
+ok("status line: the preset the project's policy picks", r.out.startsWith("run bl1077 · policy careful · "), r.out + r.err);
+fs.rmSync(path.join(REPO, "teams"), { recursive: true });
 ok("status gh fail", /tracker unreachable/.test(run(hook("proteus-status.js"), "", { env: { FAKE_GH: "fail" } }).out));
 
 // ---- autostart

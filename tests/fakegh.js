@@ -61,7 +61,8 @@ if (process.env.FAKE_GH_PRS) {
 // issue's title, labels, comments and milestone (a title; state defaults to OPEN); `issue comment <n> --body-file -` appends
 // stdin as a comment by the current login and prints its URL; `issue list --state all --search <q> in:title` matches titles
 // containing <q>, `issue list --label <l> --state open --milestone <m>` an open milestone's issues so labelled, and
-// `issue create --title` adds the next number
+// `issue create --title` adds the next number. An entry with "pr": {head, state} is a pull request: `pr view <n> --json
+// headRefOid,state` answers them, and `pr comment <n> --body-file -` appends as `issue comment` does
 if (process.env.FAKE_GH_ISSUES) {
   const fs = require("fs"), path = require("path"), file = process.env.FAKE_GH_ISSUES;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -82,7 +83,8 @@ if (process.env.FAKE_GH_ISSUES) {
   if ((m = /^issue list --label (\S+) --state open --milestone (.+) --json number,title,state,milestone,labels --limit 500$/.exec(a))) {
     out(Object.keys(s).map(asGh).filter((i) => i.state === "OPEN" && i.milestone && i.milestone.title === m[2] && i.labels.some((l) => l.name === m[1])));
   }
-  if ((m = /^issue comment (\d+) --body-file -$/.exec(a)) && s[m[1]]) {
+  if ((m = /^pr view (\d+) --json headRefOid,state$/.exec(a)) && s[m[1]] && s[m[1]].pr) out({ headRefOid: s[m[1]].pr.head, state: s[m[1]].pr.state || "OPEN" });
+  if ((m = /^(?:issue|pr) comment (\d+) --body-file -$/.exec(a)) && s[m[1]] && (a.startsWith("issue") || s[m[1]].pr)) {
     const login = CD ? fs.readFileSync(path.join(CD, "hosts.yml"), "utf8").trim() : process.env.FAKE_GH_LOGIN || "human";
     const c = s[m[1]].comments = s[m[1]].comments || [];
     c.push({ author: { login }, body: fs.readFileSync(0, "utf8") });
@@ -187,7 +189,8 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
 // FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, debt, statuses: {<sha>: [status]}}) answers proteus-cli.js next and
-// brief: the run's issues, the open PRs into the run branch, the open review, needs-human and debt issues and a commit's statuses.
+// brief: the run's issues, the open PRs into the run branch (each with optional files and comments), the open review,
+// needs-human and debt issues and a commit's statuses.
 // Set FAKE_GH_MERGE to the same file for its merge: what that merged is no longer an open PR here
 if (process.env.FAKE_GH_NEXT) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));
@@ -198,6 +201,14 @@ if (process.env.FAKE_GH_NEXT) {
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
   if (a.startsWith("issue list --label proteus-debt --state open --json ")) out(s.debt || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
+  // a PR's files (its "files", else the call fails) and its comments and head ("comments", "headRefOid"), for the policy's holds
+  if ((m = /^pr diff (\d+) --name-only$/.exec(a))) {
+    const p = (s.prs || []).find((x) => x.number === +m[1]);
+    if (!p || !Array.isArray(p.files)) { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
+    process.stdout.write(p.files.map((f) => f + "\n").join(""));
+    process.exit(0);
+  }
+  if ((m = /^pr view (\d+) --json comments,headRefOid$/.exec(a))) { const p = (s.prs || []).find((x) => x.number === +m[1]) || {}; out({ comments: p.comments || [], headRefOid: p.headRefOid || "" }); }
   // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
   if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {
     const argv = process.argv.slice(2), opt = (f) => argv[argv.indexOf(f) + 1];
@@ -213,13 +224,17 @@ if (process.env.FAKE_GH_NEXT) {
 }
 // FAKE_GH_MERGE (a JSON file {origin, issues, prs: [{number, headRefName, baseRefName, body, statusCheckRollup}]}) answers
 // proteus-merge.js: the open PRs, the run's issues, and `pr merge` as a real merge commit in the origin repo (git merge-tree);
-// a conflicting one fails and its `mergeable` turns CONFLICTING; `pr view --json headRefName,state` is MERGED once merged
+// a conflicting one fails and its `mergeable` turns CONFLICTING; `pr view --json headRefName,state` is MERGED once merged.
+// --match-head-commit <sha> fails unless the head branch is at <sha>; "pushOnMerge" on a PR pushes a commit to its head
+// just before its merge; `pr view --json headRefOid` reads the head branch
 if (process.env.FAKE_GH_MERGE) {
   const fs = require("fs"), { spawnSync } = require("child_process"), file = process.env.FAKE_GH_MERGE;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
   const git = (...args) => spawnSync("git", ["-C", s.origin, ...args], { encoding: "utf8" });
   let m;
-  if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged));
+  // as gh, a PR's headRefOid is its head branch's commit unless the state pins one
+  const oid = (p) => p.headRefOid || git("rev-parse", "-q", "--verify", `refs/heads/${p.headRefName}^{commit}`).stdout.trim() || undefined;
+  if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged).map((p) => ({ ...p, headRefOid: oid(p) })));
   if (a.startsWith("issue list --label proteus --state all --json number,state,body ")) out(s.issues || []);
   if ((m = /^pr view (\d+) --json mergeable -q \.mergeable$/.exec(a))) { process.stdout.write((s.prs.find((p) => p.number === +m[1]) || {}).mergeable || "MERGEABLE"); process.exit(0); }
   if ((m = /^pr view (\d+) --json headRefName,state$/.exec(a))) {
@@ -227,8 +242,19 @@ if (process.env.FAKE_GH_MERGE) {
     if (!p) { process.stderr.write(`GraphQL: Could not resolve to a PullRequest with the number of ${m[1]}.\n`); process.exit(1); }
     out({ headRefName: p.headRefName, state: p.merged ? "MERGED" : "OPEN" });
   }
-  if ((m = /^pr merge (\d+) --merge$/.exec(a))) {
+  if ((m = /^pr view (\d+) --json headRefOid -q \.headRefOid$/.exec(a))) { const p = s.prs.find((x) => x.number === +m[1]); process.stdout.write(p ? git("rev-parse", `refs/heads/${p.headRefName}`).stdout.trim() : ""); process.exit(0); }
+  if ((m = /^pr merge (\d+) --merge(?: --match-head-commit (\S+))?$/.exec(a))) {
     const p = s.prs.find((x) => x.number === +m[1]);
+    if (p.pushOnMerge) { // a push lands between the check and the merge
+      const c = git("commit-tree", `refs/heads/${p.headRefName}^{tree}`, "-p", `refs/heads/${p.headRefName}`, "-m", "pushed since").stdout.trim();
+      git("update-ref", `refs/heads/${p.headRefName}`, c);
+      delete p.pushOnMerge;
+      fs.writeFileSync(file, JSON.stringify(s));
+    }
+    if (m[2] && git("rev-parse", `refs/heads/${p.headRefName}`).stdout.trim() !== m[2]) {
+      process.stderr.write("GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)\n");
+      process.exit(1);
+    }
     const tree = git("merge-tree", "--write-tree", `refs/heads/${p.baseRefName}`, `refs/heads/${p.headRefName}`);
     if (tree.status !== 0) {
       p.mergeable = "CONFLICTING";

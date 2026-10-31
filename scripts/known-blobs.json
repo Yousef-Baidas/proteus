@@ -427,6 +427,8 @@
       "0ef620617b0aa9bc7b9781d39fe1b8f65711ae27",
       "538f0791bbe3c04dea95fa4bc538400ca2765bbf",
       "6b473d20cb276843738adae5c6c8176dbde3ab48",
+      "86284484c05129d2bfd4839d2b9b8e414da031b2",
+      "8708c91ffd4a7bb6228c1934e3703b1e677539bf",
       "953ca5d1245f06729d2313115149b32d518edb92",
       "a85a0f011784bd9b8d4b6cab70e13a19c86d6b2e",
       "acf07914f10bac774ebe71d8ed9d5fad252779ed",
@@ -435,7 +437,9 @@
       "cf7ad8d3926babb1d1a7ff2019c377537189cb1d",
       "d2426c0fa257712259b9c2a3d68b3095d794ac93",
       "d2d687b75b7e916ec4be4197c8dc9de39c3f56cd",
-      "e8735ab9b3deb8ee55a6e8bff63dc81eeb740a55"
+      "e8735ab9b3deb8ee55a6e8bff63dc81eeb740a55",
+      "e881f0b97741e9206f9ee7c4627c30ccd46ffbec",
+      "fcf11a04b3f981743ca756dc25d0e4794fbf7938"
     ],
     "templates/hooks/proteus-close-report.js": [
       "6a04590bcc97b3b611589fd7dad7e0c5686ed17f",
@@ -806,13 +810,16 @@
       "33b609db87f00ade92e2f0af9f5c998eff2f190d",
       "3ed6c76bac8c3ad4a106564e1792008ea4bc9bec",
       "44ff3f4abdcb02fe8503c0ebf05f788e7084a34c",
+      "457a691cf9da6d4c24411450cfcd4ada1581b700",
       "48656c77ad2f94c5ab95d4e948d4e863a18c3879",
       "657f2680815a63f4a383e6fa26357b598d5688f6",
       "7283a520352d21759ec7bf67c5e092b2b601e93d",
       "8fa9ceae1e1131255dd819a479d2c87d18ccc685",
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b",
+      "b42f2ac27a7aacab7608d752779fbeacadadeb24",
       "b700f18531435ad841904d9a52feded8a28f2ba5",
-      "e6b547b42d4d267740fe78cb21efae2e2acb87d7"
+      "e6b547b42d4d267740fe78cb21efae2e2acb87d7",
+      "e97fd58beed37f9b34e84fde1fe5e2d8ffb8697b"
     ],
     "templates/hooks/proteus-owned-check.js": [
       "1c2de99305242c7776dd991c98e9c0fb8461350a",
@@ -917,6 +924,7 @@
       "19a2863b673709c336bf98716bb5de3dc358b1ed",
       "21c16626a120be0d06c5c4abb3aaebba7ec3aed6",
       "30115c78f3cecb801454d5fbd8fd6e09ff143207",
+      "9d9bf91b827240db1ed95c637258fe9d3210aedd",
       "9f02a72212fe56e5061c1f1f4254d4bfeebfb47b",
       "dddb8da6c956d191f12d3e925f7d49c757e0d43d",
       "e7b78a7dfb2e8ce44135ff55bb69cec43c69a893",
@@ -939,6 +947,7 @@
       "b2dbfe792cb64223e64f8129729cd6e0f2d65abb"
     ],
     "templates/hooks/proteus-verdict.js": [
+      "2e1b2f66ec04a87d051ec68744e342d2991b6de3",
       "5717c3f868dfea581efb7b8062fe1a26e2e43e73",
       "7ec48fdd43a14ba8110e3b443a7b30e08dbd5d22",
       "9c0409a9051e0a4c64d35b0d934a696a434ef096",

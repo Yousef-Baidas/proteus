@@ -2088,6 +2088,14 @@ async function doctor(fix) {
     } else {
       check(() => isFile(path.join(base, "teams", "ROUTING.md")) ? ["ok", "teams/ROUTING.md"]
         : ["WARN", "teams/ROUTING.md missing", `${self} --project`]);
+      // the policy (#307): its preset, merge and ask, each with where it comes from; a file the engine ignores warns
+      check(() => {
+        const script = path.join(HERE, "templates", "hooks", "proteus-policy.js");
+        const r = require(script).load({ root: top.out }), p = r.policy, s = r.sources;
+        const what = `policy: preset ${p.preset} (${s.preset}), merge ${p.merge || "unset"} (${s.merge}), ask ${p.ask || "unset"} (${s.ask})`;
+        const write = `node ${plug ? `"${script}"` : `${hd}/hooks/proteus-policy.js`} write <draft.json>`;
+        return r.errors.length ? ["WARN", `${what}; ${r.errors.map((e) => `${e.file} ignored: ${e.error}`).join("; ")}`, `correct it through ${write}`] : ["ok", what];
+      });
       // a release changed a team file the repo owns; --project left the new text beside it
       check(() => {
         const up = upstreamPending(path.join(base, "teams"));
