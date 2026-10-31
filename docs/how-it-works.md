@@ -219,7 +219,8 @@ templates/teams/             the shipped roster, copied into your repo's teams/ 
   <team>/PROFILE.md          role, owns, rules, green additions, verifier checklist
   <team>/skills.txt          <owner/repo> <skill> lines; links land in .claude/skills/ and .agents/skills/ (git-ignored)
   <team>/required.txt        pipeline-required skills; the scout never edits it
-  skills-lock.json           content hash per linked skill
+  <team>/skills/<name>/      authored skills, committed; scanned, linked and locked like found ones
+  skills-lock.json           content hash per linked skill (plus a pinned sha, a scan acceptance)
   .proteus-base.json         hash of the shipped ROUTING.md, PROFILE.md, skills.txt each copy came from
   baseline.json              per-gate findings recorded by proteus-baseline.js (only when a gate started red)
 templates/
