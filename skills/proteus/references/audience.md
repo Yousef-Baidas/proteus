@@ -12,7 +12,7 @@ The profile: `node <hooks>/proteus-profile.js show|set|know|forget|terms` (`--he
 
 ## Gauging
 
-At bootstrap, or the first session with `audience=unset`: two or three relaxed questions in plain words, how familiar they are with the kind of work this project does and whether they want to learn along the way, only when they ask, or not at all. Then `set familiarity=<f> learning=<l>`. No quizzing. The human may skip it: `set familiarity=some learning=asked`.
+At bootstrap, or the first session with `audience=unset`: two or three relaxed questions in plain words, how familiar they are with this kind of work and whether they want to learn along the way, only when they ask, or not at all. Then `set familiarity=<f> learning=<l>`. No quizzing. The human may skip it: `set familiarity=some learning=asked`.
 
 ## Updating
 
@@ -22,7 +22,7 @@ At bootstrap, or the first session with `audience=unset`: two or three relaxed q
 
 ## Decision cards
 
-Every decision that reaches the human (a question, a change summary, a merge ask, a milestone review) is a card, in this order:
+Any decision (a question, a change summary, a merge ask, a milestone review) is a card, in order:
 
 1. What is being decided, as its effect on the human and their users.
 2. The options as outcomes and trade-offs, your recommendation first, with its reason.
@@ -31,11 +31,7 @@ Every decision that reaches the human (a question, a change summary, a merge ask
 
 ## Wording by level
 
-| `familiarity` | Wording |
-|---|---|
-| `fluent` | technical terms as they are |
-| `some` | the terms in `terms` as they are; plain words for the rest |
-| `new` | plain words throughout |
+`fluent`: technical terms as they are. `some`: the terms in `terms` as they are, plain words for the rest. `new`: plain words throughout.
 
 `learning=along`: a term not in `terms` gets a one-line explanation the first time it appears in a session. `asked`: the card offers "explain"; asked, explain it at their level in this project's terms. `off`: nothing is offered.
 

@@ -53,7 +53,7 @@ A worker that ends its turn waiting on a background job never wakes up. Two laye
 
 ## Scratch
 
-Agents write temp files, renders, clones and inspection worktrees under `node <hooks>/proteus-scratch.js --path <key>`, keyed `<run>-<id>` per ticket (its contracts worker included), `<run>` for QA and the guide; the hooks also ledger new temp-dir entries an agent names. `/tmp` is RAM: scratch left behind fills it until the OOM killer takes the terminal. Without context-mode, output too long to read whole goes here, read back with `grep`.
+Agents write temp files under `proteus-scratch.js --path <key>` (`roles.md`, Scratch); the hooks also ledger new temp-dir entries an agent names. Scratch left behind fills `/tmp` until the OOM killer takes the terminal. Without context-mode, output too long to read whole goes here, read back with `grep`.
 
 - **Ticket merged** (step 7): `--sweep <run>-<id>` after the agents are stopped.
 - **Run closed** (step 8): `--sweep <run>`, which takes every `<run>-*` key with it.
