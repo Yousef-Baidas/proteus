@@ -157,6 +157,25 @@ ok("post: posts the file's bytes under the human's login, not the agents'", r.co
   && c30.length === 1 && c30[0].author.login === "human" && c30[0].body === fs.readFileSync(BODY, "utf8"), r.out + r.err + JSON.stringify(c30));
 r = run(VD, "", { cwd: REPO, args: ["30"], env: { GH_CONFIG_DIR: BOT, FAKE_GH_ISSUES: ISSUES } });
 ok("post: proteus-verdict.js picks the posted verdict up", r.code === 0 && r.out.startsWith("ACCEPT\nThe lighting"), r.out + r.err);
+// a pull request takes the policy's merge verdict (#307): ACCEPT <sha12> for its current head, or CHANGES
+const PRHEAD = "c".repeat(40);
+issues({ 40: { title: "Ticket 7", labels: [], comments: [], pr: { head: PRHEAD } }, 41: { title: "Ticket 8", labels: [], comments: [], pr: { head: PRHEAD, state: "MERGED" } } });
+const prBody = (name, text) => { const f = path.join(W, name); fs.writeFileSync(f, text); return f; };
+const prPost = (n, f) => post([String(n), "--post", "--body-file", f, "--sha", sha(f)]);
+r = prPost(40, prBody("pr-bare.txt", "ACCEPT\n"));
+ok("post pr: a bare ACCEPT is refused, naming the line for the current head", r.code === 1 && r.err.includes(`ACCEPT ${PRHEAD.slice(0, 12)}`) && comments(40).length === 0, r.err);
+r = prPost(40, prBody("pr-stale.txt", `ACCEPT ${"d".repeat(12)}\n`));
+ok("post pr: an ACCEPT for another head is refused", r.code === 1 && /current head/.test(r.err) && comments(40).length === 0, r.err);
+r = prPost(41, prBody("pr-merged.txt", `ACCEPT ${PRHEAD.slice(0, 12)}\n`));
+ok("post pr: a pull request that is not open is refused", r.code === 1 && /no open pull request/.test(r.err) && comments(41).length === 0, r.err);
+const PRACC = prBody("pr-accept.txt", `ACCEPT ${PRHEAD.slice(0, 12)}\n`);
+r = prPost(40, PRACC);
+ok("post pr: ACCEPT <sha12> for the head posts on the PR under the human's login", r.code === 0 && comments(40).length === 1
+  && comments(40)[0].author.login === "human" && comments(40)[0].body === `ACCEPT ${PRHEAD.slice(0, 12)}\n`, r.out + r.err);
+r = prPost(40, prBody("pr-changes.txt", "CHANGES\nthe copy\n"));
+ok("post pr: CHANGES posts too", r.code === 0 && comments(40).length === 2, r.out + r.err);
+ok("post pr: the session's hook asks the human before it, as on an issue", /post this verdict on #40/.test(asked(hook(postCmd(40, PRACC, sha(PRACC))))), hook(postCmd(40, PRACC, sha(PRACC))).out);
+issues();
 // "humanGh" names the dir the human logs in with
 const ALT = path.join(W, "alt-gh");
 fs.mkdirSync(ALT); fs.writeFileSync(path.join(ALT, "hosts.yml"), "human");

@@ -15,6 +15,8 @@
 // CHANGES or ANSWER, on a proteus-review or proteus-question issue, under the human's own gh login (GH_CONFIG_DIR
 // dropped, or "humanGh" in proteus.json), and only when that login is the human. In a session the PreToolUse hook asks
 // the human first and denies agents (proteus-lib humanPost); in the human's own terminal it just runs.
+// A pull request <n> (not such an issue) takes the policy's merge verdict (#307): the first line is ACCEPT <sha12> for its
+// current head, as next's ASK human line prints it, or CHANGES. An ACCEPT for any other head is refused.
 // Exits 0 posted, 1 refused or failed (nothing posted), 2 on bad usage.
 // Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
@@ -64,6 +66,17 @@ function postUsage(args) {
   return o.issue && o.file && o.file !== "-" && /^[0-9a-f]{64}$/i.test(o.sha) ? o : null;
 }
 
+// why a verdict line cannot go on pull request <n>: it is no open PR, or an ACCEPT not for its current head; null to post
+function prVerdict(n, first, root) {
+  let v = null;
+  try { v = JSON.parse(lib.gh(["pr", "view", n, "--json", "headRefOid,state"], root, 6000, lib.agentGhDir())); } catch {}
+  const head = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid).slice(0, 12) : "";
+  if (!head || v.state !== "OPEN") return `#${n} is no proteus-review or proteus-question issue and no open pull request (or gh could not read it)`;
+  if (/^CHANGES(?=\s|$)/.test(first)) return null;
+  if (first === `ACCEPT ${head}`) return null;
+  return `on a pull request the first line is ACCEPT ${head} (its current head) or CHANGES, not "${first.slice(0, 80)}"`;
+}
+
 function post(args, root) {
   const o = postUsage(args);
   if (!o) { console.error(USAGE); return 2; }
@@ -76,9 +89,13 @@ function post(args, root) {
   const who = lib.humanLogin(root);
   if (who.error) return no(who.error);
   const labels = lib.gh(["issue", "view", o.issue, "--json", "labels", "-q", ".labels[].name"], root, 6000, lib.agentGhDir()).split(/\r?\n/);
-  if (!labels.some((l) => /^(proteus|hive)-(review|question)$/.test(l.trim()))) return no(`#${o.issue} is no proteus-review or proteus-question issue (or gh could not read it)`);
-  const r = lib.ghHuman(["issue", "comment", o.issue, "--body-file", "-"], root, { input: body });
-  if (!r.ok) return no(`gh issue comment failed: ${r.err.split(/\r?\n/, 1)[0] || "no output"}`);
+  const issue = labels.some((l) => /^(proteus|hive)-(review|question)$/.test(l.trim()));
+  if (!issue) {
+    const why = prVerdict(o.issue, body.toString("utf8").split(/\r?\n/, 1)[0].trim(), root);
+    if (why) return no(why);
+  }
+  const r = lib.ghHuman([issue ? "issue" : "pr", "comment", o.issue, "--body-file", "-"], root, { input: body });
+  if (!r.ok) return no(`gh ${issue ? "issue" : "pr"} comment failed: ${r.err.split(/\r?\n/, 1)[0] || "no output"}`);
   console.log(`posted as ${who.login}: ${r.out.split(/\r?\n/).pop()}`);
   return 0;
 }

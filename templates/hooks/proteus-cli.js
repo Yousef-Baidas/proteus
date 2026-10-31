@@ -7,8 +7,8 @@
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
 //   ASK human #<n> <issue url>                               a ready step:human ticket: the human does it, opens the PR
 //   ASK human merge PR#<n> <url>                             a green PR under merge: human (#307): the human merges it
-//   ASK human PR#<n> <url>[ policy:<id>]                     a green PR held by ask: every, or ask: risky naming the
-//                                                             ask rule it hits, until the human's ACCEPT on the PR
+//   ASK human PR#<n> <url>[ policy:<id>] reply: ACCEPT <sha12>  a green PR held by ask: every, or ask: risky naming
+//                                                             the ask rule it hits, until the human posts that line
 //   STOP <agent> <reason> / NUDGE <agent> <reason>            a STALL-AGAIN / STALL agent (the watchdog's read)
 //   MERGE PR#<n> <head sha12> verdict=<state> by=<login>       a PR proteus-merge.js would pick, when no suite is known
 //   MERGED PR#<n> <head sha12> verdict=<state> by=<login>      evidence: a PR this call merged (proteus-merge.js's batch)
@@ -65,8 +65,8 @@ proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is nev
 a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
 A ready step:human ticket prints ASK human #<n> <url>, never SPAWN worker: the human opens its PR.
 The policy (proteus-policy.js show) holds green PRs: merge human prints ASK human merge PR#<n> <url>;
-ask every, or ask risky for a PR an ask rule covers, ASK human PR#<n> <url> [policy:<id>] until the
-human's comment on the PR opens with ACCEPT.
+ask every, or ask risky for a PR an ask rule covers, ASK human PR#<n> <url> [policy:<id>]
+reply: ACCEPT <sha12>, until the human's comment on the PR is that line for its current head.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -399,7 +399,7 @@ function next(arg) {
     }
     out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt, brief: briefCmd("worker", t.n) });
   }
-  const asked = holds.map((h) => ({ kind: "ASK", human: true, pr: h.n, url: issueUrl(root, h.n, "pull"), why: h.why }));
+  const asked = holds.map((h) => ({ kind: "ASK", human: true, pr: h.n, url: issueUrl(root, h.n, "pull"), why: h.why, sha: h.sha || "" }));
   out.splice(askAt, 0, ...asked, ...humans);
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
@@ -624,7 +624,7 @@ function brief(role, target, arg) {
 
 const line = (a) => {
   switch (a.kind) {
-    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${a.why.startsWith("policy:") ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : ""}`
+    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${a.why.startsWith("policy:") ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : ""}${a.why !== "merge" && a.sha ? ` reply: ACCEPT ${a.sha}` : ""}`
       : a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;

@@ -61,7 +61,8 @@ if (process.env.FAKE_GH_PRS) {
 // issue's title, labels, comments and milestone (a title; state defaults to OPEN); `issue comment <n> --body-file -` appends
 // stdin as a comment by the current login and prints its URL; `issue list --state all --search <q> in:title` matches titles
 // containing <q>, `issue list --label <l> --state open --milestone <m>` an open milestone's issues so labelled, and
-// `issue create --title` adds the next number
+// `issue create --title` adds the next number. An entry with "pr": {head, state} is a pull request: `pr view <n> --json
+// headRefOid,state` answers them, and `pr comment <n> --body-file -` appends as `issue comment` does
 if (process.env.FAKE_GH_ISSUES) {
   const fs = require("fs"), path = require("path"), file = process.env.FAKE_GH_ISSUES;
   const s = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -82,7 +83,8 @@ if (process.env.FAKE_GH_ISSUES) {
   if ((m = /^issue list --label (\S+) --state open --milestone (.+) --json number,title,state,milestone,labels --limit 500$/.exec(a))) {
     out(Object.keys(s).map(asGh).filter((i) => i.state === "OPEN" && i.milestone && i.milestone.title === m[2] && i.labels.some((l) => l.name === m[1])));
   }
-  if ((m = /^issue comment (\d+) --body-file -$/.exec(a)) && s[m[1]]) {
+  if ((m = /^pr view (\d+) --json headRefOid,state$/.exec(a)) && s[m[1]] && s[m[1]].pr) out({ headRefOid: s[m[1]].pr.head, state: s[m[1]].pr.state || "OPEN" });
+  if ((m = /^(?:issue|pr) comment (\d+) --body-file -$/.exec(a)) && s[m[1]] && (a.startsWith("issue") || s[m[1]].pr)) {
     const login = CD ? fs.readFileSync(path.join(CD, "hosts.yml"), "utf8").trim() : process.env.FAKE_GH_LOGIN || "human";
     const c = s[m[1]].comments = s[m[1]].comments || [];
     c.push({ author: { login }, body: fs.readFileSync(0, "utf8") });
@@ -199,14 +201,14 @@ if (process.env.FAKE_GH_NEXT) {
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
   if (a.startsWith("issue list --label proteus-debt --state open --json ")) out(s.debt || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
-  // a PR's files (its "files", else the call fails) and its comments (its "comments"), for the policy's holds
+  // a PR's files (its "files", else the call fails) and its comments and head ("comments", "headRefOid"), for the policy's holds
   if ((m = /^pr diff (\d+) --name-only$/.exec(a))) {
     const p = (s.prs || []).find((x) => x.number === +m[1]);
     if (!p || !Array.isArray(p.files)) { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
     process.stdout.write(p.files.map((f) => f + "\n").join(""));
     process.exit(0);
   }
-  if ((m = /^pr view (\d+) --json comments$/.exec(a))) out({ comments: ((s.prs || []).find((x) => x.number === +m[1]) || {}).comments || [] });
+  if ((m = /^pr view (\d+) --json comments,headRefOid$/.exec(a))) { const p = (s.prs || []).find((x) => x.number === +m[1]) || {}; out({ comments: p.comments || [], headRefOid: p.headRefOid || "" }); }
   // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
   if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {
     const argv = process.argv.slice(2), opt = (f) => argv[argv.indexOf(f) + 1];

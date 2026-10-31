@@ -266,32 +266,37 @@ const PR12 = "https://github.com/o/r/pull/12";
 const with12 = (o) => ({ ...BUSY, prs: [{ ...BUSY.prs[0], ...o }, BUSY.prs[1]] });
 const said = (who, body) => ({ author: { login: who }, body });
 const merges12 = (r) => lines(r).some((l) => l.startsWith("MERGE PR#12 "));
+const A12 = SHA("a").slice(0, 12), HOLD12 = `ASK human PR#12 ${PR12} reply: ACCEPT ${A12}`;
 policy({ merge: "human" });
 r = next(BUSY);
 ok("policy: merge human prints ASK human merge PR#12 with its URL, and no MERGE line", lines(r).includes(`ASK human merge PR#12 ${PR12}`) && !merges12(r), r.out);
 ok("policy: the ASK human line comes with the other ASK lines, first", kinds(r).slice(0, 2).join() === "ASK,ASK", kinds(r).join());
-r = next(with12({ comments: [said("human", "ACCEPT")] }));
+r = next(with12({ comments: [said("human", `ACCEPT ${A12}`)] }));
 ok("policy: under merge human an ACCEPT does not make the lead merge", lines(r).includes(`ASK human merge PR#12 ${PR12}`) && !merges12(r), r.out);
 policy({ ask: "every" });
 r = next(BUSY);
-ok("policy: ask every prints ASK human PR#12 and holds the MERGE line", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
-r = next(with12({ comments: [said("human", "ACCEPT\nlooks right")] }));
-ok("policy: ask every, the human's ACCEPT on the PR: MERGE and no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
-r = next(with12({ comments: [said("someone", "ACCEPT")] }));
-ok("policy: an ACCEPT from another login does not count", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
-r = next(with12({ comments: [said("human", "ACCEPT"), said("human", "CHANGES the copy")] }));
-ok("policy: the human's newest verdict counts: CHANGES after ACCEPT holds it", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
-r = next(with12({ comments: [said("human", "ACCEPTED")] }));
-ok("policy: ACCEPTED is not ACCEPT", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
+ok("policy: ask every prints ASK human PR#12 with the reply for its head, and holds the MERGE line", lines(r).includes(`ASK human PR#12 ${PR12} reply: ACCEPT ${A12}`) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", `ACCEPT ${A12}\nlooks right`)] }));
+ok("policy: ask every, the human's ACCEPT <sha12> for the head: MERGE and no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
+r = next(with12({ comments: [said("human", "ACCEPT")] }));
+ok("policy: a bare ACCEPT holds", lines(r).includes(HOLD12) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", `ACCEPT ${SHA("f").slice(0, 12)}`)] }));
+ok("policy: an ACCEPT for another head (a push since) holds", lines(r).includes(HOLD12) && !merges12(r), r.out);
+r = next(with12({ comments: [said("someone", `ACCEPT ${A12}`)] }));
+ok("policy: an ACCEPT from another login does not count", lines(r).includes(HOLD12) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", `ACCEPT ${A12}`), said("human", "CHANGES the copy")] }));
+ok("policy: the human's newest verdict counts: CHANGES after ACCEPT holds it", lines(r).includes(HOLD12) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", `ACCEPTED ${A12}`)] }));
+ok("policy: ACCEPTED is not ACCEPT", lines(r).includes(HOLD12) && !merges12(r), r.out);
 policy({ ask: "risky", rules: RISKY });
 r = next(with12({ files: ["README.md", "src/hard/x.js"] }));
-ok("policy: ask risky, a changed path an ask rule covers: ASK human naming policy:<id>", lines(r).includes(`ASK human PR#12 ${PR12} policy:keep-out`) && !merges12(r), r.out);
-r = next(with12({ files: ["src/hard/x.js"], comments: [said("human", "ACCEPT")] }));
+ok("policy: ask risky, a changed path an ask rule covers: ASK human naming policy:<id>", lines(r).includes(`ASK human PR#12 ${PR12} policy:keep-out reply: ACCEPT ${A12}`) && !merges12(r), r.out);
+r = next(with12({ files: ["src/hard/x.js"], comments: [said("human", `ACCEPT ${A12}`)] }));
 ok("policy: ask risky, the human's ACCEPT lets it merge", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
 r = next(with12({ files: ["src/easy/x.js"] }));
 ok("policy: ask risky, no path an ask rule covers: MERGE, no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
 r = next(BUSY);
-ok("policy: ask risky, the changed paths unreadable: held, ASK human saying so", lines(r).includes(`ASK human PR#12 ${PR12} policy: changed paths unreadable`) && !merges12(r), r.out);
+ok("policy: ask risky, the changed paths unreadable: held, ASK human saying so", lines(r).includes(`ASK human PR#12 ${PR12} policy: changed paths unreadable reply: ACCEPT ${A12}`) && !merges12(r), r.out);
 policy({ ask: "never", rules: RISKY });
 r = next(with12({ files: ["src/hard/x.js"] }));
 ok("policy: ask never: MERGE as before, no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
@@ -393,7 +398,7 @@ r = b.cli("result", "pass");
 ok("result: exit 2 without --at", r.code === 2 && /--at/.test(r.err), `${r.code} ${r.err}`);
 
 // the policy holds PRs in the batch itself (proteus-merge.js, so a lone run of it too): merge human merges none;
-// ask every merges only the PR with the human's ACCEPT
+// ask every merges only the PR with the human's ACCEPT for its head
 const pin = (b, o, prs = {}) => {
   fs.mkdirSync(path.join(b.root, "teams"), { recursive: true });
   fs.writeFileSync(path.join(b.root, "teams", "policy.json"), JSON.stringify({ version: 1, ...o }));
@@ -407,10 +412,11 @@ pin(b, { merge: "human" });
 r = b.cli("next");
 ok("batch, merge human: nothing merged, an ASK human merge line per green PR, no RUN",
   b.tip() === held0 && lines(r).includes("ASK human merge PR#50 #50") && lines(r).includes("ASK human merge PR#60 #60") && !lines(r).some((l) => /^(MERGED|RUN) /.test(l)), r.out);
-pin(b, { ask: "every" }, { 60: { comments: [{ author: { login: "human" }, body: "ACCEPT" }] } });
+const head = (n) => JSON.parse(fs.readFileSync(b.state, "utf8")).prs.find((p) => p.number === n).headRefOid.slice(0, 12);
+pin(b, { ask: "every" }, { 60: { comments: [{ author: { login: "human" }, body: `ACCEPT ${head(60)}` }] }, 50: { comments: [{ author: { login: "human" }, body: `ACCEPT ${head(60)}` }] } });
 r = b.cli("next");
-ok("batch, ask every: only the accepted PR merges; the other gets ASK human",
-  lines(r).some((l) => l.startsWith("MERGED PR#60 ")) && !lines(r).some((l) => l.startsWith("MERGED PR#50 ")) && lines(r).includes("ASK human PR#50 #50") && b.tip() !== held0, r.out);
+ok("batch, ask every: only the PR accepted for its own head merges; the other (another head's sha) gets ASK human",
+  lines(r).some((l) => l.startsWith("MERGED PR#60 ")) && !lines(r).some((l) => l.startsWith("MERGED PR#50 ")) && lines(r).includes(`ASK human PR#50 #50 reply: ACCEPT ${head(50)}`) && b.tip() !== held0, r.out);
 b = batchRepo("merge-held", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }]);
 pin(b, { merge: "human" });
 const lone = lib.run(path.join(HOOKS, "proteus-merge.js"), "", { cwd: b.root, args: ["r1", "--suite", "node suite.js"], env: { FAKE_GH_NEXT: b.state, FAKE_GH_MERGE: b.state } });

@@ -7,7 +7,7 @@
 // conflict or any other failed merge stops the batch. The project policy (proteus-policy.js, #307) holds some back,
 // each named on a line: every one under merge human; under ask every each, and under ask risky each whose changed
 // paths an ask rule covers, until the human's newest verdict comment on the PR (their login, as proteus-verdict.js
-// trusts it) opens with ACCEPT. It runs outside the sandbox, so it does only that, an
+// trusts it) is ACCEPT <sha12> for the PR's head. It runs outside the sandbox, so it does only that, an
 // ls-remote, a fetch that writes objects only, and its state file: no git call with a work tree, no ref read by a
 // short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD, fetches
 // no submodule, and runs no auto maintenance, whose worktree prune would follow a link an agent plants under
@@ -45,7 +45,7 @@ Merges the ready PRs into proteus/<run> and prints the commands that test the re
 A PR is ready when every check and status on its head is green and proteus/verdict is among them;
 it merges after the PRs of the tickets its own depends on; a conflict stops the batch.
 The project policy holds a PR for the human: merge human always; ask every, or ask risky when
-an ask rule covers a changed path, until the human's comment on the PR opens with ACCEPT. No worktree
+an ask rule covers a changed path, until the human's comment on the PR is ACCEPT <head sha12>. No worktree
 or branch is removed: the end names the merged branches left for the lead.
 State between calls: <git-common-dir>/proteus/merge/<run>.json.
 Exit 0 a step printed, green or nothing to merge; 1 on a stop, a red end or a failure; 2 on usage.`;
@@ -156,7 +156,7 @@ function pick(prs, issues, run, names) {
 
 const HELD = {
   merge: "the policy has the human merge every PR",
-  every: "the policy asks the human before every merge; their ACCEPT comment on the PR lets it merge",
+  every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
   unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
 };
 
@@ -167,9 +167,9 @@ function humanOf(root) {
   return human || (lib.agentGhDir() ? "" : lib.gh(["api", "user", "--jq", ".login"], root, 6000));
 }
 
-// the policy's hold on the picked PRs (#307), [{ n, why }]: merge human holds every one ("merge"); ask every holds each
+// the policy's hold on the picked PRs (#307), [{ n, why, sha }] (sha: the head's sha12, "" when gh cannot say): merge human holds every one ("merge"); ask every holds each
 // ("every"), and ask risky each whose changed paths an ask rule covers ("policy:<id>", or "unread" when gh cannot list
-// them), until the human's newest verdict comment on the PR opens with ACCEPT; ask never holds none
+// them), until the human's newest verdict comment on the PR is ACCEPT <head sha12>; ask never holds none
 function held(picked, root, policy) {
   if (!picked.length) return [];
   if (policy.merge === "human") return picked.map((p) => ({ n: p.n, why: "merge" }));
@@ -185,18 +185,24 @@ function held(picked, root, policy) {
     }
     return "";
   };
+  // the PR's head and whether the human accepted that head: their newest verdict on the PR is `ACCEPT <sha12>` for
+  // it. A bare ACCEPT, another head's sha, or CHANGES holds; comment order alone decides, never a commit date.
   let human = null;
-  const accepted = (n) => {
+  const view = (n) => {
     if (human === null) human = humanOf(root);
-    if (!human) return false;
     let v = null;
-    try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments"], root, 30000)); } catch {}
+    try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
+    const sha = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid).slice(0, 12) : "";
+    if (!human || !sha) return { sha, ok: false };
     const said = ((v && v.comments) || []).filter((c) => c && c.author && c.author.login === human && lib.isVerdict(c.body || "")).pop();
-    return !!said && /^ACCEPT(?=\s|$)/.test(String(said.body).trim());
+    const first = said ? String(said.body).trim().split(/\r?\n/, 1)[0].trim() : "";
+    return { sha, ok: first === `ACCEPT ${sha}` };
   };
   return picked.flatMap((p) => {
     const w = why(p.n);
-    return w && !accepted(p.n) ? [{ n: p.n, why: w }] : [];
+    if (!w) return [];
+    const v = view(p.n);
+    return v.ok ? [] : [{ n: p.n, why: w, sha: v.sha }];
   });
 }
 
