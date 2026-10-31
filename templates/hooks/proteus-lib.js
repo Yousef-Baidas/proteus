@@ -1256,18 +1256,43 @@ function ghRepo(cwd) {
   }
   return ghRepos.get(c);
 }
-const ghEnv = (cwd) => { const repo = ghRepo(cwd); return { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1", ...(repo && { GH_REPO: repo }) }; };
+// local mode (#310): <common>/proteus-lead/local-mode, a regular file, marks a repo whose gh is the stand-in. It sits in
+// the lead's trust state, which the sandbox cannot write: agents write proteus-local/, and a marker there would let one
+// turn a hosted repo's gh, and so every gate that reads it, over to a store it writes
+const LOCAL = "proteus-local";
+const localPath = (common, ...parts) => path.join(common, LOCAL, ...parts);
+function localMode(common) {
+  try { return !!common && fs.lstatSync(localPath(common)).isDirectory() && fs.lstatSync(path.join(common, LEAD)).isDirectory() && fs.lstatSync(path.join(common, LEAD, "local-mode")).isFile(); } catch { return false; }
+}
+// the project's common dir when cwd is in one of its checkouts and the repo is in local mode, else null
+function localCommon(cwd) {
+  const c = anchorCommon();
+  return localMode(c) && (!cwd || checkoutAt(c, cwd)) ? c : null;
+}
+// env with the stand-in's launchers first on PATH in local mode, for child processes that run a bare gh; else env itself
+function localEnv(cwd, env = process.env) {
+  const c = localCommon(cwd);
+  if (!c) return env;
+  const key = (process.platform === "win32" && Object.keys(env).find((k) => k.toUpperCase() === "PATH")) || "PATH";
+  return { ...env, [key]: localPath(c, "bin") + path.delimiter + (env[key] || "") };
+}
+// what runs gh here: [file, args]. In local mode the stand-in itself, on every OS: Windows runs no .cmd without a shell,
+// so a bare gh would pass the launcher and reach a real gh further down PATH
+const ghArgv = (args, cwd) => (localCommon(cwd) ? [process.execPath, [path.join(__dirname, "proteus-local.js"), ...args]] : ["gh", args]);
+const ghEnv = (cwd) => { const repo = ghRepo(cwd); return localEnv(cwd, { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1", ...(repo && { GH_REPO: repo }) }); };
 function gh(args, cwd, timeout = 6000, configDir = "", token = "") {
   const env = ghEnv(cwd);
   if (configDir) env.GH_CONFIG_DIR = configDir;
   if (token) env.GH_TOKEN = token;
-  try { return execFileSync("gh", args, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
+  const [bin, argv] = ghArgv(args, cwd);
+  try { return execFileSync(bin, argv, execOpts(cwd, timeout, env)).trim(); } catch { return ""; }
 }
 // gh as { ok, out, err }; configDir as gh() takes it, else this process's login
 function ghTry(args, cwd, timeout = 6000, configDir = "") {
   const env = ghEnv(cwd);
   if (configDir) env.GH_CONFIG_DIR = configDir;
-  return attempt(() => execFileSync("gh", args, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 }));
+  const [bin, argv] = ghArgv(args, cwd);
+  return attempt(() => execFileSync(bin, argv, { ...execOpts(cwd, timeout, env), stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 }));
 }
 
 const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); return Number.isFinite(n) && n > 0 ? n : dflt; };
@@ -1588,7 +1613,8 @@ function ghHuman(args, cwd, { input, timeout = 15000 } = {}) {
   const env = { ...envSansGhDir(), GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
   const own = proteusConfig().humanGh;
   if (typeof own === "string" && own.trim()) env.GH_CONFIG_DIR = humanGhDir();
-  const r = spawnSync("gh", args, { cwd, input, encoding: "utf8", timeout, windowsHide: true, env });
+  const [bin, argv] = ghArgv(args, cwd);
+  const r = spawnSync(bin, argv, { cwd, input, encoding: "utf8", timeout, windowsHide: true, env: localEnv(cwd, env) });
   return { ok: r.status === 0, out: String(r.stdout || "").trim(), err: String(r.stderr || "").trim() || (r.error ? r.error.message : "") };
 }
 // who a --post would post as: { login, human, error }; error says how to fix it, "" when login is the human
@@ -3494,7 +3520,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
+  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, localPath, localMode, localCommon, localEnv, ghArgv, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
