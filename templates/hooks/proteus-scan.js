@@ -31,11 +31,6 @@ const url = require("url");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const USAGE = "usage: proteus-scan.js --dir <checkout> --out <dir> (--base <sha> --head <sha> | --all) [--require]";
-const LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "Cargo.lock", "go.mod",
-  "poetry.lock", "uv.lock", "Pipfile.lock", "pdm.lock", "requirements.txt", "Gemfile.lock", "composer.lock", "pubspec.lock", "mix.lock",
-  "gradle.lockfile", "packages.lock.json", "conan.lock", "renv.lock"]);
-// pip's other spellings, requirements-dev.txt and requirements/base.txt, which osv-scanner gets typed as requirements.txt
-const PIP = /(^|\/)(requirements-[^/]*|requirements\/[^/]*)\.txt$/;
 const SHA = /^[0-9a-f]{40}$/i;
 const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const ACTION = /(^|\/)action\.ya?ml$/;
@@ -99,10 +94,8 @@ function main(argv) {
       args: (_, report) => ["git", HEAD_GIT, `--log-opts=${opt.base}..${opt.head}`, "--config", empty("gitleaks.toml", "[extend]\nuseDefault = true\n"),
         "--gitleaks-ignore-path", empty("gitleaks.ignore"), "--ignore-gitleaks-allow", "--redact", "--no-banner", "--exit-code", "0",
         "--report-format", "sarif", "--report-path", report], ok: [0] },
-    { name: "osv-scanner", pick: files.filter((p) => LOCKFILES.has(path.posix.basename(p)) || PIP.test(p)), none: `no lockfile ${what}`,
-      args: (t, report) => ["scan", "source", "--config", empty("osv-scanner.toml"), "--no-call-analysis=all", "--format", "sarif", "--output-file", report,
-        ...t.flatMap((p) => ["-L", PIP.test(p) ? `requirements.txt:${p}` : p])],
-      ok: [0, 1], clean: [128] },
+    { name: "osv-scanner", pick: files.filter(lib.osvLockfile), none: `no lockfile ${what}`,
+      args: (t, report) => lib.osvArgs(t, empty("osv-scanner.toml"), report), ok: lib.OSV_OK, clean: lib.OSV_CLEAN },
     // zizmor also audits a composite action's action.yml; actionlint reads workflows only
     { name: "zizmor", alt: "actionlint", pick: files.filter((p) => WORKFLOW.test(p) || ACTION.test(p)), none: `no workflow or action ${what}`,
       args: (t) => ["--offline", "--no-config", "--no-ignores", "--format", "sarif", ...t], stdout: true, ok: [0], clean: [3] },
