@@ -14,6 +14,9 @@ const cli = require(SCRIPT);
 const lib2 = require(path.join(HOOKS, "proteus-lib.js"));
 const { spawnTarget } = lib2;
 const W = lib.workdir("brief");
+// next sweeps the sandbox scratch root under os.tmpdir() (#319): its children get their own, never the real one
+const TMPD = path.join(W, "tmp");
+fs.mkdirSync(TMPD);
 
 const REPO = path.join(W, "repo");
 g(W, "init", "-q", "-b", "main", REPO);
@@ -47,7 +50,7 @@ const pr = (n, ticket, sha) => ({ number: n, headRefName: `proteus-work/r1/${tic
 const STATEJSON = { issues: ISSUES, prs: [pr(12, 5, SHA("b"))], reviews: [], inbox: [], debt: [{ number: 40, milestone: ms }, { number: 41, milestone: { title: "r1/later" } }] };
 const run = (args, env = {}, state = STATEJSON) => {
   fs.writeFileSync(STATE, JSON.stringify(state));
-  return lib.run(SCRIPT, "", { cwd: REPO, args, env: { FAKE_GH_NEXT: STATE, ...env } });
+  return lib.run(SCRIPT, "", { cwd: REPO, args, env: { FAKE_GH_NEXT: STATE, TMPDIR: TMPD, TEMP: TMPD, TMP: TMPD, ...env } });
 };
 const lines = (r) => r.out.trim().split("\n").filter(Boolean);
 

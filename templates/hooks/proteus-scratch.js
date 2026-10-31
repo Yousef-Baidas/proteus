@@ -4,8 +4,9 @@
 //   node .claude/hooks/proteus-scratch.js --path <key>       mkdir <git-common-dir>/proteus/scratch/<key>/, bump its mtime, print it
 //   node .claude/hooks/proteus-scratch.js --sweep <key>      delete scratch/<key>[-*] and the strays keyed <key>[-*]
 //   node .claude/hooks/proteus-scratch.js --sweep --all-done the same for every key whose branch is gone
-//   node .claude/hooks/proteus-scratch.js --sweep --stale    done and idle 72h, or idle 7 days regardless (the autostart says when)
-//   node .claude/hooks/proteus-scratch.js --size             MB held in scratch dirs and ledgered strays
+//   node .claude/hooks/proteus-scratch.js --sweep --stale    done and idle 72h, or idle 7 days regardless, and the sandbox
+//                                                            scratch root's entries idle 72h (the autostart says when)
+//   node .claude/hooks/proteus-scratch.js --size             MB held in scratch dirs, ledgered strays and the sandbox root
 // <key> is a ticket's <run>-<id> (its branch proteus-work/<run>/<id>) or a run's <run>.
 // As a hook (lead's session, before and after every shell call, failed or not): the first snapshots the
 // top-level names of os.tmpdir(); after the call a new name owned by this user and named in the command or its
@@ -18,6 +19,7 @@
 // lead-state writers (#236). --sweep deletes under <common>/proteus/scratch and <common>/worktrees, which agents can
 // write, so it runs only from the lead's own shell, sandboxed like theirs, never from a hook (#237): a delete or
 // rename by path there outside the sandbox can be pointed at any dir the user owns by a parent swapped for a link.
+// proteus-cli.js next requires sweep() from here and runs --all-done and --stale at most hourly (#319).
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -26,6 +28,9 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const DONE_IDLE = 72 * 3600e3;
 const ANY_IDLE = 7 * 864e5;
+// how far an idle check walks into a sandbox root entry; past either bound the entry counts as fresh
+const WALK_DEPTH = 8;
+const WALK_COUNT = 20000;
 const KEY = /^\w[\w.-]*$/;
 const PATH_CMD = /proteus-scratch\.js["']?\s+--path\s+["']?([\w.-]+)/;
 const USAGE = "usage: node proteus-scratch.js --path <key> | --sweep <key>|--all-done|--stale | --size";
@@ -36,13 +41,18 @@ Per-ticket and per-run temp space, under <git-common-dir>/proteus/scratch/, dele
   --sweep <key>       delete scratch/<key> and scratch/<key>-*, plus the /tmp strays recorded under them
                       (the lead: <run>-<id> after a ticket merges, <run> at close)
   --sweep --all-done  the same for every key whose branch is gone (session start, on a scratch= note)
-  --sweep --stale     done and idle 72h, or idle 7 days regardless (the session start says when there is any)
-  --size              MB held in scratch dirs and recorded strays
+  --sweep --stale     done and idle 72h, or idle 7 days regardless, and entries of the sandbox temp root
+                      idle 72h (proteus-cli.js next runs --all-done and --stale at most once an hour)
+  --size              MB held in scratch dirs, recorded strays and the sandbox temp root
 <key> is a ticket's <run>-<id> (branch proteus-work/<run>/<id>) or a run's <run>. Only paths Proteus made are deleted.`;
-const argv = process.argv.slice(2);
-if (argv[0] === "--help" || argv[0] === "-h") { console.log(HELP); process.exit(0); }
-if (argv.length) cli(argv);
-else if (process.env.PROTEUS !== "0") lib.run(hook);
+// loaded by proteus-cli.js for sweep(); run any other way (directly, through proteus-plugin.js) it is the script or hook
+if (path.basename(process.argv[1] || "") !== "proteus-cli.js") {
+  const argv = process.argv.slice(2);
+  if (argv[0] === "--help" || argv[0] === "-h") { console.log(HELP); process.exit(0); }
+  if (argv.length) cli(argv);
+  else if (process.env.PROTEUS !== "0") lib.run(hook);
+}
+module.exports = { sweep };
 
 function hook(ev) {
   if (ev.tool !== "shell") return;
@@ -99,7 +109,7 @@ function cli([cmd, arg]) {
       console.log(dir);
     } else if (cmd === "--sweep" && (arg === "--all-done" || arg === "--stale" || KEY.test(arg || ""))) {
       const r = sweep(common, arg);
-      console.log(`proteus-scratch: freed ${mb(r.bytes)} MB (${r.dirs} scratch dirs, ${r.strays} strays, ${r.worktrees} worktrees); ${mb(r.left)} MB left`);
+      console.log(`proteus-scratch: freed ${mb(r.bytes)} MB (${r.dirs} scratch dirs, ${r.strays} strays, ${r.worktrees} worktrees, ${r.sandbox} sandbox entries); ${mb(r.left)} MB left`);
       for (const k of r.kept) console.log(`kept ${k}`);
       for (const b of r.skipped) console.log(`proteus-scratch: git worktree prune skipped, inspect ${b}`);
     } else if (cmd === "--size") console.log(`${mb(size(common))} MB`);
@@ -118,7 +128,7 @@ function sweep(common, what) {
   const pick = (key, idle) => (what === "--all-done" ? done(key)
     : what === "--stale" ? idle > ANY_IDLE || (idle > DONE_IDLE && done(key))
     : key === what || key.startsWith(what + "-"));
-  const out = { bytes: 0, dirs: 0, strays: 0, worktrees: 0, kept: [], skipped: [] };
+  const out = { bytes: 0, dirs: 0, strays: 0, worktrees: 0, sandbox: 0, kept: [], skipped: [] };
   const prune = new Set();
   const tmpReal = real(os.tmpdir());
   const uid = typeof process.getuid === "function" ? process.getuid() : null;
@@ -148,6 +158,12 @@ function sweep(common, what) {
     out.bytes += res.bytes;
     out.dirs++;
   }
+  if (what === "--stale") {
+    const res = sweepSandbox(now, uid);
+    out.bytes += res.bytes;
+    out.sandbox = res.n;
+    out.kept.push(...res.kept);
+  }
   for (const common of prune) {
     const bad = badWorktreeEntry(common);
     if (bad) out.skipped.push(bad);
@@ -160,6 +176,46 @@ function sweep(common, what) {
   for (const f of ls(snaps)) { try { const p = path.join(snaps, f); if (now - fs.statSync(p).mtimeMs > 3600e3) lib.leadRemove(common, p); } catch {} }
   out.left = size(common, keep);
   return out;
+}
+
+// the sandbox scratch root's (lib.sandboxScratch) top-level entries nothing has changed in for 72h, each re-checked as
+// a stray is: this user's, directly in that root, a link removed as a link and never followed
+function sweepSandbox(now, uid) {
+  const out = { bytes: 0, n: 0, kept: [] };
+  const root = lib.sandboxScratch();
+  const rootReal = realDir(root) && real(root);
+  if (!rootReal) return out;
+  try { if (uid !== null && fs.lstatSync(root).uid !== uid) return out; } catch { return out; }
+  for (const name of ls(root)) {
+    const p = path.join(root, name);
+    let st;
+    try { st = fs.lstatSync(p); } catch { continue; }
+    if ((uid !== null && st.uid !== uid) || !lib.samePath(real(path.dirname(p)), rootReal)) continue;
+    if (now - newest(p, st) <= DONE_IDLE) continue;
+    try {
+      const bytes = st.isSymbolicLink() ? 0 : du(p);
+      if (st.isSymbolicLink()) fs.unlinkSync(p); else fs.rmSync(p, { recursive: true, force: true }); // rm never follows a symlink inside the tree
+      out.bytes += bytes;
+      out.n++;
+    } catch (e) { out.kept.push(`${p}: ${e.code || e.message}`); }
+  }
+  return out;
+}
+
+// the newest mtime of p and everything under it, links not followed; Infinity (fresh) once the walk passes a bound
+function newest(p, st) {
+  let t = st.mtimeMs, seen = 0;
+  const walk = (d, depth) => {
+    for (const f of ls(d)) {
+      if (++seen > WALK_COUNT) return false;
+      let s;
+      try { s = fs.lstatSync(path.join(d, f)); } catch { continue; }
+      t = Math.max(t, s.mtimeMs);
+      if (s.isDirectory() && (depth >= WALK_DEPTH || !walk(path.join(d, f), depth + 1))) return false;
+    }
+    return true;
+  };
+  return !st.isDirectory() || walk(p, 1) ? t : Infinity;
 }
 
 // a ledgered stray: {bytes, worktree} when deleted, {keep: why} when it must stay, {} when it is dropped untouched
@@ -252,10 +308,10 @@ function named(text, name) {
   return new RegExp(`(^|[^\\w.-])${esc}($|[^\\w.-])`).test(text);
 }
 
-// bytes in scratch dirs and in the ledgered strays still present; cached for the autostart's state line
+// bytes in scratch dirs, the ledgered strays still present and the sandbox root; cached for the autostart's state line
 function size(common, rows) {
-  const root = lib.scratchDir(common);
-  let n = realDir(root) ? du(root) : 0;
+  const root = lib.scratchDir(common), sb = lib.sandboxScratch();
+  let n = (realDir(root) ? du(root) : 0) + (realDir(sb) ? du(sb) : 0);
   for (const r of rows || readLedger(ledgerFile(common)).rows) if (typeof r.path === "string") n += du(r.path);
   try { lib.leadJSON(common, lib.leadPath(common, "scratch-size.json"), { at: new Date().toISOString(), bytes: n }); } catch {}
   return n;
