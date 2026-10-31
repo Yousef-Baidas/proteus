@@ -8,14 +8,18 @@
 //   node <hooks>/proteus-profile.js forget <term>...         remove terms
 //   node <hooks>/proteus-profile.js terms                    the known terms, one per line
 //   node <hooks>/proteus-profile.js path                     the profile file
-// One file per project and machine: <git-common-dir>/proteus-lead/profile.json, never committed, written through
-// lib.leadJSON (a fresh temp file renamed over it, never through a link). Works from any cwd inside the repo.
-// A convenience store, not a trust boundary: it does not check who runs it. A malformed file reads as unset, and set
-// starts a fresh profile over it; know and forget need a profile, so they never stand in for the gauging set ends.
+// One file per project and machine: <git-common-dir>/proteus/profile.json, never committed. It sits beside
+// forgotten.json, not in proteus-lead, so the lead's sandboxed shell can write it; agents can too. A convenience
+// store, not a trust boundary: it does not check who runs it, every read re-validates every field and drops what is
+// invalid, and a file that cannot be read as a profile is unset. A write is a fresh temp file created exclusively and
+// renamed over the name, never through a link. Works from any cwd inside the repo. set starts a fresh profile over an
+// unset one; know and forget need a profile, so they never stand in for the gauging set ends.
 // Exit 0 done; 1 an invalid value or term, no repo, no profile for know or forget, or the file could not be written;
 // 2 bad usage.
 "use strict";
+const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const USAGE = "usage: node proteus-profile.js show | set familiarity=<f> learning=<l> | know <term>... | forget <term>... | terms | path";
@@ -28,7 +32,8 @@ const MAX_TERM = 60;
 const MAX_TERMS = 300;
 const KEYS = { familiarity: FAMILIARITY, learning: LEARNING };
 
-const file = (common) => lib.leadPath(common, FILE);
+const MAX_BYTES = 1 << 16;
+const file = (common) => path.join(lib.stateDir(common), FILE);
 // the project's common dir from the cwd, else from the harness's project dir; null outside any repo
 function commonDir() {
   const root = lib.gitRoot(process.cwd()) || lib.gitRoot(lib.projectRoot());
@@ -50,31 +55,43 @@ function dedup(terms) {
   return [...m.values()].slice(-MAX_TERMS);
 }
 
-// { profile } when the file is valid, { profile: null } when there is none, { profile: null, error } when malformed
+// { profile } when familiarity and learning are valid (invalid terms dropped), else { profile: null }; error only
+// outside a repo
 function read(common) {
   if (!common) return { profile: null, error: "not inside a git repository" };
-  let text;
-  try { text = lib.readUntrusted(file(common), 1 << 16); } catch (e) { return e.code === "ENOENT" ? { profile: null } : { profile: null, error: `cannot be read (${e.code || e.message})` }; }
-  let p;
-  try { p = JSON.parse(text); } catch { return { profile: null, error: "not valid JSON" }; }
-  if (!p || typeof p !== "object" || Array.isArray(p)) return { profile: null, error: "not a JSON object" };
-  for (const [k, allowed] of Object.entries(KEYS)) if (!allowed.includes(p[k])) return { profile: null, error: `${k} must be one of ${allowed.join(", ")}` };
-  if (!Array.isArray(p.known) || p.known.some((t) => termError(t))) return { profile: null, error: "known must be a list of terms" };
-  return { profile: { familiarity: p.familiarity, learning: p.learning, known: dedup(p.known), updated: typeof p.updated === "string" ? p.updated : "" } };
+  const p = lib.readUntrustedJSON(file(common), null, MAX_BYTES);
+  if (!p || Array.isArray(p)) return { profile: null };
+  for (const [k, allowed] of Object.entries(KEYS)) if (!allowed.includes(p[k])) return { profile: null };
+  const known = Array.isArray(p.known) ? p.known.filter((t) => !termError(t)) : [];
+  const updated = typeof p.updated === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.updated) ? p.updated : "";
+  return { profile: { familiarity: p.familiarity, learning: p.learning, known: dedup(known), updated } };
 }
 
 // the show line; the autostart puts the short form on its state line
 function line(common) {
   const r = read(common);
-  if (!r.profile) return r.error ? `audience unset (unreadable: ${r.error})` : "audience unset";
+  if (!r.profile) return r.error ? `audience unset (${r.error})` : "audience unset";
   return `audience familiarity=${r.profile.familiarity} learning=${r.profile.learning} known=${r.profile.known.length}`;
 }
 const short = (common) => { const p = read(common).profile; return p ? `${p.familiarity}/${p.learning}` : "unset"; };
 
-// write profile with today's date; throws when the lead state is refused or the write fails
+// d is a real dir (not a link) this user owns
+function realDir(d) {
+  const st = fs.lstatSync(d);
+  if (st.isSymbolicLink() || !st.isDirectory()) throw new Error(`${d} is not a directory`);
+  if (typeof process.getuid === "function" && st.uid !== process.getuid()) throw new Error(`${d} is not owned by this user`);
+}
+// write profile with today's date: a temp file created exclusively, then renamed over the name (a link there is
+// replaced, never followed); throws when <common> or <common>/proteus is a link or not this user's
 function save(common, profile) {
   const p = { familiarity: profile.familiarity, learning: profile.learning, known: dedup(profile.known), updated: new Date().toISOString().slice(0, 10) };
-  lib.leadJSON(common, file(common), p);
+  realDir(common);
+  const dir = lib.stateDir(common);
+  try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") throw e; }
+  realDir(dir);
+  const tmp = path.join(dir, `.${FILE}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+  fs.writeFileSync(tmp, JSON.stringify(p, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  try { fs.renameSync(tmp, file(common)); } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
   return p;
 }
 
@@ -88,7 +105,7 @@ function main(argv) {
   if (cmd === "path") { console.log(file(common)); return 0; }
   const r = read(common), cur = r.profile;
   if (cmd === "terms") { for (const t of cur ? cur.known : []) console.log(t); return 0; }
-  if (!cur && cmd !== "set") { console.error(`proteus-profile: ${r.error ? `the profile is unreadable (${r.error})` : "no profile yet"}; run set first`); return 1; }
+  if (!cur && cmd !== "set") { console.error("proteus-profile: no profile yet; run set first"); return 1; }
   const next = { ...DEFAULTS, known: [], ...cur };
   if (cmd === "set") {
     if (!rest.length) { console.error(`proteus-profile: set needs familiarity=<${FAMILIARITY.join("|")}>, learning=<${LEARNING.join("|")}>, or both`); return 2; }

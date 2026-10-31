@@ -622,7 +622,8 @@ let L = r.out.split("\n");
 ok("autostart: state on line 4", L[3].startsWith("proteus-state") && /doc-bloat=CLAUDE-extra\.md:1,CLAUDE\.md:200/.test(L[3]) && /lessons=9/.test(L[3]) && L[3].includes(`proteus-src=${HSRC}`) && /proteus-update=v0\.2\.0 \(node .*install\.js --update\)/.test(L[3]) && /inbox=2q\/1r/.test(L[3]) && /proteus-branches=proteus\/bl1077( |$)/.test(L[3]), L[3]);
 ok("autostart: audience=unset on the state line with no profile", / audience=unset( |$)/.test(L[3]), L[3]);
 {
-  const prof = path.join(REPO, ".git", "proteus-lead", "profile.json");
+  const prof = path.join(REPO, ".git", "proteus", "profile.json");
+  fs.mkdirSync(path.dirname(prof), { recursive: true });
   fs.writeFileSync(prof, JSON.stringify({ familiarity: "new", learning: "along", known: ["placeholder"], updated: "2026-01-01" }));
   const a = run(AS, { hook_event_name: "SessionStart", source: "resume", session_id: "s1", cwd: REPO }).out;
   fs.writeFileSync(prof, "{ not json");

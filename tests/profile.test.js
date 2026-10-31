@@ -1,6 +1,7 @@
 // Audience profile tests (#308): node tests/profile.test.js. proteus-profile.js keeps one profile per project in
-// <git-common-dir>/proteus-lead/profile.json: show, set, know, forget, terms and path from any cwd in the repo; it
-// validates values and terms, caps and dedups the terms, reads a malformed file as unset, and needs a repo.
+// <git-common-dir>/proteus/profile.json: show, set, know, forget, terms and path from any cwd in the repo; it
+// validates values and terms, caps and dedups the terms, re-validates every field on read (a garbage, oversized or
+// linked file reads as unset, invalid terms are dropped), writes never through a link, and needs a repo.
 // Exit 0 if every assertion passed, 1 otherwise.
 "use strict";
 const fs = require("fs");
@@ -22,9 +23,8 @@ const repo = () => {
   return d;
 };
 const cli = (cwd, ...args) => lib.run(SCRIPT, "", { cwd, args });
-const FILE = (d) => path.join(d, ".git", "proteus-lead", "profile.json");
+const FILE = (d) => path.join(d, ".git", "proteus", "profile.json");
 const stored = (d) => JSON.parse(fs.readFileSync(FILE(d), "utf8"));
-const oneLine = (r) => r.out.split("\n").filter(Boolean).length === 1;
 
 // show and set
 let R = repo();
@@ -80,27 +80,39 @@ r = cli(R, "know", ...many);
 const kept = stored(R).known;
 ok("know: at most 300 terms, the oldest dropped first", r.code === 0 && kept.length === 300 && kept[0] === "term-5" && kept[299] === "term-304" && /known=300/.test(r.out), `${kept.length} ${kept[0]} ${kept[299]}`);
 
-// a malformed file
+// a garbage, oversized or partly invalid file
 R = repo();
-fs.mkdirSync(path.join(R, ".git", "proteus-lead"), { recursive: true });
+fs.mkdirSync(path.join(R, ".git", "proteus"), { recursive: true });
 fs.writeFileSync(FILE(R), "{ not json");
 r = cli(R, "show");
-ok("show: a malformed file reports unset with the reason, in one line, no stack trace", r.code === 0 && r.out === "audience unset (unreadable: not valid JSON)\n" && !r.err, r.out + r.err);
-ok("autostart's short form: unset for a malformed file", P.short(path.join(R, ".git")) === "unset");
+ok("show: a garbage file reads as unset, in one line, no stack trace", r.code === 0 && r.out === "audience unset\n" && !r.err, r.out + r.err);
+ok("autostart's short form: unset for a garbage file", P.short(path.join(R, ".git")) === "unset");
 r = cli(R, "know", "placeholder");
-ok("know: refused over a malformed file, naming why", r.code === 1 && /unreadable \(not valid JSON\); run set first/.test(r.err) && !/\n\s+at /.test(r.err), r.err);
+ok("know: refused over a garbage file", r.code === 1 && /no profile yet; run set first/.test(r.err) && !/\n\s+at /.test(r.err), r.err);
+fs.writeFileSync(FILE(R), JSON.stringify({ familiarity: "new", learning: "off", known: ["ok-term"], pad: "x".repeat(70000) }));
+ok("show: a file over 64 KiB reads as unset", cli(R, "show").out === "audience unset\n");
 fs.writeFileSync(FILE(R), JSON.stringify({ familiarity: "expert", learning: "along", known: [] }));
-r = cli(R, "show");
-ok("show: an invalid value reads as unset and names the field", r.out === "audience unset (unreadable: familiarity must be one of new, some, fluent)\n" && oneLine(r), r.out);
+ok("show: an invalid familiarity reads as unset", cli(R, "show").out === "audience unset\n");
+fs.writeFileSync(FILE(R), JSON.stringify({ familiarity: "new", learning: 3, known: [] }));
+ok("show: an invalid learning reads as unset", cli(R, "show").out === "audience unset\n");
+fs.writeFileSync(FILE(R), JSON.stringify(["new", "off"]));
+ok("show: a JSON list reads as unset", cli(R, "show").out === "audience unset\n");
+fs.writeFileSync(FILE(R), JSON.stringify({ familiarity: "new", learning: "off", known: ["good", 7, "", "bad\u0007", "z".repeat(61), null, "Good", "fine"], updated: "<script>" }));
+r = cli(R, "terms");
+ok("terms: invalid entries are dropped and the rest deduplicated", r.code === 0 && r.out === "Good\nfine\n", r.out + r.err);
+ok("show: the sanitised profile counts only the valid terms", cli(R, "show").out === "audience familiarity=new learning=off known=2\n");
+ok("read: an invalid updated is dropped", P.read(path.join(R, ".git")).profile.updated === "");
 fs.writeFileSync(FILE(R), JSON.stringify({ familiarity: "new", learning: "off", known: "x" }));
-ok("show: known that is not a list reads as unset", /^audience unset \(unreadable: known must be a list of terms\)\n$/.test(cli(R, "show").out));
+ok("show: known that is not a list keeps the profile with no terms", cli(R, "show").out === "audience familiarity=new learning=off known=0\n");
+fs.writeFileSync(FILE(R), "[]");
 r = cli(R, "set", "learning=off");
-ok("set: starts a fresh profile over a malformed file", r.code === 0 && JSON.stringify(stored(R).known) === "[]" && stored(R).familiarity === "some" && stored(R).learning === "off", r.out + r.err);
+ok("set: starts a fresh profile over an unset file", r.code === 0 && JSON.stringify(stored(R).known) === "[]" && stored(R).familiarity === "some" && stored(R).learning === "off", r.out + r.err);
+ok("set: leaves no temp file behind", fs.readdirSync(path.join(R, ".git", "proteus")).join(",") === "profile.json", fs.readdirSync(path.join(R, ".git", "proteus")).join(","));
 
 // path and help
 R = repo();
 r = cli(path.join(R, "sub"), "path");
-ok("path: the file under <git-common-dir>/proteus-lead", r.code === 0 && r.out === FILE(R) + "\n", r.out + r.err);
+ok("path: the file under <git-common-dir>/proteus", r.code === 0 && r.out === FILE(R) + "\n", r.out + r.err);
 r = cli(R, "--help");
 ok("--help: usage on stdout, exit 0", r.code === 0 && r.out.startsWith("usage: node proteus-profile.js show"), r.out + r.err);
 r = cli(R, "bogus");
@@ -118,20 +130,28 @@ ok("show: from a linked worktree reads the main checkout's profile", cli(WT, "sh
 const OUT = path.join(W, "outside");
 fs.mkdirSync(OUT);
 r = cli(OUT, "show");
-ok("show: outside a repo says unset and why, exit 0", r.code === 0 && r.out === "audience unset (unreadable: not inside a git repository)\n", r.out + r.err);
+ok("show: outside a repo says unset and why, exit 0", r.code === 0 && r.out === "audience unset (not inside a git repository)\n", r.out + r.err);
 for (const c of [["set", "familiarity=new"], ["know", "placeholder"], ["forget", "placeholder"], ["terms"], ["path"]]) {
   r = cli(OUT, ...c);
   ok(`${c[0]}: outside a repo exits 1 with one line and writes nothing`, r.code === 1 && r.err === "proteus-profile: not inside a git repository\n" && !r.out && fs.readdirSync(OUT).length === 0, r.out + r.err);
 }
 
-// a refused write: the lead dir is a link
+// links: never read through, never written through
 if (process.platform !== "win32") {
   R = repo();
   const elsewhere = path.join(W, `elsewhere${n}`);
   fs.mkdirSync(elsewhere);
-  fs.symlinkSync(elsewhere, path.join(R, ".git", "proteus-lead"));
+  fs.symlinkSync(elsewhere, path.join(R, ".git", "proteus"));
   r = cli(R, "set", "familiarity=new");
-  ok("set: a linked proteus-lead is refused in one line, nothing written through it", r.code === 1 && /^proteus-profile: cannot write .*lead state refused/.test(r.err) && fs.readdirSync(elsewhere).length === 0 && !/\n\s+at /.test(r.err), r.err);
+  ok("set: a linked proteus dir is refused in one line, nothing written through it", r.code === 1 && /^proteus-profile: cannot write .*is not a directory/.test(r.err) && fs.readdirSync(elsewhere).length === 0 && !/\n\s+at /.test(r.err), r.err);
+  R = repo();
+  fs.mkdirSync(path.join(R, ".git", "proteus"));
+  const target = path.join(W, `target${n}.json`);
+  fs.writeFileSync(target, JSON.stringify({ familiarity: "fluent", learning: "off", known: [] }));
+  fs.symlinkSync(target, FILE(R));
+  ok("show: a linked profile.json is not followed: unset", cli(R, "show").out === "audience unset\n");
+  r = cli(R, "set", "familiarity=new");
+  ok("set: replaces a linked profile.json with a file, the link's target untouched", r.code === 0 && !fs.lstatSync(FILE(R)).isSymbolicLink() && stored(R).familiarity === "new" && JSON.parse(fs.readFileSync(target, "utf8")).familiarity === "fluent", r.out + r.err);
 }
 
 lib.summary();
