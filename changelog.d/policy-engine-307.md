@@ -5,4 +5,4 @@
   `teams/policy.json`, rules by `id`; validates each file in plain words and treats an invalid one as absent;
   evaluates a shell call or an edit to the most restrictive matching rule (block, then ask, then allow); and
   renders `teams/POLICY.md`. `show`, `check`, `render` and `write` (which writes nothing for an invalid draft) on
-  the command line. No guard calls it yet.
+  the command line.

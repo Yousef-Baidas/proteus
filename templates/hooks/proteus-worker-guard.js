@@ -7,6 +7,8 @@
 // Also proteus-signoff.js whatever the harness names the agent (this session is a worker's), and what
 // lib.secretDenial refuses: Read, Edit or a shell command naming the verifier App's key, a shell setting GH_TOKEN.
 // And the human's verdict post (proteus-verdict.js --post) and any reach for the human's gh login (lib.humanGhDenial).
+// Then the project policy (proteus-policy.js guard, #307): a block or ask rule refuses (an ask with NEEDS), as do an
+// edit of the policy's files, its write, and any edit or shell write while a policy file is invalid.
 // A shell call it lets through gets the fingerprint proteus-shell-check.js compares after the call.
 // Only active when the owned-path list exists (a dispatched worker's worktree).
 // Exit 2 = block; the message on stderr reaches the worker as the tool's error.
@@ -21,6 +23,9 @@ lib.run(async (ev, ad) => {
   if (!fs.existsSync(lib.ownedFile(lib.projectRoot(ev)))) return;
   const why = lib.workerDenial(ev) || (ev.tool === "shell" && lib.signoffDenial(ev, lib.SIGNOFF_MSG.role("a worker's session")));
   if (why) ad.deny(why);
+  let policy = null;
+  try { policy = require(path.join(__dirname, "proteus-policy.js")); } catch {}
+  try { if (policy) policy.guard(ev, ad, false); } catch {}
   if (ev.tool !== "shell") return;
   let check;
   try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch { return; }
