@@ -13,6 +13,11 @@
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
+    // the run panel mod (#311) is TypeScript against Claude Code's mod API, whose names (Shaped, shape) and untyped
+    // tracker JSON these rules refuse; claude plugin validate and claude plugin test check it (tests/panel.test.js)
+    "mods/*/hooks/*.tsx",
+    "mods/*/test/*.ts",
+    "mods/*/types/*.d.ts",
     "node_modules/**",
     "tests/fixtures/**",
     "tools/oxlint/anti-slop/**"

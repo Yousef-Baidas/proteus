@@ -1,0 +1,12 @@
+{
+  "name": "proteus-panel",
+  "description": "Optional Proteus run panel for Claude Code: a pane and a status line entry showing the run and what waits on you. Display only.",
+  "author": {
+    "name": "Yousef-Baidas"
+  },
+  "homepage": "https://github.com/Yousef-Baidas/proteus",
+  "repository": "https://github.com/Yousef-Baidas/proteus",
+  "license": "MIT",
+  "hooks": "./hooks/hooks.json",
+  "types": "./types/index.d.ts"
+}

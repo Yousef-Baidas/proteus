@@ -33,11 +33,11 @@ Running agents (`status`, `pause`): your task list; on Codex the agents spawned 
 | `git`, `gh`, lead scripts | run as usual | the sandbox has no network and keeps a worktree's gitdir read-only; `.codex/rules/proteus.rules` lets a command out only when every segment matches a rule (`git <subcommand>` for the writing ones, `gh`, `node <root>/.codex/hooks/<script>` by the main checkout's absolute path, as the rules file spells it; a relative path stays sandboxed). Plain words joined by `&&`, `\|\|`, `;`, `\|` are checked one by one; `$(…)`, `$var`, a redirect, or one unmatched segment (`cd`, `tail`, `sleep`) keeps the whole command sandboxed. So set the directory with `workdir`, never `cd <dir> && git …` or `git -C` (they fail on `index.lock`), and do not pipe `gh` into a filter: use its `-q` |
 | Wait for a review verdict | the background poll in `tracker.md` | no `--wait`: one `node <root>/.codex/hooks/proteus-verdict.js <n>`; no verdict → end the turn with the review url and "type `reviewed` here once the verdict is posted". Unattended: `wait_agent` on the guide's `AUTO-` verdict |
 | Edit a file | `Edit`, `Write` | `apply_patch`; one unowned path denies the whole patch (lead's hooks, subagents included) |
-| Read a file or image | `Read` | the shell, `view_image`; the guard refuses `view_image` like `Read` of an image |
+| Read a file or image | `Read` | the shell, `view_image` |
 | Shell | `Bash`, `run_in_background` | `exec_command` returns after `yield_time_ms` (at most 30 s) with a session id; `write_stdin` with empty input polls it. A command left running past the turn is the background shell the long-jobs rule forbids |
 | Ask the human (the run cannot move) | `AskUserQuestion`, pinned picker | plain numbered questions in chat, one to four, numbered options, recommendation first and marked; wait for the reply |
 | Notify | `PushNotification` | none; the chat line and the question or review issue are the notice |
-| Status line | `proteus: N questions · M reviews` | `inbox=<q>q/<r>r` in `proteus-state` |
+| Status line | `proteus: N questions · M reviews`; a pane with the optional `proteus-panel` mod (`docs/run-panel.md`) | `inbox=<q>q/<r>r` in `proteus-state` |
 | Gate cache | `proteus-gates-cache.js` stores a pass in `<git-common-dir>/proteus/gates/` | read-only inside the sandbox; passes recorded outside still count. Not in `proteus.rules`: it runs any command |
 | Auto mode classifier | denials per `SKILL.md`; `install.js --doctor` suggests an `autoMode.environment` entry (docs/install.md) | none |
 | Hooks that cannot fire | – | failed-tool and teammate-idle; the long-jobs rule is prompt-only |

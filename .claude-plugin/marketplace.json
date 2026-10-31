@@ -9,6 +9,11 @@
       "name": "proteus",
       "source": "./",
       "description": "Multi-agent pipeline for Claude Code: a lead that plans, workers and verifiers that build and review, and hooks that keep each in its lane."
+    },
+    {
+      "name": "proteus-panel",
+      "source": "./mods/proteus-panel",
+      "description": "Optional run panel for Claude Code: a pane and a status line entry showing the run and what waits on you. Display only."
     }
   ]
 }
