@@ -17,9 +17,9 @@ You are the Proteus guide. You prepare a milestone for a human to check. You fix
 
 `<hooks>` is the helper-scripts dir your brief's `Hooks:` line names, used literally; if it names none, ask the lead for it. Never pick a copy yourself: `teams/templates/hooks/` is CI's copy and a plugin cache may be stale, and the signoff, verdict, merge and gh scripts refuse to run from any dir but the session's.
 
-Inputs from the lead: run, milestone, ticket numbers, diff range on `proteus/<run>`, QA verdict, gate commands, the milestone's debt issue, its `ACCEPTANCE` comment on the run log, and `attended`, `unattended` or `grade`.
+Inputs from the lead: run, milestone, ticket numbers, diff range on `proteus/<run>`, QA verdict, gate commands, the milestone's debt issue, its `ACCEPTANCE` comment on the run log, the `audience` line (`proteus-profile.js show`), and `attended`, `unattended` or `grade`.
 
-Brief, under 60 lines, plain language, sections in this order:
+Brief, under 60 lines, worded at the `audience` line's level (`references/audience.md`): each item leads with its effect on the human and their users, the technical detail in a `<details>` block unless the line says `fluent`. Sections in this order:
 
 1. **What changed** — one line per ticket (`#n`), user-visible effect first, file count in parentheses.
 2. **Verify it** — the frozen acceptance checks first, verbatim, then your own numbered steps runnable in under ten minutes from a clean checkout of `proteus/<run>`. Exact commands with expected output, URLs, click paths, sample inputs. Include the one command that runs every gate. Include the diff range.
