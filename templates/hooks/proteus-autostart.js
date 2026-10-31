@@ -23,6 +23,7 @@
 // Records the realpath of this hooks dir in proteus-lead/hooks-root and names it as hooks=<dir> (#277): the gate
 // scripts refuse to run from any other copy.
 // Adds audience=<familiarity>/<learning> from the audience profile (proteus-profile.js, #308), or audience=unset.
+// Adds learn=<new> when the learning workspace has records the lead has not read (proteus-learn.js, #84).
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -459,6 +460,7 @@ function localState(ad, root, runs, home, pending, drift) {
   const common = lib.gitCommonDir(root);
   const scratch = common ? Math.round(((lib.readJSON(lib.leadPath(common, "scratch-size.json"), {}) || {}).bytes || 0) / 1048576) : 0;
   const yn = (b) => (b ? "yes" : "NO");
+  const learn = safe(() => require(path.join(__dirname, "proteus-learn.js")).fresh(root), 0);
   return (
     "proteus-state (local files only; tracker not queried): " +
     [
@@ -477,6 +479,7 @@ function localState(ad, root, runs, home, pending, drift) {
       `doc-bloat=${bloat.join(",") || "none"}`,
       `lessons=${lessons}`,
       `audience=${safe(() => require(path.join(__dirname, "proteus-profile.js")).short(common), "unset")}`,
+      ...(learn > 0 ? [`learn=${learn}`] : []),
       ...(scratch > 1024 ? [`scratch=${scratch}MB`] : []),
       ...(ad.contextModeOn() ? [] : ["context-mode=missing"]),
       `proteus-src=${home || "none"}`,

@@ -13,7 +13,7 @@ A brief carries pointers (issue, `file:line`, command), not raw logs or long out
 
 Order a brief from shared to specific: lines every spawn of the role repeats (`<run>`, gates and `<hooks>` are the same all run) first, the team next, the ticket last. A prompt cache reuses only an identical prefix, so a ticket line on top makes every spawn pay full price. The report template closes every brief, after the ticket. A report missing a field its template names → the lead resends the brief once, naming the field, rather than rebuilding the report from the PR.
 
-`<safety>` is the `Safety:` lines of the team's `PROFILE.md` (QA, guide and grader: every team in the milestone), verbatim; drop the slot when there are none. They bind every command the agent runs, checks and probes included, because on a team whose deliverables change a live system (`domains.md`) running one on the host is the harm.
+`<safety>` is the `Safety:` lines of the team's `PROFILE.md` (QA, guide and grader: every team in the milestone), verbatim; drop the slot when there are none. They bind every command the agent runs, checks and probes included (`domains.md`).
 
 ## Worker
 ```

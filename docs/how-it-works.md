@@ -257,6 +257,7 @@ templates/
     proteus-skill-scan.js   static scan of a third-party skill: files, code, hooks, hosts, injection, license, deps
     proteus-policy.js       the policy engine: presets, user and project files, validate, evaluate, render POLICY.md
     proteus-profile.js      the audience profile: how familiar the human is, how they learn, the terms they know
+    proteus-learn.js        the learn/ workspace for the optional teach hand-off: prepare, seed, unread records
     proteus-agent-patch.js  writes a project's .claude/proteus-agents.json patches over the shipped agents
     proteus-owned-paths.js  proteus-owned-check.js  commit-msg.js  proteus-lib.js   shared core
     proteus-confine.js      the installers' write and delete guard: no link between an owned root and the path

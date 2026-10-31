@@ -37,7 +37,7 @@ Fix the seed first. If no seed can fix it, write a tolerance band into the contr
 
 ## Checks that cannot run in a worktree
 
-Live infrastructure, a paid API, hardware. The ticket's check is the dry run in the worktree (`terraform plan`, `ansible --check`, `kubectl diff`, a recorded fixture or a simulator). The live apply is a `step:human` ticket after the merge, and its evidence is the apply log.
+Live infrastructure, a paid API, hardware. The ticket's check is the dry run in the worktree (a recorded fixture or a simulator too). The live apply is a `step:human` ticket after the merge, and its evidence is the apply log.
 
 ## Designing the roster (bootstrap, `proteus-scout`)
 
@@ -45,7 +45,7 @@ The scout reads the repo, `CONTEXT.md`, and the work order, then proposes:
 
 - **Teams**, each a real-world role a studio or firm would hire for this work, one line of what it owns. Four to eight teams for most projects; a team that would own one ticket is merged into another.
 - **Per team**: `Owns` (paths, file types, or named parts of a shared artifact), `Never touches`, deliverable format, its checks (mechanical first, rubric second), what its verifier adds, required research sources (standards bodies, official docs, trade references), and skills from skills.sh and installed plugins, at most 4 and 40 KB of combined `SKILL.md` text (`CAP` in `teams/link-skills.js`).
-- **`Safety`** for a team whose deliverables change a live system (system tuning, live infrastructure): how agents run them without touching the host, for example privileged steps only inside `unshare -rm` with mocks bound over the real tool paths, no `sudo`. The role prompts paste it into every brief (`roles.md`); a lesson fires only after the first failure.
+- **`Safety`** for a team whose deliverables change a live system: how agents run them without touching the host, for example privileged steps only inside `unshare -rm` with mocks bound over the real tool paths, no `sudo`. The role prompts paste it into every brief (`roles.md`); a lesson fires only after the first failure.
 - **`teams/ROUTING.md`**: deliverable type or path pattern → owning team (`teams.md`).
 - **Qa and security** stay cross-cutting. Security's scope in non-code work: personal data, credentials, money movement, legal exposure, anything published.
 
@@ -57,4 +57,4 @@ Tickets tagged `needs-research` start with `/research`: primary sources first (o
 
 ## Taste
 
-Software taste is `CONVENTIONS.md`. Creative and business work has more: the human's house defaults (a camera height, a brand voice, a margin floor, a reading level). They live in `CONVENTIONS.md` or in a doc it links, are loaded at step 1 into every brief, and are what the test-piece milestone exists to catch early. Every review note that turns out to be a standing preference is added there by the human, or by a ticket the human approves, so no review round teaches the same default twice.
+Software taste is `CONVENTIONS.md`. Creative and business work has more: the human's house defaults (`conventions.md`). They live in `CONVENTIONS.md` or in a doc it links, are loaded at step 1 into every brief, and are what the test-piece milestone exists to catch early. Every review note that turns out to be a standing preference is added there by the human, or by a ticket the human approves, so no review round teaches the same default twice.
