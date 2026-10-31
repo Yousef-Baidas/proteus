@@ -42,6 +42,7 @@
 //                contextModeOn() · registerLead(root) · prepareWorker(wt, src) · ownedFile(wt)
 //                allowDir(root, dir, write) (guest mode: the session may read and write dir, outside the project)
 //                exportEnv(root, vars) (env for the agents' shell commands; SessionStart only on claude)
+//                prependPath(root, dir) (dir first on the agents' PATH; optional, the doctor names a harness without it)
 "use strict";
 const path = require("path");
 

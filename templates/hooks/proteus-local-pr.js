@@ -11,7 +11,9 @@
 // and `pr merge` refuses what the policy holds (Policy.held), which reads the human's verdicts from their record.
 // pre-receive exits 1 naming a refused ref, and fails closed outside origin.git; post-receive always exits 0.
 // A check runs the default branch's gate commands on a head with the caller's privileges, so nothing here but
-// `pr create` and post-receive starts one: never a read, and never a Claude hook, which runs outside the sandbox.
+// `pr create`, post-receive and `pr checks --rerun` starts one: never a read, and never a Claude hook, which runs
+// outside the sandbox. With a sandbox profile a run that can write proteus-lead/ is outside the sandbox: it runs
+// nothing and posts a failure naming the rerun.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -74,18 +76,23 @@ function build(core) {
   }
   // the bare repo, its hooks and the remote. core.hooksPath is its own, relative to it: a user's or machine's setting
   // cannot move the hooks away, and a moved repo keeps them
+  const hookFiles = (s, at = script) => [["pre-receive", "--pre-receive"], ["post-receive", "--post-receive"]].map(([name, flag]) => [path.join(s.origin, "hooks", name), shLauncher(at, flag), 0o755]);
   function initOrigin(s) {
-    const hooks = path.join(s.origin, "hooks"), files = [["pre-receive", "--pre-receive"], ["post-receive", "--post-receive"]];
+    const files = hookFiles(s);
     mkReal(s.origin);
-    mkReal(hooks);
-    for (const [name] of files) noLink(path.join(hooks, name));
+    mkReal(path.join(s.origin, "hooks"));
+    for (const [f] of files) noLink(f);
     if (!has(path.join(s.origin, "HEAD"))) {
       must(lib.gitTry(s.origin, ["init", "--bare", "-q", "--template=", `--object-format=${lib.gitIn(s.common, ["rev-parse", "--show-object-format"]) || "sha1"}`, s.origin], { cwd: s.root }), "git init --bare failed");
       must(git(s, ["symbolic-ref", "HEAD", `refs/heads/${firstDefault(s)}`]), "setting the origin's default branch failed");
     }
     must(git(s, ["config", "core.hooksPath", "hooks"]), "setting the origin's hooks failed");
-    for (const [name, flag] of files) writeFresh(path.join(hooks, name), shLauncher(script, flag), 0o755);
+    for (const [f, text, mode] of files) writeFresh(f, text, mode);
     if (!originValues(s).length) must(lib.gitTry(s.common, ["remote", "add", "origin", s.origin]), "git remote add failed");
+  }
+  function originHealth(s) {
+    const urls = originValues(s), branch = has(path.join(s.origin, "HEAD")) ? defaultBranch(s.origin) : "";
+    return { origin: urls.length > 0 && urls.every((u) => sameRepo(u, s.origin)), branch, pushed: !!branch && !!refOid(s, branch), gates: branch ? gateList(s) : [] };
   }
 
   // ---- statuses
@@ -388,10 +395,14 @@ function build(core) {
   }
   const CHECK_FIELDS = ["bucket", "completedAt", "description", "event", "link", "name", "startedAt", "state", "workflow"];
   function checks(s, argv) {
-    const o = flags(argv, { ...REPO, ...OUT, "--watch": 0, "--interval|-i": 1 }, "pr checks");
+    const o = flags(argv, { ...REPO, ...OUT, "--watch": 0, "--interval|-i": 1, "--rerun": 0 }, "pr checks");
     onlyHere(s, o, "pr checks");
     const n = prArg(s, o, "pr checks"), fields = jsonFields(o, CHECK_FIELDS);
     if (o["--watch"] && fields) fail("cannot use `--watch` with `--json`");
+    if (o["--rerun"]) {
+      if (o["--watch"] || fields) fail("cannot use `--rerun` with `--watch` or `--json`");
+      return rerun(s, loadPull(s, n));
+    }
     const interval = o["--interval"] === undefined ? WATCH_INTERVAL : Number(o["--interval"]);
     if (!Number.isFinite(interval) || interval < 0) fail(`proteus local mode: invalid --interval: ${o["--interval"]}`);
     let rows = checkRows(s, loadPull(s, n));
@@ -474,6 +485,22 @@ function build(core) {
     });
     if (fresh) startRunner(s, sha);
   }
+  // the one start over a result. The old claim goes under the lock; a run still pending keeps it, and its turn
+  function rerun(s, p) {
+    if (p.state !== "OPEN") fail(`proteus local mode: pull request #${p.number} is not open`);
+    const sha = headOid(s, p);
+    statusesOf(s, sha); // a dead run's pending turns to error first
+    const fresh = withLock(s.lock, () => {
+      const g = gatesOf(readStatuses(s, sha));
+      if (g && g.state === "pending") return false;
+      unlink(claimOf(s, sha));
+      addStatus(s, sha, { state: "pending", context: GATES, description: "the local check is starting" });
+      return true;
+    });
+    if (fresh) startRunner(s, sha);
+    line(fresh ? `started a check for ${sha}` : `a check for ${sha} is already running`);
+    return 0;
+  }
   // from the default branch in the bare repo, so a branch cannot choose its own gates
   function gateList(s) {
     const r = git(s, ["cat-file", "blob", `refs/heads/${defaultBranch(s.origin)}:AGENTS.md`]);
@@ -528,6 +555,11 @@ function build(core) {
   }
   // a result counts only while some PR's head is, or ended on, sha
   const isHead = (s, sha) => readPulls(s).some((p) => (p.state === "OPEN" ? refOid(s, p.headRefName) : p.headRefOid) === sha);
+  const outsideSandbox = (s) => !!lib.profileFile(s.common) && lib.leadWritable(s.common);
+  function notRun(s, sha) {
+    const p = readPulls(s).find((x) => x.state === "OPEN" && refOid(s, x.headRefName) === sha);
+    return { state: "failure", description: `not run: outside the sandbox. In a sandboxed session: gh pr checks ${p ? p.number : "<number>"} --rerun` };
+  }
   async function runCheck(common, sha, ms = CHECK_MS) {
     if (!lib.localMode(common) || !isSha(sha)) fail("proteus local mode: --run-check needs a local-mode repo and a commit");
     const s = openPr(common), claim = claimOf(s, sha);
@@ -536,7 +568,7 @@ function build(core) {
     let result;
     try {
       const list = gateList(s);
-      result = list.length ? await runGates(s, sha, list, ms) : { state: "failure", description: "no gate command in ## Learned on the default branch" };
+      result = outsideSandbox(s) ? notRun(s, sha) : list.length ? await runGates(s, sha, list, ms) : { state: "failure", description: "no gate command in ## Learned on the default branch" };
     } catch (e) {
       result = { state: "error", description: `the local check failed: ${e.message}` };
     } finally { clearInterval(beat); }
@@ -585,7 +617,7 @@ function build(core) {
     if (!Object.prototype.hasOwnProperty.call(commands, sub)) unsupported(`pr ${sub === undefined ? "" : sub}`.trim());
     return commands[sub](openPr(common), argv);
   }
-  return { run, api, checkOrigin, initOrigin, preReceive, postReceive, runCheck, commitMerge };
+  return { run, api, checkOrigin, initOrigin, hookFiles, originHealth, preReceive, postReceive, runCheck, commitMerge };
 }
 
 module.exports = build;

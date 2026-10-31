@@ -11,6 +11,8 @@ claude plugin install proteus@proteus
 
 Then, in a Claude Code session in your repo, run `/proteus:setup`. It enables the plugin for that repo in the committed `.claude/settings.json` (the plugin's hooks stay silent in every other repo), lists the `proteus` marketplace there so teammates are offered the plugin, copies `teams/`, and prints the GitHub steps left to you (`--protect`, `--verifier-app`). It then moves every other repo still on a 1.x install ([Moving from 1.x](migrating.md#moving-from-1x)); `--only-here` stops after this repo. `/proteus:setup --dry-run` shows what it would change. In a repo you cannot push to it goes [guest mode](#guest-mode-repos-you-do-not-own) like `--project`, and the checkout gets nothing to commit. Otherwise commit `.claude/settings.json` and `teams/`, start a new session, and the lead starts itself; `/proteus:proteus` invokes it by hand. The prerequisites below apply either way; on a 1.x install, `install.js --update` installs the plugin and moves your repos for you ([Moving from 1.x](migrating.md#moving-from-1x)). The pin and how to move it to a newer release are in [Updating](updating.md).
 
+To keep a project on this machine with no code host, `/proteus:setup` offers [local mode](local-mode.md); it needs neither `gh` nor a remote.
+
 Codex CLI has no plugin: it uses the installer path ([Install with the installer](#install-with-the-installer), then [Codex CLI](#codex-cli)), which still works for Claude Code too.
 
 ## Prerequisites (all platforms)
@@ -159,6 +161,8 @@ claude --settings ~/.claude/proteus-sandbox/<repo>-<hash>.json --permission-mode
 ```
 
 It prints the exact commands. Set up `--agent-login` first: the profile hides your own gh config from shell commands, so without an agent identity `gh` has no login inside the sandbox. Your own `settings.json` and `settings.local.json` under `~/.claude` are never touched. In the repo, `--sandbox` changes only a Proteus `statusLine` (see below). Run `--sandbox` again after you move the repo, update Proteus, or change `AGENTS.md ## Learned`, rather than editing the file. Native Windows has no sandbox, so the flag refuses there; use WSL2.
+
+In [local mode](local-mode.md) `proteus-state` also shows `mode=local`, and `approvals=unprotected` while the repo has no profile.
 
 At session start `proteus-state` shows `sandbox=on`, `off` or `unavailable` (native Windows, or Linux without `bwrap` or `socat`, which `--doctor` checks); under `bypassPermissions` the lead guard refuses worker and verifier spawns and `proteus-container.js run` unless it is `on`, and names the launch command above (#189).
 

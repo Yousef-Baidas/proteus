@@ -2,6 +2,8 @@
 
 A plain-language guide to the setup steps only you can take, one at a time, in this order. Each one keeps the agents from doing anything to your project that you have not approved. The full technical detail is in [GitHub](github.md).
 
+Keeping the project only on this machine has no GitHub steps; [local mode](local-mode.md) explains that path and what it gives up.
+
 In the commands below, `<proteus>` is the folder Proteus is installed in; `/proteus:setup` shows each command with the full path filled in. Inside a Claude Code session, type `!` and a space before a command, so its output lands in the chat. After each step, check it worked with:
 
 ```bash

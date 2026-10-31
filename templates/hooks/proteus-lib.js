@@ -278,6 +278,11 @@ function leadWrite(common, file, text) {
   fs.writeFileSync(tmp, text, { flag: "wx", mode: 0o600 });
   try { fs.renameSync(tmp, f); } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
 }
+// the sandbox cannot write the lead's state, so a write that lands here ran outside it
+function leadWritable(common) {
+  const f = leadPath(common, `.probe-${process.pid}-${Date.now()}`);
+  try { leadWrite(common, f, ""); fs.unlinkSync(f); return true; } catch { return false; }
+}
 const leadJSON = (common, file, obj) => leadWrite(common, file, JSON.stringify(obj, null, 2) + "\n");
 // append to file, made if missing; a link at its name is refused (O_NOFOLLOW; Windows has none, so lstat first)
 function leadAppend(common, file, text) {
@@ -1169,13 +1174,17 @@ function sandboxSeen(root, session) {
   const e = common && session ? (readJSON(leadPath(common, SANDBOX_FILE), {}) || {})[session] : null;
   return e && typeof e.state === "string" ? e.state : "";
 }
-// the launch command a refusal names: the repo's profile when install.js --sandbox wrote one, else its pattern
-function sandboxLaunch(root) {
-  const common = gitCommonDir(root), dir = path.join(claudeDir(), "proteus-sandbox");
+// the profile install.js --sandbox wrote for common, "" when it has none
+function profileFile(common) {
+  const dir = path.join(claudeDir(), "proteus-sandbox");
   const key = common ? require(path.join(__dirname, "proteus-confine.js")).sandboxKey(common) : "";
   let file = "";
   try { file = key ? fs.readdirSync(dir).find((n) => n.endsWith(`-${key}.json`)) || "" : ""; } catch {}
-  const profile = file ? path.join(dir, file) : path.join(dir, "<repo>-<hash>.json");
+  return file ? path.join(dir, file) : "";
+}
+// the launch command a refusal names: the repo's profile when install.js --sandbox wrote one, else its pattern
+function sandboxLaunch(root) {
+  const profile = profileFile(gitCommonDir(root)) || path.join(claudeDir(), "proteus-sandbox", "<repo>-<hash>.json");
   return `claude --settings ${/\s/.test(profile) ? `"${profile}"` : profile} --permission-mode bypassPermissions`;
 }
 
@@ -3624,7 +3633,7 @@ function gateCommands(text) {
 }
 
 module.exports = {
-  GATES_CHECK, REQUIRED_CHECKS, REQUIRED_REFS, requiredChecks, SANDBOX_TOKENS, branchKind, gateCommands, refSha,
+  profileFile, leadWritable, GATES_CHECK, REQUIRED_CHECKS, REQUIRED_REFS, requiredChecks, SANDBOX_TOKENS, branchKind, gateCommands, refSha,
   LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, OSV_LOCKFILES, OSV_PIP, osvLockfile, osvArgs, OSV_OK, OSV_CLEAN, driftFile, relockHint,

@@ -393,6 +393,7 @@
       "83ba50274486c6f7fbd6af9ac6bae9080c341ff4",
       "87e27f1cc4b949ab1c6435e09f8c6cf3646c2324",
       "8d29347e4b8808ef2844422cec5cb29424fc258a",
+      "8fbe5ade721e11c5e3bf8f6f67cf93eb8e93a10b",
       "90f276b2b0a88aec8e81a4afcea590159ff847a1",
       "9356518ce5ebf552340e6e2726abf3dc6a1f2e7d",
       "99434cd646c1b21cfe4963db66a532ac3674fd5c",
@@ -524,6 +525,7 @@
       "e608b10e93e6f79dde3b2caad43c1e0131afe767",
       "e8d65040add47bad334cf5024a2b4e1dc5b0c9d1",
       "e935ad923634200beadb67d4f5ad3260861f2b49",
+      "ec7b80e5e02c07d4c016a6d370761629aa7872d6",
       "faf53c657e5bd6a695bf35b8bb7e75ea5baa4829"
     ],
     "templates/hooks/proteus-harness-codex.js": [
@@ -586,6 +588,7 @@
       "0ac8acefdf1b4ef17932f3987a321149854bc169",
       "1355c762055f2420f4b873cd343cb36e24abda51",
       "1f1ea6486c05618698e256890c0968193a7de1c9",
+      "213fbbfbf5b645dc1bcf853fac10d4ba1d5c04da",
       "2f0d6d8bf01e438fb61c3c43b6e433ef1cba9315",
       "51a1a642f15e1d3011323f2021c33f7c4d0fcdf9",
       "6eb5001185037c8a1582c489b8df9fb46e93b973",
@@ -762,6 +765,7 @@
       "99fd723b54ca3d69c4adcf0158883f02a0b74107",
       "9a79e6380eea93b672f338e57981be5b9413ab5f",
       "9e267c3615c704cc8ac5eb640af85758b3709a3f",
+      "a00b8fa64fa83c9b7eac169242e306090b7fa727",
       "a02f520d25e0708fdec6c4ac5111c989f685f37c",
       "a0d205f05698129ff9fa803a690505d3dfec3caa",
       "a1e561e1284f1ce13272f2c09ad5073178e921da",
@@ -820,12 +824,14 @@
       "fe82ff905885ab20089c487abec470298fdce3ee"
     ],
     "templates/hooks/proteus-local-pr.js": [
+      "9979c656843e4b4d629adcd5378df90128cacf43",
       "a108c3683324b4398d829a30e817f93ab9b7d34d",
       "fae2e050ed14d9cfd54222d2d62d58f47e7853ee"
     ],
     "templates/hooks/proteus-local.js": [
       "116023af6e236173b1d16108da2a8d190e50210e",
-      "487bb107c58eb333c7b337ec80e51bf64760d485"
+      "487bb107c58eb333c7b337ec80e51bf64760d485",
+      "b075333128e744215ff9c48daf78c23dc82a4f31"
     ],
     "templates/hooks/proteus-merge.js": [
       "1970518875cc6eb2262732e4ee232f65bb4bd8f4",
@@ -963,6 +969,7 @@
       "9f02a72212fe56e5061c1f1f4254d4bfeebfb47b",
       "dddb8da6c956d191f12d3e925f7d49c757e0d43d",
       "e7b78a7dfb2e8ce44135ff55bb69cec43c69a893",
+      "ec48fca3fef8828d3df5173fe916d0acc5290823",
       "f90d0d371d8246fb966d4e2e59420546196e6f22"
     ],
     "templates/hooks/proteus-statusline.js": [

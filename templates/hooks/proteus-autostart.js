@@ -24,6 +24,9 @@
 // scripts refuse to run from any other copy.
 // Adds audience=<familiarity>/<learning> from the audience profile (proteus-profile.js, #308), or audience=unset.
 // Adds learn=<new> when the learning workspace has records the lead has not read (proteus-learn.js, #84).
+// In local mode (#310) adds mode=local, and approvals=unprotected when the repo has no sandbox profile; rewrites the
+// stand-in's launchers and origin hooks for this hooks dir, a failure only a notice, and puts its launchers first on
+// the agents' PATH.
 // Silent (no autostart) when: PROTEUS=0, inside a subagent, or in a linked worktree
 // (workers and the review session's fresh checkout are not the lead).
 "use strict";
@@ -71,6 +74,7 @@ lib.run(async (ev, ad) => {
     }
     if (lib.agentPrefix()) safe(() => pluginPatches(root, notes));
     safe(() => codexRoots(ad, root, home, notes));
+    safe(() => localWiring(ad, root, notes));
   };
   let check = null;
   try { check = require(path.join(__dirname, "proteus-shell-check.js")); } catch {}
@@ -86,7 +90,7 @@ lib.run(async (ev, ad) => {
   // hashed afresh each session start; the guard reuses the result until the lock changes
   const drift = safe(() => lib.lockDrift(root, true), []);
   if (drift.length) notes.push(`proteus: worker and verifier spawns are refused until the team skills match the lock. ${lib.relockHint(drift)}`);
-  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(ad, root, notes), "") + safe(() => sandbox(ev, root), " sandbox=off");
+  const state = localState(ad, root, runs, home, pending, drift) + " " + identity + " " + safe(() => inboxState(root), "inbox=unknown") + " " + safe(() => models(ev, root), "models=unknown") + safe(() => isolation(ad, root, notes), "") + safe(() => sandbox(ev, root), " sandbox=off") + safe(() => localFields(root), "");
   if (tour) notes.push(tourOffer(tour));
   safe(() => scratchNote(root, notes));
 
@@ -334,6 +338,20 @@ function codexRoots(ad, root, home, notes) {
   }
   const cmd = home ? `node "${path.join(home, "install.js")}" --update` : "install.js --update";
   notes.push(`proteus: ${w.error || `${w.missing.join(", ")} is not in writable_roots of ${w.file}`}; ${cmd} (install.ps1 -Update on Windows) finishes the move`);
+}
+
+// local mode: the launchers and the origin's hooks follow this hooks dir, and agents' bare gh finds the launchers
+function localWiring(ad, root, notes) {
+  const common = lib.localCommon(root);
+  if (!common) return;
+  try { require(path.join(__dirname, "proteus-local.js")).refresh(common); } catch (e) { notes.push(`proteus: local mode: the launchers and the origin's hooks were not refreshed (${e.message}); install.js --doctor names the fix`); }
+  if (typeof ad.prependPath !== "function") return;
+  const w = ad.prependPath(root, lib.localPath(common, "bin"));
+  if (w.error) notes.push(`proteus: local mode: agents' gh may miss the local stand-in: ${w.error}`);
+}
+function localFields(root) {
+  const common = lib.localCommon(root);
+  return common ? ` mode=local${lib.profileFile(common) ? "" : " approvals=unprotected"}` : "";
 }
 
 // The agents' GitHub login: with "agentGh" in proteus.json (install.js --agent-login), every agent shell command,

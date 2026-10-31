@@ -1,12 +1,10 @@
 # Flow, step by step
 
-The judgment behind `SKILL.md`'s flow; `next` does the mechanical steps.
-
 ## Session start
 
 - **Position**: `next` computes it each call; resume an open run, never start a second. Not printed by `next`: a ticket with a `RED`/`NEEDS` comment and no agent → step 5; a milestone's issues all closed, no review issue → step 7 QA, then 7½; every milestone closed → step 8.
 - **Baseline on `main`**: `gh run list --branch main --limit 1 --json conclusion -q '.[0].conclusion'`; no CI → the `## Learned` gate command with `>/dev/null 2>&1; echo $?`. Red → the stabilise ticket first (`bootstrap.md`). A ratcheted gate is green while it reports no new findings (`enforcement.md` §12).
-- **State notes**: `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`), not blocking. `proteus-update` → tell the human once. `scratch=` → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once: optional, `install.js --doctor --fix` installs it. `skills-unlinked` not `none` → run that command (or ask the human to) before spawning a listed team's agent. `sandbox=` not `on` under `bypassPermissions` → spawns are refused; tell the human once to relaunch with `install.js --sandbox`. Any `NO` → step 0 for the missing pieces only.
+- **State notes**: `doc-bloat` not `none` → a docs-diet ticket joins the next wave (`docs-diet.md`), not blocking. `proteus-update` → tell the human once. `scratch=` → `node <hooks>/proteus-scratch.js --sweep --all-done`. `context-mode=missing` → tell the human once: optional, `install.js --doctor --fix` installs it. `skills-unlinked` not `none` → run that command (or ask the human to) before spawning a listed team's agent. `sandbox=` not `on` under `bypassPermissions` → spawns are refused; tell the human once to relaunch with `install.js --sandbox`. `mode=local` → tracker commands work as usual; skip host-only steps. Any `NO` → step 0 for the missing pieces only.
 - **No `models=` line** (no hooks yet): `judge` is your rung (the one under it on a once-per-project model like fable), `build` and `helper` one rung down, on haiku < sonnet < opus < fable; never under sonnet.
 
 ## Asking the human
