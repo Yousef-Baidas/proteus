@@ -324,7 +324,7 @@ function next(arg) {
   } else if (picked.length) {
     const said = [], res = {};
     const code = batch({ arg: arg || run, suite, result: "", at: "" }, { say: (l) => said.push(l), err: (l) => said.push(l) }, res);
-    holds = res.held || [];
+    holds = (res.held || []).filter((h) => !/^(moved|unknown)$/.test(h.why)); // not the human's: those wait a round
     const ev = new Map(picked.map((m) => [m.pr, m]));
     for (const m of res.merged || []) {
       merged.add(m.n);

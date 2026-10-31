@@ -3,7 +3,8 @@
 // node <hooks>/proteus-merge.js [run] --suite "<suite command>" [--result pass|fail --at <sha>]
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
 // verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
-// ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
+// ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge
+// --match-head-commit <the head it checked>`, so a head pushed since waits a round, held as "head moved"; a
 // conflict or any other failed merge stops the batch. The project policy (proteus-policy.js, #307) holds some back,
 // each named on a line: every one under merge human; under ask every each, and under ask risky each whose changed
 // paths an ask rule covers, until the human's newest verdict comment on the PR (their login, as proteus-verdict.js
@@ -43,7 +44,8 @@ Merges the ready PRs into proteus/<run> and prints the commands that test the re
             batch's merges, one printed step at a time, to the first bad one
   --at      the full sha the suite ran on, as printed; a result for any other commit is refused
 A PR is ready when every check and status on its head is green and proteus/verdict is among them;
-it merges after the PRs of the tickets its own depends on; a conflict stops the batch.
+it merges after the PRs of the tickets its own depends on, pinned to the head checked (a head pushed
+since waits a round: "held: its head moved"); a conflict stops the batch.
 The project policy holds a PR for the human: merge human always; ask every, or ask risky when
 an ask rule covers a changed path, until the human's comment on the PR is ACCEPT <head sha12>. No worktree
 or branch is removed: the end names the merged branches left for the lead.
@@ -127,9 +129,9 @@ function mergeOrder(prs, open) {
   return out;
 }
 
-// the merge batch from the tracker's answers: the open PRs into the run branch (number,headRefName,body,isDraft,
-// statusCheckRollup) whose checks are all green with proteus/verdict among them, in mergeOrder over issues
-// (number,state,body). Each [{ n, head, ticket, deps }]
+// the merge batch from the tracker's answers: the open PRs into the run branch (number,headRefName,headRefOid,body,
+// isDraft,statusCheckRollup) whose checks are all green with proteus/verdict among them, in mergeOrder over issues
+// (number,state,body). Each [{ n, head, oid, ticket, deps }]: oid is the head commit's full sha, "" when gh gave none
 function pick(prs, issues, run, names) {
   // a PR's ticket: the number its head ends in, else the body's Closes #n (as proteus-ready.js)
   const heads = [`${lib.CURRENT.work}${run}/`, `${names.branch}${run}-`];
@@ -149,13 +151,16 @@ function pick(prs, issues, run, names) {
     return Number.isInteger(p.number) && p.number > 0 && !p.isDraft && checks.length && checks.every(green) && checks.some((c) => (c.context || c.name) === "proteus/verdict");
   }).map((p) => {
     const ticket = ticketOf(String(p.headRefName || ""), p.body || "");
-    return { n: p.number, head: String(p.headRefName || ""), ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
+    const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(p.headRefOid)) ? String(p.headRefOid) : "";
+    return { n: p.number, head: String(p.headRefName || ""), oid, ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
   });
   return mergeOrder(ready, open);
 }
 
 const HELD = {
   merge: "the policy has the human merge every PR",
+  moved: "its head moved after the check; it waits for the next round",
+  unknown: "gh gave no head commit to pin the merge to",
   every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
   unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
 };
@@ -192,16 +197,17 @@ function held(picked, root, policy) {
     if (human === null) human = humanOf(root);
     let v = null;
     try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
-    const sha = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid).slice(0, 12) : "";
+    const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
     if (!human || !sha) return { sha, ok: false };
     const said = ((v && v.comments) || []).filter((c) => c && c.author && c.author.login === human && lib.isVerdict(c.body || "")).pop();
     const first = said ? String(said.body).trim().split(/\r?\n/, 1)[0].trim() : "";
-    return { sha, ok: first === `ACCEPT ${sha}` };
+    return { sha, full, ok: first === `ACCEPT ${sha}` };
   };
   return picked.flatMap((p) => {
     const w = why(p.n);
     if (!w) return [];
     const v = view(p.n);
+    if (v.ok) p.oid = v.full; // the merge is pinned to the head the human accepted
     return v.ok ? [] : [{ n: p.n, why: w, sha: v.sha }];
   });
 }
@@ -336,15 +342,17 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   }
   try { if (readState(common, run)) return fail(`a batch awaits --result pass|fail (${stateFile(common, run)})`); } catch (e) { return fail(`refused: ${e.message}`); }
 
-  const prs = parse(lib.gh(["pr", "list", "--base", base, "--state", "open", "--json", "number,headRefName,body,isDraft,statusCheckRollup", "--limit", "200"], root, 30000));
+  const prs = parse(lib.gh(["pr", "list", "--base", base, "--state", "open", "--json", "number,headRefName,headRefOid,body,isDraft,statusCheckRollup", "--limit", "200"], root, 30000));
   if (!Array.isArray(prs)) return fail("tracker unreachable (gh pr list failed)");
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,state,body", "--limit", "500"], root, 30000));
   if (!Array.isArray(issues)) return fail("tracker unreachable (gh issue list failed)");
 
   const ready = pick(prs, issues, run, names);
   const hold = held(ready, root, Policy.load({ root }).policy);
+  for (const p of ready) if (!p.oid && !hold.some((h) => h.n === p.n)) hold.push({ n: p.n, why: "unknown" });
   out.held = hold;
-  for (const h of hold) say(`PR #${h.n} held for the human: ${HELD[h.why] || `the policy's ask rule ${h.why.slice(7)} covers what it changes`}`);
+  const holding = (h) => say(`PR #${h.n} held${/^(moved|unknown)$/.test(h.why) ? "" : " for the human"}: ${HELD[h.why] || `the policy's ask rule ${h.why.slice(7)} covers what it changes`}`);
+  for (const h of hold) holding(h);
   const picked = ready.filter((p) => !hold.some((h) => h.n === p.n));
   if (!picked.length) { say("merged none; suite not run"); return 0; }
 
@@ -358,7 +366,15 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   const merged = [];
   let stop = "";
   for (const p of picked) {
-    const m = lib.ghTry(["pr", "merge", String(p.n), "--merge"], root, 120000);
+    // pinned to the head the pick or the hold check read: a push since fails the merge, and the PR waits a round
+    const m = lib.ghTry(["pr", "merge", String(p.n), "--merge", "--match-head-commit", p.oid], root, 120000);
+    const now = m.ok ? "" : lib.gh(["pr", "view", String(p.n), "--json", "headRefOid", "-q", ".headRefOid"], root, 30000);
+    if (now && now !== p.oid) {
+      const h = { n: p.n, why: "moved" };
+      hold.push(h);
+      holding(h);
+      continue;
+    }
     if (!m.ok) {
       const state = lib.gh(["pr", "view", String(p.n), "--json", "mergeable", "-q", ".mergeable"], root, 30000);
       stop = state === "CONFLICTING" ? `conflict ${name(p)}` : `PR #${p.n} not merged (${last(m.err || m.out)})`;

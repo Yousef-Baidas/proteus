@@ -422,6 +422,15 @@ pin(b, { merge: "human" });
 const lone = lib.run(path.join(HOOKS, "proteus-merge.js"), "", { cwd: b.root, args: ["r1", "--suite", "node suite.js"], env: { FAKE_GH_NEXT: b.state, FAKE_GH_MERGE: b.state } });
 ok("batch: proteus-merge.js run alone holds the PR too, saying why", lone.code === 0 && b.tip() === g(b.root, "rev-parse", "origin/proteus/r1") && /PR #50 held for the human: the policy has the human merge every PR/.test(lone.out) && /merged none/.test(lone.out), lone.out + lone.err);
 
+// the batch pins each merge to the head it checked (--match-head-commit): a push between the check and the merge
+// holds that PR for the round, "head moved", and the rest of the batch still merges
+b = batchRepo("merge-moved", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }, { t: 6, pr: 60, files: { "c.txt": "six\n" } }]);
+pin(b, {}, { 50: { pushOnMerge: true } });
+const moved = lib.run(path.join(HOOKS, "proteus-merge.js"), "", { cwd: b.root, args: ["r1", "--suite", "node suite.js"], env: { FAKE_GH_NEXT: b.state, FAKE_GH_MERGE: b.state } });
+const st = JSON.parse(fs.readFileSync(b.state, "utf8")).prs;
+ok("batch: a head pushed after the check is not merged; held as head moved, and the next PR still merges",
+  !st.find((p) => p.number === 50).merged && st.find((p) => p.number === 60).merged && /PR #50 held: its head moved after the check/.test(moved.out) && /merged PR #60|merged .*#60/.test(moved.out), moved.out + moved.err);
+
 // the wave's owned-path records (#281): one commit and one PR for every open ticket with no record, made with git's
 // objects alone against a real origin; one record PR at a time, add-only, BLOCKED until it merges
 const RB = lib.workdir("next-records"), RO = path.join(RB, "origin.git"), RR = path.join(RB, "root"), RS = path.join(RB, "gh.json");
