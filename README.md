@@ -113,6 +113,7 @@ Details: [docs/install.md](docs/install.md).
 - [Costs](docs/costs.md): context tokens and how they were measured.
 - [Harnesses](docs/harnesses.md): other coding CLIs.
 - [Run panel](docs/run-panel.md): an optional pane showing the run and what waits on you.
+- [Learning](docs/learning.md): an optional hand-off for learning your project in depth.
 
 ## License
 

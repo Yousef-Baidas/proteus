@@ -631,6 +631,27 @@ ok("autostart: audience=unset on the state line with no profile", / audience=uns
   fs.rmSync(prof);
   ok("autostart: audience=<familiarity>/<learning> from the profile, and unset when it is malformed", / audience=new\/along( |$)/.test(a) && / audience=unset( |$)/.test(b), a + " | " + b);
 }
+{
+  const recs = path.join(REPO, "learn", "learning-records");
+  ok("autostart: no learn= without a learning workspace", !/ learn=/.test(L[3]), L[3]);
+  fs.mkdirSync(recs, { recursive: true });
+  fs.writeFileSync(path.join(recs, "0001-a.md"), "# a\n");
+  fs.writeFileSync(path.join(recs, "0002-b.md"), "# b\n");
+  const state = () => run(AS, { hook_event_name: "SessionStart", source: "resume", session_id: "s1", cwd: REPO }).out;
+  const a = state();
+  const seen = path.join(REPO, ".git", "proteus", "learn-seen.json");
+  fs.mkdirSync(path.dirname(seen), { recursive: true });
+  fs.writeFileSync(seen, JSON.stringify({ seen: ["0001-a.md"] }));
+  const b = state();
+  fs.writeFileSync(seen, JSON.stringify({ seen: ["0001-a.md", "0002-b.md"] }));
+  const c = state();
+  fs.writeFileSync(seen, "{ not json");
+  const d = state();
+  fs.rmSync(path.join(REPO, "learn"), { recursive: true });
+  fs.rmSync(seen);
+  ok("autostart: learn=<new> counts the unread records and never fails on a malformed seen file", / learn=2( |$)/m.test(a) && / learn=1( |$)/m.test(b) && / learn=2( |$)/m.test(d), [a, b, d].join(" | "));
+  ok("autostart: no learn= when every record is read", !/ learn=/.test(c), c);
+}
 ok("autostart: synced line", r.out.includes(`proteus: synced 2 files from ${HSRC}`) && fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v1\n" && fs.readFileSync(hook("proteus-status.js"), "utf8").includes("changed upstream"), L.slice(4, 7).join(" | ").slice(0, 400));
 ok("autostart: run-log tail on startup with branch", /run-log #7 tail \(newest last\):/.test(r.out) && /decision 15:/.test(r.out) && !/decision 3:/.test(r.out), r.out);
 const tailBlock = r.out.slice(r.out.indexOf("run-log #7"), r.out.indexOf("SKILL BODY"));
