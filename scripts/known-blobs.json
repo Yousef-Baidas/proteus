@@ -840,6 +840,9 @@
     "templates/hooks/proteus-policy.js": [
       "aff125887e0e2a6ac522bc8ea04e53bb31b13817"
     ],
+    "templates/hooks/proteus-profile.js": [
+      "d75d12ec6f3d92fa95f1b95c3be3a3ada550d2b2"
+    ],
     "templates/hooks/proteus-ready.js": [
       "20cc287fcb01e630c2d007c9e0efc0a8ced8e490",
       "6688532a5642b7bef4a10dea25a83809fdfd9460",
