@@ -620,6 +620,17 @@ fs.writeFileSync(path.join(HSRC, "templates", "hooks", "proteus-status.js"), fs.
 r = run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "s1", cwd: REPO });
 let L = r.out.split("\n");
 ok("autostart: state on line 4", L[3].startsWith("proteus-state") && /doc-bloat=CLAUDE-extra\.md:1,CLAUDE\.md:200/.test(L[3]) && /lessons=9/.test(L[3]) && L[3].includes(`proteus-src=${HSRC}`) && /proteus-update=v0\.2\.0 \(node .*install\.js --update\)/.test(L[3]) && /inbox=2q\/1r/.test(L[3]) && /proteus-branches=proteus\/bl1077( |$)/.test(L[3]), L[3]);
+ok("autostart: audience=unset on the state line with no profile", / audience=unset( |$)/.test(L[3]), L[3]);
+{
+  const prof = path.join(REPO, ".git", "proteus", "profile.json");
+  fs.mkdirSync(path.dirname(prof), { recursive: true });
+  fs.writeFileSync(prof, JSON.stringify({ familiarity: "new", learning: "along", known: ["placeholder"], updated: "2026-01-01" }));
+  const a = run(AS, { hook_event_name: "SessionStart", source: "resume", session_id: "s1", cwd: REPO }).out;
+  fs.writeFileSync(prof, "{ not json");
+  const b = run(AS, { hook_event_name: "SessionStart", source: "resume", session_id: "s1", cwd: REPO }).out;
+  fs.rmSync(prof);
+  ok("autostart: audience=<familiarity>/<learning> from the profile, and unset when it is malformed", / audience=new\/along( |$)/.test(a) && / audience=unset( |$)/.test(b), a + " | " + b);
+}
 ok("autostart: synced line", r.out.includes(`proteus: synced 2 files from ${HSRC}`) && fs.readFileSync(path.join(HOME, ".claude", "agents", "proteus-worker.md"), "utf8") === "worker v1\n" && fs.readFileSync(hook("proteus-status.js"), "utf8").includes("changed upstream"), L.slice(4, 7).join(" | ").slice(0, 400));
 ok("autostart: run-log tail on startup with branch", /run-log #7 tail \(newest last\):/.test(r.out) && /decision 15:/.test(r.out) && !/decision 3:/.test(r.out), r.out);
 const tailBlock = r.out.slice(r.out.indexOf("run-log #7"), r.out.indexOf("SKILL BODY"));

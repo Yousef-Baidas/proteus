@@ -81,7 +81,7 @@ Its brief: `node <hooks>/proteus-cli.js brief verifier <pr>`.
 ## Guide (human review gate)
 ```
 Hooks: <hooks>.
-Run <run>, milestone <name>, mode <attended|unattended>. Tickets: #<n>, ... Diff: <merge-base>..proteus/<run>. QA: WAVE-GREEN. Gates: <commands>. Debt issue: #<d>. Acceptance: <run-log comment url>. Scratch key: <run>.
+Run <run>, milestone <name>, mode <attended|unattended>. Tickets: #<n>, ... Diff: <merge-base>..proteus/<run>. QA: WAVE-GREEN. Gates: <commands>. Debt issue: #<d>. Acceptance: <run-log comment url>. Audience: <the proteus-profile.js show line>. Scratch key: <run>.
 <safety>
 Open the review issue with brief, evidence, and the open debt lines per your agent instructions, post REVIEW <milestone> <url> to the task, exit.
 ```

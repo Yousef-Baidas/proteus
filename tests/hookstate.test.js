@@ -504,6 +504,7 @@ const ALLOW = {
   "proteus-harness-codex.js:exportEnv": "the checkout's .codex/config.toml, written by install.js",
   "proteus-close-report.js:saveTracker": "--save's tracker data for proteus-retro.js, at the path the retro helper names",
   "proteus-scan.js:main": "the scan's own output dir and its temp HEAD copy, run by a gate command",
+  "proteus-profile.js:save": "set/know/forget, a lead CLI run from the lead's own (sandboxed) shell, never a hook: <common>/proteus/profile.json, both dirs lstat'd real and owned, a 'wx' temp file renamed over the name",
   "proteus-policy.js:writePolicy": "write's validated draft as teams/policy.json and POLICY.md, or the user file; a CLI, never a hook",
   "proteus-skill-scan.js:osv": "--osv's config and report in a fresh mkdtemp dir under os.tmpdir(), removed after; a CLI, never a hook",
   "proteus-worktree.js:head": "a worker worktree's files, run by the lead before the worker starts",
