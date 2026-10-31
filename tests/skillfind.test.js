@@ -128,5 +128,6 @@ const deps = { fetch: fetchOk, roots: () => [INST], now: NOW };
   ok("usage: a term starting with - exits 2 (never a gh flag)", r.code === 2);
   r = lib.run(SF, "", { args: ["--help"] });
   ok("--help: the script runs, prints the bar and exits 0", r.code === 0 && /usage: node proteus-skill-find\.js <term> \[--json\]/.test(r.out) && /365 days/.test(r.out), r.out + r.err);
+  process.chdir(ROOT); // Windows cannot remove the cwd, so leave W before summary deletes it
   lib.summary();
 })();
