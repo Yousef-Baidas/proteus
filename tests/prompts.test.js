@@ -80,6 +80,15 @@ ok("scaffold: the worker proves commit-msg with lefthook run on a bad and a good
 ok("scaffold: no instruction tells a worker to run lefthook install", /Never `lefthook install`/.test(sec3) && !/fill the `EDIT` lines, `lefthook install`/.test(sec3), sec3);
 ok("bootstrap: the lead tells the human once to run lefthook install after the scaffold or stabilise merge", /After the merge \(scaffold or stabilise\), tell the human once, in one line: run `lefthook install` in the main checkout[^\n]*never the lead's or a worker's/.test(boot), boot);
 
+// add team <role> (#10): a lead command, the scout's single-team mode, and the one ticket that writes the team
+const scout = read("agents", "proteus-scout.md");
+const commands = (/^## Commands\n[\s\S]*?(?=\n## )/m.exec(skill) || [""])[0];
+const single = (/^\*\*Single-team mode\*\*[^\n]*/m.exec(scout) || [""])[0];
+ok("add team: SKILL.md's command list has add team <role>, spawning the scout in single-team mode", /`add team <role>`: `proteus-scout` in single-team mode/.test(commands), commands);
+ok("add team: the scout names single-team mode, steps 1-4 for one team under the same rules", /steps 1-4 for that one new team only, under the same rules/.test(single) && /proteus-skill-find\.js/.test(single) && /zero skills valid/.test(single), single);
+ok("add team: an overlapping Owns gets a proposed narrowing, and the report ends with the APPROVE line", /narrowed `Owns`/.test(single) && /same APPROVE line/.test(single), single);
+ok("add team: the bootstrap ticket creates the profile, routing rows, label, agent files, skills and the narrowed Owns", /`add team <role>` spawns the scout in single-team mode[^\n]*one ticket creates `teams\/<team>\/PROFILE\.md`[^\n]*`ROUTING\.md` rows[^\n]*`profile:<team>` label[^\n]*`proteus-<team>-worker` and `proteus-<team>-verifier` agent files[^\n]*`skills\.txt` and any `teams\/<team>\/skills\/`[^\n]*narrowed `Owns`/.test(boot), boot);
+
 // the prose points to --help for the scripts' flags, so --help must explain them and exit 0
 const { spawnSync } = require("child_process");
 ok("SKILL.md points to the scripts' --help for their flags", /--help/.test(skill));
