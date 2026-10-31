@@ -428,6 +428,7 @@
       "538f0791bbe3c04dea95fa4bc538400ca2765bbf",
       "6b473d20cb276843738adae5c6c8176dbde3ab48",
       "86284484c05129d2bfd4839d2b9b8e414da031b2",
+      "8708c91ffd4a7bb6228c1934e3703b1e677539bf",
       "953ca5d1245f06729d2313115149b32d518edb92",
       "a85a0f011784bd9b8d4b6cab70e13a19c86d6b2e",
       "acf07914f10bac774ebe71d8ed9d5fad252779ed",
@@ -813,7 +814,8 @@
       "a0b6ec3f711eb01516e0ea867a744daffbd6846b",
       "b42f2ac27a7aacab7608d752779fbeacadadeb24",
       "b700f18531435ad841904d9a52feded8a28f2ba5",
-      "e6b547b42d4d267740fe78cb21efae2e2acb87d7"
+      "e6b547b42d4d267740fe78cb21efae2e2acb87d7",
+      "e97fd58beed37f9b34e84fde1fe5e2d8ffb8697b"
     ],
     "templates/hooks/proteus-owned-check.js": [
       "1c2de99305242c7776dd991c98e9c0fb8461350a",
