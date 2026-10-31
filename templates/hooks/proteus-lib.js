@@ -1155,6 +1155,8 @@ function sandboxState(root, o = {}) {
   return on === true ? "on" : "off";
 }
 const SANDBOX_FILE = "sandbox.json";
+// the variables the sandbox profile denies (install.js) and a local check's gate commands never get
+const SANDBOX_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "NPM_TOKEN", "ANTHROPIC_API_KEY"];
 // record session's state (the newest 20 sessions are kept); throws as leadWrite does
 function saveSandbox(common, session, state) {
   const f = leadPath(common, SANDBOX_FILE);
@@ -1952,6 +1954,9 @@ function tokens(s, late) {
 // delete either, and never lift or rewrite branch protection or a ruleset. The ruleset install.js --protect adds is
 // the boundary; this stops a confused or injected agent before GitHub has to, and binds the shared-identity setup
 // that has no ruleset.
+const GATES_CHECK = "gates";
+// the contexts the proteus/* ruleset requires; install.js writes it from this list
+const REQUIRED_CHECKS = [GATES_CHECK, "proteus/verdict", "proteus/security"];
 const BRANCH_MSG = {
   admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
   protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
@@ -2109,10 +2114,14 @@ function pushDenial(words, cwd, extra, lost = false) {
 // "main" for main, master or the remote's default branch; "run" for a run branch under either scheme (not a
 // pre-rename worker branch <prefix><run>-<id>); "" for anything else
 function guardedBranch(dst, dir, remote, g) {
-  const head = g("symbolic-ref", "-q", "--short", `refs/remotes/${remote}/HEAD`).slice(remote.length + 1);
+  return branchKind(dst, g("symbolic-ref", "-q", "--short", `refs/remotes/${remote}/HEAD`).slice(remote.length + 1), gitCommonDir(dir));
+}
+// the same call for dst given the default branch and a repo holding the run branches: the guards ask it about a
+// checkout's remote, a local origin's pre-receive about itself
+function branchKind(dst, head, common) {
   if (dst === "main" || dst === "master" || dst === head) return "main";
   if (!SCHEMES.some((s) => dst.startsWith(s.branch))) return "";
-  return runBranches(gitCommonDir(dir)).some((a) => a !== dst && dst.startsWith(a + "-")) ? "" : "run";
+  return runBranches(common).some((a) => a !== dst && dst.startsWith(a + "-")) ? "" : "run";
 }
 
 // ---- a subagent's shell (workerDenial, so both guards): no force-push, no git aimed at another checkout, and no
@@ -3512,7 +3521,17 @@ function verifyInstalled(bare, sha) {
   return { tag, newest, error: tag ? "" : error };
 }
 
+// the gate command(s) on the gate line of AGENTS.md text's ## Learned (`- gate: \`<command>\``); [] when there is none
+function gateCommands(text) {
+  const learned = /^##[ \t]+Learned[ \t]*$([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
+  const m = learned && /^[ \t]*(?:[-*][ \t]*)?gates?:[ \t]*(.+)$/im.exec(learned[1]);
+  if (!m) return [];
+  const ticks = [...m[1].matchAll(/`([^`]+)`/g)].flatMap((t) => (t[1].trim() ? [t[1].trim()] : []));
+  return ticks.length ? ticks : [m[1].trim()];
+}
+
 module.exports = {
+  GATES_CHECK, REQUIRED_CHECKS, SANDBOX_TOKENS, branchKind, gateCommands, refSha,
   LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, OSV_LOCKFILES, OSV_PIP, osvLockfile, osvArgs, OSV_OK, OSV_CLEAN, driftFile, relockHint,

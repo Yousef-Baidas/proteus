@@ -498,6 +498,7 @@ const ALLOW = {
   "proteus-local.js:issueCommands": "the stand-in's store, through writeFile, under its lock",
   "proteus-local.js:labelCommands": "the stand-in's store, through writeFile, under its lock",
   "proteus-local.js:api": "the stand-in's store, through writeFile, under its lock",
+  "proteus-local-pr.js:build": "the gh stand-in (#310), never a hook: its store through writeFile under the lock; a check's claim ('wx') and log ('wx', unlinked first), and git's own worktree under <common>/proteus",
   "proteus-local.js:mkReal": "--init's mkdir under <common>/proteus-local, lstat'd right after",
   "proteus-local.js:init": "--init's store and launchers, through writeFile, every name lstat'd first",
   "proteus-agent-patch.js:exclude": "install.js --project only; the hook passes noExclude",

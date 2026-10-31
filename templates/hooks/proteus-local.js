@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // The `gh` stand-in for a repo in local mode (#310). A library and a CLI: the launchers proteus-local/bin/gh and
 // gh.cmd run this file with gh's arguments, and lib.gh reaches it the same way, so a script keeps its flow:
-//   node <hooks>/proteus-local.js <gh args...>    issue, label, auth status, repo view, api (the paths below)
-//   node <hooks>/proteus-local.js --init          make the mode marker (proteus-lead/local-mode), the store and the launchers; idempotent
+//   node <hooks>/proteus-local.js <gh args...>    issue, label, pr, auth status, repo view, api (the paths below)
+//   node <hooks>/proteus-local.js --init          make the mode marker (proteus-lead/local-mode), the store, the origin and the launchers; idempotent
+// proteus-local-pr.js holds PRs, statuses, the bare origin and local checks, and their internal entries.
 // Everything lives in <git-common-dir>/proteus-local/, one per project and machine, never committed: `mode` marks the
 // repo (lib.localMode), bin/ holds the launchers, tracker/ the store: meta.json (the next numbers), labels.json,
 // milestones.json, issues/<n>.json. Agents can reach all of it, so it is a working log and not proof: every read goes
@@ -12,6 +13,7 @@
 // Exit 0 done; 1 anything else: not in local mode, a link on the path, a malformed store, a filter it cannot run, or
 // a command or flag outside the supported set, named as `proteus local mode: gh <what> is not supported`. A gap is
 // never an empty success. The hooks' fail-open rule does not apply: callers read a failure as an unreachable tracker.
+// `pr checks` also exits 8, as gh does, while a check is pending.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -22,6 +24,7 @@ const LOGIN = "local";
 const MAX_TITLE = 256, MAX_BODY = 65536, MAX_FILE = 8 << 20, MAX_INDEX = 1 << 20, MAX_ENTRIES = 100000;
 const LOCK_STALE_MS = 15000, LOCK_WAIT_MS = 30000;
 const DEFAULT_COLOR = "ededed";
+const SCRIPT = path.join(__dirname, "proteus-local.js");
 
 class Fail extends Error {}
 const fail = (msg) => { throw new Fail(msg); };
@@ -270,7 +273,7 @@ const noLink = (f) => {
 };
 function layout(common) {
   const root = lib.localPath(common), tracker = path.join(root, "tracker");
-  return { common, root, bin: path.join(root, "bin"), tracker, issues: path.join(tracker, "issues"), lock: path.join(tracker, "lock"), meta: path.join(tracker, "meta.json"), labels: path.join(tracker, "labels.json"), milestones: path.join(tracker, "milestones.json") };
+  return { common, root, bin: path.join(root, "bin"), origin: path.join(root, "origin.git"), tracker, issues: path.join(tracker, "issues"), pulls: path.join(tracker, "pulls"), statuses: path.join(tracker, "statuses"), checks: path.join(root, "checks"), lock: path.join(tracker, "lock"), meta: path.join(tracker, "meta.json"), labels: path.join(tracker, "labels.json"), milestones: path.join(tracker, "milestones.json") };
 }
 // a fresh temp file renamed over the name: a link there is replaced, never followed. A reader holding the name open
 // makes the rename fail for a moment on Windows
@@ -337,9 +340,10 @@ function readIssue(s, n) {
   return { number: n, title: i.title, body: i.body, state: i.state, labels: [...new Set(i.labels)], milestone: i.milestone, createdAt: i.createdAt, updatedAt: i.updatedAt, closedAt: i.closedAt, comments };
 }
 const writeIssue = (s, i) => writeJSON(path.join(s.issues, `${i.number}.json`), i, MAX_FILE);
-function issueNumbers(s) {
-  const names = fs.readdirSync(s.issues);
-  if (names.length > MAX_ENTRIES) fail(`proteus local mode: malformed store: ${s.issues} holds over ${MAX_ENTRIES} entries`);
+const issueNumbers = (s) => numbersIn(s.issues);
+function numbersIn(dir) {
+  const names = fs.readdirSync(dir);
+  if (names.length > MAX_ENTRIES) fail(`proteus local mode: malformed store: ${dir} holds over ${MAX_ENTRIES} entries`);
   return names.map((f) => /^([1-9]\d{0,14})\.json$/.exec(f)).filter(Boolean).map((m) => Number(m[1])).sort((a, b) => a - b);
 }
 const readIssues = (s) => issueNumbers(s).map((n) => readIssue(s, n));
@@ -374,8 +378,8 @@ function withLock(file, fn, wait = LOCK_WAIT_MS) {
 
 // the next issue or PR number: past every number on disk, so a rolled-back meta.json never reuses one
 function nextNumber(s, meta) {
-  const nums = issueNumbers(s);
-  const n = Math.max(meta.nextNumber, nums.length ? nums[nums.length - 1] + 1 : 1);
+  const nums = [...issueNumbers(s), ...(fs.existsSync(s.pulls) ? numbersIn(s.pulls) : [])];
+  const n = Math.max(meta.nextNumber, ...nums.map((x) => x + 1));
   meta.nextNumber = n + 1;
   return n;
 }
@@ -647,6 +651,7 @@ function api(s, argv) {
   if (route === "user") return method === "GET" ? emit(USER, filter) : no();
   const m = /^repos\/([^/]+\/[^/]+)\/(.+)$/.exec(route);
   if (!m || (m[1] !== "{owner}/{repo}" && m[1] !== s.repo)) no();
+  if (pr.api(s, method, m[2], { params, body, filter, no })) return;
   const comments = /^issues\/([1-9]\d{0,14})\/comments$/.exec(m[2]);
   if (comments && method === "GET") {
     const n = Number(comments[1]);
@@ -703,6 +708,7 @@ function run(common, argv) {
   const [cmd, sub, ...rest] = argv;
   if (cmd === "issue" && Object.prototype.hasOwnProperty.call(issueCommands, sub)) return issueCommands[sub](open(common), rest);
   if (cmd === "label" && Object.prototype.hasOwnProperty.call(labelCommands, sub)) return labelCommands[sub](open(common), rest);
+  if (cmd === "pr") return pr.run(common, sub, rest);
   if (cmd === "api") return api(open(common), argv.slice(1));
   if (cmd === "auth" && sub === "status") return authStatus(open(common), rest);
   if (cmd === "repo" && sub === "view") return repoView(open(common), rest);
@@ -713,25 +719,32 @@ function run(common, argv) {
 const shQuote = (p) => `'${p.replace(/'/g, "'\\''")}'`;
 // in a .cmd file, inside double quotes, only % still expands
 const cmdQuote = (p) => `"${p.replace(/%/g, "%%")}"`;
-const shLauncher = (script) => `#!/bin/sh\nexec node ${shQuote(script)} "$@"\n`;
+const shLauncher = (...words) => `#!/bin/sh\nexec node ${words.map(shQuote).join(" ")} "$@"\n`;
 const cmdLauncher = (script) => `@node ${cmdQuote(script)} %*\r\n`;
 
 function mkReal(dir) {
   try { fs.mkdirSync(dir, { mode: 0o700 }); } catch (e) { if (e.code !== "EEXIST") throw e; }
   return realDir(dir);
 }
+// text at file, written only when it differs: the hooks dir can move between installs
+function writeFresh(file, text, mode) {
+  try { if (fs.readFileSync(file, "utf8") === text) return; } catch {}
+  writeFile(file, text, mode);
+}
 function init(common) {
-  const s = layout(common), script = path.join(__dirname, "proteus-local.js");
-  for (const d of [s.root, s.bin, s.tracker, s.issues]) mkReal(d);
+  const s = layout(common);
+  pr.checkOrigin(s); // before anything is written, the mode marker included
+  for (const d of [s.root, s.bin, s.tracker, s.issues, s.pulls, s.statuses, s.checks]) mkReal(d);
   const gh = path.join(s.bin, "gh"), cmd = path.join(s.bin, "gh.cmd");
   for (const f of [s.meta, s.labels, s.milestones, gh, cmd]) noLink(f);
-  writeFile(gh, shLauncher(script), 0o755);
-  writeFile(cmd, cmdLauncher(script));
+  writeFresh(gh, shLauncher(SCRIPT), 0o755);
+  writeFresh(cmd, cmdLauncher(SCRIPT));
   withLock(s.lock, () => {
     if (!fs.existsSync(s.meta)) writeJSON(s.meta, { nextNumber: 1, nextComment: 1, nextMilestone: 1 });
     if (!fs.existsSync(s.labels)) writeJSON(s.labels, []);
     if (!fs.existsSync(s.milestones)) writeJSON(s.milestones, []);
   });
+  pr.initOrigin(s);
   // last, so a half-made store never reads as local mode
   // the sandbox cannot write here, so only an unsandboxed setup turns local mode on
   const mode = path.join(lib.leadDir(common), "local-mode");
@@ -739,8 +752,17 @@ function init(common) {
   return s;
 }
 
+const pr = require(path.join(__dirname, "proteus-local-pr.js"))({
+  fail, unsupported, flags, onlyHere, limit, csv, jsonFields, emit, emitFields, line, bodyOf, checkTitle, readStoreJSON, malformed, writeJSON, withLock, nextNumber, numbersIn, readMeta, repoUrl,
+  isTime, isCount, isText, isObj, realDir, noLink, mkReal, writeFresh, unlink, sleep, now, open, shLauncher, LOGIN, MAX_BODY, MAX_FILE, MAX_ENTRIES, REPO, OUT, script: SCRIPT,
+});
+
 function main(argv) {
   try {
+    // the origin's hooks run in the bare repo, not a checkout; the push's stdin names the refs
+    if (argv[0] === "--pre-receive") { pr.preReceive(process.cwd(), fs.readFileSync(0, "utf8")); return 0; }
+    if (argv[0] === "--post-receive") { try { pr.postReceive(process.cwd(), fs.readFileSync(0, "utf8")); } catch (e) { process.stderr.write(`proteus local mode: no local check: ${e.message}\n`); } return 0; }
+    if (argv[0] === "--run-check") { pr.runCheck(argv[1], argv[2]).catch((e) => { process.stderr.write(`proteus local mode: ${e.message}\n`); process.exitCode = 1; }); return undefined; }
     if (argv[0] === "--init") {
       if (argv.length > 1) unsupported(`--init ${argv[1]}`);
       const common = lib.repoCommon(process.cwd());
@@ -750,8 +772,7 @@ function main(argv) {
     }
     const common = lib.localCommon(process.cwd());
     if (!common) fail("proteus local mode: this repo is not in local mode; the stand-in never falls through to a real gh");
-    run(common, argv);
-    return 0;
+    return run(common, argv) || 0;
   } catch (e) {
     process.stderr.write(`${e instanceof Fail ? e.message : `proteus local mode: ${e.message}`}\n`);
     return 1;
@@ -759,4 +780,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { compile, render, init, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, nextNumber, LOCK_STALE_MS };
+module.exports = { compile, render, init, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, nextNumber, pr, LOCK_STALE_MS };
