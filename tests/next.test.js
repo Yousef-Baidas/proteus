@@ -11,6 +11,10 @@ const lib = require(path.join(__dirname, "lib.js"));
 const { ok, g } = lib;
 const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-cli.js");
 const W = lib.workdir("next");
+// next sweeps the sandbox scratch root under os.tmpdir() (#319): its children get their own, never the real one
+const TMPD = path.join(W, "tmp");
+fs.mkdirSync(TMPD);
+const TENV = { TMPDIR: TMPD, TEMP: TMPD, TMP: TMPD };
 
 const REPO = path.join(W, "repo");
 g(W, "init", "-q", "-b", "main", REPO);
@@ -49,7 +53,7 @@ const IDLE = { issues: [issue(1, { state: "CLOSED" }), issue(4, { body: "Owned: 
 
 const next = (state, args = [], env = {}) => {
   fs.writeFileSync(STATE, JSON.stringify(state));
-  return lib.run(SCRIPT, "", { cwd: REPO, args: ["next", ...args], env: { FAKE_GH_NEXT: STATE, ...env } });
+  return lib.run(SCRIPT, "", { cwd: REPO, args: ["next", ...args], env: { FAKE_GH_NEXT: STATE, ...TENV, ...env } });
 };
 const lines = (r) => r.out.trim().split("\n").filter(Boolean);
 const kinds = (r) => lines(r).map((l) => (l.startsWith("SPAWN ") ? l.split(" ").slice(0, 2).join(" ") : l.split(" ")[0]));
@@ -94,6 +98,32 @@ ok("idle: a NUDGE is due, so no WAIT", kinds(r).join() === "NUDGE,BLOCKED", r.ou
 clearBeats();
 r = next({ ...IDLE, issues: [issue(1, { state: "CLOSED" })] });
 ok("idle: nothing at all due prints WAIT alone", kinds(r).join() === "WAIT", r.out);
+
+// the hourly scratch sweep (#319): --all-done and --stale, SWEPT when something went, silent when not, a NOTE on failure
+const STAMP = path.join(COMMON, "proteus", "sweep-at");
+const SB = path.join(TMPD, `proteus-${typeof process.getuid === "function" ? process.getuid() : require("os").userInfo().username.replace(/[^\w.-]/g, "_")}`);
+const idleEntry = (name, h) => { const p = path.join(SB, name); fs.mkdirSync(p, { recursive: true }); fs.writeFileSync(path.join(p, "f"), "x".repeat(1024)); const at = new Date(Date.now() - h * 3600e3); for (const q of [path.join(p, "f"), p]) fs.utimesSync(q, at, at); return p; };
+const WAITED = { ...IDLE, issues: [issue(1, { state: "CLOSED" })] };
+fs.writeFileSync(STAMP, String(Date.now() - 10 * 60000));
+let old = idleEntry("e-old", 80);
+r = next(WAITED);
+ok("sweep: within the hour of the last one nothing is swept and nothing printed", kinds(r).join() === "WAIT" && fs.existsSync(old), r.out);
+fs.writeFileSync(STAMP, String(Date.now() + 864e5));
+r = next(WAITED);
+ok("sweep: a stamp in the future is due, and the SWEPT line follows the others", kinds(r).join() === "WAIT,SWEPT" && /^SWEPT 1 \d+\.\d MB$/.test(lines(r).pop()) && !fs.existsSync(old), r.out);
+ok("sweep: the stamp now holds this call's time", Math.abs(Number(fs.readFileSync(STAMP, "utf8")) - Date.now()) < 120000);
+old = idleEntry("e-old2", 80);
+r = next(WAITED);
+ok("sweep: at most once an hour", kinds(r).join() === "WAIT" && fs.existsSync(old), r.out);
+fs.rmSync(STAMP);
+fs.mkdirSync(path.join(STAMP, "x"), { recursive: true });
+r = next(WAITED);
+ok("sweep: a failed sweep prints one NOTE and next goes on", r.code === 0 && kinds(r).join() === "WAIT,NOTE" && lines(r).pop().startsWith("NOTE scratch sweep failed: ") && fs.existsSync(old), r.out + r.err);
+fs.rmSync(STAMP, { recursive: true });
+fs.rmSync(old, { recursive: true });
+const fresh = idleEntry("e-fresh", 1);
+r = next(WAITED);
+ok("sweep: nothing deleted prints nothing", kinds(r).join() === "WAIT" && fs.existsSync(fresh) && fs.existsSync(STAMP), r.out);
 
 // a verifier spawn recorded for the head: not listed again; a new head: listed again. The record is the lead guard's,
 // from a spawn whose prompt carries the tokens next printed
@@ -148,7 +178,7 @@ ok("exit 1 when the tracker cannot be read, nothing on stdout", r.code === 1 && 
 const BARE = path.join(W, "bare");
 g(W, "init", "-q", "-b", "main", BARE);
 g(BARE, "commit", "-q", "--allow-empty", "-m", "init");
-r = lib.run(SCRIPT, "", { cwd: BARE, args: ["next"], env: { FAKE_GH_NEXT: STATE } });
+r = lib.run(SCRIPT, "", { cwd: BARE, args: ["next"], env: { FAKE_GH_NEXT: STATE, ...TENV } });
 ok("exit 2 when there is no run", r.code === 2 && /no run named/.test(r.err), `${r.code} ${r.err}`);
 r = next(BUSY, ["--bogus"]);
 ok("exit 2 on an unknown argument", r.code === 2, `${r.code} ${r.err}`);
@@ -339,7 +369,7 @@ function batchRepo(name, tickets, gate = true) {
   }
   const state = path.join(B, "gh.json");
   fs.writeFileSync(state, JSON.stringify({ origin, issues: tickets.map((k) => issue(k.t)), prs: prs.filter((p) => !p.later), reviews: [], inbox: [], statuses }));
-  const cli = (...args) => lib.run(SCRIPT, "", { cwd: root, args, env: { FAKE_GH_NEXT: state, FAKE_GH_MERGE: state, ...logged } });
+  const cli = (...args) => lib.run(SCRIPT, "", { cwd: root, args, env: { FAKE_GH_NEXT: state, FAKE_GH_MERGE: state, ...TENV, ...logged } });
   const tip = () => g(root, "--git-dir", origin, "rev-parse", "proteus/r1");
   return { root, cli, tip, prs, state, lead: path.join(root, ".git", "proteus-lead") };
 }
@@ -448,7 +478,7 @@ const RLOG = path.join(RB, "spawns.jsonl");
 let rs = { origin: RO, issues: [issue(1, { state: "CLOSED" }), issue(2), issue(3, { body: "Owned: src/t3.js lib/**" })], prs: [], reviews: [], inbox: [] };
 const rnext = (env = {}) => {
   fs.writeFileSync(RS, JSON.stringify(rs));
-  const res = lib.run(SCRIPT, "", { cwd: RR, args: ["next"], env: { FAKE_GH_NEXT: RS, SPAWN_LOG: RLOG, NODE_OPTIONS: logged.NODE_OPTIONS, ...env } });
+  const res = lib.run(SCRIPT, "", { cwd: RR, args: ["next"], env: { FAKE_GH_NEXT: RS, SPAWN_LOG: RLOG, NODE_OPTIONS: logged.NODE_OPTIONS, ...TENV, ...env } });
   rs = JSON.parse(fs.readFileSync(RS, "utf8"));
   return res;
 };

@@ -26,6 +26,8 @@
 //   BLOCKED #<n> <reason>                                     a blocked ticket, or `prep: <why>` when its prep failed,
 //                                                             or `owned record pending PR#<m>` until its record merges
 //   WAIT node <hooks>/proteus-watchdog.js --wait              when nothing but BLOCKED is due
+//   SWEPT <count> <MB> MB                                     the hourly scratch sweep deleted something
+//   NOTE <reason>                                             the hourly scratch sweep failed; the loop goes on
 // What it executes: the wave's owned-path record PR (#281) when an open ticket with an Owned: line has no
 // .proteus/owned/<n> on proteus/<run> and no record PR is open: one commit of git objects alone (no worktree, index or
 // checkout, #212) on proteus-work/<run>/owned-<k>, a push of that one ref and gh pr create; records are add-only.
@@ -34,7 +36,9 @@
 // proteus-merge.js's batch when one is due and none awaits a result. Never proteus-run-tree.js, the suite, or the
 // watchdog's --forget, which run sandboxed. result forwards to proteus-merge.js --result with the same suite and prints
 // its line; a bisect step as a RUN line; on a pass, STOP <agent> for the spawn records of the merged PRs' verifiers and
-// tickets' workers, then their --forget as a RUN line. --json prints next's lines as an array of { kind, ... }.
+// tickets' workers, then their --forget as a RUN line. At most once an hour, proteus-scratch.js's sweep --all-done
+// and --stale (#319): next runs in the lead's sandboxed shell, the one place a sweep may run (#237). --json prints
+// next's lines as an array of { kind, ... }.
 // brief renders the ## Worker or ## Verifier block of references/roles.md, read at run time, every <slot> filled from
 // the tracker, the owned record, the repo and AGENTS.md ## Learned, into <scratch>/brief-<n>.md or verify-<pr>.md
 // (proteus-scratch.js --path <run>), and prints `PROMPT <the spawn prompt>`; a slot with no source prints
@@ -54,12 +58,15 @@ const { pick, held, batch, readState, originOf } = require(path.join(__dirname, 
 const Policy = require(path.join(__dirname, "proteus-policy.js"));
 const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
+const Scratch = require(path.join(__dirname, "proteus-scratch.js"));
 
 const USAGE = "usage: node proteus-cli.js next [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run]";
 const HELP = `${USAGE}
 next prepares the ready tickets' worktrees and starts the merge batch, then prints the lead's next
 actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN verifier, SPAWN worker,
 BLOCKED, then WAIT when nothing but BLOCKED is due. A RUN line is the lead's to run, sandboxed.
+At most once an hour next sweeps scratch (proteus-scratch.js --sweep --all-done, then --stale):
+SWEPT <count> <MB> MB when it deleted something, NOTE <reason> when it failed.
 Open tickets with an Owned: line and no record on proteus/<run> get one record PR per wave, from
 proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
 a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
@@ -278,11 +285,35 @@ function where(arg) {
 // the other teams a slice ticket's slice:<team>[,<team>] labels name, [] for any other ticket
 const sliceTeams = (labels) => [...new Set(labels.filter((l) => l.startsWith("slice:")).flatMap((l) => l.slice(6).split(",")).map((t) => t.trim()).filter(Boolean))];
 
+// scratch's sweep --all-done and --stale, at most once an hour (#319), as SWEPT or NOTE lines. The stamp is under
+// <common>/proteus, which agents can write: read as untrusted, and any value but a time in the last hour is due
+const SWEEP_EVERY = 3600e3;
+function autoSweep(common, now = Date.now()) {
+  const stamp = path.join(lib.stateDir(common), "sweep-at");
+  let at = NaN;
+  try { at = Number(lib.readUntrusted(stamp, 64).trim()); } catch {}
+  if (at <= now && now - at < SWEEP_EVERY) return [];
+  try {
+    fs.mkdirSync(path.dirname(stamp), { recursive: true });
+    // unlink what is there (a link goes, never its target), then create, never through a link
+    fs.rmSync(stamp, { force: true });
+    fs.writeFileSync(stamp, String(now), { flag: "wx" });
+    let count = 0, bytes = 0;
+    for (const what of ["--all-done", "--stale"]) {
+      const r = Scratch.sweep(common, what);
+      count += r.dirs + r.strays + r.sandbox;
+      bytes += r.bytes;
+    }
+    return count ? [{ kind: "SWEPT", count, mb: (bytes / 1048576).toFixed(1) }] : [];
+  } catch (e) { return [{ kind: "NOTE", reason: `scratch sweep failed: ${e.message}` }]; }
+}
+
 // the actions, in print order, after the due steps ran; { code, err } when there are none to give
 function next(arg) {
   const w = where(arg);
   if (w.err) return w;
   const { root, common, run, names } = w;
+  const swept = common ? autoSweep(common) : [];
 
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,milestone,labels,body", "--limit", "500"], root, 30000));
   if (!Array.isArray(issues)) return { code: 1, err: `run ${run}: tracker unreachable (gh issue list failed)` };
@@ -404,6 +435,7 @@ function next(arg) {
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
   if (out.every((a) => a.kind === "BLOCKED")) out.push({ kind: "WAIT", command: `node ${WATCHDOG} --wait` });
+  out.push(...swept);
   return { code: 0, out };
 }
 
@@ -634,6 +666,8 @@ const line = (a) => {
       ? `SPAWN verifier PR#${a.pr} #${a.ticket || "?"} head=${a.head.slice(0, 12)} brief: ${a.brief}`
       : `SPAWN worker #${a.ticket} team=${a.team} difficulty=${a.difficulty}${a.speculative ? " speculative" : ""} worktree=${a.worktree} brief: ${a.brief}`;
     case "BLOCKED": return `BLOCKED #${a.ticket} ${a.reason}`;
+    case "SWEPT": return `SWEPT ${a.count} ${a.mb} MB`;
+    case "NOTE": return `NOTE ${a.reason}`;
     default: return `WAIT ${a.command}`;
   }
 };

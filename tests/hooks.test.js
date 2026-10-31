@@ -788,7 +788,7 @@ fs.appendFileSync(LEDGER, JSON.stringify({ path: path.join(OUTSIDE, "keep.txt"),
 r = run(SC, "", { args: ["--sweep", "bl1077-5"], env: TENV });
 ok("scratch sweep ticket: worktree removed via git, locked one kept", r.code === 0 && !has(t("hs-wt")) && !wtList().includes(`worktree ${t("hs-wt")}\n`) &&
   has(t("hs-wtlock")) && wtList().includes(t("hs-wtlock")) && /kept .*hs-wtlock: git worktree remove failed/.test(r.out) && !!entry("hs-wtlock"), r.out + r.err + wtList());
-ok("scratch sweep ticket: nothing else touched", has(t("hs-lead")) && has(t("hs-unnamed")) && has(P9) && !!entry("hs-lead") && /freed .* MB \(0 scratch dirs, 1 strays, 1 worktrees\)/.test(r.out), r.out);
+ok("scratch sweep ticket: nothing else touched", has(t("hs-lead")) && has(t("hs-unnamed")) && has(P9) && !!entry("hs-lead") && /freed .* MB \(0 scratch dirs, 1 strays, 1 worktrees, 0 sandbox entries\)/.test(r.out), r.out);
 r = run(SC, "", { args: ["--sweep", "bl1077-9"], env: TENV });
 ok("scratch sweep ticket: scratch dir and bound strays", !has(P9) && !has(t("hs-clone")) && !ledger().some((e) => e.key === "bl1077-9") && /\(1 scratch dirs, 1 strays/.test(r.out), r.out + JSON.stringify(ledger()));
 bash(`touch ${t("hs-owned")}`, () => fs.writeFileSync(t("hs-owned"), "x"));
@@ -843,6 +843,42 @@ ok("scratch sweep --stale: deletes done-72h and any-7d only", !has(t("hs-old-don
   !has(path.join(SCR, "bl1077-7")) && has(path.join(SCR, "bl1077-6")) && has(path.join(SCR, "bl1077-8")), fs.readdirSync(TMPD).join(",") + " | " + fs.readdirSync(SCR).join(","));
 ok("scratch sweep --stale: size cache rewritten, under 1 GB drops scratch=", JSON.parse(fs.readFileSync(path.join(REPO, ".git", "proteus-lead", "scratch-size.json"), "utf8")).bytes < 1048576 &&
   !/scratch=/.test(run(AS, { source: "resume", cwd: REPO }, { env: TENV }).out));
+// --stale also sweeps the sandbox scratch root (#319): a top-level entry idle 72h, its own mtime and its newest
+// descendant's, through a stray's checks: this user's, directly in the root, a link removed as a link
+const SBX = path.join(TMPD, `proteus-${typeof process.getuid === "function" ? process.getuid() : require("os").userInfo().username.replace(/[^\w.-]/g, "_")}`);
+const sbAge = (p, h) => { const at = new Date(HOURS(h)); fs.utimesSync(p, at, at); };
+const sbDir = (rel, h, file = true) => { const p = path.join(SBX, rel); fs.mkdirSync(p, { recursive: true }); if (file) { fs.writeFileSync(path.join(p, "f"), "x"); sbAge(path.join(p, "f"), h); } sbAge(p, h); return p; };
+fs.mkdirSync(SBX);
+const sbIdle = sbDir("sb-idle", 80);
+const sbFile = path.join(SBX, "sb-file"); fs.writeFileSync(sbFile, "x"); sbAge(sbFile, 80);
+const sbFresh = sbDir("sb-fresh", 1);
+const sbInner = sbDir("sb-inner", 80); fs.mkdirSync(path.join(sbInner, "a", "b"), { recursive: true }); fs.writeFileSync(path.join(sbInner, "a", "b", "new"), "x"); sbAge(path.join(sbInner, "a", "b"), 80); sbAge(path.join(sbInner, "a"), 80); sbAge(sbInner, 80);
+let deep = sbDir("sb-deep", 80, false);
+const deepDirs = [deep];
+for (let i = 0; i < 12; i++) { deep = path.join(deep, `d${i}`); fs.mkdirSync(deep); deepDirs.push(deep); }
+for (const d of deepDirs.reverse()) sbAge(d, 80);
+const sbOther = sbDir("sb-other", 80);
+const sbOutside = path.join(TMPD, "sb-outside"); fs.mkdirSync(sbOutside); sbAge(sbOutside, 80);
+const SBT = path.join(W, "sb-target"); fs.mkdirSync(SBT); fs.writeFileSync(path.join(SBT, "keep.txt"), "k"); sbAge(SBT, 80);
+let sbLinked = false;
+try { fs.symlinkSync(SBT, path.join(SBX, "sb-link"), "dir"); const at = new Date(HOURS(80)); fs.lutimesSync(path.join(SBX, "sb-link"), at, at); sbLinked = true; } catch {}
+r = run(SC, "", { args: ["--size"], env: TENV });
+const sbBefore = parseFloat(r.out);
+fs.writeFileSync(path.join(sbFresh, "big"), Buffer.alloc(3 * 1048576));
+r = run(SC, "", { args: ["--size"], env: TENV });
+ok("scratch --size counts the sandbox root", parseFloat(r.out) - sbBefore >= 2.9, `${sbBefore} -> ${r.out}`);
+const OWNED2 = path.join(W, "owned2.js");
+fs.writeFileSync(OWNED2, `const fs = require("fs"); const l = fs.lstatSync; fs.lstatSync = (p, o) => { const st = l(p, o); if (String(p).endsWith("sb-other")) st.uid += 1; return st; }; require(${JSON.stringify(SC)});`);
+r = run(OWNED2, "", { args: ["--sweep", "--stale"], env: TENV });
+ok("scratch sweep --stale: a sandbox root entry idle 72h goes, a dir or a file", !has(sbIdle) && !has(sbFile) && new RegExp(`, ${2 + sbLinked + (process.platform === "win32")} sandbox entries\\)`).test(r.out), r.out + r.err);
+ok("scratch sweep --stale: a fresh sandbox root entry stays", has(sbFresh));
+ok("scratch sweep --stale: an entry with a fresh descendant stays", has(path.join(sbInner, "a", "b", "new")));
+ok("scratch sweep --stale: an entry deeper than the walk's bound counts as fresh", has(deepDirs[0]));
+if (process.platform !== "win32") ok("scratch sweep --stale: another user's sandbox root entry stays", has(sbOther));
+ok("scratch sweep --stale: an idle entry outside the sandbox root is not its business", has(sbOutside));
+if (sbLinked) ok("scratch sweep --stale: a link in the sandbox root goes as a link, its target untouched", !has(path.join(SBX, "sb-link")) && fs.readFileSync(path.join(SBT, "keep.txt"), "utf8") === "k");
+else ok("scratch sweep --stale: the sandbox link case skipped (no symlink here)", true);
+fs.rmSync(SBX, { recursive: true, force: true });
 // fail open
 ok("scratch: garbage stdin exit 0", run(SC, "not json", { env: TENV }).code === 0);
 ok("scratch: post without snapshot, odd input exit 0", run(SC, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_use_id: "none", tool_input: { command: 5 }, tool_response: 7 }, { env: TENV }).code === 0);

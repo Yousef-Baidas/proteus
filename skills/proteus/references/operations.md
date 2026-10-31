@@ -57,9 +57,9 @@ Agents write temp files, renders, clones and inspection worktrees under `node <h
 
 - **Ticket merged** (step 7): `--sweep <run>-<id>` after the agents are stopped.
 - **Run closed** (step 8): `--sweep <run>`, which takes every `<run>-*` key with it.
-- **Safety net**: when the session start says scratch may be stale, `node <hooks>/proteus-scratch.js --sweep --stale` from your sandboxed shell (done and idle 72h, or idle 7 days). No hook sweeps: it deletes under dirs agents can write (#237). `proteus-state` shows `scratch=<MB>` over 1 GB; then `--sweep --all-done` clears every key whose branch is gone.
+- **Safety net**: `next` runs `--sweep --all-done` and `--stale` at most hourly (`SWEPT <n> <MB> MB`; a failure is one `NOTE`, go on). `--stale`: done and idle 72h, idle 7 days, or a sandbox temp root entry idle 72h. No hook sweeps: it deletes under dirs agents can write (#237). Without `next`, the session start's stale note names the sweep.
 
-A sweep deletes only ledgered entries and scratch dirs and prints the MB freed plus `kept <path>: <why>` for anything refused.
+A sweep deletes only what Proteus made and prints the MB freed plus `kept <path>: <why>` for anything refused.
 
 ## Installs
 
