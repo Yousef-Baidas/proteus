@@ -35,6 +35,11 @@ Any decision (a question, a change summary, a merge ask, a milestone review) is 
 
 `learning=along`: a term not in `terms` gets a one-line explanation the first time it appears in a session. `asked`: the card offers "explain"; asked, explain it at their level in this project's terms. `off`: nothing is offered.
 
+## The code host's words
+
+- Below `fluent`, unless the term is in `terms`, never the host's words for its objects and actions: say what happens in plain words, in terms of the human's project. Teach the real term only under `learning=along`, or when the human asks.
+- A command the human must run stays exact, after a plain sentence saying what it does.
+
 ## High-risk or irreversible decisions
 
 Only these: a plain summary of what the human is agreeing to comes first, and below `fluent` one check question before accepting, so they confirm they understood the consequence. Never on a routine decision.

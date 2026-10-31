@@ -41,7 +41,7 @@ At close, if the PUT set the protection, the human deletes it before deleting th
 
 ## 2. Path ownership hook
 
-`next` runs this before `SPAWN worker` (a `RUN` line under a sandbox profile); by hand, from the repo root (`<hooks>` per `harnesses.md`):
+`next` runs this before `SPAWN worker` (a `RUN` line under a sandbox profile); by hand, from the repo root:
 
 ```
 node <hooks>/proteus-worktree.js <wt> [--tier <tier> [--human]] <owned paths and globs…>

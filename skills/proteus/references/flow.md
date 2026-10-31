@@ -1,6 +1,6 @@
 # Flow, step by step
 
-The judgment behind `SKILL.md`'s flow; `next` does the mechanical steps. Read a step's section when you reach it or a `next` line names it. `<hooks>` per `harnesses.md`.
+The judgment behind `SKILL.md`'s flow; `next` does the mechanical steps.
 
 ## Session start
 
@@ -13,7 +13,7 @@ The judgment behind `SKILL.md`'s flow; `next` does the mechanical steps. Read a 
 
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
 - **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
-- An `ASK human` line reaches the human as a card (`audience.md`).
+- An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows them the exact text and only their click posts it, they never open the host, and where no dialog can appear they run that command themselves.
 - An answer stating a standing rule ("always", "never") also becomes a `CONVENTIONS.md` line (the human's approval) or a lesson, so it is not asked twice.
 
 ## Tiers
@@ -86,7 +86,7 @@ Each merged batch is a wave: `proteus-qa-verifier` once on the branch; `WAVE-RED
 
 ## 7½. Human review
 
-Milestone complete and `WAVE-GREEN` → the gate in `review.md`; the human reviews in `/proteus-review`, not through you. `CHANGES revision`, or changes that are all small tweaks → revision mode (`operations.md`). Human away → continue only on the literal `UNATTENDED` (`review.md`).
+Milestone complete and `WAVE-GREEN` → the gate in `review.md`. `CHANGES revision`, or changes that are all small tweaks → revision mode (`operations.md`). Human away → continue only on the literal `UNATTENDED` (`review.md`).
 
 ## 8. Close
 
