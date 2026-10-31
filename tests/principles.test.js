@@ -49,7 +49,7 @@ for (const [name, text] of [["roles.md", roles], ...agents.map((f) => [f, agent(
 // domains.md: the block binds non-code teams, and every non-code rubric has the YAGNI line
 ok("domains.md: says the Principles block applies to non-code teams", /Principles block in `roles\.md`[^.]*binds non-code teams too/.test(domains));
 const rows = domains.split("\n").filter((l) => /^\| \S/.test(l) && !l.startsWith("| Domain") && !l.startsWith("| software"));
-ok("domains.md: five non-code domain rows", rows.length === 5, rows.join("\n"));
+ok("domains.md: eleven non-code domain rows", rows.length === 11, rows.join("\n"));
 for (const r of rows) {
   const cell = r.split("|")[5] || "";
   ok(`domains.md: the ${r.split("|")[1].trim()} rubric has "nothing the brief did not ask for"`, /nothing the brief did not ask for/i.test(cell), cell);

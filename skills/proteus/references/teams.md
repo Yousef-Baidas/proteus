@@ -40,6 +40,7 @@ Rules: <numbered, each one observable>
 Green adds: <checks beyond the repo gates this team's worker runs before DONE>
 Verifier adds: <what this team's verifier checks beyond the generic list>
 Safety: <optional, `domains.md`: how agents run deliverables that change a live system without touching it>
+Retries: <optional, default 0> · Timeout: <optional, minutes per check> · Rebuild: <optional, per-merge | per-wave | per-milestone> (`domains.md`, prompt-only)
 ```
 
 `teams/ROUTING.md` maps each deliverable type or path pattern to one owning team, one row each. The lead routes every ticket by it, not by guess; a ticket with no matching row is a question for the human, and the answer becomes a row through a ticket.
