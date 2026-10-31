@@ -18,8 +18,26 @@ The pipeline is the same for every project: grill → spec → tickets → contr
 | writing / editorial | editor-in-chief, developmental editor, copy editor, fact checker, designer | markdown or docx source, style sheet | spelling, style linter (vale), link check, word counts, reading level, citation present per claim | voice, structure, argument, nothing the brief did not ask for | rendered pages, diff of changes |
 | research / analysis | researcher, methodologist, data analyst, reviewer | notebooks or scripts, data manifests, report source | notebook runs clean, numbers recompute, every claim cites a primary source | question answered, limits stated, nothing the brief did not ask for | figures, tables, source list |
 | business planning | market researcher, financial modeller, strategist, operations, legal/risk, editor | plan source, model as formulas (spreadsheet or code), assumptions register | model recomputes, formulas have no hard-coded outputs, totals tie out, every assumption sourced and dated | coherence, risks named, decision-ready, nothing the brief did not ask for | model summary, sensitivity table |
+| infrastructure-as-code | platform, network, security, SRE | Terraform, Ansible, Helm or Kubernetes manifests | validate, lint (tflint, ansible-lint), policy (checkov), dry run: `terraform plan`, `ansible --check`, `kubectl diff` | blast radius, naming, rollback named, nothing the brief did not ask for | plan or diff output, apply log |
+| data / ML notebooks | data engineer, ML engineer, analyst, reviewer | notebooks stripped of outputs, pipeline scripts, data and model manifests with hashes | notebook runs top to bottom on a fixed seed, metrics within the contract's band, schema checks | leakage, baselines compared, limits stated, nothing the brief did not ask for | metric table, plots, run log |
+| docs site | technical writer, docs engineer, editor | markdown or MDX source, site config | site builds, link check, style linter, every code sample runs | accuracy, task order, nothing the brief did not ask for | built pages, diff of changes |
+| mobile app | iOS, Android, shared UI, release | code, store metadata, signing config without secrets | build per platform, unit and UI tests on a simulator, store metadata lint | platform conventions, accessibility, nothing the brief did not ask for | simulator screenshots, recordings |
+| firmware / hardware | firmware, electrical, mechanical, test | firmware source, schematics and layout source (KiCad), BOM | builds for the target, unit tests on host, simulator or hardware-in-the-loop run, ERC/DRC | power, timing and safety margins stated, nothing the brief did not ask for | test logs, scope captures, board renders |
+| game development | design, gameplay, art, level, audio, QA | code, scenes and assets (LFS or linked per team), design docs | headless build, unit tests, scripted playthrough on a fixed seed, frame-time budget | feel, readability, difficulty curve, nothing the brief did not ask for | capture video, build for the human to play |
 
-A project can mix rows (a product launch is software plus writing plus business). Teams come from the rows the project needs, nothing more.
+The rows are examples, not a closed list. A project can mix rows (a product launch is software plus writing plus business), and teams come from the rows it needs, nothing more. For a domain not here, the scout fills the same six columns in its roster report; once the human approves, the answer lives where every roster does, in `teams/<team>/PROFILE.md` and `teams/ROUTING.md`.
+
+## Binary and GUI work
+
+One owner per binary file stays the rule, so split the work into linked per-team files: one `.blend` per team linked into a master scene, Photoshop smart objects, spreadsheets that link to each other. The master file belongs to one team, which only re-links. Two teams never edit one binary. A step only a human can operate (a GUI tool with no headless mode, a signature) is a `step:human` ticket (`tracker.md`).
+
+## Nondeterministic and slow checks
+
+Fix the seed first. If no seed can fix it, write a tolerance band into the contract: value, ± band, unit. If neither works, N-of-M with M at most 5, the N and M written into the contract. The check script does the repeating itself, so a gate run stays one command and the gate cache keeps working. A team's `PROFILE.md` may also set `Retries:` (re-runs of a red check, default 0), `Timeout:` (minutes per check) and `Rebuild:` (`per-merge`, the default, `per-wave` or `per-milestone`: how often CI QA rebuilds the full deliverable). All three are prompt-only: the lead and verifiers read them, and no script does.
+
+## Checks that cannot run in a worktree
+
+Live infrastructure, a paid API, hardware. The ticket's check is the dry run in the worktree (`terraform plan`, `ansible --check`, `kubectl diff`, a recorded fixture or a simulator). The live apply is a `step:human` ticket after the merge, and its evidence is the apply log.
 
 ## Designing the roster (bootstrap, `proteus-scout`)
 
