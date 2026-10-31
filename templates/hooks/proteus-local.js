@@ -2,7 +2,7 @@
 // The `gh` stand-in for a repo in local mode (#310). A library and a CLI: the launchers proteus-local/bin/gh and
 // gh.cmd run this file with gh's arguments, and lib.gh reaches it the same way, so a script keeps its flow:
 //   node <hooks>/proteus-local.js <gh args...>    issue, label, auth status, repo view, api (the paths below)
-//   node <hooks>/proteus-local.js --init          make the mode file, the store and the launchers; idempotent
+//   node <hooks>/proteus-local.js --init          make the mode marker (proteus-lead/local-mode), the store and the launchers; idempotent
 // Everything lives in <git-common-dir>/proteus-local/, one per project and machine, never committed: `mode` marks the
 // repo (lib.localMode), bin/ holds the launchers, tracker/ the store: meta.json (the next numbers), labels.json,
 // milestones.json, issues/<n>.json. Agents can reach all of it, so it is a working log and not proof: every read goes
@@ -270,7 +270,7 @@ const noLink = (f) => {
 };
 function layout(common) {
   const root = lib.localPath(common), tracker = path.join(root, "tracker");
-  return { common, root, bin: path.join(root, "bin"), tracker, issues: path.join(tracker, "issues"), lock: path.join(tracker, "lock"), mode: path.join(root, "mode"), meta: path.join(tracker, "meta.json"), labels: path.join(tracker, "labels.json"), milestones: path.join(tracker, "milestones.json") };
+  return { common, root, bin: path.join(root, "bin"), tracker, issues: path.join(tracker, "issues"), lock: path.join(tracker, "lock"), meta: path.join(tracker, "meta.json"), labels: path.join(tracker, "labels.json"), milestones: path.join(tracker, "milestones.json") };
 }
 // a fresh temp file renamed over the name: a link there is replaced, never followed. A reader holding the name open
 // makes the rename fail for a moment on Windows
@@ -724,7 +724,7 @@ function init(common) {
   const s = layout(common), script = path.join(__dirname, "proteus-local.js");
   for (const d of [s.root, s.bin, s.tracker, s.issues]) mkReal(d);
   const gh = path.join(s.bin, "gh"), cmd = path.join(s.bin, "gh.cmd");
-  for (const f of [s.mode, s.meta, s.labels, s.milestones, gh, cmd]) noLink(f);
+  for (const f of [s.meta, s.labels, s.milestones, gh, cmd]) noLink(f);
   writeFile(gh, shLauncher(script), 0o755);
   writeFile(cmd, cmdLauncher(script));
   withLock(s.lock, () => {
@@ -733,7 +733,9 @@ function init(common) {
     if (!fs.existsSync(s.milestones)) writeJSON(s.milestones, []);
   });
   // last, so a half-made store never reads as local mode
-  if (!fs.existsSync(s.mode)) writeFile(s.mode, "1\n");
+  // the sandbox cannot write here, so only an unsandboxed setup turns local mode on
+  const mode = path.join(lib.leadDir(common), "local-mode");
+  if (!fs.existsSync(mode)) lib.leadWrite(common, mode, "1\n");
   return s;
 }
 

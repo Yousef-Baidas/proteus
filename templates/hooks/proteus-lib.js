@@ -1256,11 +1256,13 @@ function ghRepo(cwd) {
   }
   return ghRepos.get(c);
 }
-// local mode (#310): <common>/proteus-local/mode, a regular file in a real directory, marks a repo whose gh is the stand-in
+// local mode (#310): <common>/proteus-lead/local-mode, a regular file, marks a repo whose gh is the stand-in. It sits in
+// the lead's trust state, which the sandbox cannot write: agents write proteus-local/, and a marker there would let one
+// turn a hosted repo's gh, and so every gate that reads it, over to a store it writes
 const LOCAL = "proteus-local";
 const localPath = (common, ...parts) => path.join(common, LOCAL, ...parts);
 function localMode(common) {
-  try { return !!common && fs.lstatSync(localPath(common)).isDirectory() && fs.lstatSync(localPath(common, "mode")).isFile(); } catch { return false; }
+  try { return !!common && fs.lstatSync(localPath(common)).isDirectory() && fs.lstatSync(path.join(common, LEAD)).isDirectory() && fs.lstatSync(path.join(common, LEAD, "local-mode")).isFile(); } catch { return false; }
 }
 // the project's common dir when cwd is in one of its checkouts and the repo is in local mode, else null
 function localCommon(cwd) {

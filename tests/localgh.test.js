@@ -32,7 +32,7 @@ ok("outside local mode: non-zero, names why, never a real gh", r.code === 1 && /
 // ---- init
 r = gh(["--init"]);
 ok("--init: exit 0", r.code === 0, r.err);
-for (const f of ["mode", "bin/gh", "bin/gh.cmd", "tracker/meta.json", "tracker/labels.json", "tracker/milestones.json"]) ok(`--init made ${f}`, fs.existsSync(path.join(R, ".git", "proteus-local", f)));
+for (const f of ["bin/gh", "bin/gh.cmd", "tracker/meta.json", "tracker/labels.json", "tracker/milestones.json"]) ok(`--init made ${f}`, fs.existsSync(path.join(R, ".git", "proteus-local", f)));
 ok("--init: idempotent, the store kept", (() => {
   gh(["label", "create", "keep"]);
   const again = gh(["--init"]);
@@ -276,13 +276,13 @@ ok("a filter over a list from the CLI", r.out === "1 t1\n", r.out + r.err);
   if (link(path.join(W, "elsewhere"), path.join(LC, "proteus-local"), "dir")) {
     r = gh(["--init"], { cwd: L });
     ok("--init refuses a link at proteus-local", r.code === 1 && /link/.test(r.err), r.err);
-    ok("--init wrote nothing through the link", !fs.existsSync(path.join(W, "elsewhere", "mode")));
+    ok("--init wrote nothing through the link", !fs.existsSync(path.join(W, "elsewhere", "bin")));
     fs.unlinkSync(path.join(LC, "proteus-local"));
-    fs.mkdirSync(path.join(LC, "proteus-local"));
-    fs.writeFileSync(path.join(LC, "proteus-local", "mode"), "1");
-    ok("a link at proteus-local is not local mode", (fs.rmSync(path.join(LC, "proteus-local"), { recursive: true }), link(path.join(W, "elsewhere"), path.join(LC, "proteus-local"), "dir")) && (fs.writeFileSync(path.join(W, "elsewhere", "mode"), "1"), /not in local mode/.test(gh(["auth", "status"], { cwd: L }).err)));
+    fs.mkdirSync(path.join(LC, "proteus-lead"), { recursive: true });
+    fs.writeFileSync(path.join(LC, "proteus-lead", "local-mode"), "1");
+    link(path.join(W, "elsewhere"), path.join(LC, "proteus-local"), "dir");
+    ok("a link at proteus-local is not local mode", /not in local mode/.test(gh(["auth", "status"], { cwd: L }).err));
     fs.unlinkSync(path.join(LC, "proteus-local"));
-    fs.rmSync(path.join(W, "elsewhere", "mode"));
 
     const L2 = repo("linky2");
     gh(["--init"], { cwd: L2 });
@@ -307,9 +307,13 @@ ok("a filter over a list from the CLI", r.out === "1 t1\n", r.out + r.err);
     fs.unlinkSync(G); fs.renameSync(`${G}.real`, G);
   } else ok("links: skipped where this OS refuses to make one", true);
   const M = repo("modefile");
-  fs.mkdirSync(path.join(M, ".git", "proteus-local", "mode"), { recursive: true });
+  fs.mkdirSync(path.join(M, ".git", "proteus-local", "bin"), { recursive: true });
+  fs.writeFileSync(path.join(M, ".git", "proteus-local", "mode"), "1\n");
   r = gh(["auth", "status"], { cwd: M });
-  ok("a directory at mode is not local mode", r.code === 1 && /not in local mode/.test(r.err), r.err);
+  ok("a marker agents can write does not turn local mode on", r.code === 1 && /not in local mode/.test(r.err), r.err);
+  fs.mkdirSync(path.join(M, ".git", "proteus-lead", "local-mode"), { recursive: true });
+  r = gh(["auth", "status"], { cwd: M });
+  ok("a directory at the marker is not local mode", r.code === 1 && /not in local mode/.test(r.err), r.err);
 
   // ---- launchers
   ok("the POSIX launcher quotes a space and a quote", local.shLauncher("/a b/it's/x.js").includes(`exec node '/a b/it'\\''s/x.js' "$@"`));
