@@ -13,7 +13,7 @@ Run `node <hooks>/proteus-cli.js next [run]`, do each line it prints, run `next`
 
 | Line | You | Read |
 |---|---|---|
-| `ASK` | question → `questions`; review → step 7½ | `operations.md` §`questions`; `review.md` |
+| `ASK` | question → `questions`; review → step 7½; `human` → tell the human | `operations.md` §`questions`; `review.md` |
 | `STOP` | stop the agent; a stall → a fresh worker | `operations.md` §Stall check |
 | `NUDGE` | message the agent once | `operations.md` §Stall check |
 | `MERGE` | would merge, no suite known | `flow.md` §7 |

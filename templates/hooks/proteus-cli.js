@@ -5,6 +5,7 @@
 // next does the mechanical steps that are due and run in this script's context, proteus-merge.js's (outside the
 // sandbox, #226), then prints what is left for the lead, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
+//   ASK human #<n> <issue url>                               a ready step:human ticket: the human does it, opens the PR
 //   STOP <agent> <reason> / NUDGE <agent> <reason>            a STALL-AGAIN / STALL agent (the watchdog's read)
 //   MERGE PR#<n> <head sha12> verdict=<state> by=<login>       a PR proteus-merge.js would pick, when no suite is known
 //   MERGED PR#<n> <head sha12> verdict=<state> by=<login>      evidence: a PR this call merged (proteus-merge.js's batch)
@@ -35,7 +36,8 @@
 // the tracker, the owned record, the repo and AGENTS.md ## Learned, into <scratch>/brief-<n>.md or verify-<pr>.md
 // (proteus-scratch.js --path <run>), and prints `PROMPT <the spawn prompt>`; a slot with no source prints
 // `DECIDE #<n> brief: no source for <slot>` and exits 1. It writes where agents can, so it runs in the lead's
-// sandboxed shell: a SPAWN line names its brief command and next never runs it.
+// sandboxed shell: a SPAWN line names its brief command and next never runs it. A step:human ticket has no worker
+// brief: `DECIDE #<n> human step: no worker brief`, exit 1.
 // Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code; brief: also a DECIDE);
 // 2 on usage or no run.
 "use strict";
@@ -57,6 +59,7 @@ BLOCKED, then WAIT when nothing but BLOCKED is due. A RUN line is the lead's to 
 Open tickets with an Owned: line and no record on proteus/<run> get one record PR per wave, from
 proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
 a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
+A ready step:human ticket prints ASK human #<n> <url>, never SPAWN worker: the human opens its PR.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -66,6 +69,8 @@ brief writes the worker's (or the PR's verifier's) brief from roles.md into the 
 prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief: ... and exits 1.
 Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code); 2 on usage or no run.`;
 const VERDICT = "proteus/verdict";
+// a human-operated step (#82): no worker, no contracts, no brief; the human commits the evidence and opens the PR
+const isHuman = (issue) => ((issue || {}).labels || []).some((l) => l.name === "step:human");
 // what reaches the lead's output: no control character (terminal escapes, a second line)
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
@@ -282,6 +287,7 @@ function next(arg) {
   // the cache as the inbox keeps it; gh's answer, unwritten, only when there is no cache
   const inbox = (common && lib.readInbox(common)) || lib.queryInbox(root);
   if (inbox) for (const i of [...inbox.questions, ...inbox.reviews]) out.push({ kind: "ASK", n: i.n, url: issueUrl(root, i.n), title: i.title });
+  const askAt = out.length;
 
   if (common) {
     const { stalled } = stalls(common, Date.now());
@@ -357,11 +363,12 @@ function next(arg) {
   const copy = common ? path.join(C.sandboxBin(common), "proteus-worktree.js") : "";
   const profile = !!copy && fs.existsSync(copy);
   const base = owned.at;
-  const failed = [];
+  const failed = [], humans = [];
   for (const t of ready) {
     const wt = wtOf(t.n), branch = branchOf(t.n);
     // dispatched only once its record is on the run branch, which CI checks its PR against
     if (owned.has && !owned.has.has(t.n)) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: owned.wait.get(t.n) || "owned record pending" }); continue; }
+    if (isHuman(byIssue.get(t.n))) { humans.push({ kind: "ASK", human: true, n: t.n, url: issueUrl(root, t.n) }); continue; }
     const tierLine = /^Tier:[ \t]*(\S+)/im.exec((byIssue.get(t.n) || {}).body || "");
     const tier = tierLine ? tierLine[1].toLowerCase() : "standard";
     // a slice ticket (teams.md, Routing) is Quick or Standard only
@@ -381,6 +388,7 @@ function next(arg) {
     }
     out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt, brief: briefCmd("worker", t.n) });
   }
+  out.splice(askAt, 0, ...humans);
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
   if (out.every((a) => a.kind === "BLOCKED")) out.push({ kind: "WAIT", command: `node ${WATCHDOG} --wait` });
@@ -579,6 +587,7 @@ function brief(role, target, arg) {
     name = `verify-${pr}.md`;
     prompt = `verifier PR#${pr} head=${head.slice(0, 12)}`;
   } else {
+    if (isHuman(issues.find((i) => i.number === n))) return { code: 1, out: [`DECIDE #${n} human step: no worker brief`] };
     ctx = briefContext(w, issues, n);
     name = `brief-${n}.md`;
     prompt = `worker #${n}`;
@@ -603,7 +612,7 @@ function brief(role, target, arg) {
 
 const line = (a) => {
   switch (a.kind) {
-    case "ASK": return `ASK ${a.url} ${a.title}`;
+    case "ASK": return a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;
     case "RUN": return `RUN ${a.command}`;
