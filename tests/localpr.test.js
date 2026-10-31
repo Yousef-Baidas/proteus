@@ -207,7 +207,7 @@ function receive() {
 function commands() {
   const a = repo("cmds");
   const issue = a.gh(["issue", "create", "--title", "i", "--body", "b"]);
-  ok("setup: an issue takes 1", /\/issues\/1$/.test(issue.out.trim()), issue.err);
+  ok("setup: an issue takes 1", issue.out.trim().endsWith("/issues/1"), issue.err);
   const one = a.open("feat/one", "one.txt");
   ok("pr create: prints a /pull/<n> URL, numbered with the issues", one.n === 2 && one.made.code === 0, one.made.out + one.made.err);
   let r = a.gh(["pr", "create", "--base", "main", "--head", "feat/one", "--title", "t", "--body", "b"]);
@@ -223,7 +223,7 @@ function commands() {
   r = a.gh(["pr", "create", "--base", "main", "--head", "feat/one"]);
   ok("pr create: no title refused", r.code === 1 && /--title/.test(r.err), r.err);
 
-  const fill = a.work("feat/fill", "fill.txt");
+  a.work("feat/fill", "fill.txt");
   lib.g(a.dir, "checkout", "-q", "feat/fill");
   r = a.gh(["pr", "create", "--base", "main", "--fill"]);
   lib.g(a.dir, "checkout", "-q", "main");
