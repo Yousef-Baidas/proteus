@@ -139,11 +139,7 @@ const isWorker = (type) => /^proteus-(?:[a-z0-9-]+-)?worker$/.test(lib.agentName
 function gates(root) {
   let text = "";
   try { text = fs.readFileSync(path.join(lib.docRoot(root), "AGENTS.md"), "utf8"); } catch {}
-  const learned = /^##[ \t]+Learned[ \t]*$([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
-  const m = learned && /^[ \t]*(?:[-*][ \t]*)?gates?:[ \t]*(.+)$/im.exec(learned[1]);
-  if (!m) return [];
-  const ticks = [...m[1].matchAll(/`([^`]+)`/g)].flatMap((t) => (t[1].trim() ? [t[1].trim()] : []));
-  return ticks.length ? ticks : [m[1].trim()];
+  return lib.gateCommands(text);
 }
 // the suite: the gate commands joined with &&; "" when there is none
 const gateCommand = (root) => gates(root).join(" && ");

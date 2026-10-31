@@ -135,7 +135,7 @@ ok("issue reopen", gh(["issue", "reopen", "2"]).code === 0 && json(gh(["issue", 
 ok("api milestones: counts open issues", json(gh(["api", "repos/{owner}/{repo}/milestones"]))[1].open_issues === 1);
 
 // ---- unsupported
-for (const a of [["pr", "list"], ["issue", "transfer", "1"], ["auth", "token"], ["release", "list"], [], ["api", "repos/{owner}/{repo}/pulls"], ["api", "repos/o/other/milestones"], ["api", "-X", "DELETE", "repos/{owner}/{repo}/milestones"]]) {
+for (const a of [["pr", "close", "1"], ["issue", "transfer", "1"], ["auth", "token"], ["release", "list"], [], ["api", "repos/{owner}/{repo}/pulls"], ["api", "repos/o/other/milestones"], ["api", "-X", "DELETE", "repos/{owner}/{repo}/milestones"]]) {
   r = gh(a);
   ok(`gh ${a.join(" ")}: non-zero, named, no output`, r.code === 1 && /^proteus local mode: gh .* is not supported\n$/.test(r.err) && !r.out, r.code + r.err);
 }

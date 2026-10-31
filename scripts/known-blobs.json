@@ -429,6 +429,7 @@
     "templates/hooks/proteus-cli.js": [
       "0ef620617b0aa9bc7b9781d39fe1b8f65711ae27",
       "2ac81ea5fb9eb6a701feef2dfb66b9627777345d",
+      "38d8450873974c74995888bd1d3c37996e29ef48",
       "538f0791bbe3c04dea95fa4bc538400ca2765bbf",
       "6b473d20cb276843738adae5c6c8176dbde3ab48",
       "86284484c05129d2bfd4839d2b9b8e414da031b2",
@@ -744,6 +745,7 @@
       "764d887fbf379603c56b40ad237fb96eefdee56a",
       "7cf3c4a89345a1d9d0c5e51ceed238603b256ea4",
       "7f4d92f0b09068740f13cf6545ee8bc56da143a0",
+      "861c7e4b4e30c146ca42c8c1044bf5a3440282f6",
       "886a4b33883db9d54ff6068adf380aa35eb7350d",
       "89f1cbe0db1f0d2e58f28762e8d9e60653ed66a7",
       "8e9de778dbd8d06ee520385c2ac883cd892f4632",
@@ -812,7 +814,8 @@
       "fe82ff905885ab20089c487abec470298fdce3ee"
     ],
     "templates/hooks/proteus-local.js": [
-      "116023af6e236173b1d16108da2a8d190e50210e"
+      "116023af6e236173b1d16108da2a8d190e50210e",
+      "487bb107c58eb333c7b337ec80e51bf64760d485"
     ],
     "templates/hooks/proteus-merge.js": [
       "1970518875cc6eb2262732e4ee232f65bb4bd8f4",

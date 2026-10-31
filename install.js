@@ -1700,7 +1700,6 @@ function agentLogin(dirArg) {
 // the ruleset on proteus/*: a PR with gates green, the verifier's MERGE (proteus/verdict) and the security
 // trigger's status (proteus/security, proteus-trust.yml) on its head, no force push, nobody bypasses. Creating
 // proteus/<run> stays allowed (do_not_enforce_on_create), and so does deleting it at close.
-const REQUIRED = ["gates", "proteus/verdict", "proteus/security"];
 // with a verifier App, the two verdict statuses count only from it (integration_id); gates stays CI's
 const pinned = (context, app) => (app && context !== "gates" ? { context, integration_id: app.appId } : { context });
 const rulesetBody = (app = hl().verifierApp()) => ({
@@ -1708,7 +1707,7 @@ const rulesetBody = (app = hl().verifierApp()) => ({
   conditions: { ref_name: { include: ["refs/heads/proteus/*"], exclude: [] } },
   rules: [
     { type: "pull_request", parameters: { required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false, require_last_push_approval: false, required_review_thread_resolution: false } },
-    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: REQUIRED.map((c) => pinned(c, app)) } },
+    { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: hl().REQUIRED_CHECKS.map((c) => pinned(c, app)) } },
     { type: "non_fast_forward" },
   ],
 });
@@ -1719,13 +1718,13 @@ function runRules(repo, dir = "") {
   const rules = r.ok ? json(r.out) : null;
   return Array.isArray(rules) ? rules : null;
 }
-// the contexts the proteus/* rules require, among REQUIRED
+// the contexts the proteus/* rules require, among lib.REQUIRED_CHECKS
 const required = (rules) => new Set((rules || []).filter((x) => x.type === "required_status_checks").flatMap((x) => ((x.parameters || {}).required_status_checks || []).map((c) => c.context)));
 const rulesHold = (rules) => !!rules && rules.some((x) => x.type === "pull_request") && rules.some((x) => x.type === "non_fast_forward")
   && required(rules).has("gates");
-const rulesMissing = (rules) => REQUIRED.filter((c) => !required(rules).has(c));
+const rulesMissing = (rules) => hl().REQUIRED_CHECKS.filter((c) => !required(rules).has(c));
 // the verdict contexts the rules do not pin to the App (no entry with its integration_id)
-const rulesUnpinned = (rules, app) => REQUIRED.filter((c) => c !== "gates" && !(rules || []).some((x) => x.type === "required_status_checks"
+const rulesUnpinned = (rules, app) => hl().REQUIRED_CHECKS.filter((c) => c !== "gates" && !(rules || []).some((x) => x.type === "required_status_checks"
   && ((x.parameters || {}).required_status_checks || []).some((e) => e.context === c && Number(e.integration_id) === app.appId)));
 
 // proteus-trust.yml runs on pull_request_target, which GitHub reads from the default branch only (#276): --protect
@@ -2317,7 +2316,6 @@ const SANDBOX_REGISTRIES = [
   [/\b(nuget|dotnet)\b/i, ["api.nuget.org"]],
   [/\b(composer|packagist)\b/i, ["repo.packagist.org", "packagist.org"]],
 ];
-const SANDBOX_TOKENS = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "NPM_TOKEN", "ANTHROPIC_API_KEY"];
 // credentials shell commands and the Read tool never see; a trailing / marks a dir (its contents denied too)
 const SANDBOX_SECRETS = ["~/.ssh/", "~/.aws/", "~/.azure/", "~/.config/gcloud/", "~/.claude/.credentials.json", "~/.git-credentials",
   "~/.netrc", "~/.npmrc", "~/.docker/config.json", "~/.kube/", "~/.gnupg/", "~/.local/share/keyrings/", "~/Library/Keychains/"];
@@ -2410,7 +2408,7 @@ function sandboxProfile(root, common, bin, scratch, guest) {
       excludedCommands: excluded,
       filesystem: { allowWrite: writable, denyRead: secrets.map(bare) },
       network: { allowedDomains: domains, strictAllowlist: true },
-      credentials: { envVars: SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
+      credentials: { envVars: hl().SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
     },
     permissions: {
       deny: [
