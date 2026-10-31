@@ -176,4 +176,20 @@ setUser(undefined);
   setUser(undefined);
 }
 
+// install.js --doctor's policy row (#307): the effective preset, merge and ask with their sources; an ignored file warns
+{
+  const R = path.join(W, "doctor");
+  lib.g(W, "init", "-q", "-b", "main", R);
+  lib.run(path.join(ROOT, "install.js"), "", { cwd: R, args: ["--project"] });
+  const row = () => (lib.run(path.join(ROOT, "install.js"), "", { cwd: R, args: ["--doctor"] }).out.match(/^\w+\s+policy: .*$/m) || [""])[0];
+  let d = row();
+  ok("doctor: the policy row gives the default preset's merge and ask, each with its source", /^ok\s+policy: preset balanced \(default\), merge lead \(preset balanced\), ask risky \(preset balanced\)$/.test(d), d);
+  fs.writeFileSync(path.join(R, "teams", "policy.json"), JSON.stringify({ version: 1, preset: "careful", ask: "risky" }));
+  d = row();
+  ok("doctor: a project policy's preset and override show where each comes from", /^ok\s+policy: preset careful \(project\), merge human \(preset careful\), ask risky \(project\)$/.test(d), d);
+  fs.writeFileSync(path.join(R, "teams", "policy.json"), JSON.stringify({ version: 1, ask: "sometimes" }));
+  d = row();
+  ok("doctor: an invalid policy file is a WARN naming the file and the error, the defaults in force", /^WARN\s+policy: preset balanced \(default\), .*policy\.json ignored: "ask" must be one of never, risky, every — correct it through node .*proteus-policy\.js write <draft\.json>$/.test(d), d);
+}
+
 lib.summary();
