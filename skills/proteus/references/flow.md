@@ -34,7 +34,7 @@ Read `bootstrap.md`, `tracker.md`, `domains.md`, `teams.md`; detect blank / mid-
 
 Read `AGENTS.md`, `CONTEXT.md`, relevant ADRs, and the taste docs `CONVENTIONS.md` names; their defaults go into every brief and spec now. Unfamiliar repo → `graphify` once; workers get no repo tour (`stack.md`).
 
-Grill (`/grill-with-docs`, or `/grilling` on a blank repo) one question at a time until every gate item is filled. Bigger than one milestone or session → `/wayfinder` first, then the gate per destination. Unattended with a blank left → park the work order, take the next. Already grilled (per the run log) → skip.
+Grill (`/grill-with-docs`, or `/grilling` on a blank repo) one question at a time until every gate item is filled. Bigger than one milestone or session → `/wayfinder`, then the gate per destination. Unattended with a blank left → park the work order, take the next. Already grilled (per the run log) → skip.
 
 Goal mode: `goal: <name> <min|max> <target>` makes ticket 1 the scorecard program, frozen once merged; rounds follow by schedule (`operations.md`, Goal loop).
 
@@ -63,7 +63,7 @@ On a ticket's first `SPAWN worker`, one contracts worker per team with ready tic
 
 ## 4. Dispatch
 
-Protect `proteus/<run>` (`enforcement.md` §1). `SPAWN worker` comes only for a ready ticket (dependencies merged, no owned path in flight; `speculative` during a review). Per line: the pre-dispatch check in `roles.md`, the `brief:` command, then spawn `proteus-<team>-worker` if the repo defines one, else `proteus-worker` with the team named, `model` set to `build`, the `PROMPT` as its prompt. One PR per ticket into `proteus/<run>`. A `step:human` ticket gets `ASK human #<n> <url>`, no worker: tell the human; their PR then flows as usual. `BLOCKED #<n> prep: <why>` is yours to fix. Scaffold and stabilise tickets: `enforcement.md`.
+Protect `proteus/<run>` (`enforcement.md` §1). `SPAWN worker` comes only for a ready ticket (dependencies merged, no owned path in flight; `speculative` during a review). Per line: the pre-dispatch check in `roles.md`, the `brief:` command, then spawn `proteus-<team>-worker` if the repo defines one, else `proteus-worker` with the team named, `model` set to `build`, the `PROMPT` as its prompt. One PR per ticket into `proteus/<run>`. `step:human` → `ASK human`, no worker; the human's PR flows as usual. `BLOCKED #<n> prep: <why>` is yours to fix. Scaffold and stabilise tickets: `enforcement.md`.
 
 With `isolation=container`, no Agent spawn for the worker: run as a background shell `node <hooks>/proteus-container.js run --worktree <wt> --prompt-file <scratch>/brief-<id>.md --model <build> --agent <proteus-<team>-worker|proteus-worker> --ticket <n> --base proteus/<run>` (under a `--sandbox` profile, the bin copy it printed instead of `<hooks>`). Its final line `<STATUS> #<n> sent` is the result; its `--timeout` replaces the watchdog. Verifiers stay Agent spawns. `isolation=container-unready` → no worker runs: tell the human the failed doctor row, then wait.
 
