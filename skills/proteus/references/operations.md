@@ -1,6 +1,6 @@
 # Operations
 
-Commands the human types mid-run, the stall check, scratch, and installs. Each runs before anything else in the turn it arrives in. `<hooks>` and other names per `harnesses.md`. Resume and compaction need nothing here: run `next`, which computes the position from the tracker on every call.
+Commands the human types mid-run, the stall check, scratch, and installs. Each runs before anything else in the turn it arrives in. `<hooks>` and other names per `harnesses.md`.
 
 ## `status`
 
