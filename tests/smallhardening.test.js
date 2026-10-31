@@ -123,6 +123,29 @@ if (process.platform !== "win32") {
   ok("run.js: outside a git repo the checkout check is skipped", !/changed the checkout/.test(r.stdout), r.stdout.slice(-300));
 }
 
+// ---- tests/run.js: files run at once, and their output stays in file order
+{
+  const dir = path.join(W, "runner-jobs");
+  fs.mkdirSync(dir);
+  fs.copyFileSync(path.join(__dirname, "run.js"), path.join(dir, "run.js"));
+  const flag = JSON.stringify(path.join(dir, "flag"));
+  // a waits for a file only b writes, so it passes only if b started before a ended
+  fs.writeFileSync(path.join(dir, "a.test.js"), `const fs = require("fs"); const end = Date.now() + 20000;
+const wait = () => { if (fs.existsSync(${flag})) console.log("1 passed, 0 failed"); else if (Date.now() > end) console.log("0 passed, 1 failed"); else setTimeout(wait, 20); };
+wait();\n`);
+  fs.writeFileSync(path.join(dir, "b.test.js"), `require("fs").writeFileSync(${flag}, ""); console.log("1 passed, 0 failed");\n`);
+  const r = spawnSync(process.execPath, [path.join(dir, "run.js")], { encoding: "utf8", env: { ...process.env, PROTEUS_TEST_JOBS: "2" } });
+  ok("run.js: with PROTEUS_TEST_JOBS=2 two files run at once", r.status === 0 && /\n2 passed, 0 failed across 2 files/.test(r.stdout), r.stdout.slice(-300));
+  ok("run.js: output follows file order, not finish order", /test files\n1 passed, 0 failed\n1 passed, 0 failed\n/.test(r.stdout), r.stdout.slice(-300));
+  fs.rmSync(path.join(dir, "flag"));
+  fs.unlinkSync(path.join(dir, "b.test.js"));
+  fs.writeFileSync(path.join(dir, "a.test.js"), `console.log("1 passed, 0 failed");\n`);
+  fs.writeFileSync(path.join(dir, "b.test.js"), `require("fs").writeFileSync(${flag}, ""); console.log("1 passed, 0 failed");\n`);
+  fs.writeFileSync(path.join(dir, "c.test.js"), `console.log(require("fs").existsSync(${flag}) ? "1 passed, 0 failed" : "0 passed, 1 failed");\n`);
+  const one = spawnSync(process.execPath, [path.join(dir, "run.js")], { encoding: "utf8", env: { ...process.env, PROTEUS_TEST_JOBS: "1" } });
+  ok("run.js: PROTEUS_TEST_JOBS=1 runs one file at a time, in order", one.status === 0 && /\n3 passed, 0 failed across 3 files/.test(one.stdout), one.stdout.slice(-300));
+}
+
 // ---- tests/run.js: a test that writes a tracked file into the checkout fails the run (#218)
 {
   const repo = path.join(W, "runner-repo"), t = path.join(repo, "tests");

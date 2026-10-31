@@ -9,6 +9,10 @@ on:
     branches: [main, "proteus/**"]
   pull_request:
     branches: [main, "proteus/**"]
+# a new push to a PR stops that PR's older run; a run on main or proteus/** always finishes
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
