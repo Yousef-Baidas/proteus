@@ -1,6 +1,6 @@
 # Bootstrap
 
-Run before step 1 of the flow whenever "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. Don't skip the checks: a missing gate is how a wave passes locally and fails on merge. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, and `AGENTS.md`; every other file below is a worker's.
+Run before step 1 of the flow whenever "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. Don't skip the checks: a missing gate is how a wave passes locally and fails on merge. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, and the policy through its script; every other file below is a worker's.
 
 ## Detect
 
@@ -38,6 +38,18 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 ## Conventions (both paths)
 
 `CONVENTIONS.md` missing → read `conventions.md`, run the interview, commit the file (§ Lead docs). Creative and business work: the interview covers the house defaults too (`conventions.md` § Taste beyond code).
+
+## Policy (both paths)
+
+`teams/policy.json` missing, or the human asks to change the policy: one short exchange in the human's terms. Prompt-only; the write is the enforced part.
+
+1. Offer the presets: `hands-off` (the lead merges; the human is asked only at milestone reviews), `balanced` (the default; the lead merges, and the human is also asked before a change a rule marks as needing them), `careful` (the human merges every pull request and is asked before each).
+2. Ask what in this project cannot be undone, and how often they want to be asked.
+3. Draft rules from what the project contains: `block` for what must never happen, `ask` for what needs the human first, each with a `why` in plain words. Name categories, never invent examples.
+4. Show the rendered policy: the preset, who merges, how often the human is asked, and each rule with its effect and why.
+5. Write it with `node <hooks>/proteus-policy.js write <draft.json>`, which the human approves in a dialog.
+
+A later change is the same steps from 2, through the same write. Never edit `teams/policy.json` or `teams/POLICY.md` by hand.
 
 ## Lead docs (both paths)
 
