@@ -187,7 +187,8 @@ if (process.env.FAKE_GH_RUN) {
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
 // FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, debt, statuses: {<sha>: [status]}}) answers proteus-cli.js next and
-// brief: the run's issues, the open PRs into the run branch, the open review, needs-human and debt issues and a commit's statuses.
+// brief: the run's issues, the open PRs into the run branch (each with optional files and comments), the open review,
+// needs-human and debt issues and a commit's statuses.
 // Set FAKE_GH_MERGE to the same file for its merge: what that merged is no longer an open PR here
 if (process.env.FAKE_GH_NEXT) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));
@@ -198,6 +199,14 @@ if (process.env.FAKE_GH_NEXT) {
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
   if (a.startsWith("issue list --label proteus-debt --state open --json ")) out(s.debt || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
+  // a PR's files (its "files", else the call fails) and its comments (its "comments"), for the policy's holds
+  if ((m = /^pr diff (\d+) --name-only$/.exec(a))) {
+    const p = (s.prs || []).find((x) => x.number === +m[1]);
+    if (!p || !Array.isArray(p.files)) { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
+    process.stdout.write(p.files.map((f) => f + "\n").join(""));
+    process.exit(0);
+  }
+  if ((m = /^pr view (\d+) --json comments$/.exec(a))) out({ comments: ((s.prs || []).find((x) => x.number === +m[1]) || {}).comments || [] });
   // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
   if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {
     const argv = process.argv.slice(2), opt = (f) => argv[argv.indexOf(f) + 1];

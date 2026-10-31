@@ -4,7 +4,10 @@
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
 // verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge`; a
-// conflict or any other failed merge stops the batch. It runs outside the sandbox, so it does only that, an
+// conflict or any other failed merge stops the batch. The project policy (proteus-policy.js, #307) holds some back,
+// each named on a line: every one under merge human; under ask every each, and under ask risky each whose changed
+// paths an ask rule covers, until the human's newest verdict comment on the PR (their login, as proteus-verdict.js
+// trusts it) opens with ACCEPT. It runs outside the sandbox, so it does only that, an
 // ls-remote, a fetch that writes objects only, and its state file: no git call with a work tree, no ref read by a
 // short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD, fetches
 // no submodule, and runs no auto maintenance, whose worktree prune would follow a link an agent plants under
@@ -24,6 +27,7 @@
 const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+const Policy = require(path.join(__dirname, "proteus-policy.js"));
 lib.hooksRootOnly(__filename); // #277: never a copy but the session's hooks dir
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 
@@ -39,7 +43,9 @@ Merges the ready PRs into proteus/<run> and prints the commands that test the re
             batch's merges, one printed step at a time, to the first bad one
   --at      the full sha the suite ran on, as printed; a result for any other commit is refused
 A PR is ready when every check and status on its head is green and proteus/verdict is among them;
-it merges after the PRs of the tickets its own depends on; a conflict stops the batch. No worktree
+it merges after the PRs of the tickets its own depends on; a conflict stops the batch.
+The project policy holds a PR for the human: merge human always; ask every, or ask risky when
+an ask rule covers a changed path, until the human's comment on the PR opens with ACCEPT. No worktree
 or branch is removed: the end names the merged branches left for the lead.
 State between calls: <git-common-dir>/proteus/merge/<run>.json.
 Exit 0 a step printed, green or nothing to merge; 1 on a stop, a red end or a failure; 2 on usage.`;
@@ -146,6 +152,52 @@ function pick(prs, issues, run, names) {
     return { n: p.number, head: String(p.headRefName || ""), ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
   });
   return mergeOrder(ready, open);
+}
+
+const HELD = {
+  merge: "the policy has the human merge every PR",
+  every: "the policy asks the human before every merge; their ACCEPT comment on the PR lets it merge",
+  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
+};
+
+// the human's login, as proteus-verdict.js trusts it: "human" in proteus.json, else gh's own login while the agents
+// share it (no agentGh); "" when there is none, so no comment counts
+function humanOf(root) {
+  const human = String(lib.proteusConfig().human || "").trim();
+  return human || (lib.agentGhDir() ? "" : lib.gh(["api", "user", "--jq", ".login"], root, 6000));
+}
+
+// the policy's hold on the picked PRs (#307), [{ n, why }]: merge human holds every one ("merge"); ask every holds each
+// ("every"), and ask risky each whose changed paths an ask rule covers ("policy:<id>", or "unread" when gh cannot list
+// them), until the human's newest verdict comment on the PR opens with ACCEPT; ask never holds none
+function held(picked, root, policy) {
+  if (!picked.length) return [];
+  if (policy.merge === "human") return picked.map((p) => ({ n: p.n, why: "merge" }));
+  const asks = { rules: (policy.rules || []).filter((r) => r.effect === "ask" && Array.isArray(r.paths)) };
+  if (policy.ask !== "every" && !(policy.ask === "risky" && asks.rules.length)) return [];
+  const why = (n) => {
+    if (policy.ask === "every") return "every";
+    const r = lib.ghTry(["pr", "diff", String(n), "--name-only"], root, 30000);
+    if (!r.ok) return "unread";
+    for (const f of r.out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+      const v = Policy.evaluate(asks, { tool: "edit", path: f });
+      if (v.rule) return `policy:${v.rule.id}`;
+    }
+    return "";
+  };
+  let human = null;
+  const accepted = (n) => {
+    if (human === null) human = humanOf(root);
+    if (!human) return false;
+    let v = null;
+    try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments"], root, 30000)); } catch {}
+    const said = ((v && v.comments) || []).filter((c) => c && c.author && c.author.login === human && lib.isVerdict(c.body || "")).pop();
+    return !!said && /^ACCEPT(?=\s|$)/.test(String(said.body).trim());
+  };
+  return picked.flatMap((p) => {
+    const w = why(p.n);
+    return w && !accepted(p.n) ? [{ n: p.n, why: w }] : [];
+  });
 }
 
 function main() {
@@ -283,7 +335,11 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,state,body", "--limit", "500"], root, 30000));
   if (!Array.isArray(issues)) return fail("tracker unreachable (gh issue list failed)");
 
-  const picked = pick(prs, issues, run, names);
+  const ready = pick(prs, issues, run, names);
+  const hold = held(ready, root, Policy.load({ root }).policy);
+  out.held = hold;
+  for (const h of hold) say(`PR #${h.n} held for the human: ${HELD[h.why] || `the policy's ask rule ${h.why.slice(7)} covers what it changes`}`);
+  const picked = ready.filter((p) => !hold.some((h) => h.n === p.n));
   if (!picked.length) { say("merged none; suite not run"); return 0; }
 
   if (!url) return fail("refused: <common>/config names no remote.origin.url");
@@ -321,5 +377,5 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   return stop ? 1 : 0;
 }
 
-module.exports = { mergeOrder, green, writeState, checkState, readState, pick, batch, originOf };
+module.exports = { mergeOrder, green, writeState, checkState, readState, pick, held, batch, originOf };
 if (require.main === module) process.exitCode = main();

@@ -6,6 +6,9 @@
 // sandbox, #226), then prints what is left for the lead, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
 //   ASK human #<n> <issue url>                               a ready step:human ticket: the human does it, opens the PR
+//   ASK human merge PR#<n> <url>                             a green PR under merge: human (#307): the human merges it
+//   ASK human PR#<n> <url>[ policy:<id>]                     a green PR held by ask: every, or ask: risky naming the
+//                                                             ask rule it hits, until the human's ACCEPT on the PR
 //   STOP <agent> <reason> / NUDGE <agent> <reason>            a STALL-AGAIN / STALL agent (the watchdog's read)
 //   MERGE PR#<n> <head sha12> verdict=<state> by=<login>       a PR proteus-merge.js would pick, when no suite is known
 //   MERGED PR#<n> <head sha12> verdict=<state> by=<login>      evidence: a PR this call merged (proteus-merge.js's batch)
@@ -47,7 +50,8 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 const { fromTracker, ticketOf } = require(path.join(__dirname, "proteus-ready.js"));
 const { spawnSync } = require("child_process");
-const { pick, batch, readState, originOf } = require(path.join(__dirname, "proteus-merge.js"));
+const { pick, held, batch, readState, originOf } = require(path.join(__dirname, "proteus-merge.js"));
+const Policy = require(path.join(__dirname, "proteus-policy.js"));
 const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 
@@ -60,6 +64,9 @@ Open tickets with an Owned: line and no record on proteus/<run> get one record P
 proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
 a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
 A ready step:human ticket prints ASK human #<n> <url>, never SPAWN worker: the human opens its PR.
+The policy (proteus-policy.js show) holds green PRs: merge human prints ASK human merge PR#<n> <url>;
+ask every, or ask risky for a PR an ask rule covers, ASK human PR#<n> <url> [policy:<id>] until the
+human's comment on the PR opens with ACCEPT.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -85,10 +92,10 @@ const SCRATCH = path.join(__dirname, "proteus-scratch.js");
 const CLI = path.join(__dirname, "proteus-cli.js");
 
 // an issue's web URL on the project's repo (lib.ghRepo: owner/name on github.com, else host/owner/name)
-function issueUrl(root, n) {
+function issueUrl(root, n, kind = "issues") {
   const repo = lib.ghRepo(root);
   if (!repo) return `#${n}`;
-  return repo.split("/").length === 3 ? `https://${repo}/issues/${n}` : `https://github.com/${repo}/issues/${n}`;
+  return repo.split("/").length === 3 ? `https://${repo}/${kind}/${n}` : `https://github.com/${repo}/${kind}/${n}`;
 }
 
 // the newest proteus/verdict status on sha with its poster, { verdict, by }; the rollup's state and "?" when the API fails
@@ -302,7 +309,10 @@ function next(arg) {
   try { waiting = common ? readState(common, run) : null; } catch (e) { waiting = { refused: e.message }; }
   const merged = new Set();
   const byN = new Map(prs.map((p) => [p.number, p]));
-  const picked = waiting ? [] : pick(prs, issues, run, names).map((m) => {
+  // the policy's holds (#307): the batch's own when it runs, else read here for the MERGE lines
+  const green = waiting ? [] : pick(prs, issues, run, names);
+  let holds = green.length && !suite ? held(green, root, Policy.load({ root }).policy) : [];
+  const picked = green.filter((m) => !holds.some((h) => h.n === m.n)).map((m) => {
     const p = byN.get(m.n), head = String(p.headRefOid || "");
     return { pr: m.n, head, ...verdictOf(root, head, p.statusCheckRollup || []) };
   });
@@ -314,6 +324,7 @@ function next(arg) {
   } else if (picked.length) {
     const said = [], res = {};
     const code = batch({ arg: arg || run, suite, result: "", at: "" }, { say: (l) => said.push(l), err: (l) => said.push(l) }, res);
+    holds = res.held || [];
     const ev = new Map(picked.map((m) => [m.pr, m]));
     for (const m of res.merged || []) {
       merged.add(m.n);
@@ -388,7 +399,8 @@ function next(arg) {
     }
     out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt, brief: briefCmd("worker", t.n) });
   }
-  out.splice(askAt, 0, ...humans);
+  const asked = holds.map((h) => ({ kind: "ASK", human: true, pr: h.n, url: issueUrl(root, h.n, "pull"), why: h.why }));
+  out.splice(askAt, 0, ...asked, ...humans);
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
   if (out.every((a) => a.kind === "BLOCKED")) out.push({ kind: "WAIT", command: `node ${WATCHDOG} --wait` });
@@ -612,7 +624,8 @@ function brief(role, target, arg) {
 
 const line = (a) => {
   switch (a.kind) {
-    case "ASK": return a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
+    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${/^policy:/.test(a.why) ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : ""}`
+      : a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;
     case "RUN": return `RUN ${a.command}`;

@@ -257,6 +257,49 @@ ok("profile: the prep is one RUN line: worktree add, proteus-worktree.js with th
 ok("profile: no worktree made and no SPAWN worker #8", !fs.existsSync(WT(8)) && !lines(r).some((l) => l.startsWith("SPAWN worker #8")), r.out);
 fs.rmSync(PROFILE);
 
+// the project policy (#307): merge human and ask every / risky hold a green PR for the human, ask never does not;
+// with no gate command, the MERGE line goes and an ASK human line names the PR
+const POLICY = path.join(REPO, "teams", "policy.json");
+const policy = (o) => { fs.mkdirSync(path.dirname(POLICY), { recursive: true }); fs.writeFileSync(POLICY, JSON.stringify({ version: 1, ...o })); };
+const RISKY = [{ id: "keep-out", effect: "ask", tool: "edit", paths: ["src/hard/**"], why: "cannot be undone" }];
+const PR12 = "https://github.com/o/r/pull/12";
+const with12 = (o) => ({ ...BUSY, prs: [{ ...BUSY.prs[0], ...o }, BUSY.prs[1]] });
+const said = (who, body) => ({ author: { login: who }, body });
+const merges12 = (r) => lines(r).some((l) => l.startsWith("MERGE PR#12 "));
+policy({ merge: "human" });
+r = next(BUSY);
+ok("policy: merge human prints ASK human merge PR#12 with its URL, and no MERGE line", lines(r).includes(`ASK human merge PR#12 ${PR12}`) && !merges12(r), r.out);
+ok("policy: the ASK human line comes with the other ASK lines, first", kinds(r).slice(0, 2).join() === "ASK,ASK", kinds(r).join());
+r = next(with12({ comments: [said("human", "ACCEPT")] }));
+ok("policy: under merge human an ACCEPT does not make the lead merge", lines(r).includes(`ASK human merge PR#12 ${PR12}`) && !merges12(r), r.out);
+policy({ ask: "every" });
+r = next(BUSY);
+ok("policy: ask every prints ASK human PR#12 and holds the MERGE line", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", "ACCEPT\nlooks right")] }));
+ok("policy: ask every, the human's ACCEPT on the PR: MERGE and no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
+r = next(with12({ comments: [said("someone", "ACCEPT")] }));
+ok("policy: an ACCEPT from another login does not count", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", "ACCEPT"), said("human", "CHANGES the copy")] }));
+ok("policy: the human's newest verdict counts: CHANGES after ACCEPT holds it", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
+r = next(with12({ comments: [said("human", "ACCEPTED")] }));
+ok("policy: ACCEPTED is not ACCEPT", lines(r).includes(`ASK human PR#12 ${PR12}`) && !merges12(r), r.out);
+policy({ ask: "risky", rules: RISKY });
+r = next(with12({ files: ["README.md", "src/hard/x.js"] }));
+ok("policy: ask risky, a changed path an ask rule covers: ASK human naming policy:<id>", lines(r).includes(`ASK human PR#12 ${PR12} policy:keep-out`) && !merges12(r), r.out);
+r = next(with12({ files: ["src/hard/x.js"], comments: [said("human", "ACCEPT")] }));
+ok("policy: ask risky, the human's ACCEPT lets it merge", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
+r = next(with12({ files: ["src/easy/x.js"] }));
+ok("policy: ask risky, no path an ask rule covers: MERGE, no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
+r = next(BUSY);
+ok("policy: ask risky, the changed paths unreadable: held, ASK human saying so", lines(r).includes(`ASK human PR#12 ${PR12} policy: changed paths unreadable`) && !merges12(r), r.out);
+policy({ ask: "never", rules: RISKY });
+r = next(with12({ files: ["src/hard/x.js"] }));
+ok("policy: ask never: MERGE as before, no ASK human", merges12(r) && !lines(r).some((l) => l.startsWith("ASK human")), r.out);
+policy({ merge: "human" });
+r = next(BUSY, ["--json"]);
+ok("policy: --json carries the hold as an ASK with pr, url and why", (() => { try { return JSON.parse(r.out); } catch { return []; } })().some((a) => a.kind === "ASK" && a.pr === 12 && a.url === PR12 && a.why === "merge"), r.out);
+fs.rmSync(path.join(REPO, "teams"), { recursive: true, force: true });
+
 // the merge batch: proteus-merge.js's own batch against a real origin, the fake gh's NEXT and MERGE on one file. Every
 // child proteus-cli.js starts is logged: nothing sandboxed (run-tree, the suite, the watchdog) ever runs
 const HOOKS = path.dirname(SCRIPT);
@@ -348,6 +391,30 @@ r = b.cli("result", "maybe", "--at", tip0);
 ok("result: exit 2 on a verdict that is not pass or fail", r.code === 2 && /pass or fail/.test(r.err), `${r.code} ${r.err}`);
 r = b.cli("result", "pass");
 ok("result: exit 2 without --at", r.code === 2 && /--at/.test(r.err), `${r.code} ${r.err}`);
+
+// the policy holds PRs in the batch itself (proteus-merge.js, so a lone run of it too): merge human merges none;
+// ask every merges only the PR with the human's ACCEPT
+const pin = (b, o, prs = {}) => {
+  fs.mkdirSync(path.join(b.root, "teams"), { recursive: true });
+  fs.writeFileSync(path.join(b.root, "teams", "policy.json"), JSON.stringify({ version: 1, ...o }));
+  const s = JSON.parse(fs.readFileSync(b.state, "utf8"));
+  for (const p of s.prs) Object.assign(p, prs[p.number] || {});
+  fs.writeFileSync(b.state, JSON.stringify(s));
+};
+b = batchRepo("next-held", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }, { t: 6, pr: 60, files: { "c.txt": "six\n" } }]);
+const held0 = b.tip();
+pin(b, { merge: "human" });
+r = b.cli("next");
+ok("batch, merge human: nothing merged, an ASK human merge line per green PR, no RUN",
+  b.tip() === held0 && lines(r).includes("ASK human merge PR#50 #50") && lines(r).includes("ASK human merge PR#60 #60") && !lines(r).some((l) => /^(MERGED|RUN) /.test(l)), r.out);
+pin(b, { ask: "every" }, { 60: { comments: [{ author: { login: "human" }, body: "ACCEPT" }] } });
+r = b.cli("next");
+ok("batch, ask every: only the accepted PR merges; the other gets ASK human",
+  lines(r).some((l) => l.startsWith("MERGED PR#60 ")) && !lines(r).some((l) => l.startsWith("MERGED PR#50 ")) && lines(r).includes("ASK human PR#50 #50") && b.tip() !== held0, r.out);
+b = batchRepo("merge-held", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }]);
+pin(b, { merge: "human" });
+const lone = lib.run(path.join(HOOKS, "proteus-merge.js"), "", { cwd: b.root, args: ["r1", "--suite", "node suite.js"], env: { FAKE_GH_NEXT: b.state, FAKE_GH_MERGE: b.state } });
+ok("batch: proteus-merge.js run alone holds the PR too, saying why", lone.code === 0 && b.tip() === g(b.root, "rev-parse", "origin/proteus/r1") && /PR #50 held for the human: the policy has the human merge every PR/.test(lone.out) && /merged none/.test(lone.out), lone.out + lone.err);
 
 // the wave's owned-path records (#281): one commit and one PR for every open ticket with no record, made with git's
 // objects alone against a real origin; one record PR at a time, add-only, BLOCKED until it merges
