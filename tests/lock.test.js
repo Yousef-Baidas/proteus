@@ -87,4 +87,26 @@ r = cx("proteus-worker");
 ok("codex: a proteus-worker spawn_agent is refused on drift", r.code === 2 && /Drifted from teams\/skills-lock\.json: alpha\./.test(r.err), r.err);
 ok("codex: a helper spawn_agent passes", cx("explorer").code === 0, cx("explorer").err);
 
+// zero skills (#82): the scout may pick none for a team; an empty skills.txt, or one with only comments, is a valid list
+const Z = path.join(W, "zero");
+g(W, "init", "-q", "-b", "main", Z);
+fs.mkdirSync(path.join(Z, ".claude", "skills", "proteus"), { recursive: true });
+fs.writeFileSync(path.join(Z, ".claude", "skills", "proteus", "SKILL.md"), "---\nname: proteus\n---\nSKILL BODY\n");
+for (const [t, body] of [["a", ""], ["b", "# picked by proteus-scout 2026-10-31 for a zine\r\n# nothing fits better than no skill\r\n\r\n"]]) {
+  fs.mkdirSync(path.join(Z, "teams", t), { recursive: true });
+  fs.writeFileSync(path.join(Z, "teams", t, "skills.txt"), body);
+}
+r = lib.run(path.join(ROOT, "templates", "teams", "link-skills.js"), "", { cwd: Z });
+ok("zero skills: link-skills.js accepts an empty and a comment-only skills.txt, links none, reports nothing missing",
+  r.code === 0 && /teams\/a -> 0 skills linked/.test(r.out) && /teams\/b -> 0 skills linked/.test(r.out) && !/missing/.test(r.out) && !r.err, r.out + r.err);
+const zl = hl.readJSON(path.join(Z, "teams", "skills-lock.json"), null);
+ok("zero skills: the lock is written with no pins, so the state says skills-lock=yes", zl && zl.version === 1 && zl.skills && !Object.keys(zl.skills).length, JSON.stringify(zl));
+const zs = stateLine(lib.run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "z1", cwd: Z }, { cwd: Z }).out);
+ok("zero skills: autostart reports skills-unlinked=none and skills-lock=yes", /skills-unlinked=none( |$)/.test(zs) && /skills-lock=yes( |$)/.test(zs), zs);
+fs.mkdirSync(path.join(Z, "teams", "c"));
+fs.writeFileSync(path.join(Z, "teams", "c", "skills.txt"), "# one pick\no/r gamma\n");
+const zc = stateLine(lib.run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "z1", cwd: Z }, { cwd: Z }).out);
+ok("zero skills: a team that lists a skill and links none is still skills-unlinked", /skills-unlinked=c( |$)/.test(zc), zc);
+ok("zero skills: worker spawns pass", lib.run(LG, { hook_event_name: "PreToolUse", session_id: "z1", cwd: Z, tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: "proteus-worker" } }, { cwd: Z }).code === 0);
+
 lib.summary();

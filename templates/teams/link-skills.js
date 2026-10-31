@@ -103,10 +103,13 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   const missing = [];
   const linked = [];
   let confined = 0; // global links actually removed
+  let lists = 0, listed = 0; // list files and skill lines: lists naming no skill (the scout may pick zero) still lock
   for (const p of profiles(teams)) {
     const dir = path.join(teams, p);
-    const lists = listFiles(dir);
-    if (!lists.length) continue;
+    const files = listFiles(dir);
+    if (!files.length) continue;
+    lists++;
+    listed += files.flatMap(readList).length;
     const dirs = [];
     for (const d of SKILL_DIRS) {
       const segs = ["teams", p, ...d.split(path.sep)];
@@ -116,7 +119,7 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
     }
     if (!dirs.length) { log(`teams/${p} -> 0 skills linked`); continue; }
     let n = 0;
-    for (const [source, name] of lists.flatMap(readList)) {
+    for (const [source, name] of files.flatMap(readList)) {
       if (!name) { console.error(`teams/${p}: line needs '<owner/repo> <skill>': ${source}`); continue; }
       if (!validName(name)) { console.error(`teams/${p}: skill name ${JSON.stringify(name)} is not one path segment; skipped`); continue; }
       let src = findSrc(name);
@@ -147,8 +150,9 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   // lock; a link at it or on the way (a repo may commit one) is neither read nor written through (#22)
   const lockFile = path.join(teams, "skills-lock.json"), lockSt = lstat(lockFile);
   const lockOk = !!ownDir(root, ["teams"]) && !(lockSt && lockSt.isSymbolicLink());
-  if (linked.length && !lockOk) console.error(`refused  ${lockFile} (a link, or a link on the way; lock not written, left alone)`);
-  if (linked.length && lockOk) {
+  const lockIt = linked.length || (lists && !listed);
+  if (lockIt && !lockOk) console.error(`refused  ${lockFile} (a link, or a link on the way; lock not written, left alone)`);
+  if (lockIt && lockOk) {
     let lock = { version: 1, skills: {} };
     let before = "";
     try { before = fs.readFileSync(lockFile, "utf8"); lock = JSON.parse(before); } catch {}
