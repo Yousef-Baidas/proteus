@@ -239,6 +239,7 @@ templates/
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
+    proteus-skill-find.js   the scout's skill search: skills.sh, installed, GitHub, marketplaces; the bar and the ranking
     proteus-gates-cache.js  runs a gate once per clean tree and command; a pass is replayed, a failure never
     proteus-watchdog.js     wakes the lead only for a worker silent too long or stopped without a report
     proteus-ready.js        the tickets ready to dispatch, and why the rest are blocked
