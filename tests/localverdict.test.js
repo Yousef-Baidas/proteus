@@ -450,8 +450,13 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   r = a.merge(rr);
   ok("e2e: no proteus/verdict, a direct pr merge refused even with the ACCEPT", r.code !== 0 && /required status proteus\/verdict is missing/.test(r.err) && a.state(rr) === "OPEN", r.err);
   a.forget();
-  r = lib.run(a.H("proteus-signoff.js"), "", { cwd: a.dir, args: [String(rr.n), sha, "MERGE"], env: a.env });
-  ok("e2e: signoff posts proteus/verdict in local mode", r.code === 0 && /proteus\/verdict = success/.test(r.out), r.out + r.err);
+  // a verifier App configured, its API a closed port and its key missing: any reach for it fails the signoff
+  const home = path.join(W, "app-home");
+  fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".claude", "proteus.json"), JSON.stringify({ verifierApp: { appId: 1, installationId: 2, keyPath: path.join(home, "no-key.pem") } }));
+  const signoff = (n, head) => lib.run(a.H("proteus-signoff.js"), "", { cwd: a.dir, args: [String(n), head, "MERGE"], env: { ...a.env, ...lib.homeEnv(home), PROTEUS_GH_API: "http://127.0.0.1:1" } });
+  r = signoff(rr.n, sha);
+  ok("e2e: with an App configured, local signoff reaches no network and posts", r.code === 0 && /proteus\/verdict = success/.test(r.out) && !/as App/.test(r.out), r.out + r.err);
   const run = () => lib.run(a.H("proteus-merge.js"), "", { cwd: a.dir, args: ["rr", "--suite", "node gate.js"], env: a.env });
   r = lib.run(a.H("proteus-cli.js"), "", { cwd: a.dir, args: ["next", "rr"], env: a.env });
   ok("e2e: next asks for the head's ACCEPT", new RegExp(`ASK human PR#${rr.n} .*reply: ACCEPT ${rr.short}`).test(r.out), r.out + r.err);
@@ -463,12 +468,33 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   a.terminal(rr.n, `ACCEPT ${rr.short}\n`);
   r = run();
   ok("e2e: the recorded verdict merges it", a.state(rr) === "MERGED", r.out + r.err);
-}
 
-// ---- signoff never reaches for the App in local mode
-{
-  const src = fs.readFileSync(path.join(SRC, "proteus-signoff.js"), "utf8");
-  ok("signoff: the App is off in local mode", /lib\.localCommon\(cwd\) \? null : lib\.verifierApp\(\)/.test(src));
+  // merge human: proteus-merge.js reaches the merge the same way
+  const at = JSON.parse(fs.readFileSync(path.join(a.common, "proteus", "merge", "rr.json"), "utf8")).at;
+  r = lib.run(a.H("proteus-merge.js"), "", { cwd: a.dir, args: ["rr", "--suite", "node gate.js", "--result", "pass", "--at", at], env: a.env });
+  ok("e2e: the batch's suite result ends it", r.code === 0, r.out + r.err);
+  a.policy({ merge: "human", ask: "never", rules: [] });
+  lib.g(a.dir, "fetch", "-q", "origin");
+  lib.g(a.dir, "checkout", "-q", "-b", "proteus/rr-t2", "origin/proteus/rr");
+  fs.writeFileSync(path.join(a.dir, "t2.txt"), "x\n");
+  lib.g(a.dir, "add", "t2.txt");
+  lib.g(a.dir, "commit", "-q", "-m", "feat: t2");
+  const sha2 = lib.g(a.dir, "rev-parse", "HEAD");
+  lib.g(a.dir, "push", "-q", "origin", `${sha2}:refs/heads/hold-rr2`);
+  a.status(sha2, "pending");
+  lib.g(a.dir, "push", "-q", "origin", "proteus/rr-t2:proteus/rr-t2");
+  lib.g(a.dir, "checkout", "-q", "main");
+  const rr2 = { n: Number(/\/pull\/(\d+)$/.exec(a.gh(["pr", "create", "--base", "proteus/rr", "--head", "proteus/rr-t2", "--title", "t2", "--body", "b"]).out.trim())[1]), short: sha2.slice(0, 12) };
+  a.status(sha2, "success");
+  signoff(rr2.n, sha2);
+  r = run();
+  ok("e2e: merge human, proteus-merge.js holds with no record", a.state(rr2) === "OPEN" && /held for the human/.test(r.out + r.err), r.out + r.err);
+  write(a, ...a.lines(), entry(rr2.n, "ACCEPT 000000000000\n"));
+  r = run();
+  ok("e2e: merge human, proteus-merge.js holds an old head's record", a.state(rr2) === "OPEN", r.out + r.err);
+  r = a.terminal(rr2.n, `ACCEPT ${rr2.short}\n`);
+  r = run();
+  ok("e2e: merge human, proteus-merge.js merges the recorded head", a.state(rr2) === "MERGED", r.out + r.err);
 }
 
 // ---- the stand-in's rule targets are the installer's
