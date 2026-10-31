@@ -22,7 +22,8 @@ function main(args) {
   const base = num("PROTEUS_GH_BASE_S", 60), cap = num("PROTEUS_GH_MAX_WAIT_S", 600);
   let slept = 0;
   for (let n = 1; ; n++) {
-    const r = spawnSync("gh", args, { input: stdin, encoding: "utf8", maxBuffer: 64 << 20 });
+    const [bin, argv] = lib.ghArgv(args, process.cwd());
+    const r = spawnSync(bin, argv, { input: stdin, encoding: "utf8", maxBuffer: 64 << 20, env: lib.localEnv(process.cwd()) });
     if (r.error) { console.error(`proteus-gh: cannot run gh: ${r.error.message}`); return 1; }
     const text = `${r.stdout}\n${r.stderr}`;
     const limited = r.status !== 0 && LIMITED.test(text);
