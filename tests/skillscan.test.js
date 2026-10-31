@@ -76,6 +76,12 @@ const only = (r, kind) => r.code === 1 && r.kinds.length === 1 && r.kinds[0] ===
     only(r, "code") && r.findings.length === want.length && want.every((l) => r.findings.includes(l)), r.out);
 }
 
+{
+  const r = scan(skill("codealias", { "SKILL.md": md("```py\nx\n```\n\n```javascript\nx\n```\n\n```pwsh\nx\n```\n\n```sh-session\n$ ls\n```") }));
+  ok("code: the aliases py, javascript, pwsh and sh-session are code findings too",
+    only(r, "code") && r.findings.length === 4 && ["py", "javascript", "pwsh", "sh-session"].every((t) => r.findings.some((l) => l.endsWith(` fenced ${t} block`))), r.out);
+}
+
 // hook
 {
   const r = scan(skill("hook", { "SKILL.md": md("ok", "license: MIT\nallowed-tools: Bash\nhooks:\n  PreToolUse: []"), ".claude/notes.md": "x\n", ".agents/a.md": "x\n" }));
@@ -126,6 +132,11 @@ const only = (r, kind) => r.code === 1 && r.kinds.length === 1 && r.kinds[0] ===
   ok("license: a LICENSE file whose text has an OSI key phrase counts, across line breaks", txt.code === 0, txt.out);
   const junk = scan(skill("licensejunk", { "SKILL.md": md("ok", ""), "LICENSE.md": "All rights reserved.\n" }));
   ok("license: a LICENSE file matching no OSI phrase is a finding on it", only(junk, "license") && junk.findings[0].startsWith("FINDING license LICENSE.md "), junk.out);
+  const MIT = "Permission is hereby granted, free of charge, to any person obtaining a copy\n";
+  const lic = scan(skill("licensefiles", { "SKILL.md": md("ok", ""), LICENSE: MIT, "copying.TXT": MIT, "sub/LICENSE": MIT, "LICENCE.rst": MIT }));
+  ok("license: a root LICENSE or COPYING.txt, any case, is no file finding; one in a subdir or another name still is",
+    lic.code === 1 && lic.kinds.join() === "file" && lic.findings.length === 2 && lic.findings.includes("FINDING file sub/LICENSE not markdown")
+    && lic.findings.includes("FINDING file LICENCE.rst not markdown"), lic.out);
   const id = scan(skill("licenseid", { "SKILL.md": md("ok", "license: \"apache-2.0\"") }));
   ok("license: a quoted SPDX id from the list passes, case-insensitively", id.code === 0, id.out);
 }

@@ -5,7 +5,8 @@
 // a finding). Prints `SCAN <dir> files=<n> bytes=<n> sha256=<hash>` (lib.hashSkill, the skills lock's hash; `none`
 // when the dir holds a link or special file), one `FINDING <kind> <path>[:<line>] <detail>` per finding, then
 // `CLEAN` or `FINDINGS <n>`. Kinds:
-// - file: any file that is not markdown (.md), dotfiles, links and special files included;
+// - file: any file that is not markdown (.md), dotfiles, links and special files included; a root LICENSE,
+//   LICENSE.txt, LICENSE.md, COPYING or COPYING.txt (any case) is not one;
 // - code: a fenced block tagged as a shell or script language, or an untagged one whose first line is a `$ ` prompt
 //   or a known shell command;
 // - hook: settings.json, hooks.json, a .claude/ or .agents/ dir, a `hooks` or `allowed-tools` frontmatter key;
@@ -25,7 +26,8 @@ const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const USAGE = "usage: node proteus-skill-scan.js <skill dir> [--owner <o>] [--json] [--osv]";
 
-const CODE_TAGS = ["sh", "bash", "zsh", "fish", "shell", "console", "powershell", "ps1", "cmd", "bat", "python", "js", "node", "ts"];
+const CODE_TAGS = ["sh", "bash", "zsh", "fish", "shell", "console", "powershell", "ps1", "cmd", "bat", "python", "js", "node", "ts",
+  "py", "python3", "javascript", "mjs", "typescript", "pwsh", "batch", "sh-session", "shellsession"];
 const SHELL_CMDS = ["curl", "wget", "rm", "chmod", "sudo", "npx", "pip", "npm", "git", "eval"];
 const HOOK_FILES = ["settings.json", "hooks.json"];
 const HOOK_DIRS = [".claude", ".agents"];
@@ -53,6 +55,8 @@ const LICENSE_TEXT = [
   ["CC0-1.0", /CC0 1\.0 Universal/i],
 ];
 const LICENSE_FILE = /^(licen[cs]e|copying)(\.(md|txt))?$/i;
+// license files at the root are text, not a `file` finding
+const LICENSE_EXEMPT = ["license", "license.txt", "license.md", "copying", "copying.txt"];
 const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml", "Cargo.toml", "go.mod"];
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`()[\]{}]+/gi;
 
@@ -154,7 +158,7 @@ function main(argv) {
     try { buf = fs.readFileSync(path.join(dir, ...rel.split("/"))); } catch (e) { find("file", rel, null, `unreadable (${e.code || e.message})`); pinnable = false; continue; }
     bytes += buf.length;
     const text = buf.toString("utf8");
-    if (!isMd(name)) find("file", rel, null, "not markdown");
+    if (!isMd(name) && !(rel === name && LICENSE_EXEMPT.includes(name.toLowerCase()))) find("file", rel, null, "not markdown");
     if (HOOK_FILES.includes(name.toLowerCase())) find("hook", rel, null, "hook or settings file");
     if (MANIFESTS.includes(name)) find("deps", rel, null, "dependency manifest");
     lines(text).forEach((l, i) => {
