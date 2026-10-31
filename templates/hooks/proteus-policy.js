@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // The project policy engine (#307): who merges, how often the human is asked, and the rules that block, ask or
-// allow a shell call or an edit. A module and a CLI; no guard calls it yet.
+// allow a shell call or an edit. A module and a CLI; the lead guard and the worker guard call guard(ev, ad) after their
+// own checks, so a refusal of theirs always stands.
 //   node <hooks>/proteus-policy.js show [--json]           the effective policy and where each value came from
 //   node <hooks>/proteus-policy.js check '<json event>'    { tool: "shell"|"edit", command?, path? } -> its effect
 //   node <hooks>/proteus-policy.js write <draft.json> [--user]
@@ -32,8 +33,8 @@ const TOP_KEYS = ["version", "preset", "merge", "ask", "rules"];
 const RULE_KEYS = ["id", "effect", "tool", "command", "paths", "why"];
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-// the user file: beside proteus.json (lib.configFile), or under home/.claude when a home is given
-const userFile = (home) => home ? path.join(home, ".claude", FILE) : path.join(path.dirname(lib.configFile()), FILE);
+// the user file: beside proteus.json (lib.policyUserFile), or under home/.claude when a home is given
+const userFile = (home) => home ? path.join(home, ".claude", FILE) : lib.policyUserFile();
 
 // the presets: beside these hooks in the plugin, else the copy setup keeps in a repo's teams/templates
 function presets(root) {
@@ -205,6 +206,141 @@ function render(policy) {
 
 const rootOf = () => lib.repoRoot(process.cwd()) || process.cwd();
 
+// ---- the guards (#307): guard(ev, ad, lead) runs after the lead guard's or the worker guard's own checks. It refuses
+// through ad.deny, or returns the text of a permission "ask" for the lead's own call (the caller asks once its own
+// bookkeeping is done), else "". lead: the lead's own session; a subagent, a teammate or a worker is not.
+// 1. `node <hooks>/proteus-policy.js write <draft> [--user]`: the lead's opens a dialog showing the draft rendered, or,
+//    where none can appear (Codex, a mode without one), is refused with the command for the human's own terminal;
+//    anyone else's is refused.
+// 2. The fixed core: no edit of the policy's files (teams/policy.json, teams/POLICY.md, the user file), nor a write
+//    to one the lead's command line names. The agents' shell writes to them are lib.agentShellDenial's (AGENT_NEVER)
+//    and proteus-shell-check.js's.
+// 3. A policy file that fails validation refuses every edit and shell write until it is fixed; a missing one is fine.
+// 4. The rules: block refuses; ask asks the lead's human, or refuses with NEEDS; allow and none change nothing.
+const SCRIPT_WORD = /(^|[\\/])proteus-policy\.js$/;
+const RUNS_TEXT = new Set(["sh", "bash", "zsh", "dash", "ksh", "fish", "pwsh", "powershell", "cmd", "eval"]);
+const WRITE_USAGE = "run it alone, exactly as `node <hooks>/proteus-policy.js write <draft.json> [--user]`, nothing before or after it";
+const WRITE_HOW = "the lead drafts the change and runs `node <hooks>/proteus-policy.js write <draft.json>`, which the human approves";
+const NEEDS = "File NEEDS; the lead asks the human.";
+const fwd = (p) => String(p).split(path.sep).join("/");
+const quote = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
+const commands = (command) => { try { return lib.shellCommands(String(command || "")); } catch { return null; } };
+const noAsk = (ev, ad) => (typeof ad.noAsk === "function" ? ad.noAsk(ev) : "this CLI's adapter cannot ask");
+const sentence = (s) => (/[.!?]$/.test(s) ? s : s + ".");
+
+// the call runs proteus-policy.js write: the script, as the program or under node, bun or deno, then write; or both
+// in the text a shell or eval runs; a line it cannot split, or a $( ) as a program, counts when it names both. A
+// commit message or an echo naming them is no write
+const RUNNERS = /^(node|nodejs|bun|deno)$/;
+function runsWrite(command) {
+  const cmd = String(command || "");
+  if (!/proteus-policy/.test(cmd) || !/\bwrite\b/.test(cmd)) return false;
+  const cmds = commands(cmd);
+  if (!cmds || cmds.dynamic) return true;
+  return cmds.some((all) => {
+    const w = lib.unwrap(all), k = w.findIndex((x) => SCRIPT_WORD.test(x));
+    if (k >= 0 && (k === 0 || w.slice(0, k).some((x) => RUNNERS.test(lib.progName(x)))) && w.slice(k + 1).includes("write")) return true;
+    return RUNS_TEXT.has(lib.progName(w[0])) && w.slice(1).some((x) => /proteus-policy/.test(x) && /\bwrite\b/.test(x));
+  });
+}
+
+// { file, user, root } from the one form the dialog shows, `node <this script> write <draft> [--user]` alone on the
+// line, so what the human approves is what runs; else { error }
+function writeArgs(ev) {
+  const dir = lib.shellCwd(ev), cmd = String(ev.command || ""), cmds = commands(cmd);
+  const bad = { error: `proteus-policy.js write: ${WRITE_USAGE}.` };
+  if (!cmds || cmds.length !== 1 || /`|\$\(|<\(|>\(/.test(cmd) || (cmds[0].redirects || []).length) return bad;
+  const w = cmds[0];
+  if (lib.unwrap(w).length !== w.length || lib.progName(w[0]) !== "node" || w[2] !== "write") return bad;
+  if (!lib.samePath(lib.realOr(path.resolve(dir, lib.expandPath(w[1] || "", dir))), lib.realOr(__filename))) return { error: `proteus-policy.js write runs only as this install's script, ${fwd(__filename)}: ${WRITE_USAGE}.` };
+  const rest = w.slice(3), files = rest.filter((a) => a !== "--user");
+  if (files.length !== 1 || files[0].startsWith("-")) return bad;
+  return { file: path.resolve(dir, lib.expandPath(files[0], dir)), user: rest.includes("--user"), root: lib.repoRoot(dir) || dir };
+}
+
+// a policy write: { ask } with the rendered draft for the lead's dialog, else { deny }
+function writeDecision(ev, ad, lead) {
+  if (!lead) return { deny: `proteus-policy.js write is the lead's, and the human approves each write; a subagent or a worker never runs it. ${NEEDS}` };
+  const a = writeArgs(ev);
+  if (a.error) return { deny: a.error };
+  let draft;
+  try { draft = JSON.parse(fs.readFileSync(a.file, "utf8")); } catch (e) { return { deny: `proteus-policy.js write: ${fwd(a.file)} is not a readable JSON file (${e.code || e.message}).` }; }
+  const all = presets(a.root), errors = validate(draft, Object.keys(all));
+  if (errors.length) return { deny: `proteus-policy.js write: the draft ${fwd(a.file)} has errors, so nothing would be written: ${errors.slice(0, 3).join("; ")}.` };
+  const why = noAsk(ev, ad);
+  if (why) return { deny: `the human approves each policy write in a permission dialog, and none can appear here (${why}). The human runs it in their own terminal, in ${fwd(a.root)}: node ${quote(fwd(__filename))} write ${quote(fwd(a.file))}${a.user ? " --user" : ""}` };
+  const target = a.user ? userFile() : path.join(a.root, ...PROJECT_FILE.split("/"));
+  const text = render(resolve([{ name: a.user ? "user" : "project", data: draft }], all).policy).trimEnd().split("\n");
+  const SHOW = 60, shown = text.slice(0, SHOW).map((l) => `  ${l.slice(0, 200)}`);
+  if (text.length > SHOW) shown.push(`  … ${text.length - SHOW} more lines in ${fwd(a.file)}`);
+  return { ask: `Proteus: write this policy to ${fwd(target)}${a.user ? ", the default for every project" : ""}? Approve only if it is what you agreed.\n${shown.join("\n")}` };
+}
+
+// the policy file abs is, as shown in a refusal, else "": teams/policy.json or teams/POLICY.md in any checkout
+// (lib.POLICY_NEVER, on lib.fileKey so case and trailing dots do not get around it), or the user file
+function policyFile(abs) {
+  const user = userFile();
+  for (const p of new Set([abs, lib.realOr(abs)])) {
+    const wt = lib.gitRoot(path.dirname(p)), rel = wt ? lib.relPath(wt, p) : null;
+    if (rel && lib.POLICY_NEVER.some((re) => re.test(lib.fileKey(rel)))) return rel;
+    if (lib.samePath(p, user) || lib.samePath(p, lib.realOr(user))) return fwd(p);
+  }
+  return "";
+}
+
+// what a shell call's line names as written (redirects and writing programs), resolved; null when it cannot be split
+function shellWrites(ev) {
+  const dir = lib.shellCwd(ev), cmds = commands(ev.command);
+  if (!cmds) return null;
+  const out = [];
+  for (const all of cmds) {
+    for (const t of [...(all.redirects || []), ...lib.writeTargets(lib.unwrap(all))]) {
+      if (!/^(\/dev\/\w+|nul)$/i.test(t)) out.push(path.resolve(dir, lib.expandPath(t, dir)));
+    }
+  }
+  return out;
+}
+
+// the approved policy is the main checkout's, a worker's in its linked worktree too
+function policyRoot(ev) {
+  const root = path.resolve(lib.projectRoot(ev)), common = lib.gitCommonDir(root);
+  return (common && lib.mainRoot(common)) || root;
+}
+
+function guard(ev, ad, lead) {
+  if (ev.tool !== "shell" && ev.tool !== "edit") return "";
+  if (ev.tool === "shell" && runsWrite(ev.command)) {
+    const d = writeDecision(ev, ad, lead);
+    if (d.deny) ad.deny(d.deny);
+    return d.ask || "";
+  }
+  const cwd = path.resolve(ev.cwd || lib.projectRoot(ev));
+  const edits = ev.tool === "edit" ? (ev.paths || []).map((p) => path.resolve(cwd, String(p))) : [];
+  // the lead's line naming a policy file; an agent's shell is AGENT_NEVER's
+  const writes = ev.tool === "shell" && lead && /policy/i.test(ev.command) ? shellWrites(ev) : null;
+  for (const abs of [...edits, ...(writes || [])]) {
+    const f = policyFile(abs);
+    if (f) ad.deny(`${f} is the policy, which nobody writes by hand: ${WRITE_HOW}.`);
+  }
+  const r = load({ root: policyRoot(ev) });
+  const bad = r.errors.find((e) => e.file && (e.file === r.files.user || e.file === r.files.project));
+  if (bad) {
+    const w = ev.tool === "edit" ? edits : shellWrites(ev);
+    if (!w || w.length) ad.deny(`the policy file ${fwd(bad.file)} is invalid (${bad.error}); edits and shell writes are refused until it is fixed: ${WRITE_HOW}${bad.file === r.files.user ? " with --user" : ""}.`);
+  }
+  let hit = { effect: "none" };
+  const evs = ev.tool === "shell" ? [{ tool: "shell", command: ev.command }]
+    : edits.map((abs) => { const wt = lib.gitRoot(path.dirname(abs)); return wt && lib.relPath(wt, abs); }).filter(Boolean).map((p) => ({ tool: "edit", path: p }));
+  for (const e of evs) { const v = evaluate(r.policy, e); if (v.rule && (!hit.rule || RANK[v.effect] > RANK[hit.effect])) hit = v; }
+  if (hit.effect === "block") ad.deny(`policy ${hit.rule.id}: ${String(hit.rule.why).trim()}`);
+  if (hit.effect !== "ask") return "";
+  const text = `policy ${hit.rule.id}: ${String(hit.rule.why).trim()}`;
+  if (lead && !noAsk(ev, ad)) return text;
+  ad.deny(`${sentence(text)} ${NEEDS}`);
+  return "";
+}
+
+
 // writes a valid draft as the project's policy.json and POLICY.md, or as the user file
 function writePolicy(draft, { root, user, home }) {
   if (user) { lib.writeJSON(userFile(home), draft); return [userFile(home)]; }
@@ -261,6 +397,6 @@ function main(argv) {
   return 2;
 }
 
-module.exports = { load, validate, evaluate, render, presets, userFile, FILE, PROJECT_FILE, PROJECT_DOC };
+module.exports = { load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

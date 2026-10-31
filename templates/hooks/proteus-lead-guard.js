@@ -30,6 +30,9 @@
 //    recorded it for this session (bypassDenial); the refusal names the sandbox profile's launch command.
 // 9. Lead and subagents: no `gh issue create` labelled proteus-review while its milestone has open tickets or the
 //    tracker cannot say (lib.reviewOpenDenial, #254).
+// 10. Lead and subagents, after every rule here: the project policy (proteus-policy.js guard, #307). Its block refuses;
+//    its ask opens the dialog for the lead's own call and refuses a subagent's with NEEDS; no edit of the policy's
+//    files, and its write only through the lead's dialog; an invalid policy file refuses edits and shell writes.
 // Subagents (ev.agent set; they run in the lead's process, so a worktree's own hooks may never load):
 //   no background Bash, a Monitor command only where a Bash call would pass and only reads (monitorDenial), no proteus-container.js (noRunner: teammates neither), no --edit-last, no ACCEPT / CHANGES / ANSWER comment, nothing rule 5 refuses, proteus-signoff.js only from a verifier (lib.signoffDenial; an unnamed agent whose brief names a worktree is a worker), nothing lib.agentShellDenial refuses
 //   (force-push, set up or through the API too, git -C outside its own worktree, shell writes to .claude/, .codex/, .git/ or the gates,
@@ -87,6 +90,7 @@ else lib.run((ev, ad) => {
     const why = (ev.tool === "monitor" && monitorDenial(ev.command)) || lib.workerDenial(sev) || unnamedSignoff(sev, ad) ||
       (ev.tool === "edit" && subagentEdit(ev, ad)) || noRunner(sev) || verifierGate(sev);
     if (why) ad.deny(why);
+    policy(ev, ad, false);
     // what the shell call is let through to do is checked after it ran (proteus-shell-check.js, PostToolUse)
     if (ev.tool === "shell") return shellCheck("snapshot", ev, ad);
     return;
@@ -99,14 +103,18 @@ else lib.run((ev, ad) => {
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = noRunner(ev) || lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
     if (why) ad.deny(why);
-    return shellCheck("leadStart", ev);
+    const ask = policy(ev, ad, true);
+    return shellCheck("leadStart", ev).then(() => { if (ask) ad.ask(ask); });
   }
   if (ev.tool === "monitor") return;
   const secret = lib.secretDenial(ev); // the verifier App's key, wherever it lives
   if (secret) ad.deny(secret);
 
   const root = lib.projectRoot(ev);
-  if (lib.isLinked(root)) return ev.tool === "spawn" ? lib.recordSpawn(ev) : undefined;
+  if (lib.isLinked(root)) {
+    if (ev.tool === "edit") { const ask = policy(ev, ad, true); if (ask) ad.ask(ask); }
+    return ev.tool === "spawn" ? lib.recordSpawn(ev) : undefined;
+  }
 
   if (ev.tool === "spawn") {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
@@ -146,7 +154,18 @@ else lib.run((ev, ad) => {
     const grel = !rel && guest ? lib.relPath(guest, p) : null;
     if (grel && !mine(grel)) ad.deny(`the lead does not edit ${grel} in the guest dir ${slash(guest)}. Team files are the scout's; anything else goes to a worker.` + BYPASS);
   } // else outside the repo (temp issue bodies, memory) or a doc the lead keeps
+  const ask = policy(ev, ad, true);
+  if (ask) ad.ask(ask);
 });
+
+// the project policy (proteus-policy.js guard, #307), after this guard's own checks so a refusal of theirs stands:
+// refuses through ad.deny, or returns the text of an "ask" for the lead's own call. A hook copy without it (an old
+// install) skips it, and so does an internal error: the shell-check after it still runs
+function policy(ev, ad, lead) {
+  let p;
+  try { p = require(path.join(__dirname, "proteus-policy.js")); } catch { return ""; }
+  try { return p.guard(ev, ad, lead) || ""; } catch (e) { if (process.env.PROTEUS_DEBUG) process.stderr.write(`proteus policy: ${e.stack}\n`); return ""; }
+}
 
 // the lead's scratch (#271): a file under <git-common-dir>/proteus/scratch/<key>/, the dir proteus-scratch.js --path
 // prints, judged on its real path so no symlink leads out; nothing else under .git
