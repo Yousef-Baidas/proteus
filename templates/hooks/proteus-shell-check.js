@@ -4,9 +4,9 @@
 // (`python -c`, `node -e`, a build script). This one compares the files themselves.
 // Before each subagent shell call (snapshot(ev), from the lead guard and the worker guard, after their checks pass)
 // it records a fingerprint of the paths the guards protect, in every checkout of the repo: .claude (minus agent
-// memory and nested checkouts), .codex, .agents, .github/workflows and actions, teams/templates/hooks, lefthook
-// config, a linked worktree's .git file; the shared .git/hooks, .git/info, the git config files and the guard's
-// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, the plugin's own folder (CLAUDE_PLUGIN_ROOT), and the verifier App's key. Each file is its
+// memory and nested checkouts), .codex, .agents, .github/workflows and actions, teams/templates/hooks, the policy's
+// teams/policy.json and teams/POLICY.md, lefthook config, a linked worktree's .git file; the shared .git/hooks, .git/info, the git config files and the guard's
+// records and notices; and the CLIs' own settings, hooks, agents, skills and rules in the home, the user's policy file, the plugin's own folder (CLAUDE_PLUGIN_ROOT), and the verifier App's key. Each file is its
 // mode and a content hash (cached by size, mtime and inode in <state>/guard-hash.json, so a call hashes only what
 // changed); settings JSON is compared without its `permissions`. A git config file (.git/config, config.worktree)
 // is compared by key and value, without the keys an agent may set (ALLOWED_KEY, and its own branch's upstream)
@@ -85,7 +85,7 @@ function targets(common) {
   const roots = [...new Set([lib.mainRoot(common), ...lib.registeredWorktrees(common)].flatMap((r) => (r ? [lib.realOr(r)] : [])))];
   const out = [];
   for (const r of roots) {
-    for (const d of [".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks"]) out.push([path.join(r, d), r]);
+    for (const d of [".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks", "teams/policy.json", "teams/POLICY.md"]) out.push([path.join(r, d), r]);
     if (lib.isLinked(r)) out.push([path.join(r, ".git"), r]); // a linked worktree's pointer file; the main .git is the common dir
     for (const dir of [r, path.join(r, ".config")]) {
       try { for (const n of fs.readdirSync(dir)) if (/^\.?lefthook/i.test(n)) out.push([path.join(dir, n), r]); } catch {}
@@ -97,6 +97,7 @@ function targets(common) {
   const home = os.homedir();
   const codex = process.env.CODEX_HOME || path.join(home, ".codex");
   for (const d of ["settings.json", "hooks", "agents", "skills"]) out.push([path.join(lib.claudeDir(), d), "home"]);
+  out.push([lib.policyUserFile(), "home"]);
   out.push([path.join(home, ".agents"), "home"]);
   for (const d of ["config.toml", "hooks.json", "hooks", "agents", "rules"]) out.push([path.join(codex, d), "home"]);
   // the plugin's own folder (CLAUDE_PLUGIN_ROOT), less a git clone's .git

@@ -346,6 +346,8 @@ function migrateLead(common, dst) {
 }
 
 const configFile = () => path.join(claudeDir(), "proteus.json");
+// the user's policy file (#307), beside proteus.json; only proteus-policy.js write writes it
+const policyUserFile = () => path.join(path.dirname(configFile()), "proteus-policy.json");
 const proteusConfig = () => readJSON(configFile(), {}) || {};
 // the gh config dir the agents post from ("agentGh" in proteus.json, a leading ~ allowed): a GitHub login of
 // their own, set up by install.js --agent-login. "" while they post under the human's.
@@ -586,10 +588,11 @@ function pentestDenial(root, words, line = "") {
 // name it reads, and the CI that runs the gates (.github/workflows, plus .github/actions that workflows call).
 // Matched on fileKey, so case, trailing dots and :streams do not get around it on any OS.
 // GUARDED is the part a subagent's shell may never write either (agentShellDenial): there teams/ is a worker's to
-// edit, all but the gate scripts under teams/templates/hooks.
+// edit, all but the gate scripts under teams/templates/hooks and the policy's own files (POLICY_NEVER, #307).
 const GUARDED = [/^\.(?:claude|codex|agents|git)(?:\/|$)/, /^(?:\.config\/)?\.?lefthook[^/]*(?:\/|$)/, /^\.github\/(?:workflows|actions)(?:\/|$)/];
+const POLICY_NEVER = [/^teams\/policy\.(?:json|md)$/];
 const LEAD_NEVER = [...GUARDED, /^teams(?:\/|$)/];
-const AGENT_NEVER = [...GUARDED, /^teams\/templates\/hooks(?:\/|$)/];
+const AGENT_NEVER = [...GUARDED, /^teams\/templates\/hooks(?:\/|$)/, ...POLICY_NEVER];
 const keyIn = (list, rel) => { const k = fileKey(rel); return list.some((re) => re.test(k)) || /~\d/.test(k); }; // ~1: a Windows 8.3 alias (CLAUDE~1)
 const neverLeads = (rel) => keyIn(LEAD_NEVER, rel);
 // abs with its nearest existing ancestor's links resolved; null when a link on the way does not resolve
@@ -2396,7 +2399,7 @@ function treeRel(t, dir, ev) {
 }
 // the guarded path (relative to abs, forward slashes) that abs holds as a parent, else "": a guarded dir of any
 // checkout of this repo or of the guest dir, a whole checkout (its .git), the CLIs' dirs in the home, or the human's gh config
-const ANCHORS = [".git", ".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks"];
+const ANCHORS = [".git", ".claude", ".codex", ".agents", ".github/workflows", ".github/actions", "teams/templates/hooks", "teams/policy.json", "teams/POLICY.md"];
 function guardedParent(abs, ev) {
   const roots = new Set(), commons = new Set([gitCommonDir(path.resolve(projectRoot(ev)))]);
   const near = gitRoot(abs);
@@ -3490,12 +3493,12 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, AGENT_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}
