@@ -756,6 +756,7 @@
       "c43efa0d28d022fcc95edd87dc0a0cb69382194c",
       "c45bc98c4a90d1adbcff5aff67ce25f29cad9df6",
       "c916205271730ad83fe866f07e70f24a33594300",
+      "cc5a2b831e026ba3e45abe6b58c9f71a814522f6",
       "cce9ec8d9d55c961ccf5bce7300c9edce711f091",
       "ccfdc2413c633f1ad57be848f71a023851de0d6d",
       "d09e0f24bebc16cb3a836374d3c4f0fc26df2b5d",
@@ -831,6 +832,7 @@
     "templates/hooks/proteus-scan.js": [
       "20de203c577909fa4f61fae15e0c7d75598fb49c",
       "4d98a177191ef9a5ae651a7f452698126973f70f",
+      "677e5e446fd3fc3d0d25c290cd500edb03dd86bc",
       "7104665ac5434bffa9d5b2cfc5a3b06041f0616a"
     ],
     "templates/hooks/proteus-scratch.js": [
