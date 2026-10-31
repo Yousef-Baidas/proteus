@@ -88,3 +88,10 @@ No hook reads Claude Code's hook JSON itself. `proteus-harness.js` loads the ada
 Every guard decision that turns on an agent's name reads it through `lib.agentName`, which strips a leading `proteus:`, the namespace a Claude Code plugin gives its agents (#136). Only that one: `evil:proteus-verifier` counts as a named agent that is no verifier, worker or scout, since any plugin can ship an agent under a Proteus name.
 
 `PROTEUS=0 claude` (`PROTEUS=0 codex`) opens a plain session with none of the lead's hooks but the verdict checks: the review session, or the human working by hand. `node <Proteus checkout>/install.js --doctor` checks the whole install, `--doctor --fix` repairs what it safely can.
+
+## Policy (#307)
+
+- `proteus-policy.js` is the policy engine; no guard calls it yet. `show [--json]` prints the effective policy and where each value came from, `check '<json event>'` the effect for `{ "tool": "shell"|"edit", "command", "path" }`, `render` the project's `POLICY.md`, and `write <draft.json> [--user]` writes a draft only when it validates (exit 2 and nothing written otherwise).
+- Layers, each overriding the last: the preset (`templates/policy/presets.json`: `hands-off`, `balanced` by default, `careful`), the user file `proteus-policy.json` beside `proteus.json`, and the project's `teams/policy.json`. Rules merge by `id`; when several match, block beats ask beats allow.
+- An invalid file counts as absent and its errors are reported. `teams/POLICY.md` is rendered from `teams/policy.json` on every write; nobody edits it by hand.
+- The policy guards against mistakes, not an adversary: a pattern can be worked around. The fixed core in `enforcement.md` stays the hard boundary.

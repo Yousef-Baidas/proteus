@@ -1,0 +1,5 @@
+{
+  "hands-off": { "version": 1, "merge": "lead", "ask": "never", "rules": [] },
+  "balanced": { "version": 1, "merge": "lead", "ask": "risky", "rules": [] },
+  "careful": { "version": 1, "merge": "human", "ask": "every", "rules": [] }
+}
