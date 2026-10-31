@@ -44,6 +44,11 @@ function repo(teams) {
 const linkSkills = (R, args = []) => lib.run(LS, "", { cwd: R, args });
 const linkedIn = (R, t) => { try { return fs.readdirSync(path.join(R, "teams", t, ".claude", "skills")).sort(); } catch { return []; } };
 
+// the shipped starting sets fit the cap, so a fresh install links them
+const T = path.join(ROOT, "templates", "teams");
+const over = fs.readdirSync(T).filter((t) => fs.existsSync(path.join(T, t, "skills.txt")) && require(LS).readList(path.join(T, t, "skills.txt")).length > CAP.skills);
+ok("shipped: every templates/teams/*/skills.txt lists at most 4 skills", !over.length, over.join());
+
 for (const n of ["s1", "s2", "s3", "s4", "s5", "req"]) skill(n);
 
 let R = repo({ a: { "skills.txt": ["s1", "s2", "s3", "s4"] } });

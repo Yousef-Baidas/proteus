@@ -5,4 +5,3 @@ microsoft/playwright-cli playwright-cli
 currents-dev/playwright-best-practices-skill playwright-best-practices
 github/awesome-copilot javascript-typescript-jest
 wshobson/agents python-testing-patterns
-affaan-m/ecc rust-testing

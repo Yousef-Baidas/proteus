@@ -4,3 +4,5 @@
   `SKILL.md` text (#10), one exported `CAP` constant; `required.txt` does not count. A team over either cap
   prints `cap: <team> <n> skills, <bytes> bytes (max 4, 40960)`, links nothing and, under `--install`, runs no
   `npx skills add`; the other teams still link and the script exits 3. This replaces the old "eight per team".
+- The shipped `skills.txt` starting sets keep their first 4 skills: backend and frontend drop 6 each, qa drops
+  `rust-testing`.
