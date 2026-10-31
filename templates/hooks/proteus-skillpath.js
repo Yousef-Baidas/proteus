@@ -9,7 +9,7 @@ const path = require("path");
 
 const MAX_DEPTH = 8;
 
-// dirs named `name` under root that hold a SKILL.md; no symlink is followed except a root itself
+// dirs named `name` (null: any name) under root that hold a SKILL.md; no symlink is followed except a root itself
 function find(root, name, depth = 0, out = []) {
   let ents;
   try { ents = fs.readdirSync(root, { withFileTypes: true }); } catch { return out; }
@@ -19,7 +19,7 @@ function find(root, name, depth = 0, out = []) {
     const dir = e.isDirectory() || (e.isSymbolicLink() && depth === 0 && isDir(d));
     if (!dir) continue;
     const md = path.join(d, "SKILL.md");
-    if (e.name === name && fs.existsSync(md)) out.push(md);
+    if ((name === null || e.name === name) && fs.existsSync(md)) out.push(md);
     else if (depth < MAX_DEPTH) find(d, name, depth + 1, out);
   }
   return out;
@@ -61,4 +61,4 @@ PROTEUS_SKILL_DIRS (path-delimited). Exit 1 if none is found; 2 on usage.`);
   if (!hits.length) { console.error(`proteus-skillpath: no SKILL.md for "${name}" under the plugin cache or skills folders; set PROTEUS_SKILL_DIRS or install the skill`); process.exit(1); }
   console.log(hits.join("\n"));
 }
-module.exports = { locate, find };
+module.exports = { locate, find, roots };
