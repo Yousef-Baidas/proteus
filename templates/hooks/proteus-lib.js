@@ -3113,6 +3113,20 @@ function readInbox(common) {
   return c && Array.isArray(c.questions) && Array.isArray(c.reviews) ? c : null;
 }
 
+// ---- osv-scanner: the one way Proteus runs it, for proteus-scan.js on a PR head and proteus-skill-scan.js --osv
+// on a skill. The lockfiles it reads, pip's other spellings too (requirements-dev.txt, requirements/base.txt, typed
+// as requirements.txt); its args for targets (./paths from the cwd it runs in), an empty config outside the scanned
+// tree and the SARIF report's path, call analysis off so it runs no go or cargo. Exit 0 or 1 (vulns) is a result,
+// 128 means no package to check.
+const OSV_LOCKFILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "Cargo.lock", "go.mod",
+  "poetry.lock", "uv.lock", "Pipfile.lock", "pdm.lock", "requirements.txt", "Gemfile.lock", "composer.lock", "pubspec.lock", "mix.lock",
+  "gradle.lockfile", "packages.lock.json", "conan.lock", "renv.lock"]);
+const OSV_PIP = /(^|\/)(requirements-[^/]*|requirements\/[^/]*)\.txt$/;
+const osvLockfile = (p) => OSV_LOCKFILES.has(path.posix.basename(p)) || OSV_PIP.test(p);
+const osvArgs = (targets, config, report) => ["scan", "source", "--config", config, "--no-call-analysis=all", "--format", "sarif", "--output-file", report,
+  ...targets.flatMap((p) => ["-L", OSV_PIP.test(p) ? `requirements.txt:${p}` : p])];
+const OSV_OK = [0, 1], OSV_CLEAN = [128];
+
 // ---- skills lock: teams/skills-lock.json pins each linked skill's content hash (teams/link-skills.js).
 // A drifted skill is one whose copy linked under teams/<team>/{.claude,.agents}/skills/<name> hashes
 // differently from its pin; no lock, or a pinned skill linked nowhere, is no drift. Local files only.
@@ -3472,7 +3486,7 @@ function verifyInstalled(bare, sha) {
 module.exports = {
   LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
-  readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, driftFile, relockHint,
+  readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, OSV_LOCKFILES, OSV_PIP, osvLockfile, osvArgs, OSV_OK, OSV_CLEAN, driftFile, relockHint,
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
