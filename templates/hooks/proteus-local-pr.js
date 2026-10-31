@@ -7,7 +7,8 @@
 //   proteus-local.js --run-check <common> <sha>       one check run, foreground
 // origin.git is the `origin` remote. tracker/pulls/<n>.json holds a PR, numbered with the issues; tracker/statuses/
 // <sha>.json its commit's statuses; checks/<sha>.claim and .log one check run. All of it is agent-reachable and
-// read as untrusted, so an approval never rests on it: `pr review` is a plain record that `pr merge` does not read.
+// read as untrusted, so an approval never rests on it: `pr review` is a plain record that `pr merge` does not read,
+// and `pr merge` refuses what the policy holds (Policy.held), which reads the human's verdicts from their record.
 // pre-receive exits 1 naming a refused ref, and fails closed outside origin.git; post-receive always exits 0.
 // A check runs the default branch's gate commands on a head with the caller's privileges, so nothing here but
 // `pr create` and post-receive starts one: never a read, and never a Claude hook, which runs outside the sandbox.
@@ -17,6 +18,7 @@ const path = require("path");
 const { fileURLToPath } = require("url");
 const { spawn, spawnSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
+const Policy = require(path.join(__dirname, "proteus-policy.js"));
 
 const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const STATES = ["pending", "success", "failure", "error"];
@@ -254,13 +256,26 @@ function build(core) {
     if (!git(s, ["update-ref", `refs/heads/${ref.baseRefName}`, made, oldBase]).ok) fail(`proteus local mode: ${ref.baseRefName} moved during the merge; nothing merged`);
     return made;
   }
+  // the head this merge may take: refused while the policy holds the PR, so a direct `gh pr merge` skips nothing
+  // proteus-merge.js honours. held reads through the stand-in, so never under the lock
+  function policyHead(s, n, head) {
+    const root = lib.mainRoot(s.common), p = { n };
+    const [hold] = Policy.held([p], root, Policy.load({ root }).policy);
+    if (hold) fail(Policy.heldLine(hold));
+    return p.oid || head;
+  }
   function merge(s, argv) {
     const o = flags(argv, { ...REPO, "--merge|-m": 0, "--match-head-commit": 1 }, "pr merge");
     onlyHere(s, o, "pr merge");
     const n = prArg(s, o, "pr merge");
     if (!o["--merge"]) fail("--merge required when not running interactively");
     const first = loadPull(s, n);
-    if (first.state === "OPEN") statusesOf(s, headOid(s, first)); // the lock is not re-entrant, so a dead run turns to error here
+    let want = "";
+    if (first.state === "OPEN") {
+      const at = headOid(s, first);
+      statusesOf(s, at); // the lock is not re-entrant, so a dead run turns to error here
+      want = policyHead(s, n, at);
+    }
     withLock(s.lock, () => {
       const p = loadPull(s, n);
       if (p.state === "MERGED") fail(`Pull request #${n} was already merged`);
@@ -268,7 +283,7 @@ function build(core) {
       if (p.isDraft) fail(`Pull request #${n} is still a draft`);
       const head = headOid(s, p), base = baseOid(s, p);
       if (!base) fail(`proteus local mode: PR #${n}'s base ${p.baseRefName} is missing from the origin`);
-      if (o["--match-head-commit"] !== undefined && o["--match-head-commit"] !== head) fail(HEAD_MOVED);
+      if ((o["--match-head-commit"] !== undefined && o["--match-head-commit"] !== head) || head !== want) fail(HEAD_MOVED);
       // reviews play no part here: they are plain records, and the human's approval belongs to the verdict record
       const g = gatesOf(readStatuses(s, head));
       if (!g || g.state !== "success") fail(`Pull request #${n} is not mergeable: required status ${GATES} is ${g ? g.state : "missing"} on ${head.slice(0, 12)}`);

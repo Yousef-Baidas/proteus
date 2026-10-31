@@ -85,6 +85,15 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/templates/hooks/proteus-plugin.js\" proteus-shell-check.js"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/templates/hooks/proteus-plugin.js\" proteus-verdict-record.js"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [

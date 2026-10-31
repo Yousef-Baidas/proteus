@@ -1623,6 +1623,7 @@ function ghHuman(args, cwd, { input, timeout = 15000 } = {}) {
 function humanLogin(cwd) {
   const dir = humanGhDir(), human = String(proteusConfig().human || "").trim();
   const login = ghHuman(["api", "user", "--jq", ".login"], cwd).out;
+  if (localCommon(cwd)) return { login, human: login, error: "" }; // the stand-in's one login: it names nobody (#310)
   const fix = `in your own terminal run \`gh auth login\`${human ? ` (or \`gh auth switch --user ${human}\`)` : ""}, or set "humanGh" in ${configFile()} to the gh config dir you log in with`;
   if (!human && agentGhDir()) return { login, human, error: `no "human" in ${configFile()} beside agentGh; install.js --agent-login writes it` };
   if (!login) return { login, human, error: `gh in ${fwd(dir)} is not logged in: ${fix}` };
@@ -1784,6 +1785,90 @@ function postArgs(command, dir) {
   out.sha = out.sha.toLowerCase();
   return out;
 }
+// ---- the human's verdicts in local mode (#310). Every author in the store is the same login and agents can write
+// the store, so no comment there says who wrote it: a human verdict counts only in the record,
+// <common>/proteus-lead/verdicts.jsonl, one JSON line each ({ number, kind, body, sha256, first, at }), oldest first,
+// which the sandbox cannot write. Two ways in, both recordVerdict: after the permission dialog, humanPost leaves a
+// pending entry in proteus-lead/verdict-pending/ and proteus-verdict-record.js (PostToolUse) turns it into the record
+// when that same main-thread call succeeds (recordPosted); in the human's own terminal, proteus-verdict.js --post
+// appends it. A working log, not proof: it stops a sandboxed agent, not an unsandboxed one.
+const VERDICT_RECORD = "verdicts.jsonl", VERDICT_PENDING = "verdict-pending";
+const VERDICT_RECORD_MAX = 1 << 24, VERDICT_PENDING_MS = 3600e3;
+const bodySha = (body) => require("crypto").createHash("sha256").update(body).digest("hex");
+const firstLine = (body) => String(body).trim().split(/\r?\n/, 1)[0].trim();
+const isoTime = (s) => { const t = Date.parse(s); return Number.isFinite(t) && new Date(t).toISOString() === s; };
+// e is an entry as verdictEntry makes it, every field checked again
+function verdictOk(e) {
+  return !!e && typeof e === "object" && Number.isSafeInteger(e.number) && e.number > 0 && (e.kind === "issue" || e.kind === "pr")
+    && typeof e.body === "string" && Buffer.byteLength(e.body) <= POST_MAX && e.sha256 === bodySha(e.body)
+    && e.first === firstLine(e.body) && isVerdict(e.body) && typeof e.at === "string" && isoTime(e.at);
+}
+function verdictEntry(number, kind, body) {
+  const e = { number: Number(number), kind, body: String(body), sha256: bodySha(String(body)), first: firstLine(body), at: new Date().toISOString() };
+  if (!verdictOk(e)) throw leadErr(`#${number}: not a verdict of at most ${POST_MAX} bytes`);
+  return e;
+}
+// the record's valid entries, oldest first; [] when it does not exist, null when it cannot be read (a link, over the cap)
+function verdictRecord(common) {
+  let text;
+  try { text = readUntrusted(leadPath(common, VERDICT_RECORD), VERDICT_RECORD_MAX); } catch (e) { return e.code === "ENOENT" ? [] : null; }
+  return text.split("\n").flatMap((l) => {
+    let e = null;
+    try { e = JSON.parse(l); } catch {}
+    return verdictOk(e) ? [{ number: e.number, kind: e.kind, body: e.body, sha256: e.sha256, first: e.first, at: e.at }] : [];
+  });
+}
+// append one verdict, the only way into the record; false when the number's newest entry already is this body, so a
+// post both paths saw counts once. Throws when the record cannot be read or written: inside the sandbox it always can't
+function recordVerdict(common, number, kind, body) {
+  const e = verdictEntry(number, kind, body), had = verdictRecord(common);
+  if (!had) throw leadErr(`${VERDICT_RECORD} cannot be read`);
+  const last = had.filter((x) => x.number === e.number).pop();
+  if (last && last.sha256 === e.sha256) return false;
+  leadAppend(common, leadPath(common, VERDICT_RECORD), JSON.stringify(e) + "\n");
+  return true;
+}
+// the live pending entries, each with its file; a stale one (past VERDICT_PENDING_MS: a dialog denied or left open) is none
+function pendingVerdicts(common) {
+  const dir = leadPath(common, VERDICT_PENDING);
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch {}
+  return names.flatMap((n) => {
+    const file = path.join(dir, n), e = readUntrustedJSON(file, null, 8 * POST_MAX);
+    const age = verdictOk(e) ? Date.now() - Date.parse(e.at) : NaN;
+    return age >= 0 && age <= VERDICT_PENDING_MS && typeof e.command === "string" ? [{ ...e, file }] : [];
+  });
+}
+// the post the dialog is about to show: its call, its number and the body it read. Clears what has gone stale
+function pendVerdict(common, ev, number, kind, body) {
+  const e = verdictEntry(number, kind, body), dir = leadPath(common, VERDICT_PENDING);
+  const live = new Set(pendingVerdicts(common).map((p) => p.file));
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch {}
+  for (const n of names) if (!live.has(path.join(dir, n))) leadRemove(common, path.join(dir, n));
+  leadJSON(common, path.join(dir, `${bodySha(ev.command).slice(0, 32)}.json`), { ...e, command: ev.command, session: ev.session, toolUseId: ev.toolUseId });
+}
+// a finished tool call: when it is the main thread's successful run of a pending post, that entry's body goes into the
+// record, not the file's, and the entry goes. True when it did. An agent's or teammate's event never records.
+function recordPosted(ev) {
+  if (ev.kind !== "post-tool" || ev.tool !== "shell" || ev.agent || ev.teammate || ev.error) return false;
+  const common = localCommon(shellCwd(ev));
+  const e = common && pendingVerdicts(common).find((p) => p.command === ev.command && p.session === ev.session && p.toolUseId === ev.toolUseId);
+  if (!e) return false;
+  recordVerdict(common, e.number, e.kind, e.body);
+  leadRemove(common, e.file);
+  return true;
+}
+// the human's verdicts on number, oldest first, each { body, first, at }: the one source of truth for who said what.
+// Local mode reads the record and never comments; else the human's comments that open with a verdict word
+function humanVerdicts(root, number, comments = [], human = "") {
+  const common = localCommon(root);
+  if (common) return (verdictRecord(common) || []).filter((e) => e.number === Number(number));
+  return comments.filter((c) => c && c.author && c.author.login === human && isVerdict(c.body || "")).map((c) => ({ body: String(c.body), first: firstLine(c.body), at: c.createdAt }));
+}
+// #n is a review or question issue, as far as its labels say
+const reviewIssue = (n, cwd) => gh(["issue", "view", String(n), "--json", "labels", "-q", ".labels[].name"], cwd, 6000, agentGhDir()).split(/\r?\n/).some((l) => /^(proteus|hive)-(review|question)$/.test(l.trim()));
+
 // the gate on the human's verdict post, for a shell call: null when the command is no --post; else { ask } with
 // the dialog text for the human, or { deny } with why. Reads the body file once: the hash it checks and the
 // lines it shows come from the same bytes, and --post refuses a file whose hash no longer matches.
@@ -1803,11 +1888,16 @@ function humanPost(ev, ad) {
   const sha = require("crypto").createHash("sha256").update(body).digest("hex");
   const cmd = postCommand(p.issue, p.file, sha);
   if (p.sha !== sha) return { deny: `${fwd(p.file)} has sha256 ${sha}${p.sha ? `, not ${p.sha} (the file changed since?)` : ""}. Run: ${cmd}` };
-  const why = ad && typeof ad.noAsk === "function" ? ad.noAsk(ev) : "this CLI's adapter cannot ask";
-  if (why) return { deny: `the human approves each verdict post in a permission dialog, and none can appear here (${why}). The human runs it in their own terminal, where it posts as their own gh login: ${cmd}` };
+  const local = localCommon(dir);
+  // local mode needs the post-tool hook too: without it an approved dialog would record nothing
+  const why = (ad && typeof ad.noAsk === "function" ? ad.noAsk(ev) : "this CLI's adapter cannot ask") || (local && !ad.postRecords ? "this CLI's adapter has no post-tool hook to record it" : "");
+  if (why) return { deny: `the human approves each verdict post in a permission dialog, and none can appear here (${why}). The human runs it in their own terminal, where ${local ? "it records the verdict" : "it posts as their own gh login"}: ${cmd}` };
   const who = humanLogin(dir);
   if (who.error) return { deny: `proteus-verdict.js --post would not post as the human: ${who.error}. Nothing was posted.` };
-  const title = gh(["issue", "view", p.issue, "--json", "title", "-q", ".title"], dir, 6000, agentGhDir()) || "(title unavailable)";
+  const title = gh(["issue", "view", p.issue, "--json", "title", "-q", ".title"], dir, 6000, agentGhDir()) || (local && gh(["pr", "view", p.issue, "--json", "title", "-q", ".title"], dir, 6000, agentGhDir())) || "(title unavailable)";
+  if (local) {
+    try { pendVerdict(local, ev, p.issue, reviewIssue(p.issue, dir) ? "issue" : "pr", text); } catch (e) { return { deny: `proteus-verdict.js --post: could not note the post for the verdict record (${e.message}). Nothing was posted.` }; }
+  }
   const SHOW = 12, shown = lines.slice(0, SHOW).map((l) => `  ${l.slice(0, 200)}`);
   if (lines.length > SHOW) shown.push(`  … ${lines.length - SHOW} more lines in ${fwd(p.file)}`);
   return { ask: `Proteus: post this verdict on #${p.issue} "${title.slice(0, 120)}" as ${who.login}? Approve only if it is what you said.\n${shown.join("\n")}\n(sha256 ${sha.slice(0, 12)}; --post refuses the file if it changes)` };
@@ -3543,7 +3633,7 @@ module.exports = {
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
-  ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict,
+  ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
   workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

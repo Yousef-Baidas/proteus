@@ -13,7 +13,7 @@
 // statuses, so a status a worker posts with the agents' token does not count. A token that cannot be minted fails
 // the signoff: never a quiet fall back to the agents' login. With the App, a MERGE without --security also carries
 // CI's no-security-path success over as the App's (securityMirror), and is refused until CI has posted.
-// Without an App it posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a
+// In local mode (#310) it posts through the stand-in, never with the App. Without an App it posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a
 // hand-posted status (lib.branchDenial) and this script from anyone but a verifier (lib.signoffDenial, the lead
 // guard); without the App that is a guard, not a boundary: a worker sharing the agents' token can post a status
 // with its own script (#69).
@@ -45,7 +45,7 @@ async function main(argv) {
     if (open) { console.error(open); return 1; }
   }
   const context = security ? "proteus/security" : "proteus/verdict";
-  const app = lib.verifierApp();
+  const app = lib.localCommon(cwd) ? null : lib.verifierApp(); // no host, so no ruleset for its status to satisfy
   let repo = process.env.GITHUB_REPOSITORY || "{owner}/{repo}", token = "", mirror = null;
   if (app) {
     if (!process.env.GITHUB_REPOSITORY) repo = run(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"]);

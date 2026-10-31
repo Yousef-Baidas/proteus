@@ -320,9 +320,12 @@ const LEAD_HOOKS = [
   ["PostToolUseFailure", "proteus-scratch.js", "Bash"],
   ["PostToolUse", "proteus-shell-check.js", "Bash"],
   ["PostToolUseFailure", "proteus-shell-check.js", "Bash"],
+  ["PostToolUse", "proteus-verdict-record.js", "Bash"],
   ["SubagentStop", "proteus-stall.js"],
   ["TeammateIdle", "proteus-stall.js"],
 ];
+
+const postRecords = LEAD_HOOKS.some(([ev, script]) => ev === "PostToolUse" && script === "proteus-verdict-record.js");
 
 // the plugin's hooks/hooks.json (scripts/plugin-hooks.js writes it): LEAD_HOOKS, each through proteus-plugin.js,
 // the per-repo gate, from the plugin root. No statusLine: a plugin cannot set one.
@@ -437,7 +440,7 @@ function exportEnv(root, vars) {
 }
 
 module.exports = {
-  name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, context, keepGoing, postBlock,
+  name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, postRecords, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv,
 };

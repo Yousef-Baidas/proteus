@@ -397,6 +397,65 @@ function main(argv) {
   return 2;
 }
 
-module.exports = { load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
+const HELD = {
+  merge: "the policy has the human merge every PR",
+  moved: "its head moved after the check; it waits for the next round",
+  unknown: "gh gave no head commit to pin the merge to",
+  every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
+  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
+};
+
+// what a hold says, proteus-merge.js's line and the stand-in's `pr merge` refusal
+const heldLine = (h) => `PR #${h.n} held${/^(moved|unknown)$/.test(h.why) ? "" : " for the human"}: ${HELD[h.why] || `the policy's ask rule ${h.why.slice(7)} covers what it changes`}`;
+
+// the human's login, as proteus-verdict.js trusts it: "human" in proteus.json, else gh's own login while the agents
+// share it (no agentGh); "" when there is none, so no comment counts
+function humanOf(root) {
+  const human = String(lib.proteusConfig().human || "").trim();
+  return human || (lib.agentGhDir() ? "" : lib.gh(["api", "user", "--jq", ".login"], root, 6000));
+}
+
+// the policy's hold on the picked PRs (#307), [{ n, why, sha }] (sha: the head's sha12, "" when gh cannot say): merge human holds every one ("merge"); ask every holds each
+// ("every"), and ask risky each whose changed paths an ask rule covers ("policy:<id>", or "unread" when gh cannot list
+// them), until the human's newest verdict on the PR (lib.humanVerdicts) is ACCEPT <head sha12>; ask never holds none. Here
+// rather than in proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
+function held(picked, root, policy) {
+  if (!picked.length) return [];
+  if (policy.merge === "human") return picked.map((p) => ({ n: p.n, why: "merge" }));
+  const asks = { rules: (policy.rules || []).filter((r) => r.effect === "ask" && Array.isArray(r.paths)) };
+  if (policy.ask !== "every" && !(policy.ask === "risky" && asks.rules.length)) return [];
+  const why = (n) => {
+    if (policy.ask === "every") return "every";
+    const r = lib.ghTry(["pr", "diff", String(n), "--name-only"], root, 30000);
+    if (!r.ok) return "unread";
+    for (const f of r.out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
+      const v = evaluate(asks, { tool: "edit", path: f });
+      if (v.rule) return `policy:${v.rule.id}`;
+    }
+    return "";
+  };
+  // the PR's head and whether the human accepted that head: their newest verdict on the PR is `ACCEPT <sha12>` for
+  // it. A bare ACCEPT, another head's sha, or CHANGES holds; their order alone decides, never a commit date.
+  let human = null;
+  const local = lib.localCommon(root);
+  const view = (n) => {
+    if (human === null) human = local ? "" : humanOf(root);
+    let v = null;
+    try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
+    const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
+    if ((!local && !human) || !sha) return { sha, ok: false };
+    const said = lib.humanVerdicts(root, n, (v && v.comments) || [], human).pop();
+    return { sha, full, ok: !!said && said.first === `ACCEPT ${sha}` };
+  };
+  return picked.flatMap((p) => {
+    const w = why(p.n);
+    if (!w) return [];
+    const v = view(p.n);
+    if (v.ok) p.oid = v.full; // the merge is pinned to the head the human accepted
+    return v.ok ? [] : [{ n: p.n, why: w, sha: v.sha }];
+  });
+}
+
+module.exports = { held, heldLine, load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
