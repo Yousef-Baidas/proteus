@@ -26,6 +26,8 @@
 //   answers      deny(why, {json}) · context(ev, text, kind) · keepGoing(ev, reason)
 //                ask(why) (PreToolUse: the human decides in a permission dialog) · noAsk(ev) (why no such
 //                dialog can reach the human here, "" when it can; the caller denies instead of asking)
+//                postRecords (a post-tool hook, proteus-verdict-record.js, records a verdict after its dialog; false
+//                sends a local-mode verdict to the human's own terminal)
 //                postBlock(ev, reason) (after the tool ran: the reason reaches the model as feedback to act on)
 //   transcript   contextTokens(ev) · lastAssistantText(ev) · lastHumanPrompt(ev) · sessionModel(ev)
 //                briefText(ev) (a subagent's brief, the lead's spawn prompt; "" when the CLI cannot show it)

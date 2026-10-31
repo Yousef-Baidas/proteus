@@ -18,6 +18,11 @@
 // A pull request <n> (not such an issue) takes the policy's merge verdict (#307): the first line is ACCEPT <sha12> for its
 // current head, as next's ASK human line prints it, or CHANGES. An ACCEPT for any other head is refused.
 // Exits 0 posted, 1 refused or failed (nothing posted), 2 on bad usage.
+// In local mode (#310) human verdicts come only from the verdict record (lib.humanVerdicts), never a comment, whoever it
+// names; AUTO-ACCEPT and AUTO-HOLD still come from comments, merged by time. --post appends to the record first, then
+// writes the comment as a copy for reading. A refused write (the sandbox) passes only for a post with a pending entry,
+// which the hook records; else nothing is recorded or posted and it exits 1. A failed comment after a written record
+// says so and exits 1.
 // Run from any dir but the session's hooks dir (proteus-lead/hooks-root, #277): exit 1, naming that dir.
 "use strict";
 const fs = require("fs");
@@ -48,6 +53,19 @@ function pick(comments, human, agent) {
     if (who && who === agent && AUTO.test(first)) return body;
   }
   return null;
+}
+
+// local mode: the newer of the human's newest record entry and the newest AUTO comment, the human's on a tie. A
+// comment's time is the store's, so one dated in the future is no comment
+function pickLocal(comments, verdicts) {
+  const now = Date.now(), said = verdicts[verdicts.length - 1];
+  let auto = null;
+  for (const c of comments) {
+    const body = String((c && c.body) || "").trim(), at = Date.parse(c && c.createdAt);
+    if (AUTO.test(body.split(/\r?\n/, 1)[0].trim()) && at <= now && (!auto || at >= auto.at)) auto = { body, at };
+  }
+  if (auto && (!said || auto.at > Date.parse(said.at))) return auto.body;
+  return said ? said.body.trim() : null;
 }
 
 const USAGE = "usage: proteus-verdict.js <issue> [--wait] | <issue> --post --body-file <file> --sha <sha256>";
@@ -88,13 +106,22 @@ function post(args, root) {
   if (!lib.VERDICT_LINE.test(body.toString("utf8").split(/\r?\n/, 1)[0].trim())) return no("the first line must open with ACCEPT, CHANGES or ANSWER");
   const who = lib.humanLogin(root);
   if (who.error) return no(who.error);
-  const labels = lib.gh(["issue", "view", o.issue, "--json", "labels", "-q", ".labels[].name"], root, 6000, lib.agentGhDir()).split(/\r?\n/);
-  const issue = labels.some((l) => /^(proteus|hive)-(review|question)$/.test(l.trim()));
+  const issue = lib.reviewIssue(o.issue, root);
   if (!issue) {
     const why = prVerdict(o.issue, body.toString("utf8").split(/\r?\n/, 1)[0].trim(), root);
     if (why) return no(why);
   }
+  const common = lib.localCommon(root);
+  let recorded = false;
+  if (common) {
+    const text = body.toString("utf8");
+    try { lib.recordVerdict(common, o.issue, issue ? "issue" : "pr", text); recorded = true; } catch (e) {
+      const hash = crypto.createHash("sha256").update(text).digest("hex");
+      if (!lib.pendingVerdicts(common).some((p) => p.number === Number(o.issue) && p.sha256 === hash)) { console.error(`proteus-verdict --post: the verdict record refused it (${e.message}); nothing recorded, nothing posted.`); return 1; }
+    }
+  }
   const r = lib.ghHuman([issue ? "issue" : "pr", "comment", o.issue, "--body-file", "-"], root, { input: body });
+  if (!r.ok && recorded) { console.error(`proteus-verdict --post: the verdict is recorded, but its comment failed: ${r.err.split(/\r?\n/, 1)[0] || "no output"}`); return 1; }
   if (!r.ok) return no(`gh ${issue ? "issue" : "pr"} comment failed: ${r.err.split(/\r?\n/, 1)[0] || "no output"}`);
   console.log(`posted as ${who.login}: ${r.out.split(/\r?\n/).pop()}`);
   return 0;
@@ -106,17 +133,23 @@ function main() {
   const issue = args.find((a) => /^\d+$/.test(a));
   if (!issue) { console.error(USAGE); return 2; }
   const root = path.resolve(lib.projectRoot());
-  const own = lib.agentGhDir();
-  const agent = lib.gh(["api", "user", "--jq", ".login"], root, 6000, own);
-  // with a login of their own, this process may be running as either one: only the config names the human
-  const human = String(lib.proteusConfig().human || "").trim() || (own ? "" : agent);
-  if (!human) { console.error(`proteus-verdict: no human login (${own ? "agentGh is set but" : "gh not logged in and"} no "human" in ~/.claude/proteus.json; install.js --agent-login writes it)`); return 1; }
-  if (human === agent) console.error(`proteus-verdict: identity=shared: agents post as ${human}, so an agent's ACCEPT would count too`);
+  const local = lib.localCommon(root);
+  let human = "", agent = "";
+  if (!local) {
+    const own = lib.agentGhDir();
+    agent = lib.gh(["api", "user", "--jq", ".login"], root, 6000, own);
+    // with a login of their own, this process may be running as either one: only the config names the human
+    human = String(lib.proteusConfig().human || "").trim() || (own ? "" : agent);
+    if (!human) { console.error(`proteus-verdict: no human login (${own ? "agentGh is set but" : "gh not logged in and"} no "human" in ~/.claude/proteus.json; install.js --agent-login writes it)`); return 1; }
+    if (human === agent) console.error(`proteus-verdict: identity=shared: agents post as ${human}, so an agent's ACCEPT would count too`);
+  }
   const pollMs = lib.envInt("PROTEUS_VERDICT_POLL_S", 30) * 1000;
   let said = "";
   for (;;) {
-    const view = JSON.parse(lib.gh(["issue", "view", issue, "--json", "comments,labels,milestone"], root) || "null");
-    const v = view && Array.isArray(view.comments) ? pick(view.comments, human, agent) : null;
+    // the stand-in's numbers are not gh's: a PR is no issue there
+    const view = JSON.parse(lib.gh(["issue", "view", issue, "--json", "comments,labels,milestone"], root) || (local && lib.gh(["pr", "view", issue, "--json", "comments"], root)) || "null");
+    const listed = view && Array.isArray(view.comments);
+    const v = !listed ? null : local ? pickLocal(view.comments, lib.humanVerdicts(root, issue)) : pick(view.comments, human, agent);
     const shut = v && gateShut(v, view, root);
     if (v && !shut) { console.log(v); return 0; }
     if (shut && shut !== said) console.error(`proteus-verdict: ${v.split(/\r?\n/, 1)[0].trim()} not counted: ${(said = shut)}`);
