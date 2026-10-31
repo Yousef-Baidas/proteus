@@ -8,6 +8,7 @@
 // --json (#311, the run panel mod): one JSON object and nothing else, state "ok", "no-run" or "unreachable" (gh
 // failed), with the line's facts as fields plus what waits on the human: open proteus-question issues and open
 // proteus-review issues still labelled needs-human, each { number, title, url }. Exit 0 in every state.
+// In local mode the line ends "mode local" and every object has mode: "local".
 "use strict";
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
@@ -20,10 +21,12 @@ if (argv[0] === "--help" || argv[0] === "-h") {
   process.exit(0);
 }
 const asJson = argv.includes("--json");
-const say = (line, obj) => console.log(asJson ? JSON.stringify({ version: 1, ...obj }) : line);
 const root = path.resolve(lib.projectRoot());
 
 const common = lib.gitCommonDir(root);
+// local mode (#310) shows; a hosted repo's output stays as it was
+const local = lib.localMode(common);
+const say = (line, obj) => console.log(asJson ? JSON.stringify({ version: 1, ...(local && { mode: "local" }), ...obj }) : local && line ? `${line} · mode local` : line);
 const branches = lib.runRefs(common);
 const runBranches = lib.runBranches(common);
 const arg = argv.find((a) => a !== "--json") || "";
@@ -67,6 +70,7 @@ else {
   eta = { ms: remaining ? Math.round((med * remaining) / parallel) : 0, medianMs: med };
   parts.push(remaining ? `eta ~${fmt((med * remaining) / parallel)} (median ${fmt(med)}/ticket)` : `eta: milestone tickets done (median ${fmt(med)}/ticket)`);
 }
+if (local) parts.push("mode local");
 if (!asJson) { console.log(parts.join(" · ")); return; }
 
 // what waits on the human: a failed read is the tracker unreachable, never an empty list

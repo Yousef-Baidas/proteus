@@ -151,7 +151,7 @@ Proteus writes nothing to your repo but deliverables, checks, contract stubs, le
 
 The lead itself edits only those docs; anything else goes to a worker. For small housekeeping you can widen that with a line in `AGENTS.md`, beside `models:`: `lead-edits: .vscode/* .editorconfig .gitattributes .gitignore`. The globs are relative to the repo root (`*` within a folder, `**` at any depth; a glob that matches a folder covers what is in it), and the lead edits matching files directly, on Claude Code and Codex alike. Whatever the line says, the guard still refuses `.claude/`, `.codex/`, `.agents/`, `.git/`, `teams/` (the commit-msg gate and the gate scripts), lefthook's config, `.github/workflows/` and `.github/actions/`, a path that is a link, and one whose real location is outside the repo or on that list. Case, trailing dots and Windows short names do not get around it. In guest mode the line sits in the guest dir's `AGENTS.md` and still names the repo's own files.
 
-The tracker is GitHub via `gh` today. `references/tracker.md` is an operations table with one column per tracker; Jira or anything else slots in by filling the column.
+The tracker is GitHub via `gh` today, or a stand-in on this machine in [local mode](local-mode.md), where the session's state line adds `mode=local`. `references/tracker.md` is an operations table with one column per tracker; Jira or anything else slots in by filling the column.
 
 ### Worker worktrees
 
@@ -235,6 +235,7 @@ templates/
     proteus-lessons.js      trigger-based lesson recall
     proteus-stall.js  proteus-worker-guard.js  no waiting on background jobs, one report per agent
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
+    proteus-local.js  proteus-local-pr.js   local mode's stand-in for gh, its origin and checks
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
     proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls

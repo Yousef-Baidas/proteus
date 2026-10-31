@@ -439,8 +439,19 @@ function exportEnv(root, vars) {
   return {};
 }
 
+// dir in front of PATH for every later Bash call, as exportEnv: appended to the env file, and a Windows drive as
+// Git Bash names it. Returns { error } when it cannot.
+function prependPath(root, dir) {
+  const file = process.env.CLAUDE_ENV_FILE;
+  if (!file) return { error: "no CLAUDE_ENV_FILE (Claude Code gives it to SessionStart hooks only)" };
+  const val = String(dir).replace(/\\/g, "/").replace(/^([A-Za-z]):(?=\/)/, (_, d) => `/${d.toLowerCase()}`);
+  if (val.includes("'")) return { error: `${dir} holds a quote` };
+  fs.appendFileSync(file, `export PATH='${val}':"$PATH"\n`);
+  return {};
+}
+
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, postRecords, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv, prependPath,
 };

@@ -731,14 +731,29 @@ function writeFresh(file, text, mode) {
   try { if (fs.readFileSync(file, "utf8") === text) return; } catch {}
   writeFile(file, text, mode);
 }
+// what the launchers and the origin's hooks hold for the hooks dir of script
+const launchers = (s, script) => [[path.join(s.bin, "gh"), shLauncher(script), 0o755], [path.join(s.bin, "gh.cmd"), cmdLauncher(script)]];
+const wiring = (s, script) => [...launchers(s, script), ...pr.hookFiles(s, script)];
+// the session start's rewrite, as the hooks dir moves between installs: never the store, never a check
+function refresh(common) {
+  const s = layout(common);
+  for (const d of [s.root, s.bin, s.origin, path.join(s.origin, "hooks")]) realDir(d);
+  const files = wiring(s, SCRIPT);
+  for (const [f] of files) noLink(f);
+  for (const [f, text, mode] of files) writeFresh(f, text, mode);
+}
+// what the doctor shows; reads only
+function health(common, script = SCRIPT) {
+  const s = layout(common), differs = ([f, text]) => { try { return fs.readFileSync(f, "utf8") !== text; } catch { return true; } };
+  return { bin: s.bin, staleLaunchers: launchers(s, script).filter(differs).map(([f]) => f), staleHooks: pr.hookFiles(s, script).filter(differs).map(([f]) => f), ...pr.originHealth(s) };
+}
 function init(common) {
   const s = layout(common);
   pr.checkOrigin(s); // before anything is written, the mode marker included
   for (const d of [s.root, s.bin, s.tracker, s.issues, s.pulls, s.statuses, s.checks]) mkReal(d);
-  const gh = path.join(s.bin, "gh"), cmd = path.join(s.bin, "gh.cmd");
-  for (const f of [s.meta, s.labels, s.milestones, gh, cmd]) noLink(f);
-  writeFresh(gh, shLauncher(SCRIPT), 0o755);
-  writeFresh(cmd, cmdLauncher(SCRIPT));
+  const files = launchers(s, SCRIPT);
+  for (const f of [s.meta, s.labels, s.milestones, ...files.map(([p]) => p)]) noLink(f);
+  for (const [f, text, mode] of files) writeFresh(f, text, mode);
   withLock(s.lock, () => {
     if (!fs.existsSync(s.meta)) writeJSON(s.meta, { nextNumber: 1, nextComment: 1, nextMilestone: 1 });
     if (!fs.existsSync(s.labels)) writeJSON(s.labels, []);
@@ -780,4 +795,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { compile, render, init, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, nextNumber, pr, LOCK_STALE_MS };
+module.exports = { compile, render, init, refresh, health, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, nextNumber, pr, LOCK_STALE_MS };

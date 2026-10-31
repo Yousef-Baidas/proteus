@@ -15,12 +15,13 @@
 #   ... -Harness codex             any of the above for Codex CLI instead of Claude Code
 #   ... -Migrate [-DryRun] [-Scan <dir>,<dir>]   move every repo still on 1.x to the Claude Code plugin
 #   ... -PluginSetup [-OnlyHere] [-DryRun]   what /proteus:setup runs: this repo, then every other 1.x repo
+#   ... -PluginSetup -Local   or -Project -Local: keep the project on this machine, no code host (docs/local-mode.md)
 #
 # Or skip PowerShell entirely: node C:\path\to\proteus\install.js --project
 param([switch]$Project, [switch]$Install, [switch]$Confine, [switch]$Update,
       [switch]$Doctor, [switch]$Fix, [switch]$AutoUpdate, [switch]$NoAutoUpdate, [string]$Harness,
       [string[]]$Scan, [switch]$Guest, [switch]$NoGuest,
-      [switch]$Migrate, [switch]$PluginSetup, [switch]$OnlyHere, [switch]$DryRun)
+      [switch]$Migrate, [switch]$PluginSetup, [switch]$OnlyHere, [switch]$DryRun, [switch]$Local)
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "node not found; install Node 22.5+, open a new terminal, and re-run:"
@@ -41,6 +42,7 @@ foreach ($d in $Scan) { $flags += "--scan", $d }
 if ($Migrate)      { $flags += "--migrate" }
 if ($PluginSetup)  { $flags += "--plugin-setup" }
 if ($OnlyHere)     { $flags += "--only-here" }
+if ($Local)        { $flags += "--local" }
 if ($DryRun)       { $flags += "--dry-run" }
 if ($Guest)        { $flags += "--guest" }
 if ($NoGuest)      { $flags += "--no-guest" }

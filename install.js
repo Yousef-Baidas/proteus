@@ -53,6 +53,10 @@
 //                                     Moving from 1.x: removes the repo's unedited .claude/hooks and .claude/agents copies,
 //                                     their settings entries and exclude lines; edited ones stay and are named.
 //                                     Then every other repo still on 1.x is moved (--migrate); --only-here skips that.
+//                                     --local (also with --project): keep the project on this machine, no code host
+//                                     (docs/local-mode.md): prints what that gives up, then makes the stand-in, its
+//                                     origin and tracker in the repo's git dir, pushes the default branch and skips
+//                                     the GitHub steps and the other repos. Never with --guest. Refused in the sandbox
 //                                     Guest mode (as --project): teams/ in the guest dir; the gate, statusLine and the
 //                                     guest dir (additionalDirectories) in .claude/settings.local.json; settings.json and
 //                                     the rest of the checkout untouched, nothing to commit
@@ -819,6 +823,7 @@ function guestSetup(root, opt) {
   let dir;
   if (typeof opt.guest === "string") dir = path.resolve(opt.guest.replace(/^~(?=$|[\\/])/, () => HOME));
   else if (have) return have;
+  else if (opt.local) return ""; // local mode names no host to ask
   else if (opt.guest) dir = lib.defaultGuestDir(common);
   else {
     if (isDir(path.join(root, "teams"))) return "";
@@ -874,9 +879,11 @@ function install(opt) {
   const root = top.ok && top.out && !inside(realish(HOME), realish(top.out)) ? path.resolve(top.out) : process.cwd();
   if (!samePath(real(root), real(process.cwd()))) log(`project  -> ${root} (the repo's root; run from ${process.cwd()})`);
   if (opt.project && samePath(real(root), real(HOME))) die("--project sets up a repo; run it from the repo root, not from your home directory");
+  if (opt.local) { warnLocal(root); localOn(root); }
   const fresh = !lstat(CONFIG);
   let ok = codex() ? codexGlobalInstall({ autoUpdate }) : globalInstall({ autoUpdate });
   if (opt.project) ok = withProject(root, () => projectInstall(root, { ...opt, confine: opt.confine && HARNESS === "claude" })) && ok;
+  if (opt.local) ok = localFinish(root, adapter().hooksDir(root)) && ok;
   if (codex()) {
     codexSteps(root, opt.project);
     log("");
@@ -1153,15 +1160,72 @@ function lastAuthor(root, rel) {
   return who ? `last changed by ${who}` : "not yet committed";
 }
 
+// ---- local mode (#310): the choice. The warning prints before anything changes, and the setup skill shows it too
+const LOCAL_WARNING = [
+  "Keeping this project on this machine means:",
+  "- Everything stays on this machine, inside this repo's git folder. If the machine or that folder is lost, the history and the tracker are lost too; there is no copy anywhere else.",
+  "- There are no hosted checks and no separate accounts. Local hooks and the safety policy are the only enforcement.",
+  "- Agents can reach these records, so they are a working log, not proof.",
+  "- Your approvals are protected from agents only where the sandbox is on.",
+].join("\n");
+const standIn = () => require(path.join(HERE, "templates", "hooks", "proteus-local.js"));
+function warnLocal(root) {
+  log(LOCAL_WARNING);
+  log(repoProfile(root) ? "Right now this repo has a sandbox profile: approvals are protected in sessions started with it." : "Right now this repo has no sandbox profile: approvals are not protected from agents.");
+  log("");
+}
+// the stand-in's --init from hooks, its refusals as they are. The sandbox cannot write the lead's state, so there the
+// human runs this; a write refused anywhere else reads the same
+function localInit(root, hooks) {
+  const r = spawnSync(process.execPath, [path.join(hooks, "proteus-local.js"), "--init"], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 60000 });
+  const why = String(r.stderr || (r.error && r.error.message) || "").trim();
+  if (r.status === 0) return;
+  if (/EROFS|EACCES|EPERM|read-only/i.test(why)) die(`local mode is not on: this command cannot write Proteus's protected state here, which is what happens inside the sandbox. Run it yourself in your own terminal: node "${path.join(HERE, "install.js")}" ${process.argv.slice(2).join(" ")}`);
+  die(why || "local mode is not on: the stand-in's setup failed");
+}
+const localOn = (root) => localInit(root, path.join(HERE, "templates", "hooks"));
+// a repo that turned local on after --sandbox: the profile gets the rules, and keeps the deny rules a worktree added
+function localProfile(root) {
+  const prof = repoProfile(root);
+  if (!prof) return;
+  const lib = hl(), common = lib.trustedCommon(root), main = lib.mainRoot(common);
+  const old = readJson(prof.file) || {}, next = sandboxProfile(main, common, prof.bin, sandboxScratch(), sandboxGuest(main, common));
+  next.permissions.deny = [...new Set([...next.permissions.deny, ...((old.permissions || {}).deny || [])])];
+  writeJson(prof.file, next);
+  log(`sandbox  -> ${prof.file} (local mode's rules)`);
+}
+// the default branch into an empty origin; with no commits, the step. False when the push failed
+function firstPush(root) {
+  const h = standIn().health(hl().trustedCommon(root));
+  if (h.pushed) return true;
+  if (!git(["rev-parse", "--verify", "-q", "HEAD"], root).ok) { log(`first push -> no commits yet; after the first: git push origin ${h.branch}`); return true; }
+  const r = git(["push", "-q", "origin", `refs/heads/${h.branch}:refs/heads/${h.branch}`], root);
+  if (!r.ok) warn(`first push -> failed (${r.err.split("\n")[0]}); run: git push origin ${h.branch}`);
+  else log(`first push -> ${h.branch}`);
+  return r.ok;
+}
+// after the install: launchers from the hooks the sessions will run, when those are not the plugin's own
+function localFinish(root, hooks) {
+  if (hooks && isFile(path.join(hooks, "proteus-local.js"))) localInit(root, hooks);
+  log("local    -> on: the code, the tracker and the checks stay on this machine (docs/local-mode.md)");
+  localProfile(root);
+  return firstPush(root);
+}
+
 async function pluginSetup(opt) {
   const dry = !!opt.dryRun;
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
   if (!top.ok || !top.out) die("--plugin-setup sets up a git repo; run it inside one (git init first)");
   const root = path.resolve(top.out);
   if (inside(realish(HOME), realish(root))) die("--plugin-setup sets up a repo; this one holds your home directory");
+  if (opt.local) warnLocal(root);
   if (!samePath(real(root), real(process.cwd()))) log(`project  -> ${root} (the repo's root; run from ${process.cwd()})`);
-  // the other repos' move needs gh (who owns each): offline or logged out, nothing changes, this repo included
-  const pass = opt.onlyHere ? null : await passPlan(dry, root);
+  const local = opt.local || !!hl().localCommon(root);
+  if (opt.local && !dry) localOn(root);
+  else if (opt.local) log("local    -> would turn on: the code, the tracker and the checks stay on this machine");
+  // the other repos' move needs gh (who owns each): offline or logged out, nothing changes, this repo included.
+  // Local mode needs no gh, so it leaves them to --migrate
+  const pass = opt.onlyHere || local ? null : await passPlan(dry, root);
   // a local-scope install here keeps the gate out of the committed settings.json
   const e = entryFor(root);
   // the same guest decision as --project: teams/ in the guest dir, the gate in settings.local.json, nothing to commit
@@ -1171,6 +1235,7 @@ async function pluginSetup(opt) {
   if (guest && dry) log(`guest    -> .claude/settings.local.json (would add ${guest} to additionalDirectories)`);
   else if (guest) ok = allowGuest(root, guest) && ok;
   if (!dry) { setupReleaseCheck(root); register(root); }
+  if (opt.local && !dry) ok = localFinish(root, "") && ok;
   const self = `node "${path.join(HERE, "install.js")}"`;
   if (pass) ok = movePass(pass) && ok;
   else {
@@ -1188,7 +1253,7 @@ async function pluginSetup(opt) {
   if (guest) log(`  nothing to commit: guest mode keeps teams/ in ${guest} and the plugin on for you alone (--no-guest: install into the repo)`);
   else log(r.gate === "settings.json" ? "  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin" : "  commit teams/ (the plugin is on for you alone here, through .claude/settings.local.json)");
   if (!teamsEnvOn()) log(`  enable agent teams once, then restart the terminal: ${envCommand()}`);
-  if (!guest) {
+  if (!guest && !local) {
     log(`  on GitHub, as an admin of the repo: ${self} --protect`);
     log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
   }
@@ -1666,7 +1731,9 @@ function ghAs(dir, args, extra = {}) {
   const env = { ...process.env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" };
   if (dir) env.GH_CONFIG_DIR = dir;
   else if (env.GH_CONFIG_DIR && agentGh() && samePath(path.resolve(env.GH_CONFIG_DIR), agentGh())) delete env.GH_CONFIG_DIR;
-  const r = spawnSync("gh", args, { encoding: "utf8", timeout: 30000, ...extra, env });
+  // in local mode the stand-in, but a login or logout is always the real gh's
+  const cwd = extra.cwd || process.cwd(), [bin, argv] = args[0] === "auth" && args[1] !== "status" ? ["gh", args] : hl().ghArgv(args, cwd);
+  const r = spawnSync(bin, argv, { encoding: "utf8", timeout: 30000, ...extra, env: hl().localEnv(cwd, env) });
   return { ok: r.status === 0, out: (r.stdout || "").trim(), err: (r.stderr || "").trim() || (r.error ? r.error.message : "") };
 }
 const loginOf = (dir) => { const r = ghAs(dir, ["api", "user", "--jq", ".login"]); return r.ok ? r.out : ""; };
@@ -1704,7 +1771,7 @@ function agentLogin(dirArg) {
 const pinned = (context, app) => (app && context !== "gates" ? { context, integration_id: app.appId } : { context });
 const rulesetBody = (app = hl().verifierApp()) => ({
   name: RULESET, target: "branch", enforcement: "active", bypass_actors: [],
-  conditions: { ref_name: { include: ["refs/heads/proteus/*"], exclude: [] } },
+  conditions: { ref_name: { include: hl().REQUIRED_REFS, exclude: [] } },
   rules: [
     { type: "pull_request", parameters: { required_approving_review_count: 0, dismiss_stale_reviews_on_push: false, require_code_owner_review: false, require_last_push_approval: false, required_review_thread_resolution: false } },
     { type: "required_status_checks", parameters: { strict_required_status_checks_policy: false, do_not_enforce_on_create: true, required_status_checks: hl().REQUIRED_CHECKS.map((c) => pinned(c, app)) } },
@@ -1870,6 +1937,42 @@ async function verifierApp(idArg, keyArg) {
 
 // doctor
 
+// the doctor in local mode: the rows that stand where the host's were
+function localChecks(check, root, common, self) {
+  // before any session has recorded the hooks dir, the project's copy when --project made one
+  const lib = hl(), rec = (readText(lib.leadPath(common, "hooks-root")) || "").trim(), copy = adapter().hooksDir(root);
+  const hooks = rec || (isFile(path.join(copy, "proteus-local.js")) ? copy : path.join(HERE, "templates", "hooks"));
+  const script = path.join(hooks, "proteus-local.js"), init = `node "${script}" --init`;
+  const h = () => standIn().health(common, script);
+  check(() => ["ok", "local mode: the code, the tracker and the checks stay on this machine"]);
+  check(() => {
+    const s = h();
+    if (!s.origin) return ["FIX", "origin is not this repo's local origin", `git remote -v, then ${init}`];
+    return s.staleHooks.length ? ["FIX", `the local origin's hooks are out of date: ${s.staleHooks.map((f) => path.basename(f)).join(", ")}`, init] : ["ok", "the local origin and its hooks"];
+  });
+  check(() => {
+    const s = h();
+    return s.staleLaunchers.length ? ["FIX", `the gh launchers do not point at this hooks dir: ${s.staleLaunchers.map((f) => path.basename(f)).join(", ")}`, init] : ["ok", "the gh launchers point at this hooks dir"];
+  });
+  check(() => {
+    const s = h();
+    if (s.pushed) return ["ok", `first push done: ${s.branch} is on the local origin`];
+    return ["WARN", `${s.branch || "the default branch"} is not on the local origin yet, so no pull request can target it`, git(["rev-parse", "--verify", "-q", "HEAD"], root).ok ? `git push origin ${s.branch}` : `make the first commit, then git push origin ${s.branch}`];
+  });
+  check(() => {
+    const s = h();
+    return s.gates.length ? ["ok", `${s.gates.length} gate command(s) in ## Learned on ${s.branch}`] : ["WARN", "no gate command in ## Learned on the default branch, so every local check fails", "add them to AGENTS.md on the default branch"];
+  });
+  check(() => {
+    const prof = repoProfile(root);
+    if (!prof) return ["WARN", "approvals=unprotected: no sandbox profile, so agents can reach your approvals", `${self} --sandbox`];
+    const rules = ((readJson(prof.file) || {}).sandbox || {}).filesystem || {};
+    return (rules.denyWrite || []).length ? ["ok", "sandbox profile with local mode's rules: approvals are protected in sessions started with it"] : ["WARN", "the sandbox profile lacks local mode's rules", `${self} --sandbox`];
+  });
+  check(() => (typeof adapter().prependPath === "function" ? ["ok", `agents' shells find gh in ${lib.localPath(common, "bin")}, from the next session`]
+    : ["WARN", `this harness has no way to put ${lib.localPath(common, "bin")} first on agents' PATH: Proteus's own gh calls reach the stand-in, a bare gh in an agent's shell does not`, "add that dir to PATH in the shell agents run in"]));
+}
+
 async function doctor(fix) {
   const root = process.cwd();
   const top = git(["rev-parse", "--show-toplevel"], root);
@@ -1880,6 +1983,8 @@ async function doctor(fix) {
   // guest mode: teams/ lives in the guest dir, and the repo's CI and lefthook are not Proteus's to check
   const guest = inRepo ? hl().guestDir(root) : "", base = guest || root;
   const isProject = inRepo && isDir(path.join(base, "teams"));
+  // local mode: no host, so the stand-in's rows replace the host's
+  const localC = top.ok ? hl().localCommon(root) : null;
   const self = `node "${path.join(HERE, "install.js")}"${cxh ? " --harness codex" : ""}`;
   const hd = cxh ? ".codex" : ".claude";
   // a plugin setup (D8): the repo's committed gate, or this run is the plugin's own copy; the plugin then carries the
@@ -1906,12 +2011,16 @@ async function doctor(fix) {
   }
   let ghAuthed = false;
   check(() => {
+    if (localC) {
+      ghAuthed = ghAs("", ["auth", "status"], { cwd: root }).ok;
+      return ghAuthed ? ["ok", "gh here is the local stand-in; a real gh is not needed"] : ["FIX", "the local stand-in does not answer", `node "${path.join(HERE, "templates", "hooks", "proteus-local.js")}" --init`];
+    }
     if (!has("gh")) return ["FIX", "gh not found", WIN ? "winget install GitHub.cli" : "brew install gh | sudo pacman -S github-cli | https://cli.github.com"];
     ghAuthed = has("gh", ["auth", "status"]) !== null;
     return ghAuthed ? ["ok", "gh logged in"] : ["FIX", "gh not logged in", "gh auth login"];
   });
   let bot = "";
-  check(() => {
+  if (!localC) check(() => {
     if (!ghAuthed) return ["WARN", "agents' GitHub login not checked (gh not ready)", "gh auth login"];
     const dir = agentGh();
     if (!dir) return ["WARN", "identity=shared: agents post as you, so only the guards tell their ACCEPT from yours", `${self} --agent-login`];
@@ -1923,7 +2032,7 @@ async function doctor(fix) {
   });
   // the verifier App (#81), when one is recorded: its key readable here, and a token mints for this repo. GitHub
   // out of reach is a WARN: the key and the config may be fine
-  const vapp = hl().verifierApp();
+  const vapp = localC ? null : hl().verifierApp();
   if (vapp) check(() => {
     try { fs.accessSync(vapp.keyPath, fs.constants.R_OK); } catch (e) { return ["FIX", `verifier App ${vapp.appId}: key ${vapp.keyPath} is not readable (${e.code}); every signoff fails`, `put the App's .pem back there, or ${self} --verifier-app <appId> <keyPath>`]; }
     const st = fs.statSync(vapp.keyPath);
@@ -2047,7 +2156,8 @@ async function doctor(fix) {
     const where = top.ok ? "in the Proteus checkout, not set up for self-host" : "not inside a git repo";
     check(() => ["WARN", `${where}; project checks skipped`, top.ok ? `${self} --project, or cd into your repo and re-run` : "cd into your repo and re-run"]);
   } else {
-    check(() => {
+    if (localC) localChecks(check, root, localC, self);
+    if (!localC) check(() => {
       const remotes = git(["remote", "-v"], root).out;
       if (!/github\.com/.test(remotes)) return ["FIX", "no GitHub remote", "gh repo create --private --source . --push"];
       if (!ghAuthed) return ["WARN", "GitHub remote not verified (gh not ready)", "gh auth login"];
@@ -2057,7 +2167,7 @@ async function doctor(fix) {
     // what binds proteus/* and who the agents are there; the ruleset is the human's, set once by --protect.
     // ghAuthed is read when the row runs: the gh row before it sets it, after every row is registered
     let repo = "";
-    if (isProject) check(() => {
+    if (isProject && !localC) check(() => {
       if (!ghAuthed) return ["WARN", "proteus/* rules not checked (gh not ready)", "gh auth login"];
       repo = json(ghAs("", ["repo", "view", "--json", "nameWithOwner"], { cwd: root }).out)?.nameWithOwner || "";
       if (!repo) return ["WARN", "proteus/* rules not checked (gh repo view fails)", "gh repo view"];
@@ -2068,13 +2178,13 @@ async function doctor(fix) {
       if (rulesHold(rules)) return ["ok", `proteus/* ruleset: PR with gates, verdict and security green${vapp ? ` (the verdicts from App ${vapp.appId})` : ""}, no force push`];
       return ["WARN", `no ruleset binds proteus/* on ${repo}${rules ? "" : " (or gh cannot read it)"}: the lead falls back to per-run protection, which only an admin's login can set`, `${self} --protect (run by an admin of ${repo})`];
     });
-    if (isProject) check(() => {
+    if (isProject && !localC) check(() => {
       if (!bot || !repo) return ["ok", "agents' access not checked (no agents' login or repo)"];
       const p = ghAs("", ["api", `repos/${repo}/collaborators/${bot}/permission`, "--jq", ".permission"], { cwd: root }).out;
       if (p === "admin") return ["WARN", `${bot} is an admin of ${repo} and can lift the ruleset`, "lower it to write in Settings > Collaborators"];
       return p === "write" || p === "maintain" ? ["ok", `${bot} has ${p} on ${repo}`] : ["FIX", `${bot} cannot push to ${repo} (${p || "unknown"})`, `${self} --protect (run by an admin of ${repo})`];
     });
-    if (isProject) check(() => {
+    if (isProject && !localC) check(() => {
       if (!repo) return ["ok", "proteus-trust.yml on the default branch not checked (no repo)"];
       const cur = trustOnDefault(repo, { cwd: root });
       if (!cur) return ["WARN", `${TRUST} on the default branch of ${repo} not checked (gh cannot read it)`, "gh auth status"];
@@ -2223,7 +2333,7 @@ async function doctor(fix) {
         return ms > budget ? ["WARN", `pre-commit took ${r.error ? "over " : ""}${secs}s`, "move slow checks to pre-push or CI"] : ["ok", `pre-commit took ${secs}s`];
       });
       // the template's EDIT-* steps fail on purpose; a workflow that still has one keeps every PR red
-      if (!guest) check(() => {
+      if (!guest && !localC) check(() => {
         const left = [...(readText(path.join(root, ".github", "workflows", "proteus-gates.yml")) || "").matchAll(/^[^#\n]*\b(EDIT-\w+)/gm)].map((m) => m[1]);
         return left.length ? ["WARN", `.github/workflows/proteus-gates.yml still has unfilled placeholders (${[...new Set(left)].join(", ")}): its gates fail every PR until they run real commands`, "replace each EDIT-* step with the project's command and commit"] : ["ok", "proteus-gates.yml has no unfilled placeholder"];
       });
@@ -2382,9 +2492,18 @@ function sandboxGuest(root, common) {
 const sandboxWritable = (root, common, scratch, guest) =>
   [...new Set([root, common, scratch, ...(guest ? [guest] : [])].flatMap((p) => [path.resolve(p), real(p) || path.resolve(p)]))];
 
+// local mode's part of a profile: agents use the store and push to its origin, but the launchers, the origin's hooks
+// and its config run or steer code outside the sandbox. Exact paths or a trailing /**, as gitDenyRules
+function localRules(common) {
+  const stores = [...new Set([common, real(common) || common])].map((c) => hl().localPath(c));
+  const dirs = stores.flatMap((s) => [path.join(s, "bin"), path.join(s, "origin.git", "hooks")]), files = stores.map((s) => path.join(s, "origin.git", "config"));
+  return { stores, denyWrite: [...dirs, ...files], edits: [...dirs.map((d) => slashRule("Edit", path.join(d, "**"))), ...files.map((f) => slashRule("Edit", f))] };
+}
+
 function sandboxProfile(root, common, bin, scratch, guest) {
   const lib = hl();
   const writable = sandboxWritable(root, common, scratch, guest);
+  const local = lib.localMode(common) ? localRules(common) : null;
   const keep = writable.filter((p) => !writable.some((q) => q !== p && inside(p, q)));
   // the human's gh config dir, always (agents read theirs, agentGh), and the credentials Claude Code itself keeps
   const human = lib.humanGhDir();
@@ -2406,7 +2525,7 @@ function sandboxProfile(root, common, bin, scratch, guest) {
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       excludedCommands: excluded,
-      filesystem: { allowWrite: writable, denyRead: secrets.map(bare) },
+      filesystem: { allowWrite: local ? [...writable, ...local.stores] : writable, ...(local && { denyWrite: local.denyWrite }), denyRead: secrets.map(bare) },
       network: { allowedDomains: domains, strictAllowlist: true },
       credentials: { envVars: hl().SANDBOX_TOKENS.map((name) => ({ name, mode: "deny" })) },
     },
@@ -2431,6 +2550,7 @@ function sandboxProfile(root, common, bin, scratch, guest) {
         ...["settings.json", "settings.local.json"].map((f) => slashRule("Edit", path.join(root, ".claude", f))),
         ...new Set([common, real(common) || common].flatMap(C.gitDenyRules)),
         ...outsideEdits(keep),
+        ...(local ? local.edits : []),
       ],
     },
   };
@@ -2612,7 +2732,7 @@ const FLAGS = {
   "--doctor": "doctor", "--fix": "fix", "--auto-update": "autoUpdate", "--no-auto-update": "noAutoUpdate",
   "--tour-done": "tourDone", "--protect": "protect", "--no-guest": "noGuest",
   "--plugin-setup": "pluginSetup", "--dry-run": "dryRun", "--remove-user-install": "removeUser",
-  "--only-here": "onlyHere", "--migrate": "migrate", "--migrate-here": "migrateHere", "--sandbox": "sandbox",
+  "--only-here": "onlyHere", "--local": "local", "--migrate": "migrate", "--migrate-here": "migrateHere", "--sandbox": "sandbox",
 };
 let harnessArg = null;
 
@@ -2665,7 +2785,9 @@ function main() {
   if (opt.autoUpdate && opt.noAutoUpdate) die("--auto-update and --no-auto-update conflict", 2);
   if (opt.dryRun && !opt.pluginSetup && !opt.removeUser && !opt.migrate) die("--dry-run needs --plugin-setup, --migrate or --remove-user-install", 2);
   if (opt.onlyHere && !opt.pluginSetup) die("--only-here needs --plugin-setup", 2);
-  const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere", "guest", "noGuest"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
+  if (opt.local && !opt.project && !opt.pluginSetup) die("--local needs --project or --plugin-setup", 2);
+  if (opt.local && opt.guest) die("--local and --guest conflict", 2);
+  const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere", "guest", "noGuest", "local"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
     migrate: ["--migrate", ["dryRun"], "--project"], migrateHere: ["--migrate-here", [], "--project"] };
   for (const [k, [flag, ok, cx]] of Object.entries(takes)) {
     if (opt[k] && Object.keys(opt).some((x) => x !== k && !ok.includes(x))) die(`${flag} takes only ${[...ok.map((x) => Object.keys(FLAGS).find((f) => FLAGS[f] === x) || `--${x}`), "--scan"].join(" and ")}`, 2);
@@ -2675,6 +2797,8 @@ function main() {
   if ((opt.agentLogin || opt.protect || opt.verifierApp) && Object.keys(opt).length > 1) die("--agent-login, --protect and --verifier-app take no other flag", 2);
   if (opt.sandbox && (Object.keys(opt).length > 1 || SCANS.length)) die("--sandbox takes no other flag", 2);
   if (opt.sandbox && codex()) die("--sandbox is for Claude Code; Codex runs its own sandbox", 2);
+  const hostOnly = [opt.agentLogin && "--agent-login", opt.protect && "--protect", opt.verifierApp && "--verifier-app"].find(Boolean);
+  if (hostOnly && hl().localCommon(process.cwd())) die(`${hostOnly}: this repo is in local mode, so there is no host to set up; nothing changed`);
 
   (async () => {
     if (opt.doctor) process.exitCode = (await doctor(opt.fix)) ? 0 : 1;
@@ -2694,5 +2818,5 @@ function main() {
 }
 
 // required rather than run (tests): the delete guard only, and nothing runs
-module.exports = { allowedRoots, safeRemove };
+module.exports = { allowedRoots, safeRemove, LOCAL_WARNING };
 if (require.main === module) main();

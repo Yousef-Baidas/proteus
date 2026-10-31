@@ -108,6 +108,7 @@ Details: [docs/install.md](docs/install.md).
 - [Installing](docs/install.md): prerequisites, installer, guest mode, agent patches, Windows, Codex, auto mode, uninstall.
 - [Setup walkthrough](docs/setup-walkthrough.md): the GitHub steps, one at a time, in plain words.
 - [GitHub](docs/github.md): agent login, verifier App, CI and the other enforcement.
+- [Local mode](docs/local-mode.md): no code host, everything on this machine, and what that gives up.
 - [Updating](docs/updating.md): pins, the release check, signed tags, auto-update.
 - [Migrating](docs/migrating.md): from 1.x.
 - [Costs](docs/costs.md): context tokens and how they were measured.

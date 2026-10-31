@@ -1,0 +1,3 @@
+### Added
+
+- Local mode can now be chosen: `/proteus:setup` asks once whether a project goes on a code host or stays on this machine, and `install.js --plugin-setup --local` or `--project --local` sets it up, printing first what it gives up (#310, [docs/local-mode.md](../docs/local-mode.md)). The state line, `proteus-status.js` and `--doctor` show the mode; host-only flags refuse. Sessions keep the stand-in's launchers and origin hooks pointing at the current hooks dir, and put the launchers first on agents' PATH under Claude Code. With a sandbox profile, a local check starting outside the sandbox runs nothing and names `gh pr checks <n> --rerun`.

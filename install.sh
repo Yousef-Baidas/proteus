@@ -8,6 +8,7 @@
 #   ./install.sh --project --install --confine   fetch missing skills, hide them from the lead
 #   ./install.sh --project --guest   guest mode, for a repo you do not own: teams/ and the lead's docs
 #                                    outside the repo (--no-guest: install into the repo)
+#   ./install.sh --project --local   keep the project on this machine, no code host (docs/local-mode.md)
 #   ./install.sh --update            move this checkout to the newest verified signed release, reinstall, refresh the current repo
 #   ./install.sh --auto-update       let sessions pull this checkout (--no-auto-update: stop)
 #   ./install.sh --doctor [--fix]    check the setup; --fix applies the safe local fixes

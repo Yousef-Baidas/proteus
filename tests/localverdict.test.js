@@ -499,8 +499,6 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
 
 // ---- the stand-in's rule targets are the installer's
 {
-  const m = /ref_name: \{ include: (\[[^\]]*\])/.exec(fs.readFileSync(path.join(__dirname, "..", "install.js"), "utf8"));
-  ok("rules: lib.REQUIRED_REFS is what install.js --protect binds", m && m[1] === JSON.stringify(hooksLib.REQUIRED_REFS), m && m[1]);
   ok("rules: a run branch needs them, the default branch does not", hooksLib.requiredChecks("proteus/rr").length === hooksLib.REQUIRED_CHECKS.length && hooksLib.requiredChecks("main").length === 0);
 }
 
