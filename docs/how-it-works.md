@@ -109,7 +109,7 @@ A team is a folder, not an extra agent. `teams/<team>/` holds `PROFILE.md` (real
 
 ### Skills are picked for your project, not mine
 
-The shipped `skills.txt` files are only a starting set for software. At bootstrap the lead spawns `proteus-scout`, which reads your project, queries skills.sh for each domain and tool term, ranks by fit and installs, caps at eight per team, and reports what it picked and why, then stops. You approve and run the link script. Nothing third-party enters a worker without that yes.
+The shipped `skills.txt` files are only a starting set for software. At bootstrap the lead spawns `proteus-scout`, which reads your project, queries skills.sh for each domain and tool term, ranks by fit and installs, keeps at most 4 skills and 40 KB of their combined `SKILL.md` text per team (the link script refuses a team over either), and reports what it picked and why, then stops. You approve and run the link script. Nothing third-party enters a worker without that yes.
 
 ### Required skills
 

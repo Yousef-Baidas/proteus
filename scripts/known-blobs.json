@@ -1004,7 +1004,9 @@
     ],
     "templates/teams/backend/skills.txt": [
       "40fc4c835613608744a4a9f5a07cb62688442e7a",
+      "426ddd70b14d35c790ca5f446537735b3f127e8e",
       "ccd0f844e684ce3ff6a509d530e1e898a54ccad4",
+      "cfb096f49c93530935e4d079db21f20c390faab2",
       "cfe6480501965db1027553b0aef90c78cb01dfd6"
     ],
     "templates/teams/devops/PROFILE.md": [
@@ -1024,6 +1026,7 @@
     ],
     "templates/teams/frontend/skills.txt": [
       "63384c395026653f20092c7352933e075be422a7",
+      "bb290e39df28716c311c91b289d86d1657301374",
       "c3e59ff0ac595a326976e65d109dacb7a8db13fc",
       "ead9b1e57079071069a7503dc78335b5f4782e62"
     ],
@@ -1038,6 +1041,7 @@
       "b97d84b97a421cc101f9f265156bd13bb3dd8ad7",
       "c221dd99a5a0c52daddcfec3e89ca5bf12b00035",
       "e069a55deb1c4605c1c56a69b3c2e170ec463592",
+      "ea2dc5edb2a56bba1688a741772e688daf26d435",
       "f02ef7e21138d62fb3bd0b9c383c74b4ab440cc1",
       "f4aded89aacab749bee88802d8b3401c44fabe64"
     ],
@@ -1072,8 +1076,10 @@
       "e750ba188670b1757774a6f8fe6b3901c0fe7538"
     ],
     "templates/teams/qa/skills.txt": [
+      "207a7431eb28c79f70d89608e3c06a7e44c3c55d",
       "3fea1dc71d3143f834faaa42088447afd50f5439",
       "5d106a21945cc85066fdf0d9fcf04cbd5fb0edff",
+      "7761f10f8651c27c5bc466636fe4bc438d7ce73f",
       "9a4944e171587558cc408b9e21f985cea6ab57b7"
     ],
     "templates/teams/security/PROFILE.md": [
@@ -1103,7 +1109,9 @@
     },
     "templates/teams/backend/skills.txt": {
       "40fc4c835613608744a4a9f5a07cb62688442e7a": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
+      "426ddd70b14d35c790ca5f446537735b3f127e8e": "# shipped default; proteus-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. proteus-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
       "ccd0f844e684ce3ff6a509d530e1e898a54ccad4": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\nbetter-auth/skills email-and-password-best-practices\nbetter-auth/skills organization-best-practices\napollographql/skills rust-best-practices\nwshobson/agents rust-async-patterns\nactionbook/rust-skills m15-anti-pattern\nwshobson/agents python-performance-optimization\n",
+      "cfb096f49c93530935e4d079db21f20c390faab2": "# shipped default; proteus-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. proteus-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nwshobson/agents modern-javascript-patterns\ngithub/awesome-copilot sql-optimization\ngithub/awesome-copilot sql-code-review\nbetter-auth/skills better-auth-best-practices\n",
       "cfe6480501965db1027553b0aef90c78cb01dfd6": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nmodern-javascript-patterns\nsql-optimization\nsql-code-review\nbetter-auth-best-practices\nemail-and-password-best-practices\norganization-best-practices\nrust-best-practices\nrust-async-patterns\npython-performance-optimization\nm15-anti-pattern\n"
     },
     "templates/teams/devops/PROFILE.md": {
@@ -1123,6 +1131,7 @@
     },
     "templates/teams/frontend/skills.txt": {
       "63384c395026653f20092c7352933e075be422a7": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nweb-design-guidelines\nvercel-react-best-practices\nfrontend-design\nimpeccable\nui-ux-pro-max\nshadcn\ngsap-core\ngsap-react\nsvelte-code-writer\nastro\n",
+      "bb290e39df28716c311c91b289d86d1657301374": "# shipped default; proteus-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. proteus-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nanthropics/skills frontend-design\nvercel-labs/agent-skills web-design-guidelines\nvercel-labs/agent-skills vercel-react-best-practices\npbakaus/impeccable impeccable\nnextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max\nshadcn/ui shadcn\ngreensock/gsap-skills gsap-core\ngreensock/gsap-skills gsap-react\nsveltejs/ai-tools svelte-code-writer\nastrolicious/agent-skills astro\n",
       "c3e59ff0ac595a326976e65d109dacb7a8db13fc": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nanthropics/skills frontend-design\nvercel-labs/agent-skills web-design-guidelines\nvercel-labs/agent-skills vercel-react-best-practices\npbakaus/impeccable impeccable\nnextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max\nshadcn/ui shadcn\ngreensock/gsap-skills gsap-core\ngreensock/gsap-skills gsap-react\nsveltejs/ai-tools svelte-code-writer\nastrolicious/agent-skills astro\n",
       "ead9b1e57079071069a7503dc78335b5f4782e62": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nanthropics/skills frontend-design\nvercel-labs/agent-skills web-design-guidelines\nvercel-labs/agent-skills vercel-react-best-practices\npbakaus/impeccable impeccable\nnextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max\nshadcn/ui shadcn\ngreensock/gsap-skills gsap-core\ngreensock/gsap-skills gsap-react\nsveltejs/ai-tools svelte-code-writer\nastrolicious/agent-skills astro\n"
     },
@@ -1143,8 +1152,10 @@
       "e750ba188670b1757774a6f8fe6b3901c0fe7538": "# qa profile (verifier only)\n\nReal-world role: release QA lead. Owns nothing; checks the integrated branch.\n\nReading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.\n\nRuns once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.\n\nDo (every gate as `node .claude/hooks/proteus-gates-cache.js \"<gate>\"` on a clean checkout, so a tree the lead already passed after the last merge is not run again): full suite, e2e suite if present, smoke command from a fresh install dir, and a clean rebuild of every non-code deliverable from the branch alone (render, export, compile, recompute) matching the merged evidence. Compress output with rtk. Map each test to a ticket id; a ticket with no coverage is a finding even when green.\n\nThe lead names the mode: `wave` is the paragraph above, nothing more. `milestone` and `close` add the steps below and run on the lead's `top` model.\n\nMilestone, step 1: mutation testing on files changed since the milestone's merge-base. Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>`. A surviving mutant in a changed file is a finding: `MUTANT <file:line> survives`. Tool missing → say so once, continue without.\n\nMilestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuclear-code-quality-review/SKILL.md` (it cannot be invoked, only read) and apply it to `git diff <merge-base>..proteus/<run>`, opening surrounding files only where the skill needs them to judge. `CONVENTIONS.md` beats the skill where they disagree. Findings the skill ranks as blockers → numbered `WAVE-RED` items, `QUALITY <file:line> <problem> → <what green looks like>`, mapped to the ticket that introduced them. Everything below blocker → one comment each on the milestone's debt issue (`Debt: <run>/<milestone>`, named by the lead), never a ticket, never a fix. Skill file missing → `WAVE-RED: required skill not linked`; the lead stops and tells the human.\n\nClose: full suite; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read `SKILL.md` under `~/.claude/plugins/cache/*/mattpocock-skills/*/skills/engineering/improve-codebase-architecture/`; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.\n\nVerdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.\n"
     },
     "templates/teams/qa/skills.txt": {
+      "207a7431eb28c79f70d89608e3c06a7e44c3c55d": "# shipped default; proteus-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. proteus-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\n",
       "3fea1dc71d3143f834faaa42088447afd50f5439": "# <owner/repo> <skill-name>   one per line; `bash teams/link-skills.sh` links them.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\naffaan-m/ecc rust-testing\n",
       "5d106a21945cc85066fdf0d9fcf04cbd5fb0edff": "# shipped default; hive-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. hive-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\naffaan-m/ecc rust-testing\n",
+      "7761f10f8651c27c5bc466636fe4bc438d7ce73f": "# shipped default; proteus-scout replaces this list for your stack. <owner/repo> <skill-name> per line.\n# Defaults below are a starting set. proteus-scout rewrites this file for your stack\n# from https://skills.sh (ranked by installs) during bootstrap; human approves the list.\nmicrosoft/playwright-cli playwright-cli\ncurrents-dev/playwright-best-practices-skill playwright-best-practices\ngithub/awesome-copilot javascript-typescript-jest\nwshobson/agents python-testing-patterns\naffaan-m/ecc rust-testing\n",
       "9a4944e171587558cc408b9e21f985cea6ab57b7": "# one skill name per line; installer links these from ~/.agents/skills or ~/.claude/skills\nplaywright-best-practices\nplaywright-cli\njavascript-typescript-jest\npython-testing-patterns\nrust-testing\n"
     },
     "templates/teams/security/PROFILE.md": {

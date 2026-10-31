@@ -12,7 +12,8 @@
 //
 // skills.txt line format:  <owner/repo> <skill-name>
 // required.txt (same format) holds the pipeline's mandatory skills; proteus-scout never
-// rewrites it and it does not count against the eight-per-profile cap.
+// rewrites it and it does not count against the per-team cap (CAP): at most 4 skills.txt skills and 40960 bytes
+// of their combined SKILL.md text. A team over either prints "cap: <team> ..." and links and installs nothing.
 // teams/skills-lock.json pins each linked skill's content hash (sha256 over its files);
 // a differing hash on this machine prints "drift: <skill>" and keeps the committed hash; until the copy
 // matches or --relock, the lead guard refuses worker and verifier spawns (proteus-lib.js lockDrift).
@@ -23,7 +24,7 @@
 // removeLink removes only a link under teams/<profile>/{.claude,.agents}/skills or ~/.claude/skills,
 // each the real repo root (or HOME) plus fixed segments lstat'd real directories, so a symlinked
 // component below the root refuses the delete, and no mkdir, link or lock write goes through one.
-// Exit 0 on success, 1 when there is no teams/ here, 2 on an unknown flag.
+// Exit 0 on success, 1 when there is no teams/ here, 2 on an unknown flag, 3 when a team was over its cap.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -47,6 +48,9 @@ const OURS = new Set(["proteus", "proteus-review"]);
 // keeps the lead's cwd, so a Codex worker opens <team>/.agents/skills/<name>/SKILL.md itself.
 const SKILL_DIRS = [path.join(".claude", "skills"), path.join(".agents", "skills")];
 
+// per team, over its skills.txt picks: skills listed, and bytes of their SKILL.md files on this machine
+const CAP = { skills: 4, bytes: 40960 };
+
 // a skill name from a list file: one path segment, so a link built from it stays in its skills dir
 const validName = (name) => typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name);
 
@@ -67,6 +71,10 @@ function findSrc(name) {
 }
 
 // [[source, name], ...] from a list file; blank lines and # comments skipped, CRLF tolerated
+function skillBytes(src) {
+  try { return src ? fs.statSync(path.join(src, "SKILL.md")).size : 0; } catch { return 0; }
+}
+
 function readList(file) {
   return fs.readFileSync(file, "utf8").split(/\r?\n/)
     .map((l) => l.trim().split(/\s+/))
@@ -104,12 +112,15 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   const linked = [];
   let confined = 0; // global links actually removed
   let lists = 0, listed = 0; // list files and skill lines: lists naming no skill (the scout may pick zero) still lock
+  let capped = 0; // teams over CAP
   for (const p of profiles(teams)) {
     const dir = path.join(teams, p);
     const files = listFiles(dir);
     if (!files.length) continue;
     lists++;
-    listed += files.flatMap(readList).length;
+    // [source, name, fromSkillsTxt]: only skills.txt counts against CAP
+    const entries = files.flatMap((f) => readList(f).map((e) => [e[0], e[1], path.basename(f) === "skills.txt"]));
+    listed += entries.length;
     const dirs = [];
     for (const d of SKILL_DIRS) {
       const segs = ["teams", p, ...d.split(path.sep)];
@@ -118,17 +129,32 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
       else console.error(`teams/${p}/${d.split(path.sep).join("/")} is a link or has one on the way; refused, left alone`);
     }
     if (!dirs.length) { log(`teams/${p} -> 0 skills linked`); continue; }
-    let n = 0;
-    for (const [source, name] of files.flatMap(readList)) {
+    const picks = [];
+    for (const [source, name, pick] of entries) {
       if (!name) { console.error(`teams/${p}: line needs '<owner/repo> <skill>': ${source}`); continue; }
       if (!validName(name)) { console.error(`teams/${p}: skill name ${JSON.stringify(name)} is not one path segment; skipped`); continue; }
-      let src = findSrc(name);
-      if (!src && install) {
-        spawnSync(WIN ? "npx.cmd" : "npx", ["-y", "skills", "add", source, "--skill", name, "-g", "-y", "-a", "claude-code"],
+      picks.push({ source, name, pick, src: findSrc(name) });
+    }
+    // checked before any install and again after it, before any link; a skill not found counts as 0 bytes
+    const over = () => {
+      const mine = picks.filter((x) => x.pick);
+      const bytes = mine.reduce((sum, x) => sum + skillBytes(x.src), 0);
+      return mine.length > CAP.skills || bytes > CAP.bytes ? `${mine.length} skills, ${bytes} bytes` : "";
+    };
+    let cap = over();
+    if (!cap && install) {
+      for (const x of picks.filter((y) => !y.src)) {
+        spawnSync(WIN ? "npx.cmd" : "npx", ["-y", "skills", "add", x.source, "--skill", x.name, "-g", "-y", "-a", "claude-code"],
           { stdio: "ignore", shell: WIN });
-        src = findSrc(name);
+        x.src = findSrc(x.name);
       }
-      if (!src) { missing.push(`${p}: npx skills add ${source} --skill ${name} -g -y`); continue; }
+      cap = over();
+    }
+    for (const { source, name, src } of picks) if (!src) missing.push(`${p}: npx skills add ${source} --skill ${name} -g -y`);
+    if (cap) { console.error(`cap: ${p} ${cap} (max ${CAP.skills}, ${CAP.bytes})`); capped++; continue; }
+    let n = 0;
+    for (const { source, name, src } of picks) {
+      if (!src) continue;
       const blocked = dirs.filter(({ segs, own }) => !linkDir(src, path.join(own, name), (l) => remove(l, root, segs)));
       for (const { d } of blocked) console.error(`teams/${p}/${d.split(path.sep).join("/")}/${name} is a real directory or a link that could not be replaced; left alone`);
       if (blocked.length === dirs.length) continue;
@@ -168,10 +194,10 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
     for (const d of drift) log(`drift: ${d}  (npx skills update ${d}, or --relock to accept)`);
     log(`lock -> teams/skills-lock.json (${Object.keys(lock.skills).length} skills${relock ? ", relocked" : ""})`);
   }
-  return { linked: linked.length, missing: missing.length };
+  return { linked: linked.length, missing: missing.length, capped };
 }
 
-module.exports = { WIN, SKILL_DIRS, lstat, real, isDir, isFile, samePath, validName, ownDir, removeLink, linkDir, readList, listFiles, profiles, hashDir, run };
+module.exports = { WIN, CAP, SKILL_DIRS, lstat, real, isDir, isFile, samePath, validName, ownDir, removeLink, linkDir, readList, listFiles, profiles, hashDir, run };
 
 if (require.main === module) {
   const opt = {};
@@ -183,6 +209,6 @@ if (require.main === module) {
   }
   // from elsewhere (a guest dir outside the repo, a subfolder): the teams/ this script sits in
   if (!isDir(path.join(process.cwd(), "teams")) && path.basename(__dirname) === "teams") opt.root = path.dirname(__dirname);
-  try { run(opt); }
+  try { if (run(opt).capped) process.exitCode = 3; }
   catch (e) { console.error(e.message); process.exit(1); }
 }
