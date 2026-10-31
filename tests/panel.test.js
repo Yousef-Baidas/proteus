@@ -41,7 +41,7 @@ const BANNED = [
 ];
 for (const [what, re] of BANNED) ok(`register.tsx: no ${what}`, !re.test(src), (src.match(re) || [""])[0]);
 const runs = src.match(/\$\.process\.\w+\s*\(/g) || [];
-ok("register.tsx: exactly one process call, $.process.run", runs.length === 1 && /^\$\.process\.run/.test(runs[0]), JSON.stringify(runs));
+ok("register.tsx: exactly one process call, $.process.run", runs.length === 1 && runs[0].startsWith("$.process.run"), JSON.stringify(runs));
 ok("register.tsx: its argv is node, the status script and --json, with a timeout",
   /\$\.process\.run\(\s*\[\s*'node'\s*,\s*script\s*,\s*'--json'\s*\]\s*,\s*\{[^}]*timeoutMs:/.test(src), (src.match(/\$\.process\.run\([^\n]*/) || [""])[0]);
 ok("register.tsx: script is only ever the status script's path", (src.match(/proteus-status\.js/g) || []).length === 3 && !/\$\.process\.run\([^\n]*\+/.test(src));
