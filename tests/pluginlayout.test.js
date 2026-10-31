@@ -50,9 +50,10 @@ ok("plugin.json: hooks is hooks/hooks.json", P.hooks === "./hooks/hooks.json" &&
 const shipped = fs.readdirSync(path.join(ROOT, "agents")).filter((f) => f.endsWith(".md")).sort().map((f) => `./agents/${f}`);
 ok("plugin.json: agents lists every agents/*.md, each a file in the plugin", Array.isArray(P.agents) && key([...P.agents].sort()) === key(shipped) && P.agents.every(inRoot), JSON.stringify(P.agents));
 const M = read(".claude-plugin/marketplace.json");
-const entry = Array.isArray(M.plugins) && M.plugins.length === 1 ? M.plugins[0] : {};
+// the second entry is the optional run panel mod (#311), checked in tests/panel.test.js
+const entry = Array.isArray(M.plugins) && M.plugins.length === 2 ? M.plugins[0] : {};
 ok("marketplace.json: marketplace proteus with an owner", M.name === "proteus" && isObj(M.owner) && isStr(M.owner.name), JSON.stringify(M));
-ok("marketplace.json: one plugin, proteus, sourced from the repo root", entry.name === "proteus" && entry.source === "./", JSON.stringify(M.plugins));
+ok("marketplace.json: proteus first, sourced from the repo root, then the panel mod", entry.name === "proteus" && entry.source === "./" && M.plugins[1].name === "proteus-panel", JSON.stringify(M.plugins));
 ok("layout: no plugin/ copy of the repo", !fs.existsSync(path.join(ROOT, "plugin")));
 
 // ---- proteus-plugin.js runs the named hook in-process, as node would

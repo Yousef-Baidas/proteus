@@ -112,6 +112,7 @@ Details: [docs/install.md](docs/install.md).
 - [Migrating](docs/migrating.md): from 1.x.
 - [Costs](docs/costs.md): context tokens and how they were measured.
 - [Harnesses](docs/harnesses.md): other coding CLIs.
+- [Run panel](docs/run-panel.md): an optional pane showing the run and what waits on you.
 
 ## License
 
