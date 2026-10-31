@@ -233,6 +233,13 @@ r = next({ issues: [sliced(9, "hard"), sliced(10, "standard", "\nTier: full"), s
 ok("slice: a hard slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #9 slice: tier hard too large") && !fs.existsSync(WT(9)) && !lines(r).some((l) => l.startsWith("SPAWN worker #9")), r.out);
 ok("slice: a full-tier slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #10 slice: tier full too large") && !fs.existsSync(WT(10)) && !lines(r).some((l) => l.startsWith("SPAWN worker #10")), r.out);
 ok("slice: a standard slice ticket is prepared and spawned", lines(r).includes(`SPAWN worker #11 team=backend difficulty=standard worktree=${WT(11)} brief: node ${SCRIPT} brief worker 11`), r.out);
+// a human-operated step (step:human) is the human's: ASK, never SPAWN worker or a prepared worktree; its PR, verified
+const human = issue(6, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }, { name: "step:human" }], body: "Owned: src/t6.js" });
+r = next({ issues: [human], prs: [], reviews: [], inbox: [{ number: 30, title: "which db?", labels: [{ name: "needs-human" }, { name: "proteus-question" }] }] });
+ok("human: a ready step:human ticket is ASK human with its URL, after the inbox's ASK", lines(r).join("|") === "ASK https://github.com/o/r/issues/30 which db?|ASK human #6 https://github.com/o/r/issues/6", r.out + r.err);
+ok("human: no SPAWN worker (so no contracts worker) and no worktree", !lines(r).some((l) => l.startsWith("SPAWN")) && !fs.existsSync(WT(6)), r.out);
+r = next({ issues: [human], prs: [pr(15, 6, SHA("d"), [CI])], reviews: [], inbox: [] });
+ok("human: its PR gets SPAWN verifier as usual, and no ASK once it is open", lines(r).join("|") === `SPAWN verifier PR#15 #6 head=${SHA("d").slice(0, 12)} brief: node ${SCRIPT} brief verifier 15`, r.out + r.err);
 ok("slice: the label parses to its teams", JSON.stringify(require(SCRIPT).sliceTeams(["profile:backend", "slice:frontend, devops", "slice:qa"])) === JSON.stringify(["frontend", "devops", "qa"]));
 
 // under install.js --sandbox the prep runs in the sandbox: a RUN line with both steps and the copy, nothing made

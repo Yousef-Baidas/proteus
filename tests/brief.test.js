@@ -141,6 +141,10 @@ fs.writeFileSync(path.join(REPO, "AGENTS.md"), LEARNED);
 // a ticket with neither difficulty label nor quick tier
 r = run(["brief", "worker", "5"], {}, { ...STATEJSON, issues: [{ ...ISSUES[0], labels: labels() }, ...ISSUES.slice(1)] });
 ok("difficulty: no label and no quick tier is DECIDE", r.code === 1 && lines(r).join("|") === "DECIDE #5 brief: no source for difficulty", r.out + r.err);
+// a human-operated step has no worker brief
+fs.rmSync(briefFile("brief-5.md"), { force: true });
+r = run(["brief", "worker", "5"], {}, { ...STATEJSON, issues: [{ ...ISSUES[0], labels: labels("difficulty:standard", "step:human") }, ...ISSUES.slice(1)] });
+ok("human: a step:human ticket's worker brief is DECIDE and exit 1, nothing written", r.code === 1 && lines(r).join("|") === "DECIDE #5 human step: no worker brief" && !fs.existsSync(briefFile("brief-5.md")), r.out + r.err);
 
 // the verifier
 r = run(["brief", "verifier", "12"]);
