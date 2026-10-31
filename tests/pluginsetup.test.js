@@ -140,5 +140,6 @@ const fm = (/^---\n([\s\S]*?)\n---/.exec(skill) || [])[1] || "";
 ok("skill: named setup, so the plugin namespaces it /proteus:setup", /^name: setup$/m.test(fm), fm);
 ok("skill: disable-model-invocation: true", /^disable-model-invocation: true$/m.test(fm), fm);
 ok("skill: runs install.js --plugin-setup from ${CLAUDE_PLUGIN_ROOT}", skill.includes('node "${CLAUDE_PLUGIN_ROOT}/install.js" --plugin-setup'), skill);
+ok("skill: names the setup walkthrough, which exists", skill.includes("${CLAUDE_PLUGIN_ROOT}/docs/setup-walkthrough.md") && fs.existsSync(path.join(ROOT, "docs", "setup-walkthrough.md")), skill);
 
 lib.summary();

@@ -18,7 +18,7 @@ Fires after the last ticket of a milestone merges into `proteus/<run>` and QA sa
 
 0. After one fix cycle with a listed QA item still red (`flow.md`), the gate opens anyway: pass the guide the open items, and the brief puts them first, each marked fix, debt or drop for the human to decide.
 1. Spawn `proteus-guide` with run, milestone, ticket numbers, diff range, QA verdict, gate commands, mode, debt issue, the `ACCEPTANCE` comment, the `proteus-profile.js show` line. It opens the review issue `Review: <run>/<milestone>` (label `proteus-review`, `needs-human`) with the brief, evidence links, the open debt lines, so the human sees what was deferred, and the **Quality** ledger: at most eight lines of numbers counted from CI, the tracker and git (gates, mutation survivors, deep-review blockers, security findings, rework, baseline, debt), each linked, so the human sees how far to trust it without reading code. Exits.
-2. `PushNotification`: `review ready: <milestone> — <issue url>`. Print the url and `PROTEUS=0 claude → /proteus-review` in a second terminal (or `/remote-control` from the phone); on Codex `PROTEUS=0 codex → $proteus-review`.
+2. `PushNotification`: `review ready: <milestone> — <issue url>`. Tell the human in plain words to start a second session and run `/proteus-review` in it, never to open the host; then the exact command, from Channels below.
 3. Wait: a background shell with the poll from `tracker.md` (Codex: `harnesses.md`), until a verdict comment exists. Idle context costs nothing. Dispatch only **speculative** tickets: next-milestone tickets whose owned paths miss every file this milestone changed (`git diff --name-only <merge-base>..proteus/<run>`), labelled `speculative` and logged on the run log. They run steps 3 to 6 now; their PRs merge only after `ACCEPT`, so a `CHANGES` costs their work, not a wrong merge. `CHANGES` → close the PR of each one whose paths or `depends-on` the changes touch and dispatch it again after the round. None after a test piece, which nothing follows until `ACCEPT`.
 4. Verdict comment, first line:
    - `ACCEPT` → remove `needs-human`, close review issue and milestone, next milestone. Last one → step 8.
@@ -38,7 +38,7 @@ Any of these produce the verdict comment; the lead does not care which.
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |
 
-A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. Relay the ASK line's reply to the human. To approve in chat, write it to a file and run `proteus-verdict.js <n> --post --body-file <file> --sha <sha256>` with the PR's number: it posts through the same dialog, and refuses an `ACCEPT` for any other head.
+A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. The lead posts the human's decision from chat (`flow.md`, Asking the human); `proteus-verdict.js` refuses an `ACCEPT` for any other head.
 
 ## Unattended
 

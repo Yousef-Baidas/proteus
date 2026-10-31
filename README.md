@@ -106,6 +106,7 @@ Details: [docs/install.md](docs/install.md).
 
 - [How Proteus works](docs/how-it-works.md): teams, models, questions, reviews, commands, layout.
 - [Installing](docs/install.md): prerequisites, installer, guest mode, agent patches, Windows, Codex, auto mode, uninstall.
+- [Setup walkthrough](docs/setup-walkthrough.md): the GitHub steps, one at a time, in plain words.
 - [GitHub](docs/github.md): agent login, verifier App, CI and the other enforcement.
 - [Updating](docs/updating.md): pins, the release check, signed tags, auto-update.
 - [Migrating](docs/migrating.md): from 1.x.
