@@ -166,6 +166,6 @@ function main(argv) {
   } catch (e) { console.error(`proteus-learn: ${e.message}`); return 1; }
 }
 
-module.exports = { fresh };
+module.exports = { fresh, readSeen };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

@@ -9,6 +9,7 @@ const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
 const SCRIPT = path.join(ROOT, "templates", "hooks", "proteus-learn.js");
+const L = require(SCRIPT);
 const lib = require(path.join(__dirname, "lib.js"));
 const { ok, g } = lib;
 const W = lib.workdir("learn");
@@ -31,9 +32,9 @@ const link = (target, at, type) => { try { fs.symlinkSync(target, at, type); ret
 // --help and usage
 let R = repo();
 let r = cli(R, "--help");
-ok("--help: prints the usage, exit 0", r.code === 0 && /^usage: /.test(r.out), r.out + r.err);
+ok("--help: prints the usage, exit 0", r.code === 0 && r.out.startsWith("usage: "), r.out + r.err);
 r = cli(R, "nonsense");
-ok("usage: an unknown command exits 2", r.code === 2 && /^usage: /.test(r.err), r.err);
+ok("usage: an unknown command exits 2", r.code === 2 && r.err.startsWith("usage: "), r.err);
 r = cli(R, "seed");
 ok("usage: seed with no flag exits 2", r.code === 2, r.err);
 r = cli(R, "seed", "--mission");
@@ -179,13 +180,14 @@ for (const [why, body] of [["garbage", "{ not json"], ["an array", "[1]"], ["a w
 fs.writeFileSync(SEEN(R), JSON.stringify({ seen: [1, null, "../0001-a.md", "0001-a.md", "0002-b.md"] }));
 r = cli(R, "status");
 ok("seen file: invalid entries dropped, valid ones kept", r.out === "learn records=3 new=1\n", r.out);
+ok("seen file: every entry is re-validated on read", [...L.readSeen(path.join(R, ".git"))].join() === "0001-a.md,0002-b.md");
 fs.writeFileSync(SEEN(R), "x".repeat((1 << 20) + 1));
 r = cli(R, "status");
 ok("seen file: an oversized file counts as nothing read", r.code === 0 && !r.err, r.err);
 fs.rmSync(SEEN(R));
 fs.mkdirSync(SEEN(R));
 r = cli(R, "seen");
-ok("seen: a write that fails exits 1 with a reason, no stack", r.code === 1 && /^proteus-learn: /.test(r.err) && !/\bat .*\.js:\d+/.test(r.err), r.out + r.err);
+ok("seen: a write that fails exits 1 with a reason, no stack", r.code === 1 && r.err.startsWith("proteus-learn: ") && !/\bat .*\.js:\d+/.test(r.err), r.out + r.err);
 fs.rmdirSync(SEEN(R));
 
 // the walk's cap
