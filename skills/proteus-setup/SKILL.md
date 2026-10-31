@@ -14,4 +14,4 @@ Show its output as it is. If it refused (a settings file that is not valid JSON,
 
 After this repo, the command moves every other repo still on a 1.x install that it finds (docs/migrating.md) and prints one summary. Show that too; a repo it skipped or a file it left is the human's to handle. If it stopped because gh is not logged in or offline, say so: nothing changed.
 
-If the human passed `--dry-run`, `--only-here` (this repo only), `--scan <dir>` (also look under dir), `--guest [dir]` (keep Proteus's files outside the repo) or `--no-guest` (install into the repo even where gh reports read-only access), append them to the same command as given: `--dry-run` writes nothing and prints what it would change.
+If the human passed `--dry-run`, `--only-here` (this repo only), `--scan <dir>` (also look under dir), `--guest [dir]` (keep Proteus's files outside the repo) or `--no-guest` (install into the repo even where gh reports read-only access), append them to the same command as given.

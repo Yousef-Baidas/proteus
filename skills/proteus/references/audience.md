@@ -37,8 +37,7 @@ Any decision (a question, a change summary, a merge ask, a milestone review) is 
 
 ## The code host's words
 
-- Below `fluent`, unless the term is in `terms`: never the host's words for its objects and actions. Say what happens in plain words, in terms of the human's project.
-- The real term is taught only under `learning=along`, or when the human asks.
+- Below `fluent`, unless the term is in `terms`, never the host's words for its objects and actions: say what happens in plain words, in terms of the human's project. Teach the real term only under `learning=along`, or when the human asks.
 - A command the human must run stays exact, after a plain sentence saying what it does.
 
 ## High-risk or irreversible decisions
