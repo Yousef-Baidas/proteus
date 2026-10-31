@@ -469,6 +469,7 @@ const ALLOW = {
   "proteus-lib.js:syncText": "the session-start sync writes the checkout's .claude, not <common>",
   "proteus-lib.js:privateIndex": "treeChanges' index copy: 'wx' into its own fresh mkdtemp dir under <common>/proteus-lead (denied), removed after",
   "proteus-lib.js:releaseCheck": "the release check's cache lives in the plugin data dir under the user's home, not <common>",
+  "proteus-harness-claude.js:prependPath": "Claude Code's own env file, which it named for this hook, not <common>",
   "proteus-autostart.js:patchConfig": "~/.claude/proteus.json, the user's own config, not <common>",
   "proteus-autostart.js:pluginMove": "proteus-update.log beside ~/.claude/proteus.json, the user's own config dir, not <common>",
   "proteus-baseline.js:verdict": "teams/baseline.json in the checkout, run by a gate command, not a hook",

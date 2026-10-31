@@ -281,7 +281,7 @@ function leadWrite(common, file, text) {
 // the sandbox cannot write the lead's state, so a write that lands here ran outside it
 function leadWritable(common) {
   const f = leadPath(common, `.probe-${process.pid}-${Date.now()}`);
-  try { leadWrite(common, f, ""); fs.unlinkSync(f); return true; } catch { return false; }
+  try { leadWrite(common, f, ""); leadRemove(common, f); return true; } catch { return false; }
 }
 const leadJSON = (common, file, obj) => leadWrite(common, file, JSON.stringify(obj, null, 2) + "\n");
 // append to file, made if missing; a link at its name is refused (O_NOFOLLOW; Windows has none, so lstat first)
