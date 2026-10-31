@@ -2,6 +2,5 @@
 # Defaults below are a starting set. proteus-scout rewrites this file for your stack
 # from https://skills.sh (ranked by installs) during bootstrap; human approves the list.
 microsoft/playwright-cli playwright-cli
-currents-dev/playwright-best-practices-skill playwright-best-practices
 github/awesome-copilot javascript-typescript-jest
 wshobson/agents python-testing-patterns

@@ -3,5 +3,5 @@
 # from https://skills.sh (ranked by installs) during bootstrap; human approves the list.
 wshobson/agents modern-javascript-patterns
 github/awesome-copilot sql-optimization
-github/awesome-copilot sql-code-review
 better-auth/skills better-auth-best-practices
+wshobson/agents python-performance-optimization
