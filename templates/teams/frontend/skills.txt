@@ -5,9 +5,3 @@ anthropics/skills frontend-design
 vercel-labs/agent-skills web-design-guidelines
 vercel-labs/agent-skills vercel-react-best-practices
 pbakaus/impeccable impeccable
-nextlevelbuilder/ui-ux-pro-max-skill ui-ux-pro-max
-shadcn/ui shadcn
-greensock/gsap-skills gsap-core
-greensock/gsap-skills gsap-react
-sveltejs/ai-tools svelte-code-writer
-astrolicious/agent-skills astro

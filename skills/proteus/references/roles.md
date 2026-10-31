@@ -122,7 +122,7 @@ Hooks: <hooks>.
 Domain: <domain>. Work order: <one paragraph>. Read CONTEXT.md, manifests, and skills/proteus/references/domains.md from the Proteus checkout (<path>).
 <shipped software teams fit: rewrite teams/*/skills.txt only.>
 <otherwise: propose the roster per domains.md: teams as real-world roles, per team Owns / Never touches / checks / verifier adds / research sources, ROUTING.md rows, and skills.>
-Skills from skills.sh and installed plugins, ranked by installs and fit to this project's specifics, eight per team at most. Write nothing until the human approves; do not install.
+Skills from skills.sh and installed plugins, ranked by installs and fit to this project's specifics, at most 4 per team and 40 KB of their combined SKILL.md text. Write nothing until the human approves; do not install.
 Report per team: each skill with its installs and why.
 ```
 
