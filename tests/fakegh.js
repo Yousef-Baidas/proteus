@@ -21,6 +21,15 @@ if (process.env.FAKE_GH_LIMIT) {
   if (/^(issue|pr) comment /.test(a)) { process.stdout.write("https://github.com/o/r/issues/1#issuecomment-1\n"); process.exit(0); }
 }
 const out = (o) => { process.stdout.write(JSON.stringify(o)); process.exit(0); };
+// FAKE_GH_SKILLS (a JSON file {<args joined by spaces>: <answer>}) for proteus-skill-find.js: a string answer is printed,
+// {"fail": <msg>} exits 1 with it, any other answer is printed as JSON; a call it does not list exits 1
+if (process.env.FAKE_GH_SKILLS) {
+  const m = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_SKILLS, "utf8"));
+  const v = Object.prototype.hasOwnProperty.call(m, a) ? m[a] : { fail: `gh: no fake for ${a}` };
+  if (v && typeof v === "object" && "fail" in v) { process.stderr.write(v.fail + "\n"); process.exit(1); }
+  if (typeof v === "string") { process.stdout.write(v + "\n"); process.exit(0); }
+  out(v);
+}
 if (process.env.FAKE_GH_VISIBILITY && a === "repo view --json visibility -q .visibility") { process.stdout.write(process.env.FAKE_GH_VISIBILITY + "\n"); process.exit(0); }
 if (process.env.FAKE_GH_PERMISSION && a === "repo view --json viewerPermission -q .viewerPermission") { process.stdout.write(process.env.FAKE_GH_PERMISSION + "\n"); process.exit(0); }
 if (a === "--version" || a === "auth status") { process.stdout.write("gh fake\n"); process.exit(0); }
