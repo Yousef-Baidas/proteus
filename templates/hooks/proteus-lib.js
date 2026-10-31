@@ -2047,6 +2047,9 @@ function tokens(s, late) {
 const GATES_CHECK = "gates";
 // the contexts the proteus/* ruleset requires; install.js writes it from this list
 const REQUIRED_CHECKS = [GATES_CHECK, "proteus/verdict", "proteus/security"];
+// the refs those rules bind (the include list in install.js --protect; a test keeps them equal), and the checks they require of a PR into branch
+const REQUIRED_REFS = ["refs/heads/proteus/*"];
+const requiredChecks = (branch) => (REQUIRED_REFS.some((r) => ownedMatch(r, `refs/heads/${branch}`)) ? REQUIRED_CHECKS : []);
 const BRANCH_MSG = {
   admin: "proteus: `gh pr merge --admin` merges around the required `gates` check. Wait for it (`gh pr checks <pr> --watch`) or send the ticket back; a check that cannot pass is a NEEDS for the human.",
   protect: "proteus: agents never lift or rewrite branch protection or a ruleset (enforcement.md §1). The one write allowed is the per-run PUT on `branches/proteus%2F<run>/protection`; at close the human deletes it, with the command in the close PR.",
@@ -3621,7 +3624,7 @@ function gateCommands(text) {
 }
 
 module.exports = {
-  GATES_CHECK, REQUIRED_CHECKS, SANDBOX_TOKENS, branchKind, gateCommands, refSha,
+  GATES_CHECK, REQUIRED_CHECKS, REQUIRED_REFS, requiredChecks, SANDBOX_TOKENS, branchKind, gateCommands, refSha,
   LEAD, HOOKS_ROOT, hooksRoot, recordHooksRoot, hooksRootDenial, hooksRootOnly, leadPath, leadDir, leadWrite, leadJSON, leadAppend, leadCreate, leadRemove, readUntrusted, readUntrustedJSON, LEAD_FILES, LEAD_DIRS, takeAllow,
   skillCommand, agentPrefix, marketSource, pinCommand,
   readInbox, refreshInbox, queryInbox, inboxFile, hashSkill, skillsDrift, lockDrift, OSV_LOCKFILES, OSV_PIP, osvLockfile, osvArgs, OSV_OK, OSV_CLEAN, driftFile, relockHint,

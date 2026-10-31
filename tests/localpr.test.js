@@ -410,6 +410,12 @@ function merges() {
   const run = a.open("feat/r1", "r1.txt", { start: "origin/main", base: "proteus/run2" });
   a.status(run.sha, "success");
   r = a.gh(["pr", "merge", String(run.n), "--merge"]);
+  ok("pr merge: a run branch needs proteus/verdict, as the host's rules do", r.code === 1 && /required status proteus\/verdict is missing/.test(r.err), r.err);
+  a.status(run.sha, "failure", "proteus/verdict");
+  r = a.gh(["pr", "merge", String(run.n), "--merge"]);
+  ok("pr merge: a failed proteus/verdict refused", r.code === 1 && /required status proteus\/verdict is failure/.test(r.err), r.err);
+  a.status(run.sha, "success", "proteus/verdict");
+  r = a.gh(["pr", "merge", String(run.n), "--merge"]);
   ok("pr merge: into a run branch", r.code === 0 && a.bareG("rev-parse", "refs/heads/proteus/run2^2") === run.sha, r.err);
 
   // ---- conflict

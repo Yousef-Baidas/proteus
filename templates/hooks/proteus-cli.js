@@ -652,7 +652,7 @@ function brief(role, target, arg) {
 
 const line = (a) => {
   switch (a.kind) {
-    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${a.why.startsWith("policy:") ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : ""}${a.why !== "merge" && a.sha ? ` reply: ACCEPT ${a.sha}` : ""}`
+    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${a.why.startsWith("policy:") ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : a.why.endsWith("security") ? ` ${a.why}` : ""}${a.sha ? ` reply: ACCEPT ${a.sha}` : ""}`
       : a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;

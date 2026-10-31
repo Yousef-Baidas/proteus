@@ -285,8 +285,12 @@ function build(core) {
       if (!base) fail(`proteus local mode: PR #${n}'s base ${p.baseRefName} is missing from the origin`);
       if ((o["--match-head-commit"] !== undefined && o["--match-head-commit"] !== head) || head !== want) fail(HEAD_MOVED);
       // reviews play no part here: they are plain records, and the human's approval belongs to the verdict record
-      const g = gatesOf(readStatuses(s, head));
-      if (!g || g.state !== "success") fail(`Pull request #${n} is not mergeable: required status ${GATES} is ${g ? g.state : "missing"} on ${head.slice(0, 12)}`);
+      // what the host's rules ask of this base, so a direct merge skips none of it; proteus/security is held() here
+      const checks = latest(readStatuses(s, head));
+      for (const context of new Set([GATES, ...lib.requiredChecks(p.baseRefName).filter((c) => c !== "proteus/security")])) {
+        const c = checks.find((x) => x.context === context);
+        if (!c || c.state !== "success") fail(`Pull request #${n} is not mergeable: required status ${context} is ${c ? c.state : "missing"} on ${head.slice(0, 12)}`);
+      }
       const t = mergeTree(s, base, head);
       if (t.conflict) fail(`Pull request #${n} is not mergeable: the merge commit cannot be cleanly created.`);
       commitMerge(s, p, base, head, t.tree, n, p.title);
