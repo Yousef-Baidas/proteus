@@ -14,7 +14,7 @@ const cx = require(path.join(HOOKS, "proteus-harness-codex.js"));
 const plib = require(path.join(HOOKS, "proteus-lib.js"));
 const W = lib.workdir("codexrules");
 const slash = (p) => p.split(path.sep).join("/");
-const GUARDED = ["proteus-cli.js", "proteus-worktree.js", "proteus-status.js", "proteus-ready.js", "proteus-merge.js", "proteus-inbox.js", "proteus-skillpath.js", "proteus-verdict.js", "proteus-watchdog.js", "proteus-close-report.js", "proteus-intake.js"];
+const GUARDED = ["proteus-cli.js", "proteus-worktree.js", "proteus-status.js", "proteus-ready.js", "proteus-merge.js", "proteus-inbox.js", "proteus-skillpath.js", "proteus-skill-find.js", "proteus-verdict.js", "proteus-watchdog.js", "proteus-close-report.js", "proteus-intake.js"];
 const WORKER_RUN = ["proteus-tier.js", "proteus-scratch.js"];
 const REFUSAL = /^proteus: proteus-[\w-]+\.js runs only from the main checkout's hooks dir or the plugin's, not .+\n$/;
 
