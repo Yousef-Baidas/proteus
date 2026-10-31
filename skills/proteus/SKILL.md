@@ -24,6 +24,8 @@ Run `node <hooks>/proteus-cli.js next [run]`, do each line it prints, run `next`
 | `PROMPT` | the spawn's prompt, verbatim | `roles.md` |
 | `BLOCKED` | nothing; `prep:` is yours | `flow.md` §4 |
 | `WAIT` | background; `next` on exit | `operations.md` §Stall check |
+| `SWEPT` | nothing | `operations.md` §Scratch |
+| `NOTE` | nothing | `operations.md` §Scratch |
 
 ## Rules
 
