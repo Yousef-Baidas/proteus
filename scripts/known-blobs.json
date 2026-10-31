@@ -670,6 +670,9 @@
       "f9a59003dedafe62f272c1a4504afd98b8f65487",
       "fb8ce2a18f17636850c21f9a43f5ed9c116ae9d5"
     ],
+    "templates/hooks/proteus-learn.js": [
+      "afe93a1175bd9f7bc5d12ee5edfde5103a5d64cc"
+    ],
     "templates/hooks/proteus-lessons.js": [
       "6e5c4c308660d8cdb2929d208a22d88aac635614",
       "74c5d3be2dd5181d433d5c5cbd35aa30757aae3c",
