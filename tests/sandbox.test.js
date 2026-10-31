@@ -208,11 +208,13 @@ if (WIN) {
     half.code === 0 && fs.existsSync(path.join(w1, ".claude", "settings.local.json")) && fs.existsSync(path.join(w1, ".claude", "proteus-owned"))
       && fs.existsSync(path.join(dotGit, "worktrees", "w1", "proteus-hooks", "pre-commit")) && /hooksPath = /.test(fs.readFileSync(path.join(dotGit, "worktrees", "w1", "config.worktree"), "utf8"))
       && half.out.includes(`node ${copy} ${fs.realpathSync(w1)}`), half.err + half.out);
+  // the profile names the temp dir's other entries, and other test files make and remove those, so compare this one step
+  const denyBefore = (read(file).permissions || {}).deny || [];
   const good = runCopy(w1);
   ok("copy: takes a listed worktree under .worktrees/", good.code === 0, good.err + good.out);
   ok("copy: sandbox-root.json names the profile", read(path.join(bin, "sandbox-root.json")).profile === file);
   const after = (read(file).permissions || {}).deny || [];
-  ok("copy: adds no worktree rule to the profile", deny.every((x) => after.includes(x)) && !after.some((x) => x.includes("/worktrees/")), after.filter((x) => x.includes("worktrees")).join(" "));
+  ok("copy: adds no worktree rule to the profile", denyBefore.every((x) => after.includes(x)) && !after.some((x) => x.includes("/worktrees/")), after.filter((x) => x.includes("worktrees")).join(" "));
   const sub = path.join(dotGit, "modules", "sub");
   fs.mkdirSync(sub, { recursive: true });
   fs.writeFileSync(path.join(sub, "HEAD"), "ref: refs/heads/main\n");
