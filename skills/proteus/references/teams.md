@@ -51,6 +51,10 @@ Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, r
 
 `teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout does not rewrite it, it does not count against the cap, and `install.js --project` refreshes it. A missing required skill stops the run.
 
+A `skills.txt` line may end with `@<40-hex commit sha>`: `--install` runs `npx skills add <owner/repo>#<sha>`, which fetches that commit, and the lock keeps the sha beside the hash.
+
+Authored skills live in `teams/<team>/skills/<name>/SKILL.md`, committed and never published. When nothing found qualifies and research turns up craft knowledge beyond the model's defaults, the scout drafts one (markdown only, citing its sources) and a worker writes it on approval. `link-skills.js` links and locks them like found ones (`"source": "authored"`), counts them toward the cap, and refuses the team when one shares a name with a listed skill (`dup: <team> <name>`). It runs `proteus-skill-scan.js` on each first: a finding prints `scan: <team>/<name> FINDINGS <n>` and links nothing for the team until the human runs `--relock`, which records `"scan": "<sha256>"` for that content, so any later edit is blocked again.
+
 Models per role follow the ladder in `SKILL.md` rule 2. On a Sonnet lead all three tiers are Sonnet; with no ladder (`models=unknown`, Codex by default) every role runs on the lead's model.
 
 ## Routing

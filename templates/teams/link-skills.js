@@ -10,10 +10,15 @@
 //                                          so the lead never loads them
 //   node teams/link-skills.js --relock     accept current hashes into teams/skills-lock.json
 //
-// skills.txt line format:  <owner/repo> <skill-name>
+// skills.txt line format:  <owner/repo> <skill-name> [@<40-hex commit sha>]  (the sha may also end the name)
+// --install passes the sha to `npx skills add <owner/repo>#<sha>`, which fetches that commit; the lock keeps it.
 // required.txt (same format) holds the pipeline's mandatory skills; proteus-scout never
-// rewrites it and it does not count against the per-team cap (CAP): at most 4 skills.txt skills and 40960 bytes
-// of their combined SKILL.md text. A team over either prints "cap: <team> ..." and links and installs nothing.
+// rewrites it and it does not count against the per-team cap (CAP): at most 4 skills.txt and authored skills and
+// 40960 bytes of their combined SKILL.md text. A team over either prints "cap: <team> ..." and links and installs nothing.
+// Authored skills are teams/<team>/skills/<name>/ (committed, never installed), linked and locked like found ones
+// with "source": "authored". One also named in the team's lists prints "dup: <team> <name>"; each is run through
+// proteus-skill-scan.js first, and one with findings prints "scan: <team>/<name> FINDINGS <n>" until --relock
+// pins the human's acceptance to that content ("scan": its sha256 in the lock). Either links nothing for the team.
 // teams/skills-lock.json pins each linked skill's content hash (sha256 over its files);
 // a differing hash on this machine prints "drift: <skill>" and keeps the committed hash; until the copy
 // matches or --relock, the lead guard refuses worker and verifier spawns (proteus-lib.js lockDrift).
@@ -24,7 +29,8 @@
 // removeLink removes only a link under teams/<profile>/{.claude,.agents}/skills or ~/.claude/skills,
 // each the real repo root (or HOME) plus fixed segments lstat'd real directories, so a symlinked
 // component below the root refuses the delete, and no mkdir, link or lock write goes through one.
-// Exit 0 on success, 1 when there is no teams/ here, 2 on an unknown flag, 3 when a team was over its cap.
+// Exit 0 on success, 1 when there is no teams/ here, 2 on an unknown flag, 3 when a team was over its cap or
+// refused (dup, scan).
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -36,6 +42,9 @@ const { spawnSync } = require("child_process");
 const C = require([__dirname, path.join(__dirname, "templates", "hooks"), path.join(__dirname, "..", "hooks")]
   .map((d) => path.join(d, "proteus-confine.js")).find((f) => fs.existsSync(f)) || path.join(__dirname, "proteus-confine.js"));
 const { WIN, lstat, real, isDir, isFile, samePath, inside, ownDir, linkDir } = C;
+// the skill scanner, found the same way; none found refuses every authored skill
+const SCAN = [__dirname, path.join(__dirname, "templates", "hooks"), path.join(__dirname, "..", "hooks")]
+  .map((d) => path.join(d, "proteus-skill-scan.js")).find((f) => fs.existsSync(f)) || "";
 const HOME = os.homedir();
 // Claude Code's skills dir ($CLAUDE_CONFIG_DIR/skills, else ~/.claude/skills) as a confined root and its segments:
 // from HOME when it is under it, so a link anywhere on the way is refused as before
@@ -75,10 +84,42 @@ function skillBytes(src) {
   try { return src ? fs.statSync(path.join(src, "SKILL.md")).size : 0; } catch { return 0; }
 }
 
+// [[source, name, sha], ...]: a trailing @<sha>, its own word or on the name, is split off ("" without one)
+const SHA = /^(.*?)@([0-9a-f]{40})$/i;
 function readList(file) {
   return fs.readFileSync(file, "utf8").split(/\r?\n/)
-    .map((l) => l.trim().split(/\s+/))
+    .map((l) => {
+      const w = l.trim().split(/\s+/), m = w.length > 1 ? SHA.exec(w[w.length - 1]) : null;
+      if (m && m[1]) w[w.length - 1] = m[1]; else if (m) w.pop();
+      return [w[0], w[1], m ? m[2].toLowerCase() : ""];
+    })
     .filter(([source]) => source && !source.startsWith("#"));
+}
+
+// teams/<p>/skills/<name>/ dirs with a SKILL.md: [{ name, src }]; a link or a bad name is warned and skipped
+function authored(root, p) {
+  const base = path.join(root, "teams", p, "skills");
+  if (!isDir(base) || !ownDir(root, ["teams", p, "skills"])) return [];
+  const out = [];
+  for (const name of fs.readdirSync(base).sort()) {
+    if (lstat(path.join(base, name)).isFile()) continue;
+    if (!validName(name)) { console.error(`teams/${p}/skills: skill name ${JSON.stringify(name)} is not one path segment; skipped`); continue; }
+    const own = ownDir(root, ["teams", p, "skills", name]);
+    if (!own) { console.error(`teams/${p}/skills/${name} is a link or not a directory; skipped`); continue; }
+    if (isFile(path.join(own, "SKILL.md"))) out.push({ name, src: own });
+  }
+  return out;
+}
+
+// proteus-skill-scan.js --json on a dir, from root so teams/skill-hosts.txt counts: { clean, n, sha } or { error }
+function scan(root, src) {
+  if (!SCAN) return { error: "no proteus-skill-scan.js" };
+  const r = spawnSync(process.execPath, [SCAN, src, "--json"], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 60000 });
+  let j = null;
+  try { j = JSON.parse(r.stdout); } catch {}
+  if (!j || (r.status !== 0 && r.status !== 1)) return { error: `scanner exit ${r.status}` };
+  const sha = /^[0-9a-f]{64}$/.test(j.sha256) ? j.sha256 : "";
+  return { clean: !!j.clean, n: Array.isArray(j.findings) ? j.findings.length : 0, sha };
 }
 
 function listFiles(dir) {
@@ -112,15 +153,26 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   const linked = [];
   let confined = 0; // global links actually removed
   let lists = 0, listed = 0; // list files and skill lines: lists naming no skill (the scout may pick zero) still lock
-  let capped = 0; // teams over CAP
+  let capped = 0, refused = 0; // teams over CAP; teams refused for a dup name or a scan finding
+  // the lock, read once up front for the scan acceptances; a link at it or on the way (a repo may commit one)
+  // is neither read nor written through (#22)
+  const lockFile = path.join(teams, "skills-lock.json"), lockSt = lstat(lockFile);
+  const lockOk = !!ownDir(root, ["teams"]) && !(lockSt && lockSt.isSymbolicLink());
+  let lock = { version: 1, skills: {} };
+  let before = "";
+  if (lockOk) try { before = fs.readFileSync(lockFile, "utf8"); lock = JSON.parse(before); } catch {}
+  if (!lock || typeof lock.skills !== "object" || !lock.skills) lock = { version: 1, skills: {} };
   for (const p of profiles(teams)) {
     const dir = path.join(teams, p);
     const files = listFiles(dir);
-    if (!files.length) continue;
-    lists++;
-    // [source, name, fromSkillsTxt]: only skills.txt counts against CAP
-    const entries = files.flatMap((f) => readList(f).map((e) => [e[0], e[1], path.basename(f) === "skills.txt"]));
+    const own = authored(root, p);
+    if (!files.length && !own.length) continue;
+    if (files.length) lists++;
+    // [source, name, fromSkillsTxt, sha]: only skills.txt counts against CAP
+    const entries = files.flatMap((f) => readList(f).map((e) => [e[0], e[1], path.basename(f) === "skills.txt", e[2]]));
     listed += entries.length;
+    const dup = own.filter((a) => entries.some((e) => e[1] === a.name));
+    if (dup.length) { for (const a of dup) console.error(`dup: ${p} ${a.name}`); refused++; continue; }
     const dirs = [];
     for (const d of SKILL_DIRS) {
       const segs = ["teams", p, ...d.split(path.sep)];
@@ -130,11 +182,12 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
     }
     if (!dirs.length) { log(`teams/${p} -> 0 skills linked`); continue; }
     const picks = [];
-    for (const [source, name, pick] of entries) {
+    for (const [source, name, pick, sha] of entries) {
       if (!name) { console.error(`teams/${p}: line needs '<owner/repo> <skill>': ${source}`); continue; }
       if (!validName(name)) { console.error(`teams/${p}: skill name ${JSON.stringify(name)} is not one path segment; skipped`); continue; }
-      picks.push({ source, name, pick, src: findSrc(name) });
+      picks.push({ source, name, pick, sha, src: findSrc(name) });
     }
+    for (const { name, src } of own) picks.push({ source: "authored", name, pick: true, sha: "", src, authored: true });
     // checked before any install and again after it, before any link; a skill not found counts as 0 bytes
     const over = () => {
       const mine = picks.filter((x) => x.pick);
@@ -142,9 +195,22 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
       return mine.length > CAP.skills || bytes > CAP.bytes ? `${mine.length} skills, ${bytes} bytes` : "";
     };
     let cap = over();
-    if (!cap && install) {
+    // every authored skill is scanned before anything installs or links; a finding stands until the lock's
+    // "scan" names this content's hash, which only --relock writes
+    let flagged = false;
+    if (!cap) for (const x of picks.filter((y) => y.authored)) {
+      const s = scan(root, x.src);
+      if (s.error) { console.error(`scan: ${p}/${x.name} FAILED (${s.error})`); flagged = true; continue; }
+      if (s.clean) continue;
+      const old = lock.skills[x.name];
+      if (relock && s.sha) { x.scan = s.sha; continue; }
+      if (s.sha && old && old.source === "authored" && old.scan === s.sha) { x.scan = s.sha; continue; }
+      console.error(`scan: ${p}/${x.name} FINDINGS ${s.n}  (node ${path.relative(root, SCAN).split(path.sep).join("/")} teams/${p}/skills/${x.name}; ${s.sha ? "--relock to accept" : "it holds a link or special file, so it cannot be accepted"})`);
+      flagged = true;
+    }
+    if (!cap && !flagged && install) {
       for (const x of picks.filter((y) => !y.src)) {
-        spawnSync(WIN ? "npx.cmd" : "npx", ["-y", "skills", "add", x.source, "--skill", x.name, "-g", "-y", "-a", "claude-code"],
+        spawnSync(WIN ? "npx.cmd" : "npx", ["-y", "skills", "add", x.sha ? `${x.source}#${x.sha}` : x.source, "--skill", x.name, "-g", "-y", "-a", "claude-code"],
           { stdio: "ignore", shell: WIN });
         x.src = findSrc(x.name);
       }
@@ -152,14 +218,15 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
     }
     for (const { source, name, src } of picks) if (!src) missing.push(`${p}: npx skills add ${source} --skill ${name} -g -y`);
     if (cap) { console.error(`cap: ${p} ${cap} (max ${CAP.skills}, ${CAP.bytes})`); capped++; continue; }
+    if (flagged) { refused++; continue; }
     let n = 0;
-    for (const { source, name, src } of picks) {
+    for (const { source, name, src, sha, scan: accepted } of picks) {
       if (!src) continue;
       const blocked = dirs.filter(({ segs, own }) => !linkDir(src, path.join(own, name), (l) => remove(l, root, segs)));
       for (const { d } of blocked) console.error(`teams/${p}/${d.split(path.sep).join("/")}/${name} is a real directory or a link that could not be replaced; left alone`);
       if (blocked.length === dirs.length) continue;
       n++;
-      linked.push({ name, source, src });
+      linked.push({ name, source, src, sha, scan: accepted });
       const g = path.join(SKILLS_BASE, ...SKILLS_SEGS, name);
       if (confine && !OURS.has(name) && lstat(g) && lstat(g).isSymbolicLink() && remove(g, SKILLS_BASE, SKILLS_SEGS)) confined++;
     }
@@ -173,31 +240,28 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   }
   if (confine) log(confined ? `confined: ${confined} linked skill${confined === 1 ? "" : "s"} removed from ~/.claude/skills (restart Claude Code)` : "confine : nothing to remove from ~/.claude/skills");
 
-  // lock; a link at it or on the way (a repo may commit one) is neither read nor written through (#22)
-  const lockFile = path.join(teams, "skills-lock.json"), lockSt = lstat(lockFile);
-  const lockOk = !!ownDir(root, ["teams"]) && !(lockSt && lockSt.isSymbolicLink());
   const lockIt = linked.length || (lists && !listed);
   if (lockIt && !lockOk) console.error(`refused  ${lockFile} (a link, or a link on the way; lock not written, left alone)`);
   if (lockIt && lockOk) {
-    let lock = { version: 1, skills: {} };
-    let before = "";
-    try { before = fs.readFileSync(lockFile, "utf8"); lock = JSON.parse(before); } catch {}
     const drift = [];
-    for (const { name, source, src } of linked) {
+    for (const { name, source, src, sha, scan: accepted } of linked) {
       const h = hashDir(src);
       const old = lock.skills[name];
       if (old && old.hash !== h && !relock) { drift.push(name); continue; }
-      lock.skills[name] = { source, hash: h };
+      const entry = { source, hash: h };
+      if (sha) entry.sha = sha;
+      if (accepted) entry.scan = accepted;
+      lock.skills[name] = entry;
     }
     const after = JSON.stringify(lock, null, 2) + "\n";
     if (after !== before) C.writeFile(lockFile, after, [ownDir(root, ["teams"])]);
     for (const d of drift) log(`drift: ${d}  (npx skills update ${d}, or --relock to accept)`);
     log(`lock -> teams/skills-lock.json (${Object.keys(lock.skills).length} skills${relock ? ", relocked" : ""})`);
   }
-  return { linked: linked.length, missing: missing.length, capped };
+  return { linked: linked.length, missing: missing.length, capped, refused };
 }
 
-module.exports = { WIN, CAP, SKILL_DIRS, lstat, real, isDir, isFile, samePath, validName, ownDir, removeLink, linkDir, readList, listFiles, profiles, hashDir, run };
+module.exports = { WIN, CAP, SKILL_DIRS, lstat, real, isDir, isFile, samePath, validName, ownDir, removeLink, linkDir, readList, listFiles, authored, profiles, hashDir, run };
 
 if (require.main === module) {
   const opt = {};
@@ -209,6 +273,6 @@ if (require.main === module) {
   }
   // from elsewhere (a guest dir outside the repo, a subfolder): the teams/ this script sits in
   if (!isDir(path.join(process.cwd(), "teams")) && path.basename(__dirname) === "teams") opt.root = path.dirname(__dirname);
-  try { if (run(opt).capped) process.exitCode = 3; }
+  try { const r = run(opt); if (r.capped || r.refused) process.exitCode = 3; }
   catch (e) { console.error(e.message); process.exit(1); }
 }
