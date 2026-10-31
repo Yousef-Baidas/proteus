@@ -37,7 +37,7 @@ What the App leaves open: the agents run as the human's OS user, so the key is a
 
 The guards hold every agent to this, ruleset or not: they refuse `gh pr merge --admin`, a push to `main` or to an existing `proteus/<run>` (the push that creates it passes), deleting either, any change to branch protection or a ruleset except the PUT above, and a hand-posted commit status or check run.
 
-At close, if the PUT set the protection, the human deletes it before deleting the branch; the guards refuse it to agents, so the close PR's body ends with `gh api -X DELETE "repos/{owner}/{repo}/branches/proteus%2F<run>/protection"` for them. The ruleset stays.
+At close, if the PUT set the protection, the human deletes it before deleting the branch; the guards refuse it to agents, so the close PR's body ends with the command for them (`tracker.md`). The ruleset stays.
 
 ## 2. Path ownership hook
 
@@ -82,7 +82,7 @@ node teams/templates/hooks/proteus-scan.js --dir . --all --out <tmp dir>
 node teams/templates/hooks/proteus-baseline.js security --record --match "^finding " -- node teams/templates/hooks/proteus-security.js --list <tmp dir>
 ```
 
-A recorded finding stays quiet while its tool, rule and path stay the same, digits included (a CVE id is the rule, so another CVE in the same lockfile is new); fixing it and re-recording tightens the baseline. The lead still adds the security verifier wherever else it judges one due; on a PR CI did not mark, its `--security` signoff replaces CI's success.
+A recorded finding stays quiet while its tool, rule and path stay the same, digits included (a CVE id is the rule, so another CVE in the same lockfile is new); fixing it and re-recording tightens the baseline. On a PR CI did not mark (`SKILL.md` principle 4), the security verifier's `--security` signoff replaces CI's success.
 
 ## 5. Cost
 

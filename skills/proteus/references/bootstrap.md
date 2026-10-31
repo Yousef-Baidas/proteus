@@ -39,9 +39,13 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 
 `CONVENTIONS.md` missing → read `conventions.md`, run the interview, commit the file (§ Lead docs). Creative and business work: the interview covers the house defaults too (`conventions.md` § Taste beyond code).
 
+## Audience (both paths)
+
+`audience=unset` on the state line: gauge the human (`audience.md` § Gauging), then `node <hooks>/proteus-profile.js set`. Prompt-only.
+
 ## Policy (both paths)
 
-`teams/policy.json` missing, or the human asks to change the policy: one short exchange in the human's terms. Prompt-only; the write is the enforced part.
+`teams/policy.json` missing, or the human asks to change the policy: one short exchange in the human's terms, each choice a decision card (`audience.md`). Prompt-only; the write is the enforced part.
 
 1. Offer the presets: `hands-off` (the lead merges; the human is asked only at milestone reviews), `balanced` (the default; the lead merges, and the human is also asked before a change a rule marks as needing them), `careful` (the human merges every pull request and is asked before each).
 2. Ask what in this project cannot be undone, and how often they want to be asked.
@@ -61,7 +65,7 @@ Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and boots
 
 ## Roster (both paths)
 
-`teams/` missing → tell the human to run `node <Proteus checkout>/install.js --project` from this repo's root and stop. Its hooks (`.claude/settings.local.json`, or `.codex/hooks.json` with `--harness codex`, naming `proteus-autostart.js` and `proteus-lead-guard.js`) come from the same command; `node <checkout>/install.js --doctor` (plus `--harness codex` on Codex) diagnoses a broken install. A `teams/**/*.upstream` file is a release's new text for a team file the repo edited (`teams.md`). It is the human's to merge, and the lead neither reads it nor routes by it.
+`teams/` missing → tell the human to run `node <Proteus checkout>/install.js --project` from this repo's root and stop. Its hooks come from the same command (`hooks.md`); `node <checkout>/install.js --doctor` (plus `--harness codex` on Codex) diagnoses a broken install. A `teams/**/*.upstream` file is a release's new text for a team file the repo edited (`teams.md`). It is the human's to merge, and the lead neither reads it nor routes by it.
 
 Then, if `skills-unscouted` is not `none` or the human says "refresh skills" or "redesign teams": spawn `proteus-scout` with the domain, the work order, and `domains.md`. On software that fits the shipped teams it only rewrites the skill lists; otherwise it proposes the roster (`teams.md`): teams, `Owns`, checks, research sources, `ROUTING.md` rows, skills per team. Print its report, ask the human to approve or edit. On approval, one worker writes the folders, `PROFILE.md`, `CRAFT.md` where needed, `ROUTING.md`, and `skills.txt`. `add team <role>` spawns the scout in single-team mode with the role; on approval, one ticket creates `teams/<team>/PROFILE.md` (plus `CRAFT.md` if needed), its `ROUTING.md` rows, the `profile:<team>` label, the `proteus-<team>-worker` and `proteus-<team>-verifier` agent files (`teams.md`), `skills.txt` and any `teams/<team>/skills/`, and an overlapping team's narrowed `Owns`. Either way, the human then runs `node teams/link-skills.js --install --confine`. Third-party skill text runs inside every worker; the human decides what gets in. The script writes `teams/skills-lock.json`; commit it. `drift: <skill>` in its output, or `skills-lock=drift:<skills>` in `proteus-state`, means this machine's copy differs from the lock; the guard refuses worker and verifier spawns until the human runs `npx skills update <skill>` or `--relock` (`enforcement.md` §6).
 

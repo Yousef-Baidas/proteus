@@ -12,7 +12,8 @@ The judgment behind `SKILL.md`'s flow; `next` does the mechanical steps. Read a 
 ## Asking the human
 
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
-- **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. Park only the tickets that depend on it; dispatch the rest. `PushNotification` once. One issue per decision, not per worker message.
+- **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
+- An `ASK human` line reaches the human as a card (`audience.md`).
 - An answer stating a standing rule ("always", "never") also becomes a `CONVENTIONS.md` line (the human's approval) or a lesson, so it is not asked twice.
 
 ## Tiers

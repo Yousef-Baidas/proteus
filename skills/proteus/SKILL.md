@@ -56,7 +56,7 @@ Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every sess
 
 ## Asking the human
 
-A question lives in a picker when the run cannot move without it, else in a question issue that parks only the tickets depending on it (`flow.md`). Ask only what a settled default, `## Learned`, a lesson, `CONVENTIONS.md` or `/research` cannot answer.
+A question lives in a picker when the run cannot move without it, else in a question issue that parks only the tickets depending on it (`flow.md`). Ask only what a settled default, `## Learned`, a lesson, `CONVENTIONS.md` or `/research` cannot answer. Anything reaching the human follows `audience.md` at the `audience=` level.
 - **Auto mode denial** (Claude Code): a call or spawn the classifier denies is not retried, reworded, split, or routed through another tool or agent; each reads as a workaround, and 3 denials in a row or 20 in a session pause auto mode. One line to the human: what was denied, its reason tag, why the run needs it; then wait or do other work. A human message naming the action clears it. A worker's `BLOCKED #<n> classifier …` is the same: relay it, don't re-spawn.
 
 ## Commands
