@@ -1,6 +1,6 @@
 # Docs diet
 
-Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into every session of every agent. Each line there is paid for on every turn, and the model's attention thins as they grow. A 1,000-line `CLAUDE.md` plus a `CLAUDE_1.md` is a project that stopped deciding what matters.
+Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into every session of every agent. Each line there is paid for on every turn, and the model's attention thins as they grow.
 
 ## Budget
 

@@ -23,7 +23,7 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
    - Not code: the build is scripts that produce the deliverable from the repo alone (render, export, compile the document, recompute the model), one check per team from `domains.md` that runs headless and prints its inputs, the commit-msg hook and CI workflow from `enforcement.md` §3–4 with the gate lines set to those checks, and Git LFS or a manifest for large binaries.
    Nothing else. Merge it before any feature wave. After the merge (scaffold or stabilise), tell the human once, in one line: run `lefthook install` in the main checkout (or `npx lefthook install`); their action, never the lead's or a worker's.
 5. Add `## Learned` to `AGENTS.md` and commit it (§ Lead docs). Record the gate commands, `labels: created`, and the domain.
-6. Now the flow from step 1. Hotspot files (routes, registries, config, shared scene or project files) get their own ticket in wave one.
+6. Now the flow from step 1. Hotspot files (routes, registries, config, shared scene or project files) go in the ticket that runs first.
 
 ## Mid-project, unset
 

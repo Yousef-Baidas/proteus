@@ -96,7 +96,7 @@ Drift blocks dispatch. Each session start re-hashes every skill linked under `te
 
 ## 7. Mutation testing per milestone
 
-CI's `qa` job mutates the files each merge changed (§1), so every changed file is mutated once, off any agent's clock. Once per milestone, `teams/qa/PROFILE.md` reads the `mutation` step of every push run since the milestone's merge-base; without that step it runs Stryker (`npx stryker run --mutate <files>`), `mutmut run --paths-to-mutate <files>`, or `cargo mutants --file <f>` locally on the files changed since the merge-base. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red. Judged per milestone, not per ticket; it is the slow gate.
+CI's `qa` job mutates the files each merge changed (§1), so every changed file is mutated once, off any agent's clock. Once per milestone, `teams/qa/PROFILE.md` reads the `mutation` step of every push run since the milestone's merge-base; without that step it mutates the files changed since the merge-base locally. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red. Judged per milestone, not per ticket; it is the slow gate.
 
 ## 8. Dependency check on `NEEDS`
 
