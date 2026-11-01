@@ -94,6 +94,9 @@ r = run("proteus-statusline.js", { workspace: { project_dir: REPO }, cwd: REPO }
 ok("statusline: the user's line and the update flag from $CLAUDE_CONFIG_DIR, the inbox of the session's repo",
   r.out.trim() === "mine · proteus: 1 question · 2 reviews · proteus: update ready (install.js --update)", r.out + r.err);
 
+r = run("proteus-statusline.js", { workspace: { project_dir: REPO }, cwd: REPO, padding: "x".repeat(1 << 20) }, W, none);
+ok("statusline: a user's command that leaves its stdin unread still shows", r.out.startsWith("mine · "), r.out + r.err);
+
 // worktree: commit-msg.js missing beside the script (as on Codex) comes from the lead's teams/templates/hooks
 const BARE = path.join(W, "cache2", "proteus", "1.0.0", "hooks");
 fs.mkdirSync(BARE, { recursive: true });
