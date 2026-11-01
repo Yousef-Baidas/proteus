@@ -4,10 +4,9 @@
 // Exit 0 if every assertion passed, 1 otherwise; a missing binary prints "SKIP lint: run npm ci" and fails only when CI is set.
 "use strict";
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { ok, summary } = require(path.join(__dirname, "lib.js"));
+const { ok, summary, tempdir } = require(path.join(__dirname, "lib.js"));
 
 const ROOT = path.join(__dirname, "..");
 const BIN = process.env.PROTEUS_OXLINT || path.join(ROOT, "node_modules", ".bin", process.platform === "win32" ? "oxlint.cmd" : "oxlint");
@@ -23,7 +22,7 @@ if (!fs.existsSync(BIN)) {
   ok("linting the repo exits 0", repo.status === 0, `${repo.status} ${repo.stdout}${repo.stderr}`);
 
   // lint a copy in tmp so the ignore of tests/fixtures/ cannot hide it; the repo config still applies
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "proteus-lint-"));
+  const tmp = tempdir("lint");
   try {
     fs.copyFileSync(path.join(__dirname, "fixtures", "slop.js"), path.join(tmp, "slop.js"));
     const bad = lint(["--deny-warnings", "-c", path.join(ROOT, ".oxlintrc.json"), "slop.js"], tmp);

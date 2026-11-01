@@ -1,6 +1,6 @@
 // Installer delete-guard contract (#13): no install.js run removes or changes anything outside the target's Proteus-owned paths,
 // every delete in install.js goes through safeRemove, and tests/lib.js workdir() refuses a TMPDIR inside a git worktree.
-// Every temp dir, the fake "real home" F included, is an fs.mkdtempSync under os.tmpdir(), checked to be outside the user's home
+// Every temp dir, the fake "real home" F included, is a tests/lib.js tempdir() under os.tmpdir(), checked to be outside the user's home
 // before anything is spawned; the installer run is a clone of the checkout there with its uncommitted edits committed, and every
 // run gets an explicit fake HOME and CODEX_HOME, a fake gh and claude, and no network. Case 3 reads install.js; the rest spawn.
 // Amendment 2 (#13): a skill name from teams/*/skills.txt is one path segment or it is skipped (cases 5, 6, 8), the confine
@@ -21,7 +21,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const { ok, summary, fakeCli, homeEnv, SYS_PATH } = require(path.join(__dirname, "lib.js"));
+const { ok, summary, tempdir, fakeCli, homeEnv, SYS_PATH } = require(path.join(__dirname, "lib.js"));
 
 const SRC = path.resolve(process.env.PROTEUS_SAFETY_SRC || path.join(__dirname, ".."));
 // any shipped agent works; the ticket's proteus-lead.md is not one
@@ -36,7 +36,7 @@ const read = (p) => { try { return fs.readFileSync(p); } catch { return null; } 
 // a fresh dir under os.tmpdir(); inside the user's home it is removed and the file stops before any spawn
 const made = [];
 function tmp(tag) {
-  const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `proteus-safety-${tag}-`)));
+  const d = tempdir(`safety-${tag}`);
   if (HOMES.some((h) => under(real(d), h))) {
     fs.rmdirSync(d);
     console.log(`FAIL ${d} is inside the user's home; run with TMPDIR outside it`);
@@ -642,21 +642,23 @@ try {
 }
 
 // #87: each process gets its own temp root, so two checkouts running the suite at once never collide;
-// a green run removes its root, a red one keeps it to inspect
+// the root goes when the process does, however it ends (#317)
 {
   const LIB = JSON.stringify(path.join(SRC, "tests", "lib.js"));
   const probe = (body) => {
     const r = spawnSync(process.execPath, ["-e", `const l = require(${LIB}); l.workdir("a"); const a = l.W; l.workdir("b"); ${body} console.log(a + "\\n" + l.W);`], { encoding: "utf8", timeout: 60000 });
     const [a, b] = (r.stdout || "").trim().split("\n").slice(-2);
-    return { a, b, root: a && path.dirname(a), err: r.stderr };
+    return { a, b, root: a && path.dirname(a), err: r.stderr, out: r.stdout };
   };
   const green = probe("l.ok(\"x\", true); l.summary();");
   const red = probe("l.ok(\"x\", false); l.summary();");
+  const thrown = probe("console.log(l.tempdir(\"t\")); setImmediate(() => { throw new Error(\"boom\"); });");
   ok("workdir(): one root per process, shared by its workdirs", green.root && green.root === path.dirname(green.b), green.err);
   ok("workdir(): two processes get different roots", green.root && red.root && green.root !== red.root, `${green.root} ${red.root}`);
   ok("summary(): a green run removes its temp root", green.root && !lstat(green.root), green.root);
-  ok("summary(): a red run keeps its temp root", red.root && !!lstat(red.root), red.root);
-  if (red.root) fs.rmSync(red.root, { recursive: true, force: true });
+  ok("summary(): a red run removes its temp root too", red.root && !lstat(red.root), red.root);
+  ok("tempdir(): made inside the process's root", thrown.root && thrown.out.includes(path.join(thrown.root, "t-")), thrown.out);
+  ok("a process that dies on a throw removes its temp root", thrown.root && !lstat(thrown.root), thrown.root);
 }
 
 summary();

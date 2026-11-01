@@ -1,7 +1,8 @@
-// Shared harness for tests/*.test.js: assertions, a per-file temp dir, fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers, an SSH tag signer.
-// summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0; a green run
-// removes the process's temp root (workdir() makes one per process), a red one keeps it.
-// workdir() exits 1 with a message, before writing anything, when os.tmpdir() is in the user's home or a git worktree.
+// Shared harness for tests/*.test.js: assertions, per-file temp dirs (workdir, tempdir), fake gh and fakeCli for others, homeEnv and SYS_PATH for stripped envs, spawn helpers, an SSH tag signer.
+// summary() prints "N passed, M failed" and sets exit code 1 if any assertion failed, else 0.
+// workdir() and tempdir() share one temp root per process, removed when the process exits, pass or fail, or takes a signal
+// it can catch (#317). Make a test's temp dirs with them; tests/run.js fails a run that leaves a root behind.
+// Both exit 1 with a message, before writing anything, when os.tmpdir() is in the user's home or a git worktree.
 "use strict";
 const fs = require("fs");
 const os = require("os");
@@ -11,6 +12,7 @@ const { spawnSync, execFileSync } = require("child_process");
 const WIN = process.platform === "win32";
 let pass = 0, fail = 0;
 let W, HOME, BIN, ENV, ROOT;
+const ROOT_OWNER = ".test-file";
 
 // dirs a stripped PATH still needs: git, and on win32 cmd.exe for shell: true
 const SYS_PATH = WIN
@@ -61,12 +63,32 @@ function refuseTmpdir() {
   process.exit(1);
 }
 
-function workdir(name) {
+function removeRoot() {
+  // win32 will not remove the current directory
+  try { process.chdir(__dirname); } catch {}
+  try { fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 3 }); } catch {}
+}
+
+function root() {
+  if (ROOT) return ROOT;
   refuseTmpdir();
   // one root per process, so two checkouts running the suite at once never share fixtures; the real path:
   // macOS reaches the temp dir through the /var symlink, and git reports /private/var
-  ROOT = ROOT || fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "proteus-test-"));
-  W = path.join(ROOT, name);
+  ROOT = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "proteus-test-"));
+  // tests/run.js reads this to name the file when a root is left behind
+  fs.writeFileSync(path.join(ROOT, ROOT_OWNER), path.basename(process.argv[1] || "unknown"));
+  process.on("exit", removeRoot);
+  for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(s, () => process.exit(128 + os.constants.signals[s]));
+  return ROOT;
+}
+
+// a fresh dir for this process, inside its temp root: use this, not fs.mkdtempSync, so it goes when the process does
+function tempdir(tag = "tmp") {
+  return fs.mkdtempSync(path.join(root(), `${tag}-`));
+}
+
+function workdir(name) {
+  W = path.join(root(), name);
   fs.rmSync(W, { recursive: true, force: true });
   fs.mkdirSync(W, { recursive: true });
   HOME = path.join(W, "home");
@@ -115,12 +137,10 @@ function sshSigner(dir, name = "maintainer") {
 function summary() {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
-  // a red run keeps its fixtures to inspect; the path is in the FAIL lines
-  if (ROOT && !fail) fs.rmSync(ROOT, { recursive: true, force: true, maxRetries: 3 });
 }
 
 module.exports = {
-  ok, run, g, workdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH, sshSigner,
+  ok, run, g, workdir, tempdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH, sshSigner,
   get ENV() { need(); return ENV; },
   get BIN() { need(); return BIN; },
   get HOME() { need(); return HOME; },

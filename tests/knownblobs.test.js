@@ -26,7 +26,7 @@ ok(`known-blobs.json has every version this branch superseded${a && a.strict ? "
 
 // the own-versus-other split, on a temp repo: main took another PR that changed b.md, this branch changed a.md
 {
-  const T = fs.mkdtempSync(path.join(require("os").tmpdir(), "proteus-kb-"));
+  const T = lib.tempdir("kb");
   const g = (...args) => { const r = spawnSync("git", args, { cwd: T, encoding: "utf8", windowsHide: true }); if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`); return r.stdout.trim(); };
   const put = (f, t) => { fs.mkdirSync(path.dirname(path.join(T, f)), { recursive: true }); fs.writeFileSync(path.join(T, f), t); };
   const id = (f) => g("rev-parse", `HEAD:${f}`);
