@@ -3228,6 +3228,23 @@ function syncFile(src, dst) {
   try { a = fs.readFileSync(src); } catch { return false; }
   return syncText(a, dst);
 }
+// the policy presets for a hooks dir (#315): the copy beside it, else ../policy (a checkout, the plugin, teams/templates)
+const presetsFile = (hooks) => [path.join(hooks, "presets.json"), path.join(hooks, "..", "policy", "presets.json")].find((f) => fs.existsSync(f)) || "";
+// a text templates/policy/presets.json had in a past release, by the known-blobs.json of the checkout src sits in
+function pastPresets(src, text) {
+  const ids = (readJSON(path.join(src, "..", "..", "scripts", "known-blobs.json"), null)?.blobs || {})["templates/policy/presets.json"];
+  const id = (t) => require("crypto").createHash("sha1").update(`blob ${Buffer.byteLength(t)}\0`).update(t).digest("hex");
+  return Array.isArray(ids) && [text, text.replace(/\r\n/g, "\n")].some((t) => ids.includes(id(t)));
+}
+// src's presets to presets.json in dir, a non-plugin hooks copy; a copy that is neither missing nor a shipped text is
+// the user's edit and stays. True when written
+function syncPresets(src, dir) {
+  const from = presetsFile(src), to = path.join(dir, "presets.json");
+  if (!from) return false;
+  let cur = null;
+  try { cur = fs.readFileSync(to, "utf8"); } catch {}
+  return cur === null || pastPresets(src, cur) ? syncFile(from, to) : false;
+}
 // write dst only when its bytes differ; true when written. With a marker, a dst that exists
 // without it as its first text is the user's own and is left alone (install.js keeps it too).
 // A link at dst (a repo may commit one) is never written through: refused, with a warning (#22).
@@ -3646,6 +3663,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, WAIT_MSG, EDIT_LAST_MSG,
+  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

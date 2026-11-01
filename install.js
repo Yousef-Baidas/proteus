@@ -104,14 +104,14 @@ const SKILLS = ["proteus", "proteus-review"];
 // own package.json sets "type": "module" (#77); one ships in templates/hooks/ too
 // proteus-confine.js, link-skills.js's guard, comes from templates/hooks/
 const LINK_SCRIPTS = ["link-skills.js", "link-skills.sh", "link-skills.ps1", "package.json", "proteus-confine.js"];
-const EXCLUDE = [".claude/settings.local.json", ".claude/hooks/proteus-*.js", ".claude/hooks/package.json", ".claude/hooks/worktree-settings.local.json", ".claude/proteus-owned"];
+const EXCLUDE = [".claude/settings.local.json", ".claude/hooks/proteus-*.js", ".claude/hooks/package.json", ".claude/hooks/presets.json", ".claude/hooks/worktree-settings.local.json", ".claude/proteus-owned"];
 const TEAMS_ENV = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
 const CTX_PLUGIN = "context-mode@context-mode";
 const CTX_MARKET = "mksglu/context-mode";
 const NODE_MIN = "22.5.0";
 const HARNESSES = ["claude", "codex"];
 const AGENTS_SKILLS = path.join(HOME, ".agents", "skills"); // Codex reads skills here and in <repo>/.agents/skills
-const CODEX_EXCLUDE = [".codex/hooks.json", ".codex/hooks/proteus-*.js", ".codex/hooks/package.json", ".codex/rules/proteus.rules", ".codex/proteus-owned"];
+const CODEX_EXCLUDE = [".codex/hooks.json", ".codex/hooks/proteus-*.js", ".codex/hooks/package.json", ".codex/hooks/presets.json", ".codex/rules/proteus.rules", ".codex/proteus-owned"];
 // the commit-msg gate runs from here on every CLI: committed with teams/, refreshed by --project
 const COMMIT_MSG = "teams/templates/hooks/commit-msg.js";
 const CODEX_CTX = "codex mcp add context-mode --env CONTEXT_MODE_PLATFORM=codex -- npx -y context-mode";
@@ -924,7 +924,7 @@ const homes = () => [HERE, oldHome()].filter(Boolean);
 const everShipped = (rel) => homes().some((d) => isFile(path.join(d, rel))) || knownBlob(rel);
 const unedited = (rel, text) => text !== null && (homes().some((d) => { const t = readText(path.join(d, rel)); return t !== null && hashText(t) === hashText(text); }) || knownBlob(rel, text));
 const HOOK_CMD = /\.claude[\\/]hooks[\\/]([\w.-]+\.js)\b/;
-const HOOK_EXCLUDE = { ".claude/hooks/proteus-*.js": /^proteus-[\w.-]*\.js$/, ".claude/hooks/package.json": /^package\.json$/, ".claude/hooks/worktree-settings.local.json": /^worktree-settings\.local\.json$/ };
+const HOOK_EXCLUDE = { ".claude/hooks/proteus-*.js": /^proteus-[\w.-]*\.js$/, ".claude/hooks/package.json": /^package\.json$/, ".claude/hooks/presets.json": /^presets\.json$/, ".claude/hooks/worktree-settings.local.json": /^worktree-settings\.local\.json$/ };
 
 // a repo's 1.x install: hook copies in .claude/hooks and their entries (hooks, statusLine) in .claude/settings.json
 // and settings.local.json, agent copies in .claude/agents, the hook lines in .git/info/exclude. settings maps a file
@@ -957,6 +957,13 @@ function oldProjectInstall(root, act, settings) {
     if (tracked.has(".claude/hooks/package.json")) kept.push(keptTracked(".claude/hooks/package.json", readText(pj), "templates/hooks/package.json"));
     else if (unedited("templates/hooks/package.json", readText(pj))) drop(pj, "1.x copy");
     else kept.push(".claude/hooks/package.json (edited)");
+  }
+  // the policy presets go with the last script too; an edited copy stays, named
+  const pre = path.join(hooks, "presets.json"), preSt = L.ownDir(root, [".claude", "hooks"]) && lstat(pre);
+  if (preSt && preSt.isFile() && !listDir(hooks, /\.js$/).some((f) => !gone.has(`.claude/hooks/${f}`))) {
+    if (tracked.has(".claude/hooks/presets.json")) kept.push(keptTracked(".claude/hooks/presets.json", readText(pre), "templates/policy/presets.json"));
+    else if (unedited("templates/policy/presets.json", readText(pre))) drop(pre, "1.x copy");
+    else kept.push(".claude/hooks/presets.json (edited)");
   }
   // an entry whose script is gone, or never was there, goes; an empty entry and then an empty event go too
   const stale = (cmd) => { const m = HOOK_CMD.exec(String(cmd)); return !!m && everShipped(`templates/hooks/${m[1]}`) && (gone.has(`.claude/hooks/${m[1]}`) || !lstat(path.join(hooks, m[1]))); };
