@@ -54,3 +54,33 @@ gh pr checks <number> --rerun
 ```
 
 `--rerun` belongs to the stand-in. It starts a check for the current head even if one finished, and it is the only way to repeat one. A repo with no profile runs gates as whoever pushed, which is the protection the warning says is off.
+
+## Moving to a host
+
+`install.js --export <owner/repo>` (`-Export` in `install.ps1`) moves a local-mode repo to a repo on a code host. Nothing starts it for you: no hook, session, agent or setup step runs it, and in the sandbox it stops and says you run it yourself.
+
+Without `--yes` it changes nothing and prints the plan: the target, its visibility, the counts of what would go, and this warning.
+
+Moving this project to a code host means:
+- All history and all records go to the host.
+- The records were written by agents and are not checked for secrets.
+- Everything posts under your account, with the original author and time in the text.
+- Human approvals do not carry over.
+
+With `--yes` it carries out that plan. It refuses, with nothing written, when the repo is not in local mode, a run is open, a local check is pending, there is no real `gh` or you are not signed in, you lack write permission on the target, or the target is missing or not empty. It never creates the target, so make it on the host first; that way you choose its visibility. A public target also needs `--public`.
+
+The steps, in order:
+
+1. Push every branch and tag from the bare origin, without force.
+2. Create the labels the records use.
+3. Post the issues in number order. Closed ones close after their comments.
+4. Post the pull requests. An open one whose head and base exist, with something to merge, becomes a real pull request. Merged, closed and unrecreatable ones become closed issues holding the record: title, base, head, final commit and state.
+5. Point `origin` at the target, then remove the local-mode marker.
+
+Every exported body and comment opens with a header line naming the original number, author and time. Verdict readers look only at the first line, so no exported text reads as your verdict. Mentions and closing keywords get an invisible character, so exported text notifies no one and closes nothing. The verdict record, auto verdicts and check statuses stay behind. A review goes as a comment with its state in the header, and an issue's milestone as a line of text.
+
+Numbers can differ on the host, and text inside bodies is not rewritten. The map from local to host numbers is `<git-common-dir>/proteus-lead/local-export.json`, written after each step; its path is printed at the end.
+
+A failure, a rate limit included, stops at that item and says which, with local mode still on. Run the same command to resume: the map keeps anything from posting twice, a different target is refused, and so is anything on the target the map does not list. A failure between the last two steps also leaves local mode on, and a rerun finishes it.
+
+The store and the bare origin stay on disk as an archive. The `gh` launchers, still on the path of a running session, now run the real `gh`. Afterwards export prints what is left for you: the host setup commands, a check of the host's default branch, and a fresh verdict on each open pull request.

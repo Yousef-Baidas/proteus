@@ -11,7 +11,7 @@ claude plugin install proteus@proteus
 
 Then, in a Claude Code session in your repo, run `/proteus:setup`. It enables the plugin for that repo in the committed `.claude/settings.json` (the plugin's hooks stay silent in every other repo), lists the `proteus` marketplace there so teammates are offered the plugin, copies `teams/`, and prints the GitHub steps left to you (`--protect`, `--verifier-app`). It then moves every other repo still on a 1.x install ([Moving from 1.x](migrating.md#moving-from-1x)); `--only-here` stops after this repo. `/proteus:setup --dry-run` shows what it would change. In a repo you cannot push to it goes [guest mode](#guest-mode-repos-you-do-not-own) like `--project`, and the checkout gets nothing to commit. Otherwise commit `.claude/settings.json` and `teams/`, start a new session, and the lead starts itself; `/proteus:proteus` invokes it by hand. The prerequisites below apply either way; on a 1.x install, `install.js --update` installs the plugin and moves your repos for you ([Moving from 1.x](migrating.md#moving-from-1x)). The pin and how to move it to a newer release are in [Updating](updating.md).
 
-To keep a project on this machine with no code host, `/proteus:setup` offers [local mode](local-mode.md); it needs neither `gh` nor a remote.
+To keep a project on this machine with no code host, `/proteus:setup` offers [local mode](local-mode.md); it needs neither `gh` nor a remote. To move it to a host later, `install.js --export <owner/repo>` does that; see [moving to a host](local-mode.md#moving-to-a-host).
 
 Codex CLI has no plugin: it uses the installer path ([Install with the installer](#install-with-the-installer), then [Codex CLI](#codex-cli)), which still works for Claude Code too.
 

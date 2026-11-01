@@ -236,6 +236,7 @@ templates/
     proteus-stall.js  proteus-worker-guard.js  no waiting on background jobs, one report per agent
     proteus-status.js  proteus-inbox.js  proteus-statusline.js   status, open questions, status line
     proteus-local.js  proteus-local-pr.js   local mode's stand-in for gh, its origin and checks
+    proteus-local-export.js   install.js --export: moves a local repo to a code host
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
     proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls
