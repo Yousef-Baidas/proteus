@@ -802,7 +802,7 @@ function gitEnv(gitDir, o = {}) {
   if (!o.user) Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: NULL_DEVICE });
   if (o.workTree) env.GIT_WORK_TREE = o.workTree;
   if (o.index) env.GIT_INDEX_FILE = o.index;
-  return env;
+  return { ...env, ...o.env };
 }
 // the human's own core.excludesFile, the one key read from the global config, so untracked files it ignores stay ignored
 let excludes;
@@ -812,7 +812,7 @@ function userExcludes(gitDir) {
   try { excludes = execFileSync("git", [...GIT_SAFE, "config", "--global", "--get", "core.excludesFile"], { ...execOpts(gitDir, 3000, gitEnv(gitDir, { user: true })) }).trim(); } catch {}
   return excludes;
 }
-// [argv, options] for git in gitDir. o: cwd (default gitDir), workTree, index, user, timeout, encoding, input, stdio
+// [argv, options] for git in gitDir. o: cwd (default gitDir), workTree, index, user, env, timeout, encoding, input, stdio
 function gitCall(gitDir, args, o = {}) {
   const pre = [...GIT_SAFE];
   if (o.workTree && !o.user && userExcludes(gitDir)) pre.push("-c", `core.excludesFile=${userExcludes(gitDir)}`);

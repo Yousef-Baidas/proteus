@@ -13,11 +13,13 @@
 // Exit 0 done; 1 anything else: not in local mode, a link on the path, a malformed store, a filter it cannot run, or
 // a command or flag outside the supported set, named as `proteus local mode: gh <what> is not supported`. A gap is
 // never an empty success. The hooks' fail-open rule does not apply: callers read a failure as an unreachable tracker.
+// Once a repo has moved to a host (proteus-local-export.js) a launcher still on PATH runs the real gh, with its exit code.
 // `pr checks` also exits 8, as gh does, while a check is pending.
 "use strict";
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { spawnSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 
 const LOGIN = "local";
@@ -25,6 +27,8 @@ const MAX_TITLE = 256, MAX_BODY = 65536, MAX_FILE = 8 << 20, MAX_INDEX = 1 << 20
 const LOCK_STALE_MS = 15000, LOCK_WAIT_MS = 30000;
 const DEFAULT_COLOR = "ededed";
 const SCRIPT = path.join(__dirname, "proteus-local.js");
+const EXPORT_MAP = "local-export.json";
+const PASSED = "PROTEUS_LOCAL_PASSED";
 
 class Fail extends Error {}
 const fail = (msg) => { throw new Fail(msg); };
@@ -767,6 +771,32 @@ function init(common) {
   return s;
 }
 
+// the real gh: { bin, env, path } with every repo's launchers off PATH, null when there is none. Any repo's, matched by the
+// path's shape, because a launcher from a second local repo would otherwise run this script again. On Windows only an
+// .exe, which runs without a shell
+const LAUNCHER_TAIL = lib.localPath("", "bin").split(path.sep).join("/").toLowerCase();
+const isLaunchers = (d) => d.split(path.sep).slice(-2).join("/").toLowerCase() === LAUNCHER_TAIL;
+function realGh() {
+  const key = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") || "PATH";
+  const real = (d) => { try { return fs.realpathSync(d); } catch { return path.resolve(d); } };
+  const dirs = String(process.env[key] || "").split(path.delimiter).filter((d) => d && !isLaunchers(path.resolve(d)) && !isLaunchers(real(d))).join(path.delimiter);
+  const found = lib.which("gh", { PATH: dirs, PATHEXT: ".EXE" });
+  return found ? { bin: found, env: { ...process.env, [key]: dirs }, path: { [key]: dirs } } : null;
+}
+// a repo that moved to a host: the map stays in the lead's state, which agents cannot write, and the marker is gone
+function exportedRepo(cwd) {
+  const common = lib.repoCommon(cwd);
+  try { return common && !lib.localMode(common) && fs.lstatSync(lib.leadPath(common, EXPORT_MAP)).isFile() ? common : null; } catch { return null; }
+}
+// PASSED on the child stops a gh that leads back to a launcher at one level, whatever the filter above missed
+function passThrough(argv) {
+  if (process.env[PASSED]) fail("proteus: the gh on PATH leads back to a proteus launcher; put the real gh on PATH");
+  const gh = realGh() || fail("proteus: this repo moved to a code host, and no real gh is on PATH");
+  const r = spawnSync(gh.bin, argv, { stdio: "inherit", env: { ...gh.env, [PASSED]: "1" }, windowsHide: true });
+  if (r.error) fail(`proteus: gh failed: ${r.error.message}`);
+  return r.status === null ? 1 : r.status;
+}
+
 const pr = require(path.join(__dirname, "proteus-local-pr.js"))({
   fail, unsupported, flags, onlyHere, limit, csv, jsonFields, emit, emitFields, line, bodyOf, checkTitle, readStoreJSON, malformed, writeJSON, withLock, nextNumber, numbersIn, readMeta, repoUrl,
   isTime, isCount, isText, isObj, realDir, noLink, mkReal, writeFresh, unlink, sleep, now, open, shLauncher, LOGIN, MAX_BODY, MAX_FILE, MAX_ENTRIES, REPO, OUT, script: SCRIPT,
@@ -786,6 +816,7 @@ function main(argv) {
       return 0;
     }
     const common = lib.localCommon(process.cwd());
+    if (!common && exportedRepo(process.cwd())) return passThrough(argv);
     if (!common) fail("proteus local mode: this repo is not in local mode; the stand-in never falls through to a real gh");
     return run(common, argv) || 0;
   } catch (e) {
@@ -795,4 +826,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { compile, render, init, refresh, health, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, nextNumber, pr, LOCK_STALE_MS };
+module.exports = { compile, render, init, refresh, health, open, withLock, repoName, shLauncher, cmdLauncher, readIssue, readIssues, readLabels, readMilestones, nextNumber, pr, fail, realGh, EXPORT_MAP, LOGIN, MAX_BODY, MAX_TITLE, LOCK_STALE_MS };
