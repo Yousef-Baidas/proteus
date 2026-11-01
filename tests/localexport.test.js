@@ -535,7 +535,8 @@ function malformed() {
   ok("malformed: the plan stops too", plan.code === 1 && both(plan).includes(`${broken}.json`), both(plan));
 
   const long = world("toolong");
-  issue(long, "t", "x".repeat(65536 - 2));
+  // written straight to the record: a body this size does not fit on a Windows command line
+  patchJSON(path.join(long.common, "proteus-local", "tracker", "issues", `${issue(long, "t")}.json`), { body: "x".repeat(65536 - 2) });
   const l = long.run(["--yes"]);
   ok("a body over the host's size with its header stops, naming it", l.code === 1 && /issue 1 is over/.test(both(l)) && writes(long).length === 0, both(l));
 
