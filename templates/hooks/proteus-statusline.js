@@ -22,7 +22,10 @@ try {
   const cmd = user && user.type === "command" && typeof user.command === "string" ? user.command : "";
   if (cmd && !cmd.includes("proteus-statusline.js")) {
     // a statusLine command is a shell string by definition, so it runs through the shell
-    out = require("child_process").execSync(cmd, { input, encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["pipe", "pipe", "ignore"] }).replace(/\s+$/, "");
+    // a command that exits without reading its stdin leaves a write error here, named differently per OS;
+    // its exit status is what counts, and a timeout or a failed start has none
+    const r = require("child_process").spawnSync(cmd, { shell: true, input, encoding: "utf8", timeout: 5000, windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+    if (r.status === 0) out = r.stdout.replace(/\s+$/, "");
   }
 } catch {}
 
