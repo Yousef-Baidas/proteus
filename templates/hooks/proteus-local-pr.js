@@ -135,6 +135,15 @@ function build(core) {
     });
   }
 
+  // the gate runs still going, reading only: a dead run's pending is no run, and turning it to error is a write
+  function pendingChecks(s) {
+    return fs.readdirSync(s.statuses).map((f) => f.replace(/\.json$/, "")).filter((sha) => {
+      if (!isSha(sha)) return false;
+      const list = readStatuses(s, sha), g = gatesOf(list);
+      return !!g && g.state === "pending" && !deadCheck(s, sha, list);
+    });
+  }
+
   // ---- the store
   function readPull(s, n) {
     const file = path.join(s.pulls, `${n}.json`), p = readStoreJSON(file, MAX_FILE);
@@ -617,7 +626,7 @@ function build(core) {
     if (!Object.prototype.hasOwnProperty.call(commands, sub)) unsupported(`pr ${sub === undefined ? "" : sub}`.trim());
     return commands[sub](openPr(common), argv);
   }
-  return { run, api, checkOrigin, initOrigin, hookFiles, originHealth, preReceive, postReceive, runCheck, commitMerge };
+  return { run, api, checkOrigin, initOrigin, hookFiles, originHealth, preReceive, postReceive, runCheck, commitMerge, openPr, readPulls, refOid, defaultBranch, originValues, sameRepo, pendingChecks };
 }
 
 module.exports = build;
