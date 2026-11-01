@@ -57,6 +57,10 @@
 //                                     (docs/local-mode.md): prints what that gives up, then makes the stand-in, its
 //                                     origin and tracker in the repo's git dir, pushes the default branch and skips
 //                                     the GitHub steps and the other repos. Never with --guest. Refused in the sandbox
+//   node install.js --export <owner/repo> [--yes] [--public]
+//                                     move a local-mode repo to an existing, empty repo on a code host. The human's own
+//                                     act: without --yes it only prints the plan, and it refuses in the sandbox. --yes
+//                                     carries it out; --public allows a public target (docs/local-mode.md)
 //                                     Guest mode (as --project): teams/ in the guest dir; the gate, statusLine and the
 //                                     guest dir (additionalDirectories) in .claude/settings.local.json; settings.json and
 //                                     the rest of the checkout untouched, nothing to commit
@@ -1219,6 +1223,22 @@ function localFinish(root, hooks) {
   return firstPush(root);
 }
 
+function hostSteps() {
+  const self = `node "${path.join(HERE, "install.js")}"`;
+  log(`  on GitHub, as an admin of the repo: ${self} --protect`);
+  log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
+}
+// --export: its refusals as they are, and what is left for the human
+function exportRepo(opt) {
+  const done = require(path.join(HERE, "templates", "hooks", "proteus-local-export.js")).run({ cwd: process.cwd(), target: opt.export, yes: !!opt.yes, allowPublic: !!opt.public }, log);
+  if (!done) return;
+  log("");
+  log("Next, by hand (export never runs these):");
+  hostSteps();
+  log(`  check that the host's default branch is ${done.branch}`);
+  log("  open pull requests need a fresh verdict from you: approvals did not carry over");
+}
+
 async function pluginSetup(opt) {
   const dry = !!opt.dryRun;
   const top = git(["rev-parse", "--show-toplevel"], process.cwd());
@@ -1260,10 +1280,7 @@ async function pluginSetup(opt) {
   if (guest) log(`  nothing to commit: guest mode keeps teams/ in ${guest} and the plugin on for you alone (--no-guest: install into the repo)`);
   else log(r.gate === "settings.json" ? "  commit .claude/settings.json and teams/: teammates who trust the repo are offered the plugin" : "  commit teams/ (the plugin is on for you alone here, through .claude/settings.local.json)");
   if (!teamsEnvOn()) log(`  enable agent teams once, then restart the terminal: ${envCommand()}`);
-  if (!guest && !local) {
-    log(`  on GitHub, as an admin of the repo: ${self} --protect`);
-    log(`  optional, verdicts from a GitHub App: ${self} --verifier-app <appId> <keyPath>, then --protect again`);
-  }
+  if (!guest && !local) hostSteps();
   log("");
   log(dry ? "Dry run: nothing written." : ok ? "Done. Start a new session; /proteus:proteus bootstraps the rest." : "Done, with errors above.");
   return ok;
@@ -2740,6 +2757,7 @@ const FLAGS = {
   "--tour-done": "tourDone", "--protect": "protect", "--no-guest": "noGuest",
   "--plugin-setup": "pluginSetup", "--dry-run": "dryRun", "--remove-user-install": "removeUser",
   "--only-here": "onlyHere", "--local": "local", "--migrate": "migrate", "--migrate-here": "migrateHere", "--sandbox": "sandbox",
+  "--yes": "yes", "--public": "public",
 };
 let harnessArg = null;
 
@@ -2757,6 +2775,11 @@ function main() {
       const d = a === "--scan" ? argv[++i] : a.slice("--scan=".length);
       if (!d) die("--scan needs a directory", 2);
       SCANS.push(path.resolve(d));
+      continue;
+    }
+    if (a === "--export" || a.startsWith("--export=")) {
+      opt.export = a === "--export" ? argv[++i] : a.slice("--export=".length);
+      if (!opt.export) die("--export needs <owner/repo>", 2);
       continue;
     }
     if (a === "--agent-login" || a.startsWith("--agent-login=")) {
@@ -2794,6 +2817,8 @@ function main() {
   if (opt.onlyHere && !opt.pluginSetup) die("--only-here needs --plugin-setup", 2);
   if (opt.local && !opt.project && !opt.pluginSetup) die("--local needs --project or --plugin-setup", 2);
   if (opt.local && opt.guest) die("--local and --guest conflict", 2);
+  if ((opt.yes || opt.public) && !opt.export) die("--yes and --public need --export", 2);
+  if (opt.export && (SCANS.length || Object.keys(opt).some((k) => !["export", "yes", "public"].includes(k)))) die("--export takes only --yes and --public", 2);
   const takes = { pluginSetup: ["--plugin-setup", ["dryRun", "onlyHere", "guest", "noGuest", "local"], "--project"], removeUser: ["--remove-user-install", ["dryRun"], "the installer path"],
     migrate: ["--migrate", ["dryRun"], "--project"], migrateHere: ["--migrate-here", [], "--project"] };
   for (const [k, [flag, ok, cx]] of Object.entries(takes)) {
@@ -2810,6 +2835,7 @@ function main() {
   (async () => {
     if (opt.doctor) process.exitCode = (await doctor(opt.fix)) ? 0 : 1;
     else if (opt.tourDone) tourDone();
+    else if (opt.export) exportRepo(opt);
     else if (opt.sandbox) process.exitCode = sandbox() ? 0 : 1;
     else if (opt.agentLogin) process.exitCode = agentLogin(opt.agentLogin === true ? "" : opt.agentLogin) ? 0 : 1;
     else if (opt.protect) process.exitCode = protect() ? 0 : 1;
