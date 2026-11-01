@@ -196,6 +196,7 @@ if (process.env.FAKE_GH_NEXT) {
   const s = JSON.parse(require("fs").readFileSync(process.env.FAKE_GH_NEXT, "utf8"));
   let m;
   if (a.startsWith("issue list --label proteus --state all --json ")) out(s.issues || []);
+  if (a.startsWith("issue list --label proteus-log --state all --json ")) out(s.logs || []);
   if (/^pr list --base \S+ --state open --json /.test(a)) out((s.prs || []).filter((p) => !p.merged));
   if (a.startsWith("issue list --label proteus-review --state open --json milestone ")) out(s.reviews || []);
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);

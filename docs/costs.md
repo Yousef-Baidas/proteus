@@ -4,4 +4,6 @@ Context cost: the name and description are ~150 tokens per session. The body loa
 
 Review cost follows ticket count: every PR gets its verifier, two on a `security` path, whatever its risk, so the lead cuts the fewest tickets that isolate risk (`references/flow.md` step 2).
 
+Close-mode passes run only when the tree changed since the milestone passes approved it, beyond the lead's added records (`references/enforcement.md` §10b).
+
 A lead on a large context window should run with an auto-compact window near 200k, since compaction is the only unattended way to shrink a lead and the existing thresholds then apply.

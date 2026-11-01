@@ -62,7 +62,7 @@ Tier ceiling (`SKILL.md` rule 3). `--tier` writes `# tier <tier>[ human] <base s
 
 ## 3. lefthook + commit-msg check
 
-Scaffold ticket: install lefthook (`npm i -D lefthook` / `pip install lefthook` / `cargo binstall lefthook` / `pacman -S lefthook` / `brew install lefthook`), copy `teams/templates/lefthook.yml` to the root, fill the `EDIT` lines, and prove the hook: `lefthook run commit-msg <file>` fails on a bad message and passes a good one (quote both). Never `lefthook install`: it writes the shared `.git/hooks`, which guards keep from agents. A test runner, linter or watcher that walks into dot folders (vitest, jest, eslint, vite; README "Worker worktrees") gets `.worktrees/` in its ignores. Its pre-push test goes through `teams/templates/hooks/proteus-gates-cache.js`, so a tree the worker already passed is not tested again. lefthook and `proteus-gates.yml` run `node teams/templates/hooks/commit-msg.js`, so `teams/templates/` is committed. It rejects non-Conventional subjects, >72 chars, and any AI attribution trailer. CI runs it on every commit in the PR, so a worker that skipped hooks still fails.
+Scaffold ticket: install lefthook with the stack's package manager, copy `teams/templates/lefthook.yml` to the root, fill the `EDIT` lines, and prove the hook: `lefthook run commit-msg <file>` fails on a bad message and passes a good one (quote both). Never `lefthook install`: it writes the shared `.git/hooks`, which guards keep from agents. A test runner, linter or watcher that walks into dot folders (vitest, jest, eslint, vite; README "Worker worktrees") gets `.worktrees/` in its ignores. Its pre-push test goes through `teams/templates/hooks/proteus-gates-cache.js`, so a tree the worker already passed is not tested again. lefthook and `proteus-gates.yml` run `node teams/templates/hooks/commit-msg.js`, so `teams/templates/` is committed. It rejects non-Conventional subjects, >72 chars, and any AI attribution trailer. CI runs it on every commit in the PR, so a worker that skipped hooks still fails.
 
 ## 4. Scanners and the security trigger
 
@@ -86,7 +86,7 @@ A recorded finding stays quiet while its tool, rule and path stay the same, digi
 
 ## 5. Cost
 
-Step 8 runs `node <hooks>/proteus-close-report.js <run>` (flags in `--help`). From the tracker it prints, per ticket, the PRs, bounces (`BACK-TO-WORKER` verdicts), escalations (`RED` reports and `CONTRACT-WRONG` verdicts) and wall-clock; per team and difficulty, the bounce rate, escalation rate and median wall-clock; and the run's totals and cost, from pinned `ccusage` over the sessions the journal saw a human message in during the run. The lead posts the output on the run-log issue and pastes it into the close PR body. Then it tunes routing from the team rows: a team and difficulty that bounces or escalates on most tickets goes to `hard` (`top`) next run, or gets smaller tickets; one with no bounce on `hard` is offered at `standard`. Each change is one line to the human; approved, a difficulty rule goes in `AGENTS.md ## Learned`, a `teams/ROUTING.md` change through a ticket.
+Step 8 runs `node <hooks>/proteus-close-report.js <run>` (flags in `--help`). From the tracker it prints, per ticket, the PRs, bounces (`BACK-TO-WORKER` verdicts), escalations (`RED` reports and `CONTRACT-WRONG` verdicts) and wall-clock; per team and difficulty, the bounce rate, escalation rate and median wall-clock; and the run's totals and cost, from pinned `ccusage` over the sessions the journal saw a human message in during the run. The lead tunes routing from the team rows: a team and difficulty that bounces or escalates on most tickets goes to `hard` (`top`) next run, or gets smaller tickets; one with no bounce on `hard` is offered at `standard`. Each change is one line to the human; approved, a difficulty rule goes in `AGENTS.md ## Learned`, a `teams/ROUTING.md` change through a ticket.
 
 ## 6. Skill pinning
 
@@ -96,7 +96,7 @@ Drift blocks dispatch. Each session start re-hashes every skill linked under `te
 
 ## 7. Mutation testing per milestone
 
-CI's `qa` job mutates the files each merge changed (§1), so every changed file is mutated once, off any agent's clock. Once per milestone, `teams/qa/PROFILE.md` reads the `mutation` step of every push run since the milestone's merge-base; without that step it mutates the files changed since the merge-base locally. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red. Judged per milestone, not per ticket; it is the slow gate.
+CI's `qa` job mutates the files each merge changed (§1), so every changed file is mutated once, off any agent's clock. Once per milestone, `teams/qa/PROFILE.md` reads the `mutation` step of every push run since the milestone's merge-base; without that step it mutates the files changed since the merge-base locally. Surviving mutants in a changed file → `WAVE-RED` finding `MUTANT <file:line> survives`, ticketed like any other red.
 
 ## 8. Dependency check on `NEEDS`
 
@@ -107,7 +107,7 @@ curl -s https://api.osv.dev/v1/query -d '{"package":{"name":"<name>","ecosystem"
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const v=(JSON.parse(s).vulns||[]);console.log(v.length?v.map(x=>x.id+" "+(x.summary||"")).join("\n"):"osv: clean")})'
 ```
 
-Result goes into the issue comment with the request. The human still decides; unattended mode parks it. Once the dependency lands, CI's osv-scanner (§4) checks the changed lockfile, transitive updates included, on that PR and every later one that changes it.
+Result goes into the issue comment with the request. The human still decides; unattended mode parks it. Once it lands, CI's osv-scanner (§4) checks the lockfile, transitive updates included.
 
 ## 9. anti-slop lint rules (JS/TS)
 
@@ -115,16 +115,17 @@ Required, `teams/devops/required.txt`. The scaffold or stabilise worker reads `t
 
 ## 10. Deep review per milestone, architecture scan at close
 
-Required, `teams/qa/required.txt`. Per-ticket verifiers check a diff against its contract; nobody at that level sees what five merged tickets did to a module. So at every milestone the QA pass (`judge`) applies `thermo-nuclear-code-quality-review` to the milestone diff; its blockers are `WAVE-RED` tickets and the human gate stays shut until they merge. Per milestone, not per ticket: on a small diff it demands rewrites and doubles the verifier bill. At close the same agent runs the scan phase of mattpocock `improve-codebase-architecture` and files at most five candidates on the last milestone's debt issue. Both are read from their `SKILL.md`; both are `disable-model-invocation`. Non-blocker findings go to the milestone's debt issue, where the human decides at close what becomes a run.
+Required, `teams/qa/required.txt`. A verifier sees one diff, not what a milestone's tickets did to a module. So at every milestone the QA pass (`judge`) applies `thermo-nuclear-code-quality-review` to the milestone diff; its blockers are `WAVE-RED` tickets and the human gate stays shut until they merge. Per milestone, not per ticket: on a small diff it demands rewrites and doubles the verifier bill. At close the same agent runs the scan phase of mattpocock `improve-codebase-architecture` and files at most five candidates on the last milestone's debt issue. Both are `disable-model-invocation`, read from their `SKILL.md`. Non-blocker findings go to the milestone's debt issue, where the human decides at close what becomes a run.
 
-The same scan also runs before the work, on the modules it touches: the refactor checkpoint in `flow.md` step 1.
+The same scan runs before the work too: the refactor checkpoint in `flow.md` step 1.
 
 ## 10b. Security pass per milestone and audit at close
 
-A security verifier sees one ticket's diff, so an access path built across tickets passes each review, and nobody audits the whole repo before `main`.
+A security verifier sees one ticket's diff, so an access path built across tickets passes each review.
 
 - Milestone mode: the QA milestone pass (§10) also spawns `proteus-security-verifier` on `judge` with the word `milestone` and the milestone diff, `git diff <merge-base>..proteus/<run>`. It checks the flows across tickets: authorization on every new route or handler, every input that reaches file, network, database or shell I/O, and each of the milestone's gate (g) abuse cases (`flow.md` step 1).
 - Close mode: at close the same agent runs with the word `close` over the whole repo at the tip of `proteus/<run>`, applying the audit skill the scout picked for `teams/security` (a line of `teams/security/skills.txt`), read from its `SKILL.md`.
+- Close skip: `proteus-cli.js close` prints `close: skip` only when every milestone has a `milestone-passes` run-log line from the human's or the agents' login and origin's tip of `proteus/<run>` differs from the newest line's commit only by added owned records, lessons and ADRs. Neither close pass then runs, §10's scan included. Anything else, a failure too, prints `close: run`.
 - Blockers become `WAVE-RED` tickets exactly as §10's do: numbered, mapped to the ticket that introduced them, fixed by tickets, never by the verifier. Non-blockers go to the milestone's debt issue.
 - The human gate does not open over a security blocker. Like §10, `proteus-lead-guard.js` holds the gate and `proteus-verdict.js` counts no `ACCEPT` or `AUTO-ACCEPT` (`review.md`).
 - No path the run touched matches the `security` block of `teams/ROUTING.md` → both modes are skipped, and the lead writes `security-pass: skipped (no security path)` on the run log.

@@ -118,7 +118,7 @@ Two skills are the pipeline's, not the scout's; they live in `teams/<profile>/re
 - [anti-slop](https://github.com/dmmulroy/anti-slop) — on JS/TS the scaffold or stabilise ticket vendors its oxlint rules into the lint gate. After that slop fails lint in the worker, in lefthook, and in CI, at zero agent tokens.
 - [thermo-nuclear-code-quality-review](https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review) — the QA pass applies it on the lead's tier to every milestone diff; its blockers are tickets and the human gate stays shut until they merge. Per milestone, not per ticket: on a forty-line diff it demands rewrites nobody asked for.
 
-At close the same pass runs the scan phase of mattpocock `improve-codebase-architecture` and files up to five deepening candidates on the milestone's debt issue for you to pick from. On a blank TypeScript repo the scaffold worker uses [create-better-t-stack](https://github.com/AmanVarshney01/create-better-t-stack) when the grilled stack is one it offers; the stack picks the tool, never the reverse.
+At close the same pass runs the scan phase of mattpocock `improve-codebase-architecture` and files up to five deepening candidates on the milestone's debt issue for you to pick from. `proteus-cli.js close` skips the close passes, this scan and the whole-repo security audit with them, when the tree is the one the milestone passes approved plus only the lead's added records; on any doubt they run. On a blank TypeScript repo the scaffold worker uses [create-better-t-stack](https://github.com/AmanVarshney01/create-better-t-stack) when the grilled stack is one it offers; the stack picks the tool, never the reverse.
 
 ## Your conventions, not the model's
 
@@ -239,7 +239,7 @@ templates/
     proteus-local-export.js   install.js --export: moves a local repo to a code host
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
-    proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls
+    proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls; `close`: skip or run the close passes
     proteus-worktree.js     prepares a worker worktree and its hooks (`next` runs it)
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-scratch.js      ledgers and sweeps agents' temp files
