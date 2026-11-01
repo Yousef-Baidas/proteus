@@ -36,7 +36,7 @@ function repo(name, { agents = gate("node gate.js"), init = true } = {}) {
   lib.g(dir, "init", "-q", "-b", "main");
   lib.g(dir, "config", "user.name", "Repo Person");
   lib.g(dir, "config", "user.email", "repo@example.com");
-  fs.writeFileSync(path.join(dir, "AGENTS.md"), agents);
+  if (agents !== null) fs.writeFileSync(path.join(dir, "AGENTS.md"), agents);
   fs.writeFileSync(path.join(dir, "gate.js"), GATE_JS);
   lib.g(dir, "add", ".");
   lib.g(dir, "commit", "-q", "-m", "init");
@@ -628,11 +628,92 @@ function scripts() {
   ok("outside local mode: --run-check refused", r.code === 1, r.err);
 }
 
+// a PR that sets the first gate: no command ran, RAN stays absent; any other head on a gateless default branch fails
+function firstGates() {
+  const BARE = "# Agents\n\n## Learned\n- domain: code\n";
+  const write = (r, file, text) => fs.writeFileSync(path.join(r.dir, file), text);
+  // a head off main with what edit stages, opened and checked in the foreground
+  const pr = (r, branch, edit) => {
+    fs.rmSync(RAN, { force: true });
+    lib.g(r.dir, "checkout", "-q", "-b", branch, "main");
+    edit();
+    lib.g(r.dir, "commit", "-q", "-m", `feat: ${branch}`);
+    const sha = lib.g(r.dir, "rev-parse", "HEAD");
+    r.hold(sha);
+    lib.g(r.dir, "push", "-q", "origin", branch);
+    lib.g(r.dir, "checkout", "-qf", "main");
+    const made = r.gh(["pr", "create", "--base", "main", "--head", branch, "--title", `t ${branch}`, "--body", "b"]);
+    r.check(sha);
+    const n = Number(/\/pull\/(\d+)$/.exec(made.out.trim())?.[1]);
+    return { sha, n, row: json(r.gh(["pr", "checks", String(n), "--json", "state,description"]))[0] };
+  };
+  const setGate = (r, text = BARE + "- gate: `node gate.js`\n") => { write(r, "AGENTS.md", text); lib.g(r.dir, "add", "AGENTS.md"); };
+  const refused = (name, { row }) => {
+    ok(`first gate: ${name} fails, naming the rule`, row.state === "FAILURE" && /no gate command/.test(row.description) && /AGENTS\.md alone/.test(row.description), JSON.stringify(row));
+    ok(`first gate: ${name} runs nothing`, !fs.existsSync(RAN));
+  };
+
+  const a = repo("firstgate", { agents: BARE });
+  const good = pr(a, "feat/gate", () => setGate(a));
+  ok("first gate: a PR changing only AGENTS.md and adding the line passes", good.row.state === "SUCCESS" && /no command run/.test(good.row.description) && /first gate/.test(good.row.description), JSON.stringify(good.row));
+  ok("first gate: no gate command ran for it", !fs.existsSync(RAN));
+  ok("first gate: the PR reads mergeable", a.view(good.n, "mergeStateStatus").mergeStateStatus === "CLEAN");
+  let r = a.gh(["pr", "merge", String(good.n), "--merge"]);
+  ok("first gate: it merges, and main has the gate", r.code === 0 && /node gate\.js/.test(a.bareG("show", "main:AGENTS.md")), r.err);
+
+  const b = repo("firstgate-extra", { agents: BARE });
+  refused("an extra file", pr(b, "feat/extra", () => { setGate(b); write(b, "extra.txt", "x\n"); lib.g(b.dir, "add", "extra.txt"); }));
+  const c = repo("firstgate-rename", { agents: null });
+  const moved = pr(c, "feat/rename", () => {
+    lib.g(c.dir, "mv", "gate.js", "AGENTS.md");
+    fs.appendFileSync(path.join(c.dir, "AGENTS.md"), "\n## Learned\n- gate: `node gate.js`\n");
+    lib.g(c.dir, "add", "AGENTS.md");
+  });
+  ok("first gate: the rename test really is a rename", lib.g(c.dir, "diff", "-M", "--name-status", "main", moved.sha).startsWith("R"));
+  refused("a rename into AGENTS.md", moved);
+  const d = repo("firstgate-noline", { agents: BARE });
+  refused("a head with no gate line", pr(d, "feat/noline", () => setGate(d, BARE + "- note: later\n")));
+  const e = repo("firstgate-mode", { agents: BARE });
+  refused("a mode change", pr(e, "feat/mode", () => { setGate(e); lib.g(e.dir, "update-index", "--chmod=+x", "AGENTS.md"); }));
+  const f = repo("firstgate-link", { agents: BARE });
+  refused("a symlink", pr(f, "feat/link", () => {
+    const body = path.join(W, "link-body");
+    fs.writeFileSync(body, BARE + "- gate: `node gate.js`\n");
+    lib.g(f.dir, "update-index", "--cacheinfo", `120000,${lib.g(f.dir, "hash-object", "-w", body)},AGENTS.md`);
+  }));
+  const u = repo("firstgate-unread", { agents: BARE });
+  const nothing = pr(u, "feat/unread", () => setGate(u));
+  fs.rmSync(path.join(u.common, "proteus-local", "tracker", "statuses", `${nothing.sha}.json`));
+  fs.rmSync(u.claim(nothing.sha));
+  const tree = lib.g(u.dir, "rev-parse", `${nothing.sha}^{tree}`), loose = path.join(u.bare, "objects", tree.slice(0, 2), tree.slice(2));
+  const missing = fs.existsSync(loose);
+  fs.rmSync(loose, { force: true });
+  r = u.check(nothing.sha);
+  const unread = json(u.gh(["pr", "checks", String(nothing.n), "--json", "state,description"]))[0];
+  ok("first gate: a diff that cannot be read fails closed", missing && unread.state === "FAILURE" && !fs.existsSync(RAN) && /AGENTS\.md alone/.test(unread.description), JSON.stringify(unread) + r.err);
+
+  // ---- once main has a gate line the path is closed
+  const g = repo("firstgate-closed");
+  const normal = pr(g, "feat/own", () => setGate(g, gate("node evil.js")));
+  ok("first gate: on a gated main an AGENTS.md-only PR takes the normal path", normal.row.state === "SUCCESS" && /1 gate command\(s\) passed/.test(normal.row.description) && fs.existsSync(RAN), JSON.stringify(normal.row));
+  // the two lines sit apart, so the second still merges cleanly
+  const LONG = "- a: 1\n- b: 2\n- c: 3\n- d: 4\n", top = "# Agents\n\n## Learned\n";
+  const h = repo("firstgate-stale", { agents: top + LONG });
+  const one = pr(h, "feat/one", () => setGate(h, `${top}${LONG}- gate: \`node gate.js\`\n`));
+  const two = pr(h, "feat/two", () => setGate(h, `${top}- gate: \`node evil.js\`\n${LONG}`));
+  ok("first gate: two open PRs can both qualify", one.row.state === "SUCCESS" && two.row.state === "SUCCESS", JSON.stringify([one.row, two.row]));
+  ok("first gate: the first merges", h.gh(["pr", "merge", String(one.n), "--merge"]).code === 0);
+  ok("first gate: the other's pass reads blocked once main has a gate", h.view(two.n, "mergeStateStatus").mergeStateStatus === "BLOCKED");
+  r = h.gh(["pr", "merge", String(two.n), "--merge"]);
+  ok("first gate: the other's pass no longer merges", r.code === 1 && /first-gate pass/.test(r.err), r.err);
+}
+
 (async () => {
   origins();
   receive();
   commands();
   merges();
+  firstGates();
   await parallel();
   await checks();
   scripts();
