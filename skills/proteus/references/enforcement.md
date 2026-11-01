@@ -121,7 +121,7 @@ The same scan runs before the work too: the refactor checkpoint in `flow.md` ste
 
 ## 10b. Security pass per milestone and audit at close
 
-A security verifier sees one ticket's diff, so an access path built across tickets passes each review, and nobody audits the whole repo before `main`.
+A security verifier sees one ticket's diff, so an access path built across tickets passes each review.
 
 - Milestone mode: the QA milestone pass (§10) also spawns `proteus-security-verifier` on `judge` with the word `milestone` and the milestone diff, `git diff <merge-base>..proteus/<run>`. It checks the flows across tickets: authorization on every new route or handler, every input that reaches file, network, database or shell I/O, and each of the milestone's gate (g) abuse cases (`flow.md` step 1).
 - Close mode: at close the same agent runs with the word `close` over the whole repo at the tip of `proteus/<run>`, applying the audit skill the scout picked for `teams/security` (a line of `teams/security/skills.txt`), read from its `SKILL.md`.
