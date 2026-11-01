@@ -2,7 +2,7 @@
 // Run from a repo root by the installer: node <checkout>/templates/hooks/install-lead-hooks.js
 // Copies every file beside it (except itself and the adapter's skipHooks, which it removes if an
 // older install left them) into the harness's hooks dir (.claude/hooks/), so the lead can run
-// proteus-worktree.js and proteus-status.js from there, and registers the lead's hooks
+// proteus-worktree.js and proteus-status.js from there, adds the policy presets (lib.syncPresets), and registers the lead's hooks
 // (Claude Code: .claude/settings.local.json, machine-local and untracked, so worktrees never inherit it).
 // Idempotent: an entry whose command already names the script is kept, its command rewritten to the
 // absolute path if an older install wrote it another way; other hooks are never touched, an old
@@ -37,6 +37,7 @@ for (const f of fs.readdirSync(__dirname)) {
   // hooksDir is machine-local and git-excluded: a copy there is an older install's, not the user's
   if (C.lstat(dest) && C.remove(dest, [own], "file")) removed++;
 }
+if (lib.syncPresets(__dirname, hooksDir)) copied++;
 
 const r = ad.registerLead(".");
 const file = r.file.split(path.sep).join("/");

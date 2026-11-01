@@ -10,7 +10,8 @@
 //   node <hooks>/proteus-policy.js render                  teams/POLICY.md as write makes it (the preset and
 //                                                          teams/policy.json, no user file), on stdout
 // Layers, each overriding the last: the preset (templates/policy/presets.json; the files' "preset", else balanced),
-// the user file (proteus-policy.json beside proteus.json), the project's teams/policy.json. Rules merge by id, so a
+// the user file (proteus-policy.json beside proteus.json), the project's teams/policy.json (in guest mode the guest
+// dir's, lib.docRoot, as for POLICY.md). Rules merge by id, so a
 // project rule replaces the user rule it shares an id with. A file that fails validation counts as absent, and its
 // errors are reported. load reads; only write writes.
 // The policy guards against mistakes, not an adversary: a pattern can be worked around.
@@ -36,9 +37,13 @@ const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 // the user file: beside proteus.json (lib.policyUserFile), or under home/.claude when a home is given
 const userFile = (home) => home ? path.join(home, ".claude", FILE) : lib.policyUserFile();
 
-// the presets: beside these hooks in the plugin, else the copy setup keeps in a repo's teams/templates
+// a project file's path under the teams dir, the guest dir's in guest mode
+const projectPath = (root, file) => path.join(lib.docRoot(root), ...file.split("/"));
+
+// the presets: the copy beside these hooks in a non-plugin install, else ../policy (the plugin, a teams/templates
+// copy), else the copy setup keeps in the repo's teams/templates
 function presets(root) {
-  const dirs = [path.join(__dirname, "..", "policy"), ...(root ? [path.join(root, "teams", "templates", "policy")] : [])];
+  const dirs = [__dirname, path.join(__dirname, "..", "policy"), ...(root ? [path.join(lib.docRoot(root), "teams", "templates", "policy")] : [])];
   for (const d of dirs) {
     const p = lib.readJSON(path.join(d, "presets.json"), null);
     if (p && typeof p === "object" && !Array.isArray(p)) return p;
@@ -125,7 +130,7 @@ function resolve(layers, all) {
 // the effective policy for root: { policy, sources, files: { user, project }, errors: [{ file, error }] }
 function load({ root, home } = {}) {
   const all = presets(root), names = Object.keys(all);
-  const files = { user: userFile(home), project: root ? path.join(root, ...PROJECT_FILE.split("/")) : "" };
+  const files = { user: userFile(home), project: root ? projectPath(root, PROJECT_FILE) : "" };
   const user = readLayer(files.user, names);
   const project = files.project ? readLayer(files.project, names) : { file: "", data: null, errors: [] };
   const errors = [user, project].flatMap((l) => l.errors.map((error) => ({ file: l.file, error })));
@@ -269,20 +274,23 @@ function writeDecision(ev, ad, lead) {
   if (errors.length) return { deny: `proteus-policy.js write: the draft ${fwd(a.file)} has errors, so nothing would be written: ${errors.slice(0, 3).join("; ")}.` };
   const why = noAsk(ev, ad);
   if (why) return { deny: `the human approves each policy write in a permission dialog, and none can appear here (${why}). The human runs it in their own terminal, in ${fwd(a.root)}: node ${quote(fwd(__filename))} write ${quote(fwd(a.file))}${a.user ? " --user" : ""}` };
-  const target = a.user ? userFile() : path.join(a.root, ...PROJECT_FILE.split("/"));
+  const target = a.user ? userFile() : projectPath(a.root, PROJECT_FILE);
   const text = render(resolve([{ name: a.user ? "user" : "project", data: draft }], all).policy).trimEnd().split("\n");
   const SHOW = 60, shown = text.slice(0, SHOW).map((l) => `  ${l.slice(0, 200)}`);
   if (text.length > SHOW) shown.push(`  … ${text.length - SHOW} more lines in ${fwd(a.file)}`);
   return { ask: `Proteus: write this policy to ${fwd(target)}${a.user ? ", the default for every project" : ""}? Approve only if it is what you agreed.\n${shown.join("\n")}` };
 }
 
-// the policy file abs is, as shown in a refusal, else "": teams/policy.json or teams/POLICY.md in any checkout
-// (lib.POLICY_NEVER, on lib.fileKey so case and trailing dots do not get around it), or the user file
-function policyFile(abs) {
-  const user = userFile();
+// the policy file abs is, as shown in a refusal, else "": teams/policy.json or teams/POLICY.md in any checkout or the
+// guest dir (lib.POLICY_NEVER, on lib.fileKey so case and trailing dots do not get around it), or the user file
+function policyFile(abs, ev) {
+  const user = userFile(), guest = lib.guestDir(policyRoot(ev));
   for (const p of new Set([abs, lib.realOr(abs)])) {
-    const wt = lib.gitRoot(path.dirname(p)), rel = wt ? lib.relPath(wt, p) : null;
-    if (rel && lib.POLICY_NEVER.some((re) => re.test(lib.fileKey(rel)))) return rel;
+    const wt = lib.gitRoot(path.dirname(p));
+    for (const base of [wt, guest, guest && lib.realOr(guest)]) {
+      const rel = base ? lib.relPath(base, p) : null;
+      if (rel && lib.POLICY_NEVER.some((re) => re.test(lib.fileKey(rel)))) return rel;
+    }
     if (lib.samePath(p, user) || lib.samePath(p, lib.realOr(user))) return fwd(p);
   }
   return "";
@@ -319,7 +327,7 @@ function guard(ev, ad, lead) {
   // the lead's line naming a policy file; an agent's shell is AGENT_NEVER's
   const writes = ev.tool === "shell" && lead && /policy/i.test(ev.command) ? shellWrites(ev) : null;
   for (const abs of [...edits, ...(writes || [])]) {
-    const f = policyFile(abs);
+    const f = policyFile(abs, ev);
     if (f) ad.deny(`${f} is the policy, which nobody writes by hand: ${WRITE_HOW}.`);
   }
   const r = load({ root: policyRoot(ev) });
@@ -345,7 +353,7 @@ function guard(ev, ad, lead) {
 function writePolicy(draft, { root, user, home }) {
   if (user) { lib.writeJSON(userFile(home), draft); return [userFile(home)]; }
   const { policy } = resolve([{ name: "project", data: draft }], presets(root));
-  const json = path.join(root, ...PROJECT_FILE.split("/")), doc = path.join(root, ...PROJECT_DOC.split("/"));
+  const json = projectPath(root, PROJECT_FILE), doc = projectPath(root, PROJECT_DOC);
   lib.writeJSON(json, draft);
   fs.writeFileSync(doc, render(policy));
   return [json, doc];
@@ -368,7 +376,7 @@ function main(argv) {
     return 0;
   }
   if (cmd === "render") {
-    const all = presets(root), l = readLayer(path.join(root, ...PROJECT_FILE.split("/")), Object.keys(all));
+    const all = presets(root), l = readLayer(projectPath(root, PROJECT_FILE), Object.keys(all));
     warn(l.errors.map((error) => ({ file: l.file, error })));
     process.stdout.write(render(resolve([{ name: "project", data: l.data }], all).policy));
     return 0;
