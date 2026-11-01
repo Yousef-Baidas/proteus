@@ -1985,7 +1985,7 @@ function localChecks(check, root, common, self) {
   });
   check(() => {
     const s = h();
-    return s.gates.length ? ["ok", `${s.gates.length} gate command(s) in ## Learned on ${s.branch}`] : ["WARN", "no gate command in ## Learned on the default branch, so every local check fails", "add them to AGENTS.md on the default branch"];
+    return s.gates.length ? ["ok", `${s.gates.length} gate command(s) in ## Learned on ${s.branch}`] : ["WARN", "no gate command in ## Learned on the default branch, so every local check fails but the PR that adds it", "open a PR that adds the gate line to AGENTS.md and changes nothing else"];
   });
   check(() => {
     const prof = repoProfile(root);

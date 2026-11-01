@@ -1,6 +1,6 @@
 # Bootstrap
 
-Run before step 1 of the flow whenever "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. Don't skip the checks: a missing gate is how a wave passes locally and fails on merge. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, and the policy through its script; every other file below is a worker's.
+Run before step 1 of the flow when "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. Don't skip the checks: a missing gate is how a wave passes locally and fails on merge. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, and the policy through its script; every other file below is a worker's.
 
 ## Detect
 
@@ -27,12 +27,12 @@ Deliverables are whatever the project ships: source code, a manuscript, pass scr
 
 ## Mid-project, unset
 
-1. `/setup-matt-pocock-skills` with GitHub as the tracker if not run. `/domain-modeling` for `CONTEXT.md` if missing; `/wayfinder` first if the project is large enough that one session cannot hold it (its map goes to the tracker as a `wayfinder:map` issue).
+1. `/setup-matt-pocock-skills` with GitHub as the tracker if not run. `/domain-modeling` for `CONTEXT.md` if missing; `/wayfinder` first if one session cannot hold the project (its map goes to the tracker as a `wayfinder:map` issue).
 2. Run every gate on `main` (`stack.md` on code; the domain checks otherwise). Red gates go into a **stabilise** ticket that runs alone before any feature wave: it records each red gate's findings in `teams/baseline.json` with `proteus-baseline.js` and runs that gate through it in CI and lefthook (`enforcement.md` §12), so a ticket fails only on findings it adds; the same ticket installs the CI workflow, lefthook, commit-msg check, and on JS/TS the anti-slop oxlint rules from `enforcement.md` if the repo lacks them (where `CONVENTIONS.md` forbids dependencies, ask about the lint dependency first: §9). Fixing the recorded failures is follow-up work, not a precondition. A red gate with no baseline still blocks features; workers cannot tell their red from yours.
-3. Code: `fallow health` / `vulture`, run by a `helper` subagent that reports counts and the ten worst files, not the listing. Dead code and duplicates go into the stabilise ticket or a follow-up, not into a feature ticket.
+3. Code: `fallow health` / `vulture`, run by a `helper` subagent that reports counts and the ten worst files. Dead code and duplicates go into the stabilise ticket or a follow-up, not into a feature ticket.
 4. Root docs over budget (`doc-bloat` in `proteus-state`) → a docs-diet ticket (`docs-diet.md`) in wave one. Plans, maps, or logs committed as files → the same ticket moves them to the tracker.
 5. Add `## Learned` to `AGENTS.md` and commit it (§ Lead docs). Record: `labels: created`, gate commands, package manager, test layout, hotspot files, the domain.
-6. Existing branches or worktrees: list them, ask the human which are live, leave the rest alone. Don't delete a branch you did not create: it may be someone's live work.
+6. Existing branches or worktrees: list them, ask the human which are live, leave the rest alone, and delete no branch you did not create.
 7. Now the flow from step 1.
 
 ## Conventions (both paths)
@@ -61,6 +61,7 @@ Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and boots
 
 - No `proteus/<run>` yet: commit on local `main`. They reach GitHub on the run branch, which `stack.md` cuts from local `main`.
 - `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Tier: full` for `CONVENTIONS.md` or `teams/`. CI checks that branch against the lead's own list (these docs, `teams/`, the owned-path records `.proteus/owned/`, and the `lead-edits:` globs of the base's `AGENTS.md`), not a body line; a run cut before the records still needs an `Owned:` line naming the files. Like a ticket's PR it needs a verifier's signoff: spawn `proteus-verifier` on it (the records against the tickets, the docs against `CONVENTIONS.md`), whose `MERGE` posts `proteus/verdict`. It merges on green `gates`, `proteus/verdict` and `proteus/security`, with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed>` so a commit you did not push fails the merge.
+- Fresh local project: the first PR sets the gate line and changes nothing else.
 - Quick and Direct branches are cut from `origin/main`, not local `main`: lead docs riding along would fail CI's owned check. They wait on local `main` for the next run branch.
 
 ## Roster (both paths)

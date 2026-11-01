@@ -13,7 +13,8 @@
 // A check runs the default branch's gate commands on a head with the caller's privileges, so nothing here but
 // `pr create`, post-receive and `pr checks --rerun` starts one: never a read, and never a Claude hook, which runs
 // outside the sandbox. With a sandbox profile a run that can write proteus-lead/ is outside the sandbox: it runs
-// nothing and posts a failure naming the rerun.
+// nothing and posts a failure naming the rerun. While the default branch has no gate line, a head that only adds one
+// passes with nothing run (firstGate), and that pass ends when the default branch gets a gate.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -37,6 +38,9 @@ const PR_FIELDS = ["number", "title", "body", "state", "url", "baseRefName", "he
 const GATES = lib.GATES_CHECK;
 const OLD_GIT = "proteus local mode: git merge-tree --write-tree is missing; local PRs need git 2.38 or newer";
 const HEAD_MOVED = "GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)";
+const FIRST_GATE = "no command run: this PR sets the first gate";
+// diff-tree --raw for AGENTS.md added or edited as a plain file: a mode change or a link does not match
+const PLAIN_AGENTS = /^:(?:000000|100644) 100644 [0-9a-f]+ [0-9a-f]+ [AM]$/;
 
 const has = (p) => { try { fs.lstatSync(p); return true; } catch { return false; } };
 const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -187,7 +191,7 @@ function build(core) {
     if (!base) return { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" };
     if (mergeTree(s, base, head).conflict) return { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" };
     const checks = latest(statusesOf(s, head)), g = checks.find((c) => c.context === GATES);
-    const status = p.isDraft ? "DRAFT" : !g || g.state !== "success" ? "BLOCKED" : checks.every((c) => c.state === "success") ? "CLEAN" : "UNSTABLE";
+    const status = p.isDraft ? "DRAFT" : !g || g.state !== "success" || spentFirstGate(s, g) ? "BLOCKED" : checks.every((c) => c.state === "success") ? "CLEAN" : "UNSTABLE";
     return { mergeable: "MERGEABLE", mergeStateStatus: status };
   }
 
@@ -307,6 +311,7 @@ function build(core) {
         const c = checks.find((x) => x.context === context);
         if (!c || c.state !== "success") fail(`Pull request #${n} is not mergeable: required status ${context} is ${c ? c.state : "missing"} on ${head.slice(0, 12)}`);
       }
+      if (spentFirstGate(s, gatesOf(checks))) fail(`Pull request #${n} is not mergeable: the default branch has a gate now, so this head's first-gate pass no longer counts; rerun its check`);
       const t = mergeTree(s, base, head);
       if (t.conflict) fail(`Pull request #${n} is not mergeable: the merge commit cannot be cleanly created.`);
       commitMerge(s, p, base, head, t.tree, n, p.title);
@@ -511,10 +516,23 @@ function build(core) {
     return 0;
   }
   // from the default branch in the bare repo, so a branch cannot choose its own gates
-  function gateList(s) {
-    const r = git(s, ["cat-file", "blob", `refs/heads/${defaultBranch(s.origin)}:AGENTS.md`]);
+  const gateList = (s) => gatesAt(s, `refs/heads/${defaultBranch(s.origin)}`);
+  function gatesAt(s, rev) {
+    const r = git(s, ["cat-file", "blob", `${rev}:AGENTS.md`]);
     return r.ok ? lib.gateCommands(r.out) : [];
   }
+  // for a default branch with no gates: against its merge base with it, does this head change AGENTS.md alone and carry
+  // a gate line? Renames off, so a move shows both its paths; diff-tree, which diff.* config cannot narrow; a failed git
+  // is a no. The line is only read here, and the check runs nothing
+  function firstGate(s, sha) {
+    const base = git(s, ["merge-base", defaultBranch(s.origin), sha]);
+    const diff = base.ok ? git(s, ["diff-tree", "-r", "-z", "--raw", "--no-abbrev", "--no-renames", base.out, sha]) : base;
+    if (!diff.ok) return false;
+    const [raw, name, ...rest] = diff.out.split("\0").filter(Boolean);
+    return PLAIN_AGENTS.test(raw) && name === "AGENTS.md" && !rest.length && gatesAt(s, sha).some(Boolean);
+  }
+  // a first-gate pass counts only while the default branch has no gates, so it opens no way around them later
+  const spentFirstGate = (s, g) => !!g && g.description === FIRST_GATE && gateList(s).length > 0;
   function killTree(c) {
     if (process.platform === "win32") { try { spawnSync("taskkill", ["/pid", String(c.pid), "/T", "/F"], { windowsHide: true, timeout: 10000, stdio: "ignore" }); } catch {} return; }
     try { process.kill(-c.pid, "SIGKILL"); } catch {}
@@ -577,7 +595,8 @@ function build(core) {
     let result;
     try {
       const list = gateList(s);
-      result = outsideSandbox(s) ? notRun(s, sha) : list.length ? await runGates(s, sha, list, ms) : { state: "failure", description: "no gate command in ## Learned on the default branch" };
+      // ahead of the sandbox test: that test guards gate commands, and a first-gate pass runs none
+      result = !list.length && firstGate(s, sha) ? { state: "success", description: FIRST_GATE } : outsideSandbox(s) ? notRun(s, sha) : list.length ? await runGates(s, sha, list, ms) : { state: "failure", description: "no gate command in ## Learned on the default branch; only a PR changing AGENTS.md alone can add the first" };
     } catch (e) {
       result = { state: "error", description: `the local check failed: ${e.message}` };
     } finally { clearInterval(beat); }
