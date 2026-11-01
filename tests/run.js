@@ -4,6 +4,8 @@
 // A file that fails to finish cleanly is named and counted in the last line, whose "failed" total includes it.
 // Exits 1 too if the run changed the checkout (#218): its git status or a tracked file's blob hash, listed by path;
 // outside a git repo that check is skipped.
+// Exits 1 too if a proteus-test-* entry is left in the run's own temp dir (#317), which every child gets as its
+// TMPDIR, TEMP and TMP, so runs at once never see each other's. That dir goes at exit, on a pass, a failure or a signal.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -27,6 +29,33 @@ function snapshot() {
 }
 const before = TOP ? snapshot() : null;
 
+// a short name: this sits above every test's paths, under macOS's socket limit and Windows's MAX_PATH
+const PARENT = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pt-run-"));
+const TEMP_ENV = { TMPDIR: PARENT, TEMP: PARENT, TMP: PARENT };
+process.on("exit", () => {
+  try { fs.rmSync(PARENT, { recursive: true, force: true, maxRetries: 3 }); } catch (e) { console.log(`could not remove ${PARENT}: ${e.message}`); }
+});
+
+// each proteus-test-* entry still in PARENT, with the test file that made it where tests/lib.js recorded one
+function leftovers() {
+  return fs.readdirSync(PARENT).filter((n) => n.startsWith("proteus-test-")).sort().map((n) => {
+    let owner = "";
+    try { owner = fs.readFileSync(path.join(PARENT, n, ".test-file"), "utf8"); } catch {}
+    return owner ? `${n} (${owner})` : n;
+  });
+}
+
+const live = new Set();
+let stopping = null;
+// the code to exit with once the last child has gone, so nothing writes into PARENT after it is removed
+const stopped = () => { if (stopping !== null && !live.size) process.exit(stopping); };
+for (const s of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(s, () => {
+  if (stopping !== null) return;
+  stopping = 128 + os.constants.signals[s];
+  for (const c of live) c.kill("SIGKILL");
+  stopped();
+});
+
 const files = fs.readdirSync(__dirname).filter((f) => f.endsWith(".test.js")).sort();
 console.log(`${__dirname}: ${files.length} test files`);
 let pass = 0, fail = 0, bad = 0;
@@ -35,10 +64,13 @@ const JOBS = Math.max(1, Math.floor(+process.env.PROTEUS_TEST_JOBS) || Math.min(
 function runFile(f) {
   return new Promise((resolve) => {
     const r = { stdout: "", stderr: "", status: null, signal: null, error: null };
-    const child = spawn(process.execPath, [path.join(__dirname, f)], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(process.execPath, [path.join(__dirname, f)], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, env: { ...process.env, ...TEMP_ENV } });
+    live.add(child);
+    const gone = () => { live.delete(child); stopped(); };
+    child.on("exit", gone);
     child.stdout.setEncoding("utf8").on("data", (d) => { r.stdout += d; });
     child.stderr.setEncoding("utf8").on("data", (d) => { r.stderr += d; });
-    child.on("error", (e) => { r.error = e; resolve(r); });
+    child.on("error", (e) => { r.error = e; gone(); resolve(r); });
     child.on("close", (status, signal) => { r.status = status; r.signal = signal; resolve(r); });
   });
 }
@@ -66,7 +98,7 @@ async function runAll(names, jobs) {
   let next = 0, shown = 0;
   const flush = () => { while (shown < names.length && done[shown]) { report(names[shown], done[shown]); shown++; } };
   const worker = async () => {
-    while (next < names.length) {
+    while (next < names.length && stopping === null) {
       const i = next++;
       done[i] = await runFile(names[i]);
       flush();
@@ -83,7 +115,9 @@ async function main() {
     const changed = [...new Set([...before.keys(), ...after.keys()])].filter((p) => before.get(p) !== after.get(p)).sort();
     if (changed.length) { dirty = true; fail++; console.log(`FAIL the run changed the checkout ${TOP}:\n${changed.map((p) => `  ${p}`).join("\n")}`); }
   }
+  const left = leftovers();
+  if (left.length) { fail++; console.log(`FAIL the run left temp dirs behind in ${PARENT}:\n${left.map((n) => `  ${n}`).join("\n")}`); }
   console.log(`\n${pass} passed, ${fail} failed across ${files.length} files${bad ? ` (${bad} did not finish cleanly)` : ""}`);
-  process.exitCode = bad || dirty || !files.length ? 1 : 0;
+  process.exitCode = bad || dirty || left.length || !files.length ? 1 : 0;
 }
 main();
