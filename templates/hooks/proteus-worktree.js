@@ -121,6 +121,7 @@ if (!co || co.gitDir === co.common || !lib.samePath(co.root, lib.realOr(wt))) {
 }
 
 const EXCLUDE = ad.prepareWorker(wt, __dirname);
+lib.syncPresets(__dirname, ad.hooksDir(wt));
 let head = entries;
 if (tier) {
   let prev = null;

@@ -257,6 +257,8 @@ function sync(ad, home, root, notes) {
     const s = path.join(hooksSrc, f);
     if (fs.statSync(s).isFile() && lib.syncFile(s, path.join(ad.hooksDir(root), f))) hooks++;
   }
+  // only a copy install.js --project made and git-excluded
+  if (fs.existsSync(path.join(ad.hooksDir(root), "presets.json")) && lib.syncPresets(hooksSrc, ad.hooksDir(root))) hooks++;
   // a new hook file may need a new registration; the CommonJS marker (#77) this sync can bring is excluded from
   // git by install.js --project, not here: this hook runs unsandboxed and writes nothing in the git dir (#236)
   if (hooks) ad.registerLead(root);
