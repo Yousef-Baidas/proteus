@@ -12,7 +12,7 @@
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
 - **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
 - An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows them the exact text and only their click posts it, they never open the host, and where no dialog can appear they run that command themselves.
-- An answer stating a standing rule ("always", "never") also becomes a `CONVENTIONS.md` line (the human's approval) or a lesson,.
+- An answer stating a standing rule ("always", "never") also becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
 
 ## Tiers
 
@@ -44,7 +44,7 @@ Gate item (g), the threat model: assets, trust boundaries, and two to five abuse
 Standard and Full only; Direct and Quick skip it.
 
 - A `helper` runs the scan phase of mattpocock `improve-codebase-architecture` (read from its `SKILL.md`) over the modules the work order touches, and reports at most three refactor candidates, each with its cost to the planned work.
-- No candidates → no question.
+- No candidates → no question; log `none`.
 - Candidates → one picker question with three options: **refactor first** (the candidates become a prep milestone ahead of the work), **defer to debt** (filed on the first milestone's debt issue, the way §10 files its scan), **ignore**.
 - Log the answer on the run log as `refactor-checkpoint: <first|defer|ignore|none>`.
 
