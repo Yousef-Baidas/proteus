@@ -12,7 +12,7 @@
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
 - **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
 - An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows them the exact text and only their click posts it, they never open the host, and where no dialog can appear they run that command themselves.
-- An answer stating a standing rule ("always", "never") also becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
+- An answer stating a standing rule ("always", "never") becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
 
 ## Tiers
 
