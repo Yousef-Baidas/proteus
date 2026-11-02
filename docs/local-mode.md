@@ -47,6 +47,8 @@ Your approvals are stored where the sandbox cannot write. Without the sandbox, a
 
 A check runs the default branch's gate commands from `## Learned` on the branch's code. It starts when a pull request is opened or its branch is pushed.
 
+A fresh project has no gate command on its default branch, so nothing can merge yet. Early in the first run the lead opens one pull request that adds the gate line and changes nothing else, and gives you its merge command along with its next question. That merge is the one action you take at the start. If the gate needs a file that doesn't exist yet, a worker adds the smallest such file to the first record pull request without asking. That pull request keeps its reviews, and a security path in it still waits for your approval.
+
 A fresh project has no gate line yet, so its first pull request sets it and changes nothing else: only `AGENTS.md` at the repo root, as a plain file, with the gate line in `## Learned`. That check passes and says no command was run. It is the one case where a branch names gates, and only while the default branch has none: any other file in the diff, a rename, a mode change or a link fails it. Once a gate line reaches the default branch this path is closed, and any other pull request that passed this way stops counting until `--rerun` checks it normally. A person still merges it, under the same rules as any other pull request.
 
 Gate commands run the branch's code, so on a repo with a sandbox profile they run only inside the sandbox. A push or `pr create` from outside it, such as your own terminal, runs nothing and posts a failure naming the rerun. From a sandboxed session:
