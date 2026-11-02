@@ -1,6 +1,6 @@
 # Bootstrap
 
-Run before step 1 of the flow when "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. Don't skip the checks: a missing gate is how a wave passes locally and fails on merge. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, and the policy through its script; every other file below is a worker's.
+Run before step 1 of the flow when "Session start" in the skill finds a piece missing. Detect the repo state, then take the matching path, doing only what is missing. The lead writes nothing here but `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, and the policy through its script; every other file below is a worker's.
 
 ## Detect
 
@@ -57,11 +57,11 @@ A later change is the same steps from 2, through the same write. Never edit `tea
 
 ## Lead docs (both paths)
 
-Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and bootstrap's `teams/` reach `main` only through the human's merge. Nobody pushes `main`; the guard refuses it.
+Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and bootstrap's `teams/` reach `main` only through the human's merge. Nobody pushes `main`.
 
 - No `proteus/<run>` yet: commit on local `main`. They reach GitHub on the run branch, which `stack.md` cuts from local `main`.
-- `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Tier: full` for `CONVENTIONS.md` or `teams/`. CI checks that branch against the lead's own list (these docs, `teams/`, the owned-path records `.proteus/owned/`, and the `lead-edits:` globs of the base's `AGENTS.md`), not a body line; a run cut before the records still needs an `Owned:` line naming the files. Like a ticket's PR it needs a verifier's signoff: spawn `proteus-verifier` on it (the records against the tickets, the docs against `CONVENTIONS.md`), whose `MERGE` posts `proteus/verdict`. It merges on green `gates`, `proteus/verdict` and `proteus/security`, with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed>` so a commit you did not push fails the merge.
-- Fresh local project: the first PR sets the gate line and changes nothing else.
+- `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Tier: full` for `CONVENTIONS.md` or `teams/`. CI checks that branch against the lead's own list (these docs, `teams/`, the owned-path records `.proteus/owned/`, and the `lead-edits:` globs of the base's `AGENTS.md`), not a body line; a run cut before the records still needs an `Owned:` line naming the files. Like a ticket's PR it needs a verifier's signoff: spawn `proteus-verifier` on it (the records against the tickets, the docs against `CONVENTIONS.md`), whose `MERGE` posts `proteus/verdict`. It merges on green `gates`, `proteus/verdict` and `proteus/security`, with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed>`.
+- Fresh local project: nothing merges until `main` has a gate. Once the stack is known, open a PR from `origin/main` that sets the gate line and changes nothing else; its `gh pr merge` command goes with your next question, the human's one action at the start. A gate needing a file no ticket has made yet: a worker commits the smallest one on the first record PR's branch and you push it, unasked; reviews and holds stand.
 - Quick and Direct branches are cut from `origin/main`, not local `main`: lead docs riding along would fail CI's owned check. They wait on local `main` for the next run branch.
 
 ## Roster (both paths)
@@ -74,7 +74,7 @@ Then, if `skills-unscouted` is not `none` or the human says "refresh skills" or 
 
 ## Tracker (both paths)
 
-Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. On a public repo the autostart adds a note once per repo (recorded in `<git-common-dir>/proteus/visibility.json`): the run log, issues, contracts, review briefs, evidence branches and questions are readable by anyone. Pass it on to the human in your first reply. Nothing Proteus produces during a run is written to the repo except deliverables, checks, contracts, lessons, and the three docs.
+Read `tracker.md`. Run its preflight; no remote or no auth → stop, tell the human. Create the labels once; `labels: created` under `## Learned` means done. Blank repo: `gh repo create` is the human's call; ask, do not assume public or private. On a public repo the autostart adds a note once per repo: the run log, issues, contracts, review briefs, evidence branches and questions are readable by anyone. Pass it on to the human in your first reply.
 
 ## Guest mode
 
