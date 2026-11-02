@@ -17,12 +17,13 @@ fs.writeFileSync(path.join(REPO, "a.txt"), "a\n");
 g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "init");
 
 const LOG = path.join(W, "calls.jsonl");
+const PIDFILE = path.join(W, "hung.pid");
 const FAKE = `
 const fs = require("fs");
 const input = fs.readFileSync(0, "utf8");
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ argv: process.argv.slice(2), input, depth: process.env.PROTEUS_DELEGATE_DEPTH, keep: process.env.PROTEUS_KEEP }) + "\\n");
 const mode = process.env.FAKE_MODE || "ok";
-if (mode === "hang") setTimeout(() => process.exit(0), 8000); // outlives the test timeout; ends itself if a kill through cmd.exe misses it
+if (mode === "hang") { fs.writeFileSync(process.env.FAKE_PID, String(process.pid)); setInterval(() => {}, 1000); }
 else if (mode === "junk") console.log("not json at all");
 else {
   process.stderr.write("warning: noise on stderr\\n");
@@ -43,7 +44,7 @@ fs.writeFileSync(PROMPT, "summarise the file\n");
 const calls = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 const reset = () => fs.rmSync(LOG, { force: true });
 const go = (args, env = {}) => {
-  const r = lib.run(DELEGATE, "", { cwd: REPO, env: { FAKE_LOG: LOG, ...env }, args });
+  const r = lib.run(DELEGATE, "", { cwd: REPO, env: { FAKE_LOG: LOG, FAKE_PID: PIDFILE, ...env }, args });
   let j = null;
   try { j = JSON.parse(r.out.trim()); } catch {}
   return { ...r, j };
@@ -116,6 +117,10 @@ r = go(base, { FAKE_MODE: "ctrl" });
 ok("result: control characters are stripped but newlines and tabs are kept", r.code === 0 && r.j.result === "a[31mred\nline\tend", JSON.stringify(r.j));
 r = go(base, { FAKE_MODE: "hang", PROTEUS_DELEGATE_TIMEOUT_MS: "300" });
 ok("timeout: a hung child is killed and reported ok:false, exit 1", r.code === 1 && r.j && r.j.ok === false && /timed out/.test(r.j.result), r.out + r.err);
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+const hung = fs.existsSync(PIDFILE) ? Number(fs.readFileSync(PIDFILE, "utf8")) : 0;
+for (let i = 0; i < 30 && hung && alive(hung); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+ok("timeout: the child process is really gone afterwards", hung > 0 && !alive(hung), `pid ${hung}`);
 r = lib.run(DELEGATE, "", { cwd: REPO, env: { FAKE_LOG: LOG, PATH: path.dirname(process.execPath) }, args: base });
 ok("missing claude: ok:false, exit 1", r.code === 1 && /"ok":false/.test(r.out), r.out + r.err);
 

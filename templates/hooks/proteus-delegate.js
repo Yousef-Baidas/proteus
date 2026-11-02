@@ -10,7 +10,8 @@
 // The prompt goes in on stdin, never argv. Tools default to Read, Grep and Glob; the Agent tool is never allowed.
 // The child's environment is inherited, plus PROTEUS_DELEGATE_DEPTH one higher than here; at depth 3 this refuses.
 // Only the child's stdout is parsed (its stderr can carry warnings and is dropped); output that does not parse is
-// ok:false, and so is a child still running after 10 minutes (PROTEUS_DELEGATE_TIMEOUT_MS overrides, for tests).
+// ok:false, and so is a child still running after 10 minutes (PROTEUS_DELEGATE_TIMEOUT_MS overrides, for tests): the
+// child and everything it started are killed, and output over 64 MB is cut the same way.
 // The child's text is data: control characters are stripped from result (its newlines and tabs kept) and from model.
 // --run <run> appends { time, tier, model, costUsd, ok, depth } as one line to delegate-ledger.jsonl in that run's
 // scratch dir (proteus-scratch.js --path <run>); with no run it resolves to, nothing is written.
@@ -19,11 +20,14 @@ const fs = require("fs");
 const path = require("path");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
+const { spawn } = require("child_process");
 const harness = require(path.join(__dirname, "proteus-harness.js"));
 
 const USAGE = "usage: node proteus-delegate.js --tier <rung> --budget <usd> --prompt-file <file> [--cwd <dir>] [--tools <comma list>] [--schema <json file>] [--run <run>]";
 const MAX_DEPTH = 3;
 const TIMEOUT_MS = Number(process.env.PROTEUS_DELEGATE_TIMEOUT_MS) > 0 ? Number(process.env.PROTEUS_DELEGATE_TIMEOUT_MS) : 10 * 60e3;
+const MAX_OUT = 64 << 20;
+const KILL_GRACE_MS = 2000;
 const DEFAULT_TOOLS = ["Read", "Grep", "Glob"];
 const KEY = /^\w[\w.-]*$/;
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
@@ -68,7 +72,33 @@ function ledger(run, cwd, row) {
   } catch {}
 }
 
-function main() {
+// The call: the prompt on stdin, stdout collected up to the cap, stderr dropped. The child leads its own process group
+// (a job tree on win32), and a timeout or an over-cap output kills the whole tree, so nothing it started keeps running
+// and spending. A win32 .cmd shim, which spawn cannot start directly, is retried through cmd.exe as spawnArgv does.
+// Resolves { error, status, stdout }; error.code is ETIMEDOUT, EMAXBUF or the spawn's own.
+function call(spec, input, cwd, env, retry = false) {
+  return new Promise((resolve) => {
+    let [cmd, args, extra] = [spec.cmd, spec.args, {}];
+    if (retry) [cmd, args, extra] = lib.cmdShimCall(spec.cmd, spec.args);
+    const c = spawn(cmd, args, { cwd, env, shell: false, detached: process.platform !== "win32", windowsHide: true, stdio: ["pipe", "pipe", "ignore"], ...extra });
+    let stdout = "", size = 0, error = null, status = null, finished = false, grace;
+    const finish = () => { if (finished) return; finished = true; clearTimeout(timer); clearTimeout(grace); resolve({ error, status, stdout }); };
+    const stop = (code) => { if (error) return; error = { code }; lib.killTree(c); grace = setTimeout(finish, KILL_GRACE_MS); };
+    const timer = setTimeout(() => stop("ETIMEDOUT"), TIMEOUT_MS);
+    c.on("error", (e) => {
+      if (!retry && process.platform === "win32" && ["ENOENT", "EINVAL"].includes(e.code)) { finished = true; clearTimeout(timer); resolve(call(spec, input, cwd, env, true)); return; }
+      error = error || e; finish();
+    });
+    c.stdout.setEncoding("utf8");
+    c.stdout.on("data", (d) => { size += Buffer.byteLength(d); if (size > MAX_OUT) stop("EMAXBUF"); else if (!error) stdout += d; });
+    c.stdin.on("error", () => {});
+    c.stdin.end(input);
+    c.on("exit", (n) => { status = n; grace = grace || setTimeout(finish, KILL_GRACE_MS); });
+    c.on("close", (n) => { if (status === null) status = n; finish(); });
+  });
+}
+
+async function main() {
   const a = parse(process.argv.slice(2));
   if (!a.budget || !(Number(a.budget) > 0) || !Number.isFinite(Number(a.budget))) usage("--budget is required and must be a positive number of dollars");
   if (!a.tier) usage("--tier is required");
@@ -93,12 +123,9 @@ function main() {
   const ladder = lib.modelPolicy(cwd).ladder;
   if (!ladder.includes(tier)) usage(`--tier ${a.tier} is not a rung of the model ladder (${ladder.join(", ") || "none"})`);
 
-  const r = lib.spawnArgv(spec.cmd, spec.args, {
-    cwd, input: prompt, encoding: "utf8", timeout: TIMEOUT_MS, killSignal: "SIGKILL", maxBuffer: 64 << 20,
-    env: { ...process.env, PROTEUS_DELEGATE_DEPTH: String(depth + 1) }, stdio: ["pipe", "pipe", "ignore"],
-  });
+  const r = await call(spec, prompt, cwd, { ...process.env, PROTEUS_DELEGATE_DEPTH: String(depth + 1) });
   let out = { ...base };
-  if (r.error) out.result = r.error.code === "ETIMEDOUT" ? `timed out after ${Math.round(TIMEOUT_MS / 1000)}s` : `could not run ${spec.cmd}: ${r.error.code || r.error.message}`;
+  if (r.error) out.result = r.error.code === "ETIMEDOUT" ? `timed out after ${Math.round(TIMEOUT_MS / 1000)}s` : r.error.code === "EMAXBUF" ? "the call's output was over the size cap" : `could not run ${spec.cmd}: ${r.error.code || r.error.message}`;
   else {
     let j = null;
     try { j = JSON.parse(String(r.stdout || "").trim()); } catch {}
@@ -117,4 +144,4 @@ function main() {
   answer(out, out.ok ? 0 : 1);
 }
 
-main();
+main().catch((e) => { console.error(plain(e && e.message)); process.exit(1); });
