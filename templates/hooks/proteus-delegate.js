@@ -11,13 +11,12 @@
 // The child's environment is inherited, plus PROTEUS_DELEGATE_DEPTH one higher than here; at depth 3 this refuses.
 // Only the child's stdout is parsed (its stderr can carry warnings and is dropped); output that does not parse is
 // ok:false, and so is a child still running after 10 minutes (PROTEUS_DELEGATE_TIMEOUT_MS overrides, for tests).
-// The child's text is data: control characters are stripped from result, as proteus-cli.js does with plain.
+// The child's text is data: control characters are stripped from result (its newlines and tabs kept) and from model.
 // --run <run> appends { time, tier, model, costUsd, ok, depth } as one line to delegate-ledger.jsonl in that run's
 // scratch dir (proteus-scratch.js --path <run>); with no run it resolves to, nothing is written.
 "use strict";
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
 const lib = require(path.join(__dirname, "proteus-lib.js"));
 lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hooks dir
 const harness = require(path.join(__dirname, "proteus-harness.js"));
@@ -28,6 +27,8 @@ const TIMEOUT_MS = Number(process.env.PROTEUS_DELEGATE_TIMEOUT_MS) > 0 ? Number(
 const DEFAULT_TOOLS = ["Read", "Grep", "Glob"];
 const KEY = /^\w[\w.-]*$/;
 const plain = (s) => String(s).replace(/\p{Cc}/gu, "");
+// the child's answer keeps its line breaks and tabs; every other control character goes
+const plainText = (s) => String(s).replace(/(?![\n\t])\p{Cc}/gu, "");
 
 const usage = (why) => { console.error(`${USAGE}${why ? `\n${plain(why)}` : ""}`); process.exit(2); };
 const answer = (o, code) => { console.log(JSON.stringify(o)); process.exit(code); };
@@ -92,7 +93,7 @@ function main() {
   const ladder = lib.modelPolicy(cwd).ladder;
   if (!ladder.includes(tier)) usage(`--tier ${a.tier} is not a rung of the model ladder (${ladder.join(", ") || "none"})`);
 
-  const r = spawnSync(spec.cmd, spec.args, {
+  const r = lib.spawnArgv(spec.cmd, spec.args, {
     cwd, input: prompt, encoding: "utf8", timeout: TIMEOUT_MS, killSignal: "SIGKILL", maxBuffer: 64 << 20,
     env: { ...process.env, PROTEUS_DELEGATE_DEPTH: String(depth + 1) }, stdio: ["pipe", "pipe", "ignore"],
   });
@@ -110,7 +111,7 @@ function main() {
       if (!out.ok && !text) out.result = String(j.subtype || "the call failed");
     }
   }
-  out.result = plain(out.result);
+  out.result = plainText(out.result);
   out.model = plain(out.model);
   ledger(a.run, cwd, { tier, model: out.model, costUsd: out.costUsd, ok: out.ok, depth });
   answer(out, out.ok ? 0 : 1);

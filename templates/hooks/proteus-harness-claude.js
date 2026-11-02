@@ -456,7 +456,8 @@ function prependPath(root, dir) {
 function delegate(opts) {
   const o = opts || {};
   const args = ["-p", "--model", String(o.tier), "--output-format", "json", "--max-budget-usd", String(o.budget), "--no-session-persistence"];
-  if (Array.isArray(o.tools) && o.tools.length) args.push("--allowedTools", o.tools.join(","));
+  // --tools limits what exists for the call; --allowedTools alone only pre-approves, and the user's settings can grant more
+  if (Array.isArray(o.tools) && o.tools.length) args.push("--tools", o.tools.join(","), "--allowedTools", o.tools.join(","));
   args.push("--disallowedTools", "Agent");
   if (o.schema) args.push("--json-schema", String(o.schema));
   return { cmd: "claude", args };

@@ -26,7 +26,7 @@ if (mode === "hang") setInterval(() => {}, 1000);
 else if (mode === "junk") console.log("not json at all");
 else {
   process.stderr.write("warning: noise on stderr\\n");
-  const r = { type: "result", subtype: mode === "budget" ? "error_max_budget_usd" : "success", is_error: mode === "budget", result: mode === "ctrl" ? "a\\u001b[31mred\\u0007\\nline" : "done", total_cost_usd: 0.0123, modelUsage: { "claude-haiku-test": {} } };
+  const r = { type: "result", subtype: mode === "budget" ? "error_max_budget_usd" : "success", is_error: mode === "budget", result: mode === "ctrl" ? "a\\u001b[31mred\\u0007\\nline\\tend" : "done", total_cost_usd: 0.0123, modelUsage: { "claude-haiku-test": {} } };
   console.log(JSON.stringify(r));
   process.exit(mode === "budget" ? 1 : 0);
 }
@@ -72,18 +72,18 @@ ok("budget: --max-budget-usd carries the budget", c.argv[c.argv.indexOf("--max-b
 ok("call: never --bare and never a permission bypass", !c.argv.some((a) => /bare|bypass|dangerously|permission-mode/i.test(a)), c.argv.join(" "));
 ok("call: the prompt is on stdin, not argv", c.input === "summarise the file\n" && !c.argv.some((a) => /summarise/.test(a)));
 ok("call: the child's depth is one higher and its environment is otherwise inherited", c.depth === "1" && c.keep === "inherited", JSON.stringify(c));
-ok("tools: default is read-only", c.argv[c.argv.indexOf("--allowedTools") + 1] === "Read,Grep,Glob" && !c.argv.includes("--json-schema"), c.argv.join(" "));
+ok("tools: default is read-only, and --tools limits the available set to exactly that list", c.argv[c.argv.indexOf("--tools") + 1] === "Read,Grep,Glob" && c.argv[c.argv.indexOf("--allowedTools") + 1] === "Read,Grep,Glob" && !c.argv.includes("--json-schema"), c.argv.join(" "));
 
 // ---- tools and schema
 reset();
 go([...base, "--tools", "Read, Agent,Bash,Task,Agent(worker)"]);
 let tools = (calls()[0] || { argv: [] }).argv;
-ok("tools: Agent is stripped from a given list, the rest kept", tools[tools.indexOf("--allowedTools") + 1] === "Read,Bash", tools.join(" "));
+ok("tools: Agent is stripped from a given list, the rest kept", tools[tools.indexOf("--tools") + 1] === "Read,Bash" && tools[tools.indexOf("--allowedTools") + 1] === "Read,Bash", tools.join(" "));
 ok("tools: the Agent tool is also denied outright", tools[tools.indexOf("--disallowedTools") + 1] === "Agent", tools.join(" "));
 reset();
 go([...base, "--tools", "Agent"]);
 tools = (calls()[0] || { argv: [] }).argv;
-ok("tools: a list of only Agent falls back to the read-only default", tools[tools.indexOf("--allowedTools") + 1] === "Read,Grep,Glob", tools.join(" "));
+ok("tools: a list of only Agent falls back to the read-only default", tools[tools.indexOf("--tools") + 1] === "Read,Grep,Glob", tools.join(" "));
 const SCHEMA = path.join(W, "schema.json");
 fs.writeFileSync(SCHEMA, '{\n "type": "object"\n}\n');
 reset();
@@ -107,7 +107,7 @@ ok("output: unparseable stdout is ok:false, exit 1", r.code === 1 && r.j && r.j.
 r = go(base, { FAKE_MODE: "budget" });
 ok("budget: a spent budget is ok:false, exit 1, with its cost", r.code === 1 && r.j && r.j.ok === false && r.j.costUsd === 0.0123, r.out + r.err);
 r = go(base, { FAKE_MODE: "ctrl" });
-ok("result: control characters are stripped", r.code === 0 && r.j.result === "a[31mredline", JSON.stringify(r.j));
+ok("result: control characters are stripped but newlines and tabs are kept", r.code === 0 && r.j.result === "a[31mred\nline\tend", JSON.stringify(r.j));
 r = go(base, { FAKE_MODE: "hang", PROTEUS_DELEGATE_TIMEOUT_MS: "300" });
 ok("timeout: a hung child is killed and reported ok:false, exit 1", r.code === 1 && r.j && r.j.ok === false && /timed out/.test(r.j.result), r.out + r.err);
 r = lib.run(DELEGATE, "", { cwd: REPO, env: { FAKE_LOG: LOG, PATH: path.dirname(process.execPath) }, args: base });
