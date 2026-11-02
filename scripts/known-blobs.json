@@ -506,6 +506,7 @@
       "c026581da368f5b7d82303f068cd160db94656b1"
     ],
     "templates/hooks/proteus-delegate.js": [
+      "0d5d6741ae3cbd0503658bd1acdcfa21d189e992",
       "4fd25c9d13fe41621d68e9bf499f016300d3c1b5"
     ],
     "templates/hooks/proteus-gates-cache.js": [
@@ -756,6 +757,7 @@
       "39e48459c17047560c4b79da9dbadd10b9873ca5",
       "3b51f0ab2cc82a57bd0edd70063ccb6297e1c29a",
       "3c88ad5c70fbd7025af7750310fc48f2217e5b62",
+      "3ce5a3d3a2ad18a27fae5cdf7b82ae66916da300",
       "45228bfa8a3bb8515c4f24c7311c25151126f36c",
       "48d6915ecd62dd06823600f6a34282e98e3dbff8",
       "4bca74787882b3c5240add026e369ac62ee09336",
@@ -859,6 +861,7 @@
       "fe82ff905885ab20089c487abec470298fdce3ee"
     ],
     "templates/hooks/proteus-local-pr.js": [
+      "19f0feb754b87bbf91f27c70794dc136bd6dd46b",
       "68f39cad3889ccca75f0076ae440c463471473a4",
       "9979c656843e4b4d629adcd5378df90128cacf43",
       "a108c3683324b4398d829a30e817f93ab9b7d34d",
