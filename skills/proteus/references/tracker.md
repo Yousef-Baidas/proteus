@@ -1,10 +1,10 @@
 # Tracker
 
-Proteus keeps no state in the repo: everything below lives in the tracker. The repo gets deliverables, checks, contracts, lessons, ADRs, and the three docs a human would want anyway: `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`. Nothing else. `teams/` is config, shared like lint config. Agent memory is `local` (git-ignored); hook state is under `.git/proteus/`, never committed.
+Proteus keeps no state in the repo: everything below lives in the tracker. The repo gets only deliverables, checks, contracts, lessons, ADRs, and the three docs a human would want anyway: `CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`. `teams/` is config, shared like lint config. Agent memory is `local` (git-ignored); hook state is under `.git/proteus/`, never committed.
 
-The lead's task list (Claude Code's Agent Teams list; on Codex the agents it spawned) is a runtime mirror; if it and the tracker disagree, the tracker wins. A session that dies loses nothing.
+The lead's task list (Claude Code's Agent Teams list; on Codex the agents it spawned) is a runtime mirror; if it and the tracker disagree, the tracker wins.
 
-Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the second column; the operations do not change.
+Tracker today: **GitHub** via `gh`. Jira and others slot in by filling the second column; the operations stay.
 
 ## Operations
 

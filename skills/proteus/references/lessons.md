@@ -1,6 +1,6 @@
 # Lessons
 
-A lesson is a solved problem, kept so it is not solved twice. It is recalled only when its trigger fires, so a hundred lessons cost nothing until one is needed; pasted into `AGENTS.md`, `CLAUDE.md`, or a brief, it would cost every session, so it stays out of them.
+A lesson is a solved problem, kept so it is not solved twice. It is recalled only when its trigger fires, so a hundred lessons cost nothing until one is needed; in `AGENTS.md`, `CLAUDE.md` or a brief it would cost every session, so it stays out of them.
 
 ## When to write one
 

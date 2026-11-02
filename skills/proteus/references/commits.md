@@ -1,6 +1,6 @@
 # Commits
 
-Every Proteus agent commits the same way. Terse, exact, professional. The diff says what; the message says why.
+Every agent commits the same way. The diff says what; the message says why.
 
 ## Subject
 
@@ -33,10 +33,6 @@ feat(api): add GET /users/:id/profile
 Mobile client needs profile data without the full user payload.
 
 Closes #128
-```
-
-```
-fix(auth): use <= on token expiry check
 ```
 
 ```

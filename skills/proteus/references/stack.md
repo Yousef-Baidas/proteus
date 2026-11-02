@@ -16,7 +16,7 @@
 | thermo-nuclear review | – | – | QA, per milestone |
 | improve-codebase-architecture | – | – | QA, at close |
 
-caveman owns prose, ponytail owns code size, rtk + context-mode own tool output. Chisle covers all three in one ruleset; beside them it restates caveman and ponytail and the prose styles fight, so it is not in the stack. Its one uncovered axis, eliding oversized non-Bash tool output, is optional: install with `CHISLE_DEFAULT_MODE=off` so only the compress hook runs, and never let it elide spawn output (`Agent`, `wait_agent`), where verdicts arrive.
+caveman owns prose, ponytail owns code size, rtk + context-mode own tool output. Chisle restates caveman and ponytail and its prose style fights theirs, so it is not in the stack. Its one uncovered axis, eliding oversized non-Bash tool output, is optional: install with `CHISLE_DEFAULT_MODE=off` so only the compress hook runs, and never let it elide spawn output (`Agent`, `wait_agent`), where verdicts arrive.
 
 One graph tool per role. Workers get no repo tour; if one asks for context, fix the ticket. Missing tool → note once in the task list, continue.
 
