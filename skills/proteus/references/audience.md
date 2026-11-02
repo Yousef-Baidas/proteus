@@ -1,6 +1,6 @@
 # Audience
 
-People who are not technical cannot judge a decision written in technical terms, so they accept blindly. Every decision that reaches the human is worded at their level, the technical detail kept underneath. Prompt-only, except the profile and learn stores.
+People who are not technical cannot judge a decision written in technical terms, so they accept blindly. Every decision reaching the human is worded at their level, the technical detail kept underneath. Prompt-only, except the profile and learn stores.
 
 The profile: `node <hooks>/proteus-profile.js show|set|know|forget|terms` (`--help`), one per project and machine; `audience=` on `proteus-state` is `<familiarity>/<learning>` or `unset`.
 
