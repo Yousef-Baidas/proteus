@@ -69,7 +69,8 @@ Team <team>, debt issue #<d>, dupes tool <fallow dupes | vulture>. Caveman lite.
 <safety>
 Ticket #<n>, PR #<pr>, scratch key <run>-<id>.
 <slice: Also check <slice profiles>.>
-One verdict, as a PR review (`gh pr review <pr> --comment|--request-changes --body`, never `--approve`):
+<recheck>
+One verdict, as a review (`gh pr review <pr> --comment|--request-changes --body`, never `--approve`):
 MERGE #<n>
 BACK-TO-WORKER #<n>  1. <file:line> wrong → green looks like  2. ...
 CONTRACT-WRONG #<n>  <one paragraph>  (comment on the issue, close the PR)
