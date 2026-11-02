@@ -450,12 +450,13 @@ function prependPath(root, dir) {
   return {};
 }
 
-// One bounded headless call for proteus-delegate.js: the command to run; the prompt goes in on stdin. Never --bare
-// and never a permission-bypass mode, so the user's hooks and deny rules still apply. opts: { tier, budget, tools
+// One bounded headless call for proteus-delegate.js: the command to run; the prompt goes in on stdin. Never --bare,
+// --setting-sources or a permission-bypass mode, so the user's hooks and deny rules still apply; --strict-mcp-config
+// keeps the user's MCP servers (and their tool schemas) out of the call. opts: { tier, budget, tools
 // (array), schema (JSON text) }. Returns { cmd, args } or { error }.
 function delegate(opts) {
   const o = opts || {};
-  const args = ["-p", "--model", String(o.tier), "--output-format", "json", "--max-budget-usd", String(o.budget), "--no-session-persistence"];
+  const args = ["-p", "--model", String(o.tier), "--output-format", "json", "--max-budget-usd", String(o.budget), "--no-session-persistence", "--strict-mcp-config"];
   // --tools limits what exists for the call; --allowedTools alone only pre-approves, and the user's settings can grant more
   if (Array.isArray(o.tools) && o.tools.length) args.push("--tools", o.tools.join(","), "--allowedTools", o.tools.join(","));
   args.push("--disallowedTools", "Agent");

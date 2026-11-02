@@ -3429,7 +3429,7 @@ function modelCaps(ev, root) {
   const { solo, aliases } = pol;
   const effortParam = harness().spawnEffort || "";
   const none = { model: "", effort: "" };
-  if (!ladder.length) return { ladder, solo, aliases, lead, leadRung: -1, cap: -1, floor: -1, top: "", mid: "", floorName: "", effortParam, tiers: { judge: none, build: none, helper: none } }; // nothing known to enforce
+  if (!ladder.length) return { ladder, solo, aliases, lead, leadRung: -1, cap: -1, floor: -1, helperFloor: -1, top: "", mid: "", floorName: "", effortParam, tiers: { judge: none, build: none, helper: none } }; // nothing known to enforce
   const L = rungOf(ladder, lead, aliases);
   // highest rung at or under the lead that is not solo (the lead is that one instance); unknown lead: the whole ladder
   let cap = L < 0 ? ladder.length - 1 : L;
@@ -3448,7 +3448,7 @@ function modelCaps(ev, root) {
   };
   const tiers = {};
   for (const k of Object.keys(MODEL_TIERS)) tiers[k] = tier(pol.tiers[k], MODEL_TIERS[k]);
-  return { ladder, solo, aliases, lead, leadRung: L, cap, floor, top: ladder[cap], mid: ladder[mid], floorName: ladder[floor], effortParam, tiers };
+  return { ladder, solo, aliases, lead, leadRung: L, cap, floor, helperFloor: Math.max(0, floor - 1), top: ladder[cap], mid: ladder[mid], floorName: ladder[floor], effortParam, tiers };
 }
 
 // ---- context window: the handoff lines are fractions of the lead's window, the smallest of the
@@ -3479,6 +3479,9 @@ function handoffLines(ev, root) {
 // (forgotten): by its id, or by `--forget all` at or after its spawn, so a late stop does not bring it back.
 // the agents that run team skills: proteus-worker, proteus-verifier, proteus-<team>-worker/verifier
 const PIPELINE_AGENT = /^proteus-(?:[a-z0-9-]+-)?(?:worker|verifier)$/;
+// the one agent type that may run one rung under the floor (modelCaps helperFloor): small jobs that return data
+const HELPER_AGENT = "proteus-helper";
+const isHelperAgent = (type) => agentName(type) === HELPER_AGENT;
 const isPipelineAgent = (type) => PIPELINE_AGENT.test(agentName(type));
 const beatsDir = (common) => leadPath(common, "beats");
 // written by the watchdog, which the lead runs from its shell (sandboxed, so it cannot write proteus-lead):
@@ -3674,6 +3677,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
-  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
+  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, isHelperAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

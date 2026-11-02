@@ -76,6 +76,7 @@ ok("call: exit 0 and one JSON line with ok, result, cost, model, tier, depth", r
 ok("call: stderr noise never reaches stdout", !/noise/.test(r.out));
 ok("call: the command is claude -p with the model, json output, the budget cap and no session", c.argv[0] === "-p" && c.argv[c.argv.indexOf("--model") + 1] === "haiku" && c.argv[c.argv.indexOf("--output-format") + 1] === "json" && c.argv.includes("--no-session-persistence"), c.argv.join(" "));
 ok("budget: --max-budget-usd carries the budget", c.argv[c.argv.indexOf("--max-budget-usd") + 1] === "0.5", c.argv.join(" "));
+ok("call: --strict-mcp-config keeps MCP servers out, and no --setting-sources", c.argv.includes("--strict-mcp-config") && !c.argv.includes("--setting-sources"), c.argv.join(" "));
 ok("call: never --bare and never a permission bypass", !c.argv.some((a) => /bare|bypass|dangerously|permission-mode/i.test(a)), c.argv.join(" "));
 ok("call: the prompt is on stdin, not argv", c.input === "summarise the file\n" && !c.argv.some((a) => /summarise/.test(a)));
 ok("call: the child's depth is one higher and its environment is otherwise inherited", c.depth === "1" && c.keep === "inherited", JSON.stringify(c));
