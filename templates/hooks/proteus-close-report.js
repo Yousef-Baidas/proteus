@@ -9,6 +9,7 @@
 // teams themselves need a redesign: routing misses, one team over half of 6+ tickets, a team of 3+ tickets bouncing over 40%.
 // --save <file> also writes what it read from the tracker, as {run, issues, prs, logs} with each PR's checks and the
 // run log's comments, for proteus-retro.js, which reads files only.
+// Debt lines marked `beyond exposure: <class>` on the run's debt issues are listed: what a verifier let through.
 // Cost comes from ccusage at the version enforcement.md §5 pins (Codex: @ccusage/codex), summed over the
 // sessions the journal saw a human message in between the run log's creation and the last ticket's close.
 // ccusage reports per session, not per ticket, so cost per ticket is that sum over closed tickets: an
@@ -28,7 +29,7 @@ let arg = "";
 const HELP = `${USAGE}
 Markdown for the run-log issue and the close PR body: one row per ticket, one per team, and a summary
 (bounces, escalations, wall-clock, cost). The team rows are what tunes ROUTING.md and the difficulty call;
-a SUGGEST re-scout line names a sign the teams need a redesign.
+a SUGGEST re-scout line names a sign the teams need a redesign; debt accepted as beyond exposure is listed.
   [run]               the run; default the open proteus/<run> branch
   --no-cost           skip the ccusage cost columns
   --cost-json <file>  read a saved \`ccusage session --json\` instead of running ccusage
@@ -126,7 +127,11 @@ for (const team of [...new Set(rows.map((r) => r.team))].filter((t) => t !== "?"
   if (rs.length >= 3 && b * 10 > rs.length * 4) out.push(`SUGGEST re-scout: team ${team} bounced ${count(b, "time")} over ${rs.length} tickets (${pct(b, rs.length)} BACK-TO-WORKER per ticket, over 40%)`);
 }
 // checks the run skipped (enforcement.md §10c, teams.md): the human decides on these, so the report names them
+// debt accepted because it lies beyond the milestone's Exposure: line (roles.md): the human sees what was accepted
+const debts = parse(lib.gh(["issue", "list", "--label", names.debt, "--state", "all", "--json", "title,comments", "--limit", "100"], root, 10000)) || [];
+const accepted = [...new Set(debts.filter((i) => String(i.title || "").startsWith(`Debt: ${run}/`)).flatMap((i) => (i.comments || []).flatMap((c) => String((c && c.body) || "").split(/\r?\n/).filter((l) => /—\s*beyond exposure:\s*\S/.test(l)).map((l) => l.replace(/^\s*[-*]\s+/, "").trim()))))];
 const skipped = [...new Set(((lib.runLogOf(logs, run) || {}).comments || []).flatMap((c) => String((c && c.body) || "").split(/\r?\n/).filter((l) => /^\S+: skipped \(.*\)\s*$/.test(l)).map((l) => l.trim())))];
+if (accepted.length) out.push("", "Accepted, not fixed: outside who can realistically reach this, so left as debt:", ...accepted.map((l) => `- ${l}`));
 if (skipped.length) out.push("", "Skipped checks, for the human to decide:", ...skipped.map((l) => `- ${l}`));
 console.log(out.join("\n"));
 

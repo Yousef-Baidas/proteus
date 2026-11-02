@@ -11,19 +11,19 @@
 
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
 - **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
-- An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows them the exact text and only their click posts it; they never open the host; with no dialog they run that command themselves.
+- An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows the exact text and only their click posts it; with no dialog they run that command.
 - An answer stating a standing rule becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
 
 ## Tiers
 
-`proteus-tier.js` reads the `tiers` block in `teams/ROUTING.md`; no block → Standard. The human's `full:` prefix raises a work order to Full; `quick:` lowers Standard to Quick, never Full. Paths decide, not extensions. Session start and the information gate apply to every tier.
+`proteus-tier.js` reads the `tiers` block in `teams/ROUTING.md`; no block → Standard. The human's `full:` prefix raises a work order to Full; `quick:` lowers Standard to Quick, never Full. Session start and the information gate apply to every tier.
 
 - **Direct** (docs and typos within the block's limits): no ticket, contract, verifier, milestone or guide. A batch branch `proteus-work/direct/<batch>` from `origin/main`, its worktree prepared with `proteus-worktree.js <wt> --tier direct <paths>` (each later change re-runs it with every path so far). One `helper` with the Direct prompt (`roles.md`) opens or extends one PR into `main`, its body the digest; CI runs the mechanical gates, the human's merge is the review. Add to a batch only while its PR is open.
 - **Quick** (small, one team): one ticket, no milestone, one worker on `proteus-work/quick/<n>` from `origin/main`, worktree prepared with `--tier quick` (`--human` after `quick:`). No contracts, debt, QA or guide; a verifier on `build` only when CI cannot show the outcome. The PR into `main` carries `Owned:` and `Tier: quick` (`quick (human)`) lines; the human merges.
 - **Standard**: steps 0–8, `Tier: standard` on each PR; milestones finishing in the same wave share one QA pass and one review issue.
 - **Full**: steps 0–8 as written, `Tier: full` on each PR.
 
-An open Direct or Quick PR into `main` waits on the human; it is not a run to resume. The ceiling check is `enforcement.md` §2.
+An open Direct or Quick PR into `main` waits on the human; no run to resume. The ceiling check is `enforcement.md` §2.
 
 ## 0. Bootstrap
 
@@ -37,30 +37,30 @@ Grill (`/grill-with-docs`, or `/grilling` on a blank repo) one question at a tim
 
 Goal mode: `goal: <name> <min|max> <target>` makes ticket 1 the scorecard program, frozen once merged; rounds follow by schedule (`operations.md`, Goal loop).
 
-Gate item (g), the threat model: assets, trust boundaries, and two to five abuse cases, each an observable outcome. It applies when `proteus-tier.js <planned paths>` ends with a `threat model` line, not by globs read by eye. Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket touching one gets a failing check for it in its contract.
+Gate item (g), the threat model: assets, trust boundaries, and two to five abuse cases, each an observable outcome. It applies when `proteus-tier.js <planned paths>` ends with a `threat model` line. Each abuse case becomes a numbered check in its milestone's `ACCEPTANCE` (`review.md`), and every ticket touching one gets a failing check for it in its contract. Also an `Exposure:` line: who can realistically reach the deliverable and the worst realistic actor; infer it from the brief, else ask the human. Record it in `ACCEPTANCE`; copy it into every verifier brief of that milestone (onto the `PROMPT`; close: every line, if all milestones have one).
 
 ### Refactor checkpoint
 
 Standard and Full only; Direct and Quick skip it.
 
-- A `helper` runs the scan phase of mattpocock `improve-codebase-architecture` (read from its `SKILL.md`) over the modules the work order touches, and reports at most three refactor candidates, each with its cost to the planned work.
+- A `helper` runs the scan phase of mattpocock `improve-codebase-architecture` over the modules the work order touches, and reports at most three refactor candidates, each with its cost to the planned work.
 - No candidates → no question; log `none`.
 - Candidates → one picker question with three options: **refactor first** (the candidates become a prep milestone ahead of the work), **defer to debt** (filed on the first milestone's debt issue, the way §10 files its scan), **ignore**.
-- Log the answer on the run log as `refactor-checkpoint: <first|defer|ignore|none>`.
+- Log on the run log as `refactor-checkpoint: <first|defer|ignore|none>`.
 
 ## 2. Tickets
 
 Read `teams.md` again. `/to-spec`, then `/to-tickets`; every ticket a tracker issue, every milestone a tracker milestone. Route each by `teams/ROUTING.md` (no row → ask the human, then add it via a ticket); owned paths inside the team's `Owns`; one owner per file in flight; hotspot files (routes, registries, config, shared scene files), when a milestone has several tickets, in the one that runs first; tags `difficulty:standard|hard` and `profile:<team>`. Two teams in one ticket → two tickets with a contract between them, or one slice ticket (`teams.md`). An outcome resting on facts outside the repo → `needs-research` (its worker runs `/research` first). Milestones per `review.md`.
 
-Fewest tickets that isolate risk, over `/to-tickets`' own slicing: a milestone's work outside the `security` block of `teams/ROUTING.md` with no real dependency split, scaffolding included, is one ticket, one worker, one PR. Each area that block covers gets its own ticket, so sensitive work has its own diff and two verifiers. More tickets only when the work needs different teams or cannot fit one worker's context; the ticket body says which. Bootstrap's scaffold and stabilise tickets still run alone first: every later ticket depends on their gates.
+Fewest tickets that isolate risk, over `/to-tickets`' own slicing: a milestone's work outside the `security` block of `teams/ROUTING.md` with no real dependency split, scaffolding included, is one ticket, one worker, one PR. Each area that block covers gets its own ticket, so sensitive work has its own diff and two verifiers. More tickets only when the work needs different teams or cannot fit one worker's context; the ticket body says which. Bootstrap's scaffold and stabilise tickets still run alone first.
 
-Script first (`roles.md`): the trigger is a procedure's second occurrence in the run, by you or a worker. Open the program ticket then and log it on the run log as `script-ticket: <procedure> #<n>`; later briefs call the program.
+Script first (`roles.md`): the trigger is a procedure's second occurrence in the run, by you or a worker. Open the program ticket then, logged on the run log as `script-ticket: <procedure> #<n>`; later briefs call the program.
 
 ## 3. Contracts
 
 Per ticket, write into the issue body the interface (code: exported signatures in a code block, `/codebase-design` vocabulary; otherwise the deliverable's shape per `domains.md`), the check in one sentence (name, input, expected result), and an `Owned:` line (the check's files among them): folders or globs outside the `security` block, so a fix round's new test or helper stays inside, test paths by glob too, as wide as no ticket in flight shares them; exact paths, in no glob, inside it; one owner per file in flight. Can't → `/grilling` until you can. Create and push `proteus/<run>` once. `next` records each ticket's paths as `.proteus/owned/<id>` in one record PR per wave, which CI checks each worker's PR against (`stack.md`). `DECIDE #<n> owned line differs from record` → restore the line, put the new paths in a new ticket, or widen, all widenings known in a review round in one record PR (`stack.md`). Then `next` prepares the worktree and prints `SPAWN worker`.
 
-On a ticket's first `SPAWN worker`, one contracts worker per team with ready tickets (`roles.md`; `judge`) runs in those worktrees, teams in parallel; it commits each ticket's stubs and check and shows it red twice, on the missing work and on a broken input. It does not push: the worker starts from that local commit in the same worktree, and the commit reaches origin with the worker's first green push. Then the worker, from that `SPAWN` line, which `next` reprints until one is spawned. You do not open the files.
+On a ticket's first `SPAWN worker`, one contracts worker per team with ready tickets (`roles.md`; `judge`) runs in those worktrees, teams in parallel; it commits each ticket's stubs and check and shows it red twice, on the missing work and on a broken input. It does not push: the worker starts from that local commit in the same worktree and pushes with its first green push. Then the worker, from that `SPAWN` line, which `next` reprints until one is spawned.
 
 ## 4. Dispatch
 
@@ -78,7 +78,7 @@ One rung at a time, no restart: (a) the same worker, failing output pasted back,
 
 ## 7. Merge
 
-`next` runs the batch (`proteus-merge.js`): every all-green PR, in dependency order, a `MERGED` evidence line each, then a `RUN` line for the suite, the `## Learned` gate command; none → `MERGE` lines and `DECIDE suite:`, so add a gate line that includes the install (`.worktrees/_run` is fresh per commit tested). Run the `RUN` line in your sandboxed shell, never through `proteus-gates-cache.js`, then `node <hooks>/proteus-cli.js result pass|fail --at <sha>` with the sha it named. Fail bisects, a `RUN` line per step, until `suite red; first bad PR #<pr> for #<n>` → a fix ticket for its team on `judge`; nothing else merges until it lands. Pass prints `suite green at <sha>`, a `STOP` per merged ticket's worker and verifier, a `RUN` line forgetting them, and the `worktree and branch left for the lead`.
+`next` runs the batch (`proteus-merge.js`): every all-green PR, in dependency order, a `MERGED` evidence line each, then a `RUN` line for the suite, the `## Learned` gate command; none → `MERGE` lines and `DECIDE suite:`, so add a gate line that includes the install. Run the `RUN` line in your sandboxed shell, never through `proteus-gates-cache.js`, then `node <hooks>/proteus-cli.js result pass|fail --at <sha>` with the sha it named. Fail bisects, a `RUN` line per step, until `suite red; first bad PR #<pr> for #<n>` → a fix ticket for its team on `judge`; nothing else merges until it lands. Pass prints `suite green at <sha>`, a `STOP` per merged ticket's worker and verifier, a `RUN` line forgetting them, and the `worktree and branch left for the lead`.
 
 Per merged PR: close the issue; per branch left for you, `git worktree remove .worktrees/<id>`, `git branch -D <branch>`, `git push origin --delete <branch>`, `node <hooks>/proteus-scratch.js --sweep <run>-<id>`. Your checkout: on `proteus/<run>`, `git fetch origin refs/heads/proteus/<run>`, then `git merge --ff-only <green sha>`, never a short ref name. `DECIDE merge: conflict PR #<pr>` → a `judge` worker of the owning team runs `/resolving-merge-conflicts`.
 

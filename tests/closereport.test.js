@@ -21,6 +21,10 @@ const ms = { number: 4, title: "r9/core" };
 const lab = (...n) => n.map((name) => ({ name }));
 const RUN = path.join(W, "run.json");
 fs.writeFileSync(RUN, JSON.stringify({
+  debts: [
+    { title: "Debt: r9/core", comments: [{ body: "#12 a.js:3 slow path — touches one user\n- #13 b.js:9 no rate cap — beyond exposure: resource exhaustion" }, { body: "- #13 b.js:9 no rate cap — beyond exposure: resource exhaustion" }, { body: "the phrase beyond exposure: here is no debt line" }] },
+    { title: "Debt: r8/core", comments: [{ body: "#3 c.js:1 other run — beyond exposure: spoofing" }] },
+  ],
   logs: [{ number: 7, title: "Run: r9", createdAt: iso(-1), comments: [{ body: "pentest: skipped (refused)" }, { body: "note\nskill: skipped (deep-review)\npentest: skipped (refused)" }, { body: "not a line: skipped (x) here" }] }, { number: 6, title: "Run: r8", createdAt: iso(-50) }],
   issues: [
     { number: 11, title: "11: api | routes", state: "CLOSED", createdAt: iso(0), closedAt: iso(2), milestone: ms, labels: lab("proteus", "profile:backend", "difficulty:standard"), comments: [{ body: "DONE #11" }] },
@@ -56,6 +60,7 @@ const report = (args, env = {}) => lib.run(CR, "", { cwd: REPO, args, env: { FAK
 let r = report(["--cost-json", COST]);
 const line = (re) => r.out.split("\n").find((l) => re.test(l)) || "";
 ok("skipped checks: each logged skip listed once, for the human; a comment that only mentions one is not", r.out.endsWith("Skipped checks, for the human to decide:\n- pentest: skipped (refused)\n- skill: skipped (deep-review)\n"), r.out);
+ok("accepted debt: only this run's `beyond exposure` lines, once each, in the report", r.out.includes("Accepted, not fixed: outside who can realistically reach this, so left as debt:\n- #13 b.js:9 no rate cap — beyond exposure: resource exhaustion\n\n") && !/other run|slow path|no debt line/.test(r.out), r.out);
 ok("report: titled with the run found from the open proteus/<run> branch", r.code === 0 && r.out.startsWith("## Close report: r9\n"), r.out + r.err);
 ok("tickets: only the run's tickets, revisions, reviews and other runs left out",
   ["#11", "#12", "#13", "#14"].every((n) => line(new RegExp(`^\\| ${n} \\|`))) && !/\| #1[567] \|/.test(r.out), r.out);

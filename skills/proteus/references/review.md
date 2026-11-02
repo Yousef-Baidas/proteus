@@ -8,7 +8,7 @@ The lead does not talk the human through a review: it has no diff, and every rel
 
 At step 2, after `/to-tickets`, one tracker milestone per user-visible feature or stated task, `<run>/<name>`, each with its debt issue (`tracker.md`). Tickets belong to exactly one. Dependency order.
 
-Each milestone's acceptance checks are frozen when it is created: gate (b) from step 1 as numbered steps with expected results, then gate (g)'s abuse cases, one check each, posted once on the run log as `ACCEPTANCE <run>/<name>` and not edited (a `CHANGES` round's milestone gets its own). The guide puts them first under **Verify it**, and the unattended grader judges by them.
+A milestone's acceptance checks are frozen at creation: gate (b) as numbered steps with expected results, then gate (g)'s `Exposure:` line and abuse cases, one check each, posted once on the run log as `ACCEPTANCE <run>/<name>` and not edited (a `CHANGES` round's milestone gets its own). The guide puts them first under **Verify it**, and the unattended grader judges by them.
 
 Taste-driven runs (anything the human judges by eye or ear) start with a **test piece**: the smallest deliverable that exercises every house default at once. It is a human gate even when unattended; nothing after it starts until it is `ACCEPT`ed.
 

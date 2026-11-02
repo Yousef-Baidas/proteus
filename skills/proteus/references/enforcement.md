@@ -86,7 +86,7 @@ A recorded finding stays quiet while its tool, rule and path stay the same, digi
 
 ## 5. Cost
 
-Step 8 runs `node <hooks>/proteus-close-report.js <run>` (flags in `--help`). From the tracker it prints, per ticket, the PRs, bounces (`BACK-TO-WORKER` verdicts), escalations (`RED` reports and `CONTRACT-WRONG` verdicts) and wall-clock; per team and difficulty, the bounce rate, escalation rate and median wall-clock; and the run's totals and cost, from pinned `ccusage` over the sessions the journal saw a human message in during the run. The lead tunes routing from the team rows: a team and difficulty that bounces or escalates on most tickets goes to `hard` (`top`) next run, or gets smaller tickets; one with no bounce on `hard` is offered at `standard`. Each change is one line to the human; approved, a difficulty rule goes in `AGENTS.md ## Learned`, a `teams/ROUTING.md` change through a ticket.
+Step 8 runs `node <hooks>/proteus-close-report.js <run>`. From the tracker it prints, per ticket, the PRs, bounces (`BACK-TO-WORKER` verdicts), escalations (`RED` reports and `CONTRACT-WRONG` verdicts) and wall-clock; per team and difficulty, the bounce rate, escalation rate and median wall-clock; the run's totals and cost, from pinned `ccusage` over the run's sessions with a human message; and debt accepted as `beyond exposure`. The lead tunes routing from the team rows: a team and difficulty that bounces or escalates on most tickets goes to `hard` (`top`) next run, or gets smaller tickets; one with no bounce on `hard` is offered at `standard`. Each change is one line to the human; approved, a difficulty rule goes in `AGENTS.md ## Learned`, a `teams/ROUTING.md` change through a ticket.
 
 ## 6. Skill pinning
 
