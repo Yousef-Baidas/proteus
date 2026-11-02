@@ -21,7 +21,7 @@ const ms = { number: 4, title: "r9/core" };
 const lab = (...n) => n.map((name) => ({ name }));
 const RUN = path.join(W, "run.json");
 fs.writeFileSync(RUN, JSON.stringify({
-  logs: [{ number: 7, title: "Run: r9", createdAt: iso(-1) }, { number: 6, title: "Run: r8", createdAt: iso(-50) }],
+  logs: [{ number: 7, title: "Run: r9", createdAt: iso(-1), comments: [{ body: "pentest: skipped (refused)" }, { body: "note\nskill: skipped (deep-review)\npentest: skipped (refused)" }, { body: "not a line: skipped (x) here" }] }, { number: 6, title: "Run: r8", createdAt: iso(-50) }],
   issues: [
     { number: 11, title: "11: api | routes", state: "CLOSED", createdAt: iso(0), closedAt: iso(2), milestone: ms, labels: lab("proteus", "profile:backend", "difficulty:standard"), comments: [{ body: "DONE #11" }] },
     { number: 12, title: "12: auth", state: "CLOSED", createdAt: iso(0), closedAt: iso(3), milestone: ms, labels: lab("proteus", "profile:backend", "difficulty:hard"), comments: [{ body: "RED #12 still failing" }, { body: "DONE #12" }] },
@@ -55,6 +55,7 @@ const report = (args, env = {}) => lib.run(CR, "", { cwd: REPO, args, env: { FAK
 
 let r = report(["--cost-json", COST]);
 const line = (re) => r.out.split("\n").find((l) => re.test(l)) || "";
+ok("skipped checks: each logged skip listed once, for the human; a comment that only mentions one is not", r.out.endsWith("Skipped checks, for the human to decide:\n- pentest: skipped (refused)\n- skill: skipped (deep-review)\n"), r.out);
 ok("report: titled with the run found from the open proteus/<run> branch", r.code === 0 && r.out.startsWith("## Close report: r9\n"), r.out + r.err);
 ok("tickets: only the run's tickets, revisions, reviews and other runs left out",
   ["#11", "#12", "#13", "#14"].every((n) => line(new RegExp(`^\\| ${n} \\|`))) && !/\| #1[567] \|/.test(r.out), r.out);

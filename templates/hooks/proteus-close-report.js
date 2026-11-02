@@ -57,7 +57,7 @@ const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,createdAt,closedAt,milestone,labels,comments", "--limit", "500"], root, 30000));
 if (!Array.isArray(issues)) { console.error(`run ${run}: tracker unreachable (gh issue list failed)`); process.exit(1); }
 const prs = parse(lib.gh(["pr", "list", "--base", `${names.branch}${run}`, "--state", "all", "--json", `number,headRefName,body,reviews,comments${save ? ",statusCheckRollup" : ""}`, "--limit", "500"], root, 30000)) || [];
-const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", `number,title,createdAt${save ? ",comments" : ""}`, "--limit", "100"], root, 10000)) || [];
+const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", `number,title,createdAt,comments`, "--limit", "100"], root, 10000)) || [];
 if (save) saveTracker(save);
 
 const tickets = lib.runTickets(issues, run, names);
@@ -125,6 +125,9 @@ for (const team of [...new Set(rows.map((r) => r.team))].filter((t) => t !== "?"
   if (rows.length >= 6 && rs.length * 2 > rows.length) out.push(`SUGGEST re-scout: team ${team} holds ${rs.length} of ${rows.length} tickets (${pct(rs.length, rows.length)}, over 50%)`);
   if (rs.length >= 3 && b * 10 > rs.length * 4) out.push(`SUGGEST re-scout: team ${team} bounced ${count(b, "time")} over ${rs.length} tickets (${pct(b, rs.length)} BACK-TO-WORKER per ticket, over 40%)`);
 }
+// checks the run skipped (enforcement.md §10c, teams.md): the human decides on these, so the report names them
+const skipped = [...new Set(((lib.runLogOf(logs, run) || {}).comments || []).flatMap((c) => String((c && c.body) || "").split(/\r?\n/).filter((l) => /^\S+: skipped \(.*\)\s*$/.test(l)).map((l) => l.trim())))];
+if (skipped.length) out.push("", "Skipped checks, for the human to decide:", ...skipped.map((l) => `- ${l}`));
 console.log(out.join("\n"));
 
 // --save: what the tracker gave, for proteus-retro.js, at the path the retro helper names (its scratch dir)

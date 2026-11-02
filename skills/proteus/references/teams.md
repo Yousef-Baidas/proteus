@@ -47,9 +47,9 @@ Retries: <optional, default 0> · Timeout: <optional, minutes per check> · Rebu
 
 ## Skills
 
-Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, resolved from [skills.sh](https://skills.sh) and installed plugins. The scout picks them for this project's specifics (stack, domain, tools the deliverables need), ranked by installs and fit, at most 4 and 40960 bytes of combined `SKILL.md` text (`CAP` in `link-skills.js`, which refuses a team over either: it prints `cap: <team> ...`, links and installs nothing for it, and exits 3); everything else stays global and on-demand. The human approves before `node teams/link-skills.js --install --confine` pulls them in (`bash teams/link-skills.sh …` and `teams\link-skills.ps1 …` are wrappers around it).
+Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, resolved from [skills.sh](https://skills.sh) and installed plugins. The scout picks them for this project's specifics (stack, domain, tools the deliverables need), ranked by installs and fit, at most 4 and 40960 bytes of combined `SKILL.md` text (`CAP` in `link-skills.js`, which refuses a team over either: it prints `cap: <team> ...`, links and installs nothing for it, and exits 3); everything else stays global and on-demand. The human approves before `node teams/link-skills.js --install --confine` pulls them in.
 
-`teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout does not rewrite it, it does not count against the cap, and `install.js --project` refreshes it. A missing required skill stops the run.
+`teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout does not rewrite it, it does not count against the cap, and `install.js --project` refreshes it. A missing required skill skips that check, never the run: the lead writes `skill: skipped (<name>)` on the run log; the human decides at the next gate.
 
 A `skills.txt` line may end with `@<40-hex commit sha>`: `--install` runs `npx skills add <owner/repo>#<sha>`, which fetches that commit, and the lock keeps the sha beside the hash.
 
