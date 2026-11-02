@@ -101,6 +101,12 @@ for (const [name, flags] of [["worktree", ["--tier", "--human"]], ["tier", ["--s
 // #278: a red contract commit cannot pass the pre-push hook, so it stays local
 const contracts = block("Contracts worker[^\\n]*");
 ok("contracts worker brief: commits the contract and says not to push", /Do not push/.test(contracts) && !/git push/.test(contracts), contracts);
+// exposure-gated blocking: the verifier rule itself is word for word across agents by tests/automode.test.js
+const rolesText = read("skills", "proteus", "references", "roles.md"), qaProfile = read("templates", "teams", "qa", "PROFILE.md");
+ok("flow.md: gate (g) has the Exposure: line, kept in ACCEPTANCE and copied into verifier briefs", /Gate item \(g\)[^\n]*`Exposure:` line: who can realistically reach the deliverable and the worst realistic actor[^\n]*`ACCEPTANCE`[^\n]*every verifier brief/.test(flow));
+for (const [name, text] of [["roles.md", rolesText], ["qa PROFILE.md", qaProfile]]) {
+  ok(`${name}: the Exposure rule names the four that always block, and fails safe with no line`, /`Exposure:` in your prompt[^\n]*blocks only if reachable within it[^\n]*authorization, separation of users' data or credentials, or causes data loss; those four block regardless[^\n]*beyond exposure: <?[^\n]*No such line → blocking as usual/.test(text));
+}
 ok("flow.md: the contracts worker does not push; the commit reaches origin with the worker's first green push", /It does not push[^\n]*first green push/.test(read("skills", "proteus", "references", "flow.md")));
 // milestone QA has a fixed bar (#280)
 {

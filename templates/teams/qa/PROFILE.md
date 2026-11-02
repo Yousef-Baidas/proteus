@@ -22,4 +22,6 @@ Milestone, step 2: deep quality review. Read `teams/qa/.claude/skills/thermo-nuc
 
 Close: the full suite and `qa` from CI's run for the head as above; `fallow health` (JS/TS) or `vulture` (Python) on the branch; then the scan phase only of `improve-codebase-architecture` (read the `SKILL.md` that `node <hooks>/proteus-skillpath.js improve-codebase-architecture` prints; no HTML report, no grilling): at most five deepening candidates, one line each with `file:line` and the seam, as one comment on the last milestone's debt issue. The human picks; a picked candidate is a future run's ticket.
 
+`Exposure:` in your prompt, `milestone` and `close` modes: a finding blocks only if reachable within it, or if it breaks authorization, separation of users' data or credentials, or causes data loss; those four block regardless. Anything else, resource exhaustion beyond it too, is debt, never `WAVE-RED`: a line on the debt issue, `#<n> <file:line or part> <what> — beyond exposure: <class>`. No such line → blocking as usual.
+
 Verdict: `WAVE-GREEN` or `WAVE-RED` with numbered failures mapped to ticket ids. Flaky tests go in memory so the lead can ticket them.

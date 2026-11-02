@@ -186,6 +186,7 @@ if (process.env.FAKE_GH_RUN) {
   if (log) out({ body: log.body || "", comments: log.comments || [] });
   if (a.startsWith("issue list --label proteus-log ")) out(s.logs || []);
   if (a.startsWith("issue list --label proteus --state all ")) out(s.issues || []);
+  if (a.startsWith("issue list --label proteus-debt --state all ")) out(s.debts || []);
   if (a.startsWith("pr list --base ")) out(s.prs || []);
 }
 // FAKE_GH_NEXT (a JSON file {issues, prs, reviews, inbox, debt, statuses: {<sha>: [status]}}) answers proteus-cli.js next and
