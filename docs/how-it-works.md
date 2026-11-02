@@ -245,6 +245,7 @@ templates/
     proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls; `close`: skip or run the close passes
     proteus-worktree.js     prepares a worker worktree and its hooks (`next` runs it)
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
+    proteus-delegate.js     one bounded headless call on a cheaper model: budget cap, read-only tools, depth limit, a ledger
     proteus-scratch.js      ledgers and sweeps agents' temp files
     proteus-skillpath.js    finds a plugin skill's SKILL.md (plugin cache, skills folders, $PROTEUS_SKILL_DIRS)
     proteus-skill-find.js   the scout's skill search: skills.sh, installed, GitHub, marketplaces; the bar and the ranking

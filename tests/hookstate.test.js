@@ -488,6 +488,7 @@ const ALLOW = {
   "proteus-container.js:checkCmd": "run.json in check's fresh in/ dir, read-only to the container (#80)",
   "proteus-container-entry.js:main": "/out inside the container, never run on the host (#80)",
   "proteus-container-entry.js:check": "/out/check.log and /out/status.json inside the container, unlinked first; never run on the host (#80)",
+  "proteus-delegate.js:ledger": "--run appends one line to <common>/proteus/scratch/<run>/ from the caller's own (sandboxed) shell; never a hook",
   "proteus-scratch.js:cli": "--path makes <common>/proteus/scratch/<key> from the caller's own (sandboxed) shell",
   "proteus-scratch.js:removeStray": "--sweep, run only from the lead's own (sandboxed) shell (#237): a stray directly in the temp dir, inode and owner checked",
   "proteus-scratch.js:removeScratch": "--sweep, run only from the lead's own (sandboxed) shell, never from a hook (#237)",
