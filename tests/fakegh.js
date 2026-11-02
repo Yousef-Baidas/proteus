@@ -202,6 +202,7 @@ if (process.env.FAKE_GH_NEXT) {
   if (a.startsWith("issue list --label needs-human --state open --json ")) out(s.inbox || []);
   if (a.startsWith("issue list --label proteus-debt --state open --json ")) out(s.debt || []);
   if ((m = /^api repos\/\{owner\}\/\{repo\}\/commits\/(\w+)\/statuses$/.exec(a))) out((s.statuses || {})[m[1]] || []);
+  if ((m = /^pr view (\d+) --json reviews$/.exec(a))) out({ reviews: ((s.prs || []).find((x) => x.number === +m[1]) || {}).reviews || [] });
   // a PR's files (its "files", else the call fails) and its comments and head ("comments", "headRefOid"), for the policy's holds
   if ((m = /^pr diff (\d+) --name-only$/.exec(a))) {
     const p = (s.prs || []).find((x) => x.number === +m[1]);

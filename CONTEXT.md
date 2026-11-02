@@ -7,6 +7,7 @@ Proteus is a multi-agent build pipeline that installs into a coding-agent CLI (t
 - **lead**: the one session that plans, writes contracts, dispatches, and merges; it never edits deliverables itself, and `proteus-lead-guard` enforces that.
 - **worker**: a subagent given one ticket, its own worktree, owned paths, and a contract; it implements, retries at most twice, and reports once.
 - **verifier**: a fresh-context subagent that never edits; it checks a diff against the ticket's contract and the team checklist and answers `MERGE`, `BACK-TO-WORKER`, or `CONTRACT-WRONG`.
+- **recheck**: a re-review limited to what an earlier one found: QA's on a wave, or a verifier's on the delta since the head it signed, when `proteus-cli.js brief` finds nothing that needs a full review.
 - **team**: a set of real-world roles with owned paths, checks, and routing (`teams/<team>/`); workers and verifiers are spawned per team.
 - **ticket**: one tracker issue for one team, tagged with difficulty and profile, carrying owned paths and a contract; it ships as one PR into the run branch.
 - **contract**: the interface (exported signatures or deliverable shape) plus a one-sentence check, committed as stubs and shown red twice before dispatch.

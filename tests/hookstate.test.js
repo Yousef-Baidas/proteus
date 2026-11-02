@@ -457,6 +457,7 @@ if (link(VICTIM, path.join(W, "probe-link"))) {
 // destructured, aliased or looked up by a computed name; open with write flags) is allowed only in a function
 // named here, each with its reason.
 const ALLOW = {
+  "proteus-cli.js:recheckLines": "a verifier's delta file beside its brief: a lead CLI, never a hook; 'wx' after an rm, never through a link",
   "proteus-lib.js:writeJSON": "the generic writer; every caller is named below",
   "proteus-lib.js:makeDir": "the helper's mkdir, checked by ownDir right after",
   "proteus-lib.js:leadWrite": "the helper",
