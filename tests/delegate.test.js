@@ -17,12 +17,12 @@ fs.writeFileSync(path.join(REPO, "a.txt"), "a\n");
 g(REPO, "add", "-A"); g(REPO, "commit", "-qm", "init");
 
 const LOG = path.join(W, "calls.jsonl");
-lib.fakeCli(lib.BIN, "claude", `
+const FAKE = `
 const fs = require("fs");
 const input = fs.readFileSync(0, "utf8");
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ argv: process.argv.slice(2), input, depth: process.env.PROTEUS_DELEGATE_DEPTH, keep: process.env.PROTEUS_KEEP }) + "\\n");
 const mode = process.env.FAKE_MODE || "ok";
-if (mode === "hang") setInterval(() => {}, 1000);
+if (mode === "hang") setTimeout(() => process.exit(0), 8000); // outlives the test timeout; ends itself if a kill through cmd.exe misses it
 else if (mode === "junk") console.log("not json at all");
 else {
   process.stderr.write("warning: noise on stderr\\n");
@@ -30,7 +30,13 @@ else {
   console.log(JSON.stringify(r));
   process.exit(mode === "budget" ? 1 : 0);
 }
-`);
+`;
+// win32: the real claude is a .cmd shim, which lib.spawnArgv starts through cmd.exe. lib.fakeCli's node.exe copy cannot stand in:
+// the CLI's leading -p is read by node itself, so the shim fixture never gets to run the fake. A .cmd calling node does.
+if (process.platform === "win32") {
+  fs.writeFileSync(lib.fakeScript(lib.BIN, "claude"), FAKE);
+  fs.writeFileSync(path.join(lib.BIN, "claude.cmd"), `@"${process.execPath}" "%~dp0claude.fake.js" %*\r\n`);
+} else lib.fakeCli(lib.BIN, "claude", FAKE);
 
 const PROMPT = path.join(W, "prompt.txt");
 fs.writeFileSync(PROMPT, "summarise the file\n");
