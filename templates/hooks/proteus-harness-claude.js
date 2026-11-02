@@ -450,8 +450,21 @@ function prependPath(root, dir) {
   return {};
 }
 
+// One bounded headless call for proteus-delegate.js: the command to run; the prompt goes in on stdin. Never --bare
+// and never a permission-bypass mode, so the user's hooks and deny rules still apply. opts: { tier, budget, tools
+// (array), schema (JSON text) }. Returns { cmd, args } or { error }.
+function delegate(opts) {
+  const o = opts || {};
+  const args = ["-p", "--model", String(o.tier), "--output-format", "json", "--max-budget-usd", String(o.budget), "--no-session-persistence"];
+  // --tools limits what exists for the call; --allowedTools alone only pre-approves, and the user's settings can grant more
+  if (Array.isArray(o.tools) && o.tools.length) args.push("--tools", o.tools.join(","), "--allowedTools", o.tools.join(","));
+  args.push("--disallowedTools", "Agent");
+  if (o.schema) args.push("--json-schema", String(o.schema));
+  return { cmd: "claude", args };
+}
+
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, postRecords, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
-  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv, prependPath,
+  home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv, prependPath, delegate,
 };

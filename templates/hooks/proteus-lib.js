@@ -444,13 +444,24 @@ function gitRoot(dir) {
 // back to cmd.exe with each argument quoted and its metacharacters ^-escaped twice, since the shim re-parses %*
 // (cross-spawn's rules); a single cmd-quoted line would let a quote inside an argument expose > or & to cmd.
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+// the cmd.exe call that runs file with args, as spawnArgv's fallback makes it: [command, args, extra spawn options]
+function cmdShimCall(file, args) {
+  const q = (a) => `"${String(a).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
+  const line = [String(file).replace(CMD_META, "^$1"), ...args.map(q)].join(" ");
+  return [process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { windowsVerbatimArguments: true }];
+}
 function spawnArgv(file, args, opts = {}) {
   const o = { encoding: "utf8", windowsHide: true, ...opts, shell: false };
   const r = spawnSync(file, args, o);
   if (process.platform !== "win32" || !r.error || !["ENOENT", "EINVAL"].includes(r.error.code)) return r;
-  const q = (a) => `"${String(a).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
-  const line = [String(file).replace(CMD_META, "^$1"), ...args.map(q)].join(" ");
-  return spawnSync(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `"${line}"`], { ...o, windowsVerbatimArguments: true });
+  const [cmd, cmdArgs, extra] = cmdShimCall(file, args);
+  return spawnSync(cmd, cmdArgs, { ...o, ...extra });
+}
+// kill a child and everything it started: taskkill /T /F on win32; elsewhere its own process group, so it must have
+// been spawned detached
+function killTree(c) {
+  if (process.platform === "win32") { try { spawnSync("taskkill", ["/pid", String(c.pid), "/T", "/F"], { windowsHide: true, timeout: 10000, stdio: "ignore" }); } catch {} return; }
+  try { process.kill(-c.pid, "SIGKILL"); } catch {}
 }
 
 // ---- guest mode: a repo the human does not own keeps Proteus's files out of its tree. <common>/proteus/guest.json
@@ -3663,6 +3674,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
-  workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
+  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

@@ -532,9 +532,12 @@ function exportEnv(root, vars) {
   return { file, changed: true };
 }
 
+// proteus-delegate.js: Codex has no headless call built here yet, so it says so rather than guess one
+const delegate = () => ({ error: "delegation is not supported on the codex harness" });
+
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, postRecords, context, keepGoing, postBlock,
   contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, generated: GENERATED, contextModeOn, registerLead, prepareWorker, ownedFile, LEAD_HOOKS,
-  patchPaths, RULE_SCRIPTS, rules, samePath, writableRoots, sandboxRoots, allowDir, exportEnv,
+  patchPaths, RULE_SCRIPTS, rules, samePath, writableRoots, sandboxRoots, allowDir, exportEnv, delegate,
 };

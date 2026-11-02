@@ -533,10 +533,7 @@ function build(core) {
   }
   // a first-gate pass counts only while the default branch has no gates, so it opens no way around them later
   const spentFirstGate = (s, g) => !!g && g.description === FIRST_GATE && gateList(s).length > 0;
-  function killTree(c) {
-    if (process.platform === "win32") { try { spawnSync("taskkill", ["/pid", String(c.pid), "/T", "/F"], { windowsHide: true, timeout: 10000, stdio: "ignore" }); } catch {} return; }
-    try { process.kill(-c.pid, "SIGKILL"); } catch {}
-  }
+  const killTree = lib.killTree;
   // one gate command in its own process group, bounded; output into the capped log. A process that outlives the kill
   // and holds the pipe open does not hold the run
   function runGate(command, cwd, env, log, ms) {
