@@ -60,6 +60,7 @@ const signed = (word = "BACK-TO-WORKER", login) => status("proteus/security", wo
 const review = (sha, text = "BACK-TO-WORKER #5  1. src/app.js:4 wrong → green looks like fixed") => ({ body: text, state: "COMMENTED", commit: { oid: sha } });
 const STATE = path.join(W, "gh.json");
 const run = (head, { reviews = [review(REVIEWED)], statuses = { [REVIEWED]: [verdict()] }, env = {} } = {}) => {
+  lib.spec(REPO, "r1"); // the approved spec a verifier's prompt names (#365)
   fs.writeFileSync(STATE, JSON.stringify({ issues: [issue], prs: [{ number: 12, headRefName: BRANCH, headRefOid: head, body: "Closes #5", isDraft: false, statusCheckRollup: [], reviews }], reviews: [], inbox: [], debt: [{ number: 40, milestone: issue.milestone }], statuses }));
   const r = lib.run(SCRIPT, "", { cwd: REPO, args: ["brief", "verifier", "12", "r1"], env: { FAKE_GH_NEXT: STATE, TMPDIR: TMPD, TEMP: TMPD, TMP: TMPD, ...env } });
   const file = (/PROMPT Your brief is (.+?); read it first/.exec(r.out) || [])[1];

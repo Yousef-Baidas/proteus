@@ -30,7 +30,7 @@ const pin = () => fs.writeFileSync(LOCK, JSON.stringify({ version: 1, skills: { 
 
 const LG = path.join(SRC, "proteus-lead-guard.js");
 const AS = path.join(SRC, "proteus-autostart.js");
-const spawn = (type, extra = {}) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: type || undefined }, ...extra }, { cwd: REPO });
+const spawn = (type, extra = {}) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, tool_name: "Agent", tool_input: { model: "opus", prompt: lib.spec(REPO), subagent_type: type || undefined }, ...extra }, { cwd: REPO });
 const start = () => lib.run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "s1", cwd: REPO }, { cwd: REPO });
 const stateLine = (out) => out.split("\n").find((l) => l.startsWith("proteus-state")) || "";
 
@@ -107,6 +107,6 @@ fs.mkdirSync(path.join(Z, "teams", "c"));
 fs.writeFileSync(path.join(Z, "teams", "c", "skills.txt"), "# one pick\no/r gamma\n");
 const zc = stateLine(lib.run(AS, { hook_event_name: "SessionStart", source: "startup", session_id: "z1", cwd: Z }, { cwd: Z }).out);
 ok("zero skills: a team that lists a skill and links none is still skills-unlinked", /skills-unlinked=c( |$)/.test(zc), zc);
-ok("zero skills: worker spawns pass", lib.run(LG, { hook_event_name: "PreToolUse", session_id: "z1", cwd: Z, tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: "proteus-worker" } }, { cwd: Z }).code === 0);
+ok("zero skills: worker spawns pass", lib.run(LG, { hook_event_name: "PreToolUse", session_id: "z1", cwd: Z, tool_name: "Agent", tool_input: { model: "opus", prompt: lib.spec(REPO), subagent_type: "proteus-worker" } }, { cwd: Z }).code === 0);
 
 lib.summary();

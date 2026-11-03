@@ -1,5 +1,6 @@
 // length budget tests: node tests/budget.test.js. Proteus's own skill text is read by every session, so it gets
-// a byte budget (#205): SKILL.md 12 KB, each references/*.md 32 KB, each agents/*.md 10 KB, and 280 KB in total.
+// a byte budget (#205): SKILL.md 12 KB, each references/*.md 32 KB, each agents/*.md 10 KB, and 284 KB in total
+// (280 KB until the acceptance-check agent, #365).
 // The lead's loop docs (#79) are capped tighter, at their size after the `next` rewrite plus about 3%, and at
 // 45000 bytes together.
 // Sizes count LF line endings, so a CRLF checkout on Windows measures the same. A file over its budget is named
@@ -12,7 +13,7 @@ const { ok } = lib;
 
 const ROOT = path.resolve(__dirname, "..");
 const SKILL = path.join(ROOT, "skills", "proteus");
-const TOTAL = 280 * 1024;
+const TOTAL = 284 * 1024;
 const LOOP = { "SKILL.md": 12130, "flow.md": 15740, "operations.md": 10630, "harnesses.md": 7710 };
 const LOOP_TOTAL = 45000;
 
