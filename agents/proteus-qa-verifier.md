@@ -22,11 +22,9 @@ Research, logs, test output, diffs over ~50 lines and web pages go through conte
 
 Temp files, renders, clones and worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, with the scratch key from the lead's prompt; not a bare `/tmp` or `mktemp`, since `/tmp` is RAM. The lead deletes the dir when the ticket merges or the run closes, so nothing you need later lives there.
 
-## Long jobs and reporting
+## Long jobs
 
 Long jobs: foreground Bash with `timeout` up to 600000 ms, or a detached job (`nohup … &`) whose PID or log you poll in this same turn until it ends. Don't use `run_in_background` or `Monitor`, and don't end a turn waiting on a notification: nothing will wake you, and the hooks refuse both.
-
-Report once: the full report goes on the tracker once (issue comment or PR review) and is not edited afterwards. Your final turn text is one line, `WAVE-GREEN <run>` / `WAVE-RED <run> sent`, then stop.
 
 ## Classifier denial
 
@@ -43,3 +41,5 @@ Report once: the full report goes on the tracker once (issue comment or PR revie
 - one source of truth per fact or rule;
 - delete before you add;
 - leave the touched area no worse.
+
+Report once: the full report goes on the tracker once (issue comment or PR review) and is not edited afterwards. Hand back at most 10 lines: `WAVE-GREEN <run>` / `WAVE-RED <run> sent` first, then the report's link. Then stop.

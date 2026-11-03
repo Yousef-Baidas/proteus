@@ -41,6 +41,11 @@ for (const f of [...workers, ...verifiers]) {
   const missing = shared.filter((l) => !agent(f).includes(l));
   ok(`agents: ${f} carries the four shared rules word for word`, !missing.length, missing.join("\n"));
 }
+// the hand-back (#366): Report once caps the final turn text and ends every worker and verifier file
+const report = shared.find((l) => l.startsWith("- **Report once**")) || "";
+ok("roles.md: Report once caps the hand-back at 10 lines, status first, then the report's link or path", /at most 10 lines/.test(report) && /status line first/.test(report) && /link or path/.test(report));
+for (const f of [...workers, ...verifiers]) ok(`agents: ${f} ends with Report once (the hand-back)`, agent(f).trimEnd().endsWith(report));
+ok("agents: proteus-qa-verifier.md ends with its hand-back cap", /^Report once: .*Hand back at most 10 lines.*Then stop\.$/.test(agent("proteus-qa-verifier.md").trimEnd().split("\n").pop()));
 for (const f of workers) {
   const missing = workerRules.filter((l) => !agent(f).includes(l));
   ok(`agents: ${f} carries every worker rule moved out of the brief`, !missing.length, missing.join("\n"));

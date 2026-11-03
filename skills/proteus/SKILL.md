@@ -43,12 +43,12 @@ Your own hands: `gh` and `git` reads capped with `--json … -q` or `| tail -5`;
 
 A mattpocock skill the Skill tool refuses (`/grill-with-docs`, `/wayfinder`, `/to-spec`, `/to-tickets`, `/handoff`) → read its `SKILL.md` (`node <hooks>/proteus-skillpath.js <skill>`) and follow it as if invoked; tell a worker the same for `/implement`.
 
-Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every session, and translate. At the start read only this skill and the `flow.md` sections the current phase needs. Every other reference is read when a `next` line or a phase points to it, then only the named §: `roles.md` when spawning; `operations.md` on a command or an install; `stack.md` on a first run in a repo; `conventions.md` when `CONVENTIONS.md` is missing; `docs-diet.md` when `doc-bloat` is not `none`; `lessons.md` on a lesson; `tour.md` on `tour`; `hooks.md` when a hook refuses and you need why. Your commits follow `commits.md`.
+Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every session, and translate. Read no reference up front: a step, a `next` line or a command names the one to read when it comes, then only its named §: `roles.md` when spawning; `operations.md` on a command or an install; `docs-diet.md` when `doc-bloat` is not `none`; `lessons.md` on a lesson; `tour.md` on `tour`; `hooks.md` when a hook refuses and you need why. Your commits follow `commits.md`.
 
 ## Session start
 
-`proteus-autostart.js` (or `/proteus`, `$proteus` on Codex) prints a `proteus-state` line from local files: trust a `yes`, act on a `NO`, redo nothing it reports present. Under the plugin the command is `/proteus:proteus`, and every agent name takes the `agent-prefix` from `proteus-state`. No `proteus-state` line in context → never run `proteus-autostart.js` by hand (a hand run has no `CLAUDE_ENV_FILE`, so agents would post as the human); tell the human in one line that this repo is not set up for Proteus or the session started before setup, so run `/proteus:setup` if not done, then start a new session; stop. Then, in order (`flow.md`):
-1. Tracker preflight (`tracker.md`). Fails → stop.
+`proteus-autostart.js` (or `/proteus`, `$proteus` on Codex) prints a `proteus-state` line from local files: trust a `yes`, act on a `NO`, redo nothing it reports present. Under the plugin the command is `/proteus:proteus`, and every agent name takes the `agent-prefix` from `proteus-state`. No `proteus-state` line in context → never run `proteus-autostart.js` by hand (a hand run has no `CLAUDE_ENV_FILE`, so agents would post as the human); tell the human in one line that this repo is not set up for Proteus or the session started before setup, so run `/proteus:setup` if not done, then start a new session; stop. Then, in order:
+1. Tracker preflight (`tracker.md`, its `preflight` row). Fails → stop.
 2. An open `proteus/<run>` → the loop: `next` computes the position from the tracker.
 3. `main` red → the stabilise ticket before any feature work.
 4. Act on the state line's notes.
@@ -63,9 +63,9 @@ A question lives in a picker when the run cannot move without it, else in a ques
 
 Handled first, whenever typed: `status`, `questions` or `inbox`, `pause` (or its `## Learned` alias), `resume`, `revision`, `intake <urls|file>` (`operations.md`); "remember this", "never again", a fix after a failed attempt or a correction, or "Improve proteus: …" (`lessons.md`); `tour`, `tour off` (`tour.md`); `add team <role>`: `proteus-scout` in single-team mode (`bootstrap.md`).
 
-## Surviving compaction
+## Compaction
 
-Hooks re-inject this skill, the run-log tail and the human's last ten messages. Log on the run-log issue, as it happens, each decision `next` cannot derive: grilled decisions before `/to-spec` exists, an `UNATTENDED` grant and its limit, every deviation allowed, a parked `NEEDS`, the fork point, and every human hand edit to an artifact. After a compaction, run `next`; trust it, the run log and the journal over the summary. On the meter's warning, finish the step, `/handoff`, and the fresh lead runs `next`.
+Compaction is expected (setup caps the auto-compact window); never ask the human for a new session. State lives on the tracker: log on the run-log issue, as it happens, each decision `next` cannot derive: grilled decisions before `/to-spec` exists, an `UNATTENDED` grant and its limit, every deviation allowed, a parked `NEEDS`, the fork point, and every human hand edit to an artifact. Hooks re-inject this skill, the run-log tail and the human's last ten messages; after a compaction, run `next` and trust it, the run log and the journal over the summary.
 
 ## Tiers
 
@@ -73,8 +73,10 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 
 ## Flow
 
-0. **Bootstrap** to the `Ready` line of `bootstrap.md`: roster approved, the domain's mechanical gates installed. Not there → stop.
-1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human runs and checks it, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, not your preference.
+Each step: read its `flow.md` § as it starts.
+
+0. **Bootstrap** to the `Ready` line of `bootstrap.md`: roster approved, the domain's mechanical gates installed. Not there → stop. Read it (`conventions.md` if `CONVENTIONS.md` is missing; `stack.md` on a first run).
+1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human runs and checks it, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier. Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, not your preference.
 2. **Tickets**: `/to-spec`, `/to-tickets`; prototype first.
 3. **Contracts**: you decide each ticket's interface and check; a contracts worker commits them, red.
 4. **Dispatch** each `SPAWN worker` on `build` into a protected `proteus/<run>`.
