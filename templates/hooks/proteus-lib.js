@@ -3522,7 +3522,7 @@ function contextWindow(ev, root) {
   const known = [h.modelWindow ? h.modelWindow(model, ev) : 0, h.contextCap ? h.contextCap(ev, model) : 0, +proteusConfig().contextWindow].filter((n) => n > 0);
   return known.length ? Math.min(...known) : DEFAULT_WINDOW;
 }
-// at: the journal tells the lead to hand off; hard: the guard refuses new spawns. PROTEUS_HANDOFF_AT
+// at: the journal tells the lead to log its position; hard: the guard refuses new spawns until it compacts. PROTEUS_HANDOFF_AT
 // and PROTEUS_HANDOFF_HARD (tokens) override them.
 function handoffLines(ev, root) {
   const w = contextWindow(ev, root);
