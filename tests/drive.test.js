@@ -67,7 +67,7 @@ ok("loop: WAIT runs the watchdog, then next again", t.calls.exec.join() === "wai
 let k = 0;
 const fresh = { root: W, max: 4, next: () => ({ code: 0, out: [{ kind: "RUN", command: `step ${k++}`, argv: [] }] }), result: () => ({ code: 0, out: [], acts: [] }), exec: () => ({ code: 0, why: "", gate: false }) };
 d = drive("", fresh);
-ok("cap: stops after max rounds with a NOTE", k === 4 && d.code === 0 && d.out.length === 1 && /^drive: stopped after 4 rounds/.test(d.out[0].reason), JSON.stringify(d));
+ok("cap: stops after max rounds with a NOTE", k === 4 && d.code === 0 && d.out.length === 1 && d.out[0].reason.startsWith("drive: stopped after 4 rounds"), JSON.stringify(d));
 process.env.PROTEUS_DRIVE_MAX = "2";
 k = 0;
 d = drive("", { ...fresh, max: 0 });
@@ -148,7 +148,7 @@ ok("cli pass: the batch's MERGED lines as DID", L.filter((l) => /^DID MERGED PR#
 ok("cli pass: the suite's RUN as DID, on the batch's tip", L.some((l) => l.startsWith("DID RUN ") && l.includes(`proteus-run-tree.js ${tip}, then in .worktrees/_run: node suite.js`)), r.out);
 ok("cli pass: result pass at the tip, the batch done", L.some((l) => l.startsWith(`DID NOTE result pass --at ${tip}: `) && /suite green/.test(l)) && !fs.existsSync(path.join(b.root, ".git", "proteus", "merge", "r1.json")), r.out);
 ok("cli pass: _run holds the tested tip", g(path.join(b.root, ".worktrees", "_run"), "rev-parse", "HEAD") === tip);
-ok("cli pass: then the lead's line, the ready ticket's SPAWN, last and not DID", /^SPAWN worker #8 /.test(L[L.length - 1]) && !L.some((l) => l.startsWith("DID SPAWN")), r.out);
+ok("cli pass: then the lead's line, the ready ticket's SPAWN, last and not DID", L[L.length - 1].startsWith("SPAWN worker #8 ") && !L.some((l) => l.startsWith("DID SPAWN")), r.out);
 r = b.cli("drive", "--json");
 let J = [];
 try { J = JSON.parse(r.out); } catch {}
