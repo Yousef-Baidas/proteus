@@ -3470,6 +3470,56 @@ function handoffLines(ev, root) {
   return { window: w, at: envInt("PROTEUS_HANDOFF_AT", Math.round(w * 0.75)), hard: envInt("PROTEUS_HANDOFF_HARD", Math.round(w * 0.9)) };
 }
 
+// ---- the optional local model (#344): "local": { "endpoint": <base url>, "model": <name>, "keyEnv": <env var> } in
+// ~/.claude/proteus.json, any OpenAI-compatible chat server the user runs. Absent is off: null. A key comes only from
+// the env var keyEnv names, never from the file, and an endpoint carrying a user or password is refused, so nothing
+// else in the config is ever sent. { error } for a config that is set but unusable.
+function localModel() {
+  const c = proteusConfig().local;
+  if (c === undefined || c === null) return null;
+  if (typeof c !== "object" || Array.isArray(c)) return { error: "\"local\" in proteus.json is not an object" };
+  const model = typeof c.model === "string" ? c.model.trim() : "";
+  let u = null;
+  try { u = new URL(String(c.endpoint || "").trim()); } catch {}
+  if (!u || !/^https?:$/.test(u.protocol)) return { error: "\"local\".endpoint in proteus.json is not an http(s) URL" };
+  if (u.username || u.password) return { error: "\"local\".endpoint carries credentials; name an env var in \"local\".keyEnv instead" };
+  if (!model) return { error: "\"local\".model in proteus.json is not set" };
+  const keyEnv = typeof c.keyEnv === "string" && /^[A-Za-z_]\w*$/.test(c.keyEnv) ? c.keyEnv : "";
+  return { url: `${(u.origin + u.pathname).replace(/\/+$/, "").replace(/\/v1$/, "")}/v1/chat/completions`, model, keyEnv };
+}
+// one chat call to the local model: the prompt as the one user message, no tools, Node's own fetch. No redirect is
+// followed, the whole call (body included) stops at timeoutMs and the body at maxBytes. Resolves { ok, result, model }
+// or { ok: false, error }, never throws.
+async function localChat(cfg, prompt, { timeoutMs = 600000, maxBytes = 64 << 20, schema = null } = {}) {
+  const headers = { "content-type": "application/json" };
+  const key = cfg.keyEnv ? process.env[cfg.keyEnv] : "";
+  if (key) headers.authorization = `Bearer ${key}`;
+  const body = { model: cfg.model, messages: [{ role: "user", content: String(prompt) }], stream: false };
+  if (schema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema } };
+  const ac = new AbortController();
+  let late = false;
+  const timer = setTimeout(() => { late = true; ac.abort(); }, timeoutMs);
+  try {
+    const res = await fetch(cfg.url, { method: "POST", headers, body: JSON.stringify(body), redirect: "error", signal: ac.signal });
+    const chunks = [];
+    let size = 0;
+    for await (const ch of res.body || []) {
+      size += ch.length;
+      if (size > maxBytes) { ac.abort(); return { ok: false, error: "the local model's answer was over the size cap" }; }
+      chunks.push(ch);
+    }
+    if (!res.ok) return { ok: false, error: `the local model answered HTTP ${res.status}` };
+    let j = null;
+    try { j = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch {}
+    const msg = j && Array.isArray(j.choices) && j.choices[0] && j.choices[0].message;
+    const content = msg && (typeof msg.content === "string" ? msg.content : Array.isArray(msg.content) ? msg.content.map((p) => (p && typeof p.text === "string" ? p.text : "")).join("") : null);
+    if (typeof content !== "string") return { ok: false, error: "the local model's answer was not a chat completion" };
+    return { ok: true, result: content, model: typeof j.model === "string" && j.model ? j.model : cfg.model };
+  } catch (e) {
+    return { ok: false, error: late ? `timed out after ${Math.round(timeoutMs / 1000)}s` : `the local model is unreachable: ${(e.cause && e.cause.code) || e.message}` };
+  } finally { clearTimeout(timer); }
+}
+
 // Liveness of the lead's workers and verifiers, read by proteus-watchdog.js: one file per agent in
 // <git-common-dir>/proteus/beats/. "tool" (the lead's guard, on each of its tool calls) stamps `last`,
 // "ended" (proteus-stall.js, a stop with no final message) stamps `ended`, "done" (a stop that hands one back)
@@ -3677,6 +3727,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
-  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, isHelperAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
+  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, isHelperAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, localModel, localChat, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

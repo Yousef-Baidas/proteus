@@ -5,7 +5,7 @@ The pipeline is the same for every project: grill → spec → tickets → contr
 ## The three invariants
 
 1. **Everything reproducible lives in git.** Text, scripts, project files, specs, data manifests. A deliverable that only exists in a GUI session, a `/tmp` dir or an `out/` folder does not exist. Large binaries: Git LFS, or reproduced from committed scripts plus a manifest of input hashes. A human's hand edit to a binary is logged on the run log at once and ported to a script by a ticket before the milestone closes.
-2. **Every check can go red.** A check that can be executed is: a script, a linter, a probe, a schema, a render comparison. Where taste decides, it is a rubric: numbered pass lines, each observable ("title under 60 characters", "key light from the window side", "every figure has a cited source"), scored by the verifier with evidence. The contracts worker shows each check failing on a deliberately broken input before any worker starts.
+2. **Every check can go red.** A check that can be executed is: a script, a linter, a probe, a schema, a render comparison. Where taste decides, it is a rubric: numbered pass lines, each observable, scored by the verifier with evidence. The contracts worker shows each check failing on a deliberately broken input before any worker starts.
 3. **Probes print what they measured.** Any script that inspects an artifact prints, first line, the absolute path, size or hash, and item count of what it actually opened. A probe whose output cannot prove its input is void. Isolation must be real: worktrees share nothing only if the artifact is in the worktree. A symlinked or absolute-path binary is shared: one writer per such file per wave, or each worktree builds its own copy from the scripts.
 
 ## Domain map
@@ -29,7 +29,7 @@ The rows are examples, not a closed list. A project can mix rows (a product laun
 
 ## Binary and GUI work
 
-One owner per binary file stays the rule, so split the work into linked per-team files: one `.blend` per team linked into a master scene, Photoshop smart objects, spreadsheets that link to each other. The master file belongs to one team, which only re-links. Two teams never edit one binary. A step only a human can operate (a GUI tool with no headless mode, a signature) is a `step:human` ticket (`tracker.md`).
+One owner per binary file stays the rule, so split the work into per-team files linked into a master file, which belongs to one team that only re-links. Two teams never edit one binary. A step only a human can operate (a GUI tool with no headless mode, a signature) is a `step:human` ticket (`tracker.md`).
 
 ## Nondeterministic and slow checks
 

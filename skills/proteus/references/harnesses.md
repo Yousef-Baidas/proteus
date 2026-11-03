@@ -41,7 +41,7 @@ Running agents (`status`, `pause`): your task list; on Codex the agents spawned 
 | Gate cache | `proteus-gates-cache.js` stores a pass in `<git-common-dir>/proteus/gates/` | read-only inside the sandbox; passes recorded outside still count. Not in `proteus.rules`: it runs any command |
 | Auto mode classifier | denials per `SKILL.md`; `install.js --doctor` suggests an `autoMode.environment` entry (docs/install.md) | none |
 | Hooks that cannot fire | – | failed-tool and teammate-idle; the long-jobs rule is prompt-only |
-| Model ladder | default `haiku < sonnet < opus < fable`, floor Sonnet (`proteus-helper`: one rung under), Fable once per project (Mythos counts as Fable) | none: `models=unknown`, every spawn names your own model, until `models.ladder` in `~/.claude/proteus.json` or a `models:` line in `AGENTS.md` names the rungs |
+| Model ladder | default `haiku < sonnet < opus < fable`, floor Sonnet (`proteus-helper`: one rung under), Fable once per project (Mythos counts as Fable) | none: `models=unknown`, every spawn names your own model, until `models.ladder` in `~/.claude/proteus.json` or a `models:` line in `AGENTS.md` names the rungs; `local` alike |
 | Effort per role tier | not per spawn: the judge agents (verifiers, scout) carry `effort: high` in their frontmatter, the rest run at the session's effort | `spawn_agent` takes `reasoning_effort`: `judge` high, `build` medium, `helper` low on your own model (`models=…,judge:<model>@high,…`) |
 | Container workers | `flow.md` §4 | none yet: `isolation=container-unready` |
 | Goal-loop schedule | `/schedule` | none: the human runs each round |
