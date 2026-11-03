@@ -87,6 +87,32 @@ sec();
 ok("security: CI failure, then the security verifier's MERGE, then CI again: success stays",
   before === "failure" && secState().state === "success" && secState().description === "MERGE by the security verifier", JSON.stringify(pr().statuses));
 
+// #364: a security signoff carries over a whitespace-only push, on the verifier's MERGE, and nothing else does
+const WS = path.join(W, "ws");
+fs.mkdirSync(WS);
+g(WS, "init", "-q", "-b", "main");
+const commit = (body) => { fs.writeFileSync(path.join(WS, "a.js"), body); g(WS, "add", "-A"); g(WS, "commit", "-q", "-m", "c"); return g(WS, "rev-parse", "HEAD"); };
+const C1 = commit("if (a) {\n  b();\n}\n"), C2 = commit("if (a)  {\n    b();\n}\n"), C3 = commit("if (a)  {\n    c();\n}\n");
+const signWs = (head, word = "MERGE") => lib.run(SIGN, "", { cwd: WS, args: ["5", head, word], env });
+const SEC_MERGE = { state: "success", context: "proteus/security", description: "MERGE by the security verifier" };
+setPr({ head: C2, commits: [C1, C2], statuses: { [C1]: [SEC_MERGE] } });
+r = signWs(C2);
+ok("signoff: a whitespace-only push since the security verifier's MERGE carries it to the new head",
+  r.code === 0 && latest(C2, "proteus/security") && latest(C2, "proteus/security").state === "success"
+  && latest(C2, "proteus/security").description === `MERGE by the security verifier, carried from ${C1.slice(0, 12)}: whitespace-only since`, r.out + r.err);
+setPr({ head: C3, commits: [C1, C2, C3], statuses: { [C1]: [SEC_MERGE] } });
+r = signWs(C3);
+ok("signoff: a real change since the security verifier's MERGE carries nothing", r.code === 0 && !latest(C3, "proteus/security") && latest(C3, "proteus/verdict").state === "success", r.out + r.err);
+setPr({ head: C2, commits: [C1, C2], statuses: { [C1]: [{ ...SEC_MERGE, state: "failure", description: "BACK-TO-WORKER by the security verifier" }] } });
+r = signWs(C2);
+ok("signoff: a security BACK-TO-WORKER is never carried over", r.code === 0 && !latest(C2, "proteus/security"), r.out + r.err);
+setPr({ head: C2, commits: [C1, C2], statuses: { [C1]: [SEC_MERGE] } });
+r = signWs(C2, "BACK-TO-WORKER");
+ok("signoff: only a MERGE carries the security signoff over", r.code === 0 && !latest(C2, "proteus/security"), r.out + r.err);
+setPr({ head: C2, commits: [C1, C2], statuses: { [C1]: [{ ...SEC_MERGE, description: "no security path touched" }] } });
+r = signWs(C2);
+ok("signoff: CI's no-path success on the earlier head is not a signoff to carry", r.code === 0 && !latest(C2, "proteus/security"), r.out + r.err);
+
 const REPORT = path.join(W, "semgrep.json");
 fs.writeFileSync(REPORT, JSON.stringify({ results: [{ path: "src/app/page.tsx", check_id: "x" }, { path: "./src/untouched.ts", check_id: "y" }] }));
 setPr({ files: ["src/app/page.tsx"] });
