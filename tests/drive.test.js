@@ -102,7 +102,7 @@ ok("steps: the gate runs in .worktrees/_run, its code returned as the suite's", 
 
 // ---- the CLI on a real merge batch
 const ms = { title: "r1/core", number: 1 };
-const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js` });
+const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js\nReview: light` });
 const VERDICT = { __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" };
 const CI = { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" };
 const put = (dir, files) => { for (const [f, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), body); };
