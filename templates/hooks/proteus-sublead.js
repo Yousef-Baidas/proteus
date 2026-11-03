@@ -14,9 +14,10 @@
 // (its hooks name the main checkout's hooks dir by absolute path), then one headless Claude Code session there:
 // `claude -p --output-format stream-json --verbose --max-budget-usd <usd>`, with --model when given, never in a
 // mode more permissive than the lead's: the lead guard stores the lead's mode as this shell call arrives, where
-// neither agents nor a sandboxed shell can write (lib.saveLeadMode). Lead on bypassPermissions with the repo's
-// sandbox profile (install.js --sandbox): that profile and bypassPermissions; lead on auto: auto; any other mode, or
-// none recorded for this checkout in the last 5 minutes: refused, exit 1 (permArgs). Never a bare mode, a credential or a credential file: the session inherits this process's
+// neither agents nor a sandboxed shell can write (lib.saveLeadMode). Only a lead on auto gets a sub-lead, run with
+// --permission-mode auto; any other mode, bypassPermissions included, or none recorded for this checkout in the
+// last 5 minutes: refused, exit 1 (permArgs), and the slice is split instead. Never a bare mode, a credential or a
+// credential file: the session inherits this process's
 // environment, the prompt goes in on stdin. Its runtime is bounded by --minutes (default 240, at most 1440;
 // PROTEUS_SUBLEAD_TIMEOUT_MS overrides, for tests): past it, or on SIGINT/SIGTERM to this process, the session and all
 // it started are killed. The CLI checks the budget between turns, so a session can overshoot it by one turn.
@@ -186,13 +187,11 @@ function session(cmd, args, input, o, retry = false) {
   });
 }
 
-// the sub-lead's permission flags, never more permissive than the lead's mode as the lead guard recorded it; a
-// string (the refusal) when that mode has no headless equivalent: a session started with -p answers no prompt
-function permArgs(mode, profile) {
-  if (mode === "bypassPermissions" && profile) return ["--settings", profile, "--permission-mode", "bypassPermissions"];
+// the sub-lead's permission flags from the lead's mode as the lead guard recorded it: auto only; a string (the
+// refusal) for any other mode
+function permArgs(mode) {
   if (mode === "auto") return ["--permission-mode", "auto"];
-  if (mode === "bypassPermissions") return "the lead runs bypassPermissions without the repo's sandbox profile (install.js --sandbox); a sub-lead runs only under it";
-  return `the lead's permission mode is ${mode ? plain(mode) : "unknown"}; a headless sub-lead cannot answer permission prompts, so it runs only when the lead runs auto, or bypassPermissions with the sandbox profile. Start it from the lead's own shell`;
+  return `the lead's permission mode is ${mode ? plain(mode) : "unknown"}; sub-leads need the lead in auto mode (start it from the lead's own shell). Split the slice instead`;
 }
 
 async function start(o) {
@@ -201,7 +200,7 @@ async function start(o) {
   const { root, common, run } = w;
   const why = refusal(common, run);
   if (why) return { code: 1, out: [`SUBLEAD refused: ${why}`] };
-  const modeArgs = permArgs(lib.leadModeSeen(common, process.cwd()), lib.profileFile(common));
+  const modeArgs = permArgs(lib.leadModeSeen(common, process.cwd()));
   if (typeof modeArgs === "string") return { code: 1, out: [`SUBLEAD refused: ${modeArgs}`] };
   const sub = subName(run, o.ticket), branch = `${lib.CURRENT.branch}${sub}`, parent = `${lib.CURRENT.branch}${run}`;
   const depth = depthOf(common, run) + 1;

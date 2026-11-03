@@ -1063,7 +1063,8 @@
       "b1a1118a552a52002d644638ceb954033dcb0169"
     ],
     "templates/hooks/proteus-sublead.js": [
-      "a4d04a898848cb916975da69d7c033af41940700"
+      "a4d04a898848cb916975da69d7c033af41940700",
+      "c4d00ca244ef93809f10919fdc4cd52c8362d6fe"
     ],
     "templates/hooks/proteus-teamfit.js": [
       "7faaa4dbf5d322c756603f89ec72e39789438517",

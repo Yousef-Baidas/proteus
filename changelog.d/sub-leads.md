@@ -10,6 +10,6 @@
   from `proteus-work/<run>/<n>` into the parent run branch, verified, owned-checked and merged like a worker's.
   Runs nest at most three deep: a run at depth 3 is refused a sub-lead, and its `DECIDE` line offers only the
   split. A sub-lead never runs in a more permissive mode than the lead: the lead guard records the lead's
-  permission mode where agents cannot write, and `start` uses the sandbox profile with `bypassPermissions` only
-  when the lead runs `bypassPermissions` and the profile exists, `auto` when the lead runs `auto`, and refuses
-  (exit 1) for any other or unknown mode, since a headless session cannot answer permission prompts.
+  permission mode where agents cannot write, and `start` runs the sub-lead in `auto` only when the lead runs
+  `auto`. Any other or unknown mode, `bypassPermissions` included, is refused (exit 1) with a pointer to split
+  the slice instead.
