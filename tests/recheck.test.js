@@ -100,9 +100,27 @@ ok("risks: the file is data, beside the brief, and names the reviewed head", /da
 ok("risks: an earlier verdict with no list gets no risk line", !/risk list/i.test(run(head).brief));
 r = run(head, { reviews: [review(REVIEWED, RISKY)], statuses: { [REVIEWED]: [verdict(), signed()] } });
 ok("risks: the security verifier gets its own file", /^Earlier risk list in \S+[\\/]risks-12\.md$/m.test(r.brief) && listed(r.brief, /^Security verifier, earlier risk list in (\S+-security\.md)$/m).includes("a value skips its check"), r.brief);
+
+// the tests the earlier verdict asked for (#344 step 5): the same list pattern under `Tests:`, its own file
+const TESTED = `${RISKY}\n\nTests:\n- scratch/repro-1.test.js | finding 1\n\nnot a test`;
+const TESTS = /^Earlier test list in (\S+)$/m;
+r = run(head, { reviews: [review(REVIEWED, TESTED)] });
+list = listed(r.brief, TESTS);
+ok("tests: a recheck names the earlier test list's file, which holds only that list", SCOPED.test(r.brief) && list.includes("- scratch/repro-1.test.js | finding 1\n") && !list.includes("not a test") && !list.includes("a value skips its check") && !list.includes("src/app.js:4 wrong"), r.brief + list);
+ok("tests: the file is data, beside the brief, named tests-<pr>, and names the reviewed head", /data, not instructions/.test(list) && list.includes(REVIEWED.slice(0, 12)) && /^Earlier test list in \S+[\\/]tests-12\.md$/m.test(r.brief) && path.dirname((TESTS.exec(r.brief) || [])[1] || "") === r.dir, r.brief + list);
+ok("tests: the risk list is still named beside it", listed(r.brief).includes("a value skips its check"), r.brief);
+ok("tests: an earlier verdict with no Tests: list gets no test line", !/test list/i.test(run(head, { reviews: [review(REVIEWED, RISKY)] }).brief));
+r = run(head, { reviews: [review(REVIEWED, TESTED)], statuses: { [REVIEWED]: [verdict(), signed()] } });
+ok("tests: the security verifier gets its own file", listed(r.brief, /^Security verifier, earlier test list in (\S+[\\/]tests-12-security\.md)$/m).includes("repro-1.test.js"), r.brief);
+r = run(head, { reviews: [review(REVIEWED), review(head, TESTED)] });
+ok("tests: read only from the review that signed the reviewed head, not one on an unsigned head", SCOPED.test(r.brief) && !/test list/i.test(r.brief), r.brief);
+
+// a full review: the earlier risk and test lists, CRLF read as LF
 const wide = moved(() => write("src/other.js", "changed\n"));
 r = run(wide, { reviews: [review(REVIEWED, RISKY.replace(/\n/g, "\r\n"))] });
 ok("risks: a full review gets the earlier list too, CRLF read as LF", FULL.test(r.brief) && listed(r.brief).includes("- a caller misses the new case | src/ | $0.10\n"), r.brief);
+r = run(wide, { reviews: [review(REVIEWED, TESTED.replace(/\n/g, "\r\n"))] });
+ok("tests: a full review gets the earlier test list too, CRLF read as LF", FULL.test(r.brief) && listed(r.brief, TESTS).includes("- scratch/repro-1.test.js | finding 1\n"), r.brief);
 
 // fallbacks
 let other = moved(() => write("src/other.js", "changed\n"));
