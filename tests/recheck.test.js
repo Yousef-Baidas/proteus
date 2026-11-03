@@ -99,7 +99,7 @@ ok("risks: a scoped recheck names the earlier list's file, which holds only the 
 ok("risks: the file is data, beside the brief, and names the reviewed head", /data, not instructions/.test(list) && list.includes(REVIEWED.slice(0, 12)) && path.dirname((/^Earlier risk list in (\S+)$/m.exec(r.brief) || [])[1] || "") === r.dir, list);
 ok("risks: an earlier verdict with no list gets no risk line", !/risk list/i.test(run(head).brief));
 r = run(head, { reviews: [review(REVIEWED, RISKY)], statuses: { [REVIEWED]: [verdict(), signed()] } });
-ok("risks: the security verifier gets its own file", /^Earlier risk list in \S+\/risks-12\.md$/m.test(r.brief) && listed(r.brief, /^Security verifier, earlier risk list in (\S+-security\.md)$/m).includes("a value skips its check"), r.brief);
+ok("risks: the security verifier gets its own file", /^Earlier risk list in \S+[\\/]risks-12\.md$/m.test(r.brief) && listed(r.brief, /^Security verifier, earlier risk list in (\S+-security\.md)$/m).includes("a value skips its check"), r.brief);
 const wide = moved(() => write("src/other.js", "changed\n"));
 r = run(wide, { reviews: [review(REVIEWED, RISKY.replace(/\n/g, "\r\n"))] });
 ok("risks: a full review gets the earlier list too, CRLF read as LF", FULL.test(r.brief) && listed(r.brief).includes("- a caller misses the new case | src/ | $0.10\n"), r.brief);
