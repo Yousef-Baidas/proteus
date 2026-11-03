@@ -7,4 +7,6 @@
 - Its answers are one-way: they may add work or pick a listed option, never skip a review, verifier, gate or check,
   and never give a verdict. A caller that doubts one reruns the job on `helper`.
 - `next` asks it once per PR head whether a diff CI did not mark for security is security-relevant; a yes adds
-  `security=local` to the verifier's `SPAWN` line. No config, or a failed call, changes nothing.
+  `security=local` to the verifier's `SPAWN` line. No config, or a failed call, changes nothing. When `local` is
+  configured, this check sends each PR's diff to the endpoint, so an endpoint not on the machine means the code
+  leaves it.
