@@ -1,6 +1,7 @@
 // The human's verdicts in local mode (#310): node tests/localverdict.test.js. The record decides and no store comment
 // does; both ways into it (the dialog's pending entry and the human's terminal); held, proteus-verdict.js and `pr merge`
-// reading it; a damaged record; and outside local mode, comments still decide.
+// reading it on a security change into the default branch; a damaged record; no PR into a run branch waiting for the
+// human (#368), a security one for the security verifier; and outside local mode, comments still decide.
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -12,9 +13,10 @@ const { ok } = lib;
 const W = lib.workdir("localverdict");
 const hooksLib = require(path.join(SRC, "proteus-lib.js"));
 const HELD = path.join(W, "held.js");
-fs.writeFileSync(HELD, `const path = require("path"), [hooks, n, policy] = process.argv.slice(2);
-console.log(JSON.stringify(require(path.join(hooks, "proteus-policy.js")).held([{ n: Number(n) }], process.cwd(), JSON.parse(policy))));
+fs.writeFileSync(HELD, `const path = require("path"), [hooks, n] = process.argv.slice(2);
+console.log(JSON.stringify(require(path.join(hooks, "proteus-policy.js")).held([{ n: Number(n) }], process.cwd())));
 `);
+const ROUTING = "# Routing\n\n```security\n**/auth/**\n```\n";
 
 const sha256 = (s) => crypto.createHash("sha256").update(s).digest("hex");
 const asked = (r) => { try { return JSON.parse(r.out).hookSpecificOutput.permissionDecision === "ask"; } catch { return false; } };
@@ -82,7 +84,7 @@ function repo(name, routing = "") {
   r.state = (p) => r.gh(["pr", "view", String(p.n), "--json", "state", "-q", ".state"]).out.trim();
   r.merge = (p) => r.gh(["pr", "merge", String(p.n), "--merge"]);
   // in a process of its own, as lib.gh finds the stand-in from the hooks it runs from
-  r.held = (p, policy = { merge: "lead", ask: "every", rules: [] }) => JSON.parse(lib.run(HELD, "", { cwd: dir, args: [hooks, String(p.n), JSON.stringify(policy)], env: r.env }).out);
+  r.held = (p) => JSON.parse(lib.run(HELD, "", { cwd: dir, args: [hooks, String(p.n)], env: r.env }).out);
   r.comment = (n, body, kind = "pr") => r.gh([kind, "comment", String(n), "--body-file", "-"], body);
   r.verdict = (n, ...a) => lib.run(H("proteus-verdict.js"), "", { cwd: dir, args: [String(n), ...a], env: r.env });
   r.body = (text, name = `v${++r.n}.md`) => { const f = path.join(dir, name); fs.writeFileSync(f, text); return f; };
@@ -107,14 +109,13 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
 
 // ---- no comment counts, whatever it says and whoever it names
 {
-  const a = repo("comments");
-  const p = a.open(), i = a.gh(["issue", "create", "--title", "t", "--body", "b"]);
+  const a = repo("comments", ROUTING);
+  const p = a.open("auth/c.txt"), i = a.gh(["issue", "create", "--title", "t", "--body", "b"]);
   const issue = Number(/(\d+)\s*$/.exec(i.out.trim())[1]);
   a.gh(["label", "create", "proteus-review"]);
   a.gh(["issue", "edit", String(issue), "--add-label", "proteus-review"]);
-  a.policy({ merge: "lead", ask: "every", rules: [] });
   for (const body of [`ACCEPT ${p.short}`, `ACCEPT ${p.short}\nlooks fine`, `\n\nACCEPT ${p.short}\n`, "ACCEPT", "ANSWER yes"]) a.comment(p.n, body);
-  ok("comment: no ACCEPT form lifts the hold", a.held(p).length === 1 && a.held(p)[0].why === "every");
+  ok("comment: no ACCEPT form lifts the hold", a.held(p).length === 1 && a.held(p)[0].why === "human");
   let r = a.verdict(p.n);
   ok("comment: proteus-verdict.js reads none as a verdict", !r.out.trim(), r.out + r.err);
   ok("comment: no identity warning in local mode", !/identity=shared/.test(r.err), r.err);
@@ -274,17 +275,16 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
 
 // ---- reading
 {
-  const a = repo("reading");
-  const p = a.open();
-  const every = { merge: "lead", ask: "every", rules: [] };
+  const a = repo("reading", ROUTING);
+  const p = a.open("auth/r.txt");
   write(a, entry(p.n, "ACCEPT 000000000000\n"));
-  ok("read: ACCEPT of an old head holds", a.held(p, every).length === 1);
+  ok("read: ACCEPT of an old head holds", a.held(p).length === 1);
   write(a, entry(p.n, `ACCEPT ${p.short}\n`, ago(2000)), entry(p.n, "CHANGES\nno\n", ago(1000)));
-  ok("read: CHANGES after ACCEPT holds", a.held(p, every).length === 1);
+  ok("read: CHANGES after ACCEPT holds", a.held(p).length === 1);
   write(a, entry(p.n, "CHANGES\nno\n", ago(1000)), entry(p.n, `ACCEPT ${p.short}\n`, ago(2000)));
-  ok("read: file order decides, not the time", a.held(p, every).length === 0);
+  ok("read: file order decides, not the time", a.held(p).length === 0);
   write(a, entry(p.n + 1, `ACCEPT ${p.short}\n`));
-  ok("read: another number's verdict is not this one's", a.held(p, every).length === 1);
+  ok("read: another number's verdict is not this one's", a.held(p).length === 1);
 
   // AUTO comments merge by time
   fs.rmSync(a.record);
@@ -306,12 +306,12 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
     ["bad time", { ...good, at: "yesterday" }], ["not a verdict", entry(p.n, "hello\n")], ["oversized body", entry(p.n, `ACCEPT ${p.short}\n${"x".repeat(1 << 17)}`)],
   ]) {
     write(a, bad);
-    ok(`record: ${name} counts for nothing`, a.held(p, every).length === 1 && hooksLib.verdictRecord(a.common).length === 0);
+    ok(`record: ${name} counts for nothing`, a.held(p).length === 1 && hooksLib.verdictRecord(a.common).length === 0);
     write(a, bad, good);
-    ok(`record: past ${name}, the rest still reads`, a.held(p, every).length === 0);
+    ok(`record: past ${name}, the rest still reads`, a.held(p).length === 0);
   }
   fs.writeFileSync(a.record, "x".repeat((1 << 24) + 1));
-  ok("record: over the size cap reads as unreadable", hooksLib.verdictRecord(a.common) === null && a.held(p, every).length === 1);
+  ok("record: over the size cap reads as unreadable", hooksLib.verdictRecord(a.common) === null && a.held(p).length === 1);
   r = a.terminal(p.n, `ACCEPT ${p.short}\n`);
   ok("record: over the cap, nothing is appended", r.code === 1 && /nothing recorded/.test(r.err), r.err);
   fs.rmSync(a.record);
@@ -320,7 +320,7 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   let linked = true;
   try { fs.symlinkSync(elsewhere, a.record); } catch { linked = false; }
   if (linked) {
-    ok("record: a link reads as unreadable", hooksLib.verdictRecord(a.common) === null && a.held(p, every).length === 1);
+    ok("record: a link reads as unreadable", hooksLib.verdictRecord(a.common) === null && a.held(p).length === 1);
     fs.rmSync(a.record);
   }
   const big = `ACCEPT ${p.short}\n${"x".repeat(1 << 17)}`;
@@ -328,82 +328,39 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   ok("record: a body over the cap is refused", r.code === 1 && a.lines().length === 0, r.code + r.err);
 }
 
-// ---- pr merge, each policy mode
+// ---- pr merge: no PR waits for the human but a security change into the default branch (#368)
 {
   const a = repo("merge");
-  const accept = (p) => write(a, ...a.lines(), entry(p.n, `ACCEPT ${p.short}\n`));
-  a.policy({ merge: "lead", ask: "never", rules: [] });
-  let p = a.open(), r = a.merge(p);
-  ok("merge: ask never merges a green PR", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
+  a.policy({ merge: "human", ask: "every", rules: [{ id: "keep-out", effect: "ask", tool: "edit", paths: ["src/hard/**"], why: "w" }] });
+  let p = a.open("src/hard/a.txt"), r = a.merge(p);
+  ok("merge: a retired merge human or ask every, or an ask rule, holds no green PR", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
 
-  a.policy({ merge: "lead", ask: "every", rules: [] });
-  p = a.open();
-  r = a.merge(p);
-  ok("merge: ask every holds without a verdict", r.code !== 0 && /held for the human/.test(r.err) && a.state(p) === "OPEN", r.err);
-  write(a, entry(p.n, "ACCEPT 000000000000\n"));
-  r = a.merge(p);
-  ok("merge: an old head's ACCEPT holds", r.code !== 0 && a.state(p) === "OPEN", r.err);
-  accept(p);
-  const stale = p;
-  a.push(p);
-  r = a.merge(stale);
-  ok("merge: head moved past the ACCEPT holds", r.code !== 0 && a.state(p) === "OPEN", r.out + r.err);
-  p = a.open();
-  accept(p);
-  r = a.merge(p);
-  ok("merge: ask every merges the accepted head", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
-
-  const rule = [{ id: "keep-out", effect: "ask", tool: "edit", paths: ["src/hard/**"], why: "w" }];
-  a.policy({ merge: "lead", ask: "risky", rules: rule });
-  p = a.open("src/easy/a.txt");
-  r = a.merge(p);
-  ok("merge: ask risky takes what no rule covers", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
-  p = a.open("src/hard/a.txt");
-  r = a.merge(p);
-  ok("merge: ask risky holds what a rule covers", r.code !== 0 && /keep-out/.test(r.err) && a.state(p) === "OPEN", r.err);
-  accept(p);
-  r = a.merge(p);
-  ok("merge: ask risky merges it once accepted", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
-
-  a.policy({ merge: "human", ask: "never", rules: [] });
-  p = a.open();
-  r = a.merge(p);
-  ok("merge: merge human holds with no record", r.code !== 0 && /held for the human/.test(r.err) && /ACCEPT <sha12>/.test(r.err) && a.state(p) === "OPEN", r.err);
-  write(a, ...a.lines(), entry(p.n, "ACCEPT 000000000000\n"));
-  r = a.merge(p);
-  ok("merge: merge human holds an old head's record", r.code !== 0 && a.state(p) === "OPEN", r.err);
-  accept(p);
-  a.push(p);
-  r = a.merge(p);
-  ok("merge: merge human holds once the head moved", r.code !== 0 && a.state(p) === "OPEN", r.err);
-  p = a.open();
-  accept(p);
-  r = a.merge(p);
-  ok("merge: merge human merges the recorded head", r.code === 0 && a.state(p) === "MERGED", r.out + r.err);
-
-  // a security path, whatever the modes say. The block is the base's, as proteus-security.js reads it
-  const off = { merge: "lead", ask: "never", rules: [] };
-  ok("security: no ROUTING.md on the base, no hold", a.held(a.open("src/auth/key.txt"), off).length === 0);
-  const s = repo("security", "# Routing\n\n```security\n**/auth/**\n```\n");
-  s.policy(off);
+  // a security path, held for the human into the default branch. The block is the base's, as proteus-security.js reads it
+  ok("security: no ROUTING.md on the base, no hold", a.held(a.open("src/auth/key.txt")).length === 0);
+  const s = repo("security", ROUTING);
+  const accept = (q) => write(s, ...s.lines(), entry(q.n, `ACCEPT ${q.short}\n`));
   const none = s.open("src/open.txt");
-  ok("security: a path outside the block is not held", s.held(none, off).length === 0);
+  ok("security: a path outside the block is not held", s.held(none).length === 0);
   let q = s.open("src/auth/key.txt");
-  let h = s.held(q, off);
-  ok("security: a path in the block is held with ask never", h.length === 1 && h[0].why === "security" && h[0].sha === q.short, JSON.stringify(h));
-  ok("security: held under ask every too", s.held(q, { merge: "lead", ask: "every", rules: [] })[0].why === "security");
+  let h = s.held(q);
+  ok("security: a path in the block is held for the human into the default branch", h.length === 1 && h[0].why === "human" && h[0].sha === q.short, JSON.stringify(h));
   r = s.merge(q);
-  ok("security: pr merge refuses it, saying why", r.code !== 0 && /held for the human/.test(r.err) && /security block/.test(r.err) && s.state(q) === "OPEN", r.err);
+  ok("security: pr merge refuses it, saying why", r.code !== 0 && /held for the human/.test(r.err) && /security block/.test(r.err) && /ACCEPT <sha12>/.test(r.err) && s.state(q) === "OPEN", r.err);
   write(s, entry(q.n, "ACCEPT 000000000000\n"));
-  ok("security: an old head's ACCEPT holds", s.held(q, off).length === 1);
-  write(s, entry(q.n, `ACCEPT ${q.short}\n`));
+  ok("security: an old head's ACCEPT holds", s.held(q).length === 1);
+  accept(q);
+  const stale = { ...q, sha: s.push(q) };
+  r = s.merge(stale);
+  ok("security: head moved past the ACCEPT holds", r.code !== 0 && s.state(q) === "OPEN", r.out + r.err);
+  q = s.open("src/auth/key2.txt");
+  accept(q);
   r = s.merge(q);
   ok("security: the recorded ACCEPT merges it", r.code === 0 && s.state(q) === "MERGED", r.out + r.err);
   lib.g(s.dir, "fetch", "-q", "origin");
   lib.g(s.dir, "merge", "-q", "--ff-only", "origin/main");
   // a rename out of the block counts by its old end
   lib.g(s.dir, "checkout", "-q", "-b", "b-move", "main");
-  lib.g(s.dir, "mv", "src/auth/key.txt", "src/plain.txt");
+  lib.g(s.dir, "mv", "src/auth/key2.txt", "src/plain.txt");
   lib.g(s.dir, "commit", "-q", "-m", "refactor: move");
   const moved = lib.g(s.dir, "rev-parse", "HEAD");
   lib.g(s.dir, "push", "-q", "origin", `${moved}:refs/heads/hold-move`);
@@ -412,40 +369,59 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   lib.g(s.dir, "checkout", "-q", "main");
   const mo = { n: Number(/\/pull\/(\d+)$/.exec(s.gh(["pr", "create", "--base", "main", "--head", "b-move", "--title", "t", "--body", "b"]).out.trim())[1]) };
   s.status(moved, "success");
-  ok("security: a rename out of the block is held", (s.held(mo, off)[0] || {}).why === "security", JSON.stringify(s.held(mo, off)));
+  ok("security: a rename out of the block is held", (s.held(mo)[0] || {}).why === "human", JSON.stringify(s.held(mo)));
   // a PR cannot rewrite the block it is judged by
   q = s.open("src/auth/two.txt");
-  ok("security: held before the worktree's block is emptied", s.held(q, off).length === 1);
+  ok("security: held before the worktree's block is emptied", s.held(q).length === 1);
   fs.writeFileSync(path.join(s.dir, "teams", "ROUTING.md"), "# Routing\n");
-  ok("security: the block is read from the base, not the worktree", s.held(q, off).length === 1);
+  ok("security: the block is read from the base, not the worktree", s.held(q).length === 1);
   lib.g(s.dir, "checkout", "-q", "teams/ROUTING.md");
   // the definition cannot be read: a stand-in that fails that one call
   const standIn = s.H("proteus-local.js"), real = fs.readFileSync(standIn, "utf8");
   fs.writeFileSync(standIn, `if (process.argv.some((x) => x.includes("contents/teams"))) { console.error("gh: boom (HTTP 500)"); process.exit(1); }\n${real.replace(/^#!.*\n/, "")}`);
-  h = s.held(none, off);
+  h = s.held(none);
   r = s.merge(none);
   fs.writeFileSync(standIn, real);
-  ok("security: an unreadable block holds", h.length === 1 && h[0].why === "unread-security", JSON.stringify(h));
+  ok("security: an unreadable block holds", h.length === 1 && h[0].why === "unread-human", JSON.stringify(h));
   ok("security: pr merge refuses on it", r.code !== 0 && /could not read/.test(r.err) && s.state(none) === "OPEN", r.err);
 
-  // green, next, merge: through proteus-merge.js with a recorded verdict
-  a.policy({ merge: "lead", ask: "every", rules: [] });
-  const origin = path.join(a.common, "proteus-local", "origin.git");
-  lib.g(origin, "branch", "proteus/rr", "refs/heads/main");
-  lib.g(a.dir, "fetch", "-q", "origin");
-  lib.g(a.dir, "branch", "proteus/rr", "origin/proteus/rr");
-  lib.g(a.dir, "checkout", "-q", "-b", "proteus/rr-t1", "origin/proteus/rr");
-  fs.writeFileSync(path.join(a.dir, "t1.txt"), "x\n");
-  lib.g(a.dir, "add", "t1.txt");
-  lib.g(a.dir, "commit", "-q", "-m", "feat: t1");
-  const sha = lib.g(a.dir, "rev-parse", "HEAD");
-  lib.g(a.dir, "push", "-q", "origin", `${sha}:refs/heads/hold-rr`);
-  a.status(sha, "pending");
-  lib.g(a.dir, "push", "-q", "origin", "proteus/rr-t1:proteus/rr-t1");
-  lib.g(a.dir, "checkout", "-q", "main");
-  const made = a.gh(["pr", "create", "--base", "proteus/rr", "--head", "proteus/rr-t1", "--title", "t", "--body", "b"]);
-  const rr = { n: Number(/\/pull\/(\d+)$/.exec(made.out.trim())[1]), short: sha.slice(0, 12) };
-  a.status(sha, "success");
+  // into a run branch a security change waits for the security verifier's signoff, never the human's ACCEPT
+  const runBranch = (x, name) => {
+    lib.g(path.join(x.common, "proteus-local", "origin.git"), "branch", `proteus/${name}`, "refs/heads/main");
+    lib.g(x.dir, "fetch", "-q", "origin");
+  };
+  const runPr = (x, name, t, file) => {
+    lib.g(x.dir, "checkout", "-q", "-b", `proteus/${name}-${t}`, `origin/proteus/${name}`);
+    fs.mkdirSync(path.dirname(path.join(x.dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(x.dir, file), "x\n");
+    lib.g(x.dir, "add", file);
+    lib.g(x.dir, "commit", "-q", "-m", `feat: ${t}`);
+    const sha = lib.g(x.dir, "rev-parse", "HEAD");
+    lib.g(x.dir, "push", "-q", "origin", `${sha}:refs/heads/hold-${name}-${t}`);
+    x.status(sha, "pending");
+    lib.g(x.dir, "push", "-q", "origin", `proteus/${name}-${t}:proteus/${name}-${t}`);
+    lib.g(x.dir, "checkout", "-q", "main");
+    const made = x.gh(["pr", "create", "--base", `proteus/${name}`, "--head", `proteus/${name}-${t}`, "--title", t, "--body", "b"]);
+    x.status(sha, "success");
+    return { n: Number(/\/pull\/(\d+)$/.exec(made.out.trim())[1]), sha, short: sha.slice(0, 12) };
+  };
+  const signoff = (x, n, head, ...more) => lib.run(x.H("proteus-signoff.js"), "", { cwd: x.dir, args: [String(n), head, "MERGE", ...more], env: x.env });
+  runBranch(s, "rs");
+  q = runPr(s, "rs", "t1", "src/auth/run.txt");
+  signoff(s, q.n, q.sha);
+  h = s.held(q);
+  ok("security, run branch: held for the security verifier, not the human", h.length === 1 && h[0].why === "security", JSON.stringify(h));
+  accept(q);
+  r = s.merge(q);
+  ok("security, run branch: the human's ACCEPT does not lift it", r.code !== 0 && !/held for the human/.test(r.err) && /security verifier's MERGE/.test(r.err) && s.state(q) === "OPEN", r.err);
+  r = signoff(s, q.n, q.sha, "--security");
+  ok("security, run branch: the security verifier's signoff posts", r.code === 0, r.out + r.err);
+  r = s.merge(q);
+  ok("security, run branch: then it merges", r.code === 0 && s.state(q) === "MERGED", r.out + r.err);
+
+  // green, next, merge: proteus-merge.js merges a signed-off PR into the run branch with no verdict from the human
+  runBranch(a, "rr");
+  const rr = runPr(a, "rr", "t1", "t1.txt");
   r = a.terminal(rr.n, `ACCEPT ${rr.short}\n`);
   r = a.merge(rr);
   ok("e2e: no proteus/verdict, a direct pr merge refused even with the ACCEPT", r.code !== 0 && /required status proteus\/verdict is missing/.test(r.err) && a.state(rr) === "OPEN", r.err);
@@ -454,47 +430,15 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   const home = path.join(W, "app-home");
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
   fs.writeFileSync(path.join(home, ".claude", "proteus.json"), JSON.stringify({ verifierApp: { appId: 1, installationId: 2, keyPath: path.join(home, "no-key.pem") } }));
-  const signoff = (n, head) => lib.run(a.H("proteus-signoff.js"), "", { cwd: a.dir, args: [String(n), head, "MERGE"], env: { ...a.env, ...lib.homeEnv(home), PROTEUS_GH_API: "http://127.0.0.1:1" } });
-  r = signoff(rr.n, sha);
+  r = lib.run(a.H("proteus-signoff.js"), "", { cwd: a.dir, args: [String(rr.n), rr.sha, "MERGE"], env: { ...a.env, ...lib.homeEnv(home), PROTEUS_GH_API: "http://127.0.0.1:1" } });
   ok("e2e: with an App configured, local signoff reaches no network and posts", r.code === 0 && /proteus\/verdict = success/.test(r.out) && !/as App/.test(r.out), r.out + r.err);
-  const run = () => lib.run(a.H("proteus-merge.js"), "", { cwd: a.dir, args: ["rr", "--suite", "node gate.js"], env: a.env });
   r = lib.run(a.H("proteus-cli.js"), "", { cwd: a.dir, args: ["next", "rr"], env: a.env });
-  ok("e2e: next asks for the head's ACCEPT", new RegExp(`ASK human PR#${rr.n} .*reply: ACCEPT ${rr.short}`).test(r.out), r.out + r.err);
-  r = run();
-  ok("e2e: a green PR holds without the human's verdict", a.state(rr) === "OPEN" && /held for the human/.test(r.out + r.err), r.out + r.err);
-  a.comment(rr.n, `ACCEPT ${rr.short}`);
-  r = run();
-  ok("e2e: an agent's comment changes nothing", a.state(rr) === "OPEN", r.out + r.err);
-  a.terminal(rr.n, `ACCEPT ${rr.short}\n`);
-  r = run();
-  ok("e2e: the recorded verdict merges it", a.state(rr) === "MERGED", r.out + r.err);
-
-  // merge human: proteus-merge.js reaches the merge the same way
+  ok("e2e: next merges it, asking the human nothing", a.state(rr) === "MERGED" && !/^ASK human/m.test(r.out), r.out + r.err);
+  const msg = lib.g(path.join(a.common, "proteus-local", "origin.git"), "log", "-1", "--format=%B", "proteus/rr");
+  ok("e2e: the merge commit carries its evidence", msg.includes(`Reviewed merge of PR #${rr.n} at ${rr.short}: `) && /proteus\/verdict/.test(msg), msg);
   const at = JSON.parse(fs.readFileSync(path.join(a.common, "proteus", "merge", "rr.json"), "utf8")).at;
   r = lib.run(a.H("proteus-merge.js"), "", { cwd: a.dir, args: ["rr", "--suite", "node gate.js", "--result", "pass", "--at", at], env: a.env });
   ok("e2e: the batch's suite result ends it", r.code === 0, r.out + r.err);
-  a.policy({ merge: "human", ask: "never", rules: [] });
-  lib.g(a.dir, "fetch", "-q", "origin");
-  lib.g(a.dir, "checkout", "-q", "-b", "proteus/rr-t2", "origin/proteus/rr");
-  fs.writeFileSync(path.join(a.dir, "t2.txt"), "x\n");
-  lib.g(a.dir, "add", "t2.txt");
-  lib.g(a.dir, "commit", "-q", "-m", "feat: t2");
-  const sha2 = lib.g(a.dir, "rev-parse", "HEAD");
-  lib.g(a.dir, "push", "-q", "origin", `${sha2}:refs/heads/hold-rr2`);
-  a.status(sha2, "pending");
-  lib.g(a.dir, "push", "-q", "origin", "proteus/rr-t2:proteus/rr-t2");
-  lib.g(a.dir, "checkout", "-q", "main");
-  const rr2 = { n: Number(/\/pull\/(\d+)$/.exec(a.gh(["pr", "create", "--base", "proteus/rr", "--head", "proteus/rr-t2", "--title", "t2", "--body", "b"]).out.trim())[1]), short: sha2.slice(0, 12) };
-  a.status(sha2, "success");
-  signoff(rr2.n, sha2);
-  r = run();
-  ok("e2e: merge human, proteus-merge.js holds with no record", a.state(rr2) === "OPEN" && /held for the human/.test(r.out + r.err), r.out + r.err);
-  write(a, ...a.lines(), entry(rr2.n, "ACCEPT 000000000000\n"));
-  r = run();
-  ok("e2e: merge human, proteus-merge.js holds an old head's record", a.state(rr2) === "OPEN", r.out + r.err);
-  r = a.terminal(rr2.n, `ACCEPT ${rr2.short}\n`);
-  r = run();
-  ok("e2e: merge human, proteus-merge.js merges the recorded head", a.state(rr2) === "MERGED", r.out + r.err);
 }
 
 // ---- the stand-in's rule targets are the installer's
