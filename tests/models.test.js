@@ -77,6 +77,29 @@ ok("rungOf: an alias to a rung the ladder lacks matches nothing", plib.rungOf(["
     !/^effort:/m.test(agent("proteus-worker")));
 }
 
+// ---- Haiku for helpers only: proteus-helper may go one rung under the floor, every other type keeps it
+{
+  const TO = tr("claude-opus-5-5");
+  const as = (type, model, tp = TO, opts = {}) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", transcript_path: tp, cwd: REPO, tool_name: "Agent",
+    tool_input: { model, subagent_type: type, prompt: "x" } }, { cwd: REPO, ...opts });
+  const under = (r) => r.code === 2 && /under the floor/.test(r.err);
+  ok("helper: proteus-helper on Haiku is allowed", as("proteus-helper", "haiku").code === 0 && as("proteus:proteus-helper", "haiku").code === 0);
+  ok("helper: a worker, a verifier, no type and a similar name on Haiku are refused",
+    ["proteus-worker", "proteus-verifier", "proteus-qa-verifier", "", "proteus-helpers", "proteus-helper-x", "my-proteus-helper", "Proteus-Helper", "helper"].every((t) => under(as(t, "haiku"))));
+  ok("helper: the helper's exception is Haiku only and the ceiling still holds", as("proteus-helper", "sonnet").code === 0 && as("proteus-helper", "fable").code === 2);
+  const CH = path.join(W, "floor-home"); fs.mkdirSync(path.join(CH, ".claude"), { recursive: true });
+  const cfg = (o) => fs.writeFileSync(path.join(CH, ".claude", "proteus.json"), JSON.stringify({ models: o }));
+  cfg({ floor: "opus", solo: [] });
+  const env = { env: lib.homeEnv(CH) };
+  ok("helper: a custom floor holds for other types and the helper goes one rung under it",
+    under(as("proteus-worker", "sonnet", TO, env)) && as("proteus-worker", "opus", TO, env).code === 0 &&
+    as("proteus-helper", "sonnet", TO, env).code === 0 && under(as("proteus-helper", "haiku", TO, env)));
+  cfg({ floor: "haiku", solo: [] });
+  ok("helper: with the floor at the ladder's bottom there is no rung under it", as("proteus-helper", "haiku", TO, env).code === 0 && as("proteus-worker", "haiku", TO, env).code === 0);
+  const ag = fs.readFileSync(path.join(ROOT, "agents", "proteus-helper.md"), "utf8");
+  ok("helper: the agent runs on haiku, cannot spawn agents and is not a pipeline agent", /^model: haiku$/m.test(ag) && /^  - Agent$/m.test(ag) && !/^effort:/m.test(ag) && !plib.isPipelineAgent("proteus-helper") && !plib.isPipelineAgent("proteus:proteus-helper") && plib.isHelperAgent("proteus-helper"));
+}
+
 // ---- context window: the handoff lines are 75% and 90% of the lead's window, a configured cap first
 const cl = require(path.join(SRC, "proteus-harness-claude.js"));
 ok("modelWindow: 1M for [1m], Fable, Mythos, Opus 4.7+, Sonnet 5+ and bare aliases", ["claude-opus-5-5", "claude-sonnet-4-6[1m]", "claude-fable-5-1", "claude-mythos-5-1", "claude-opus-4-7", "claude-sonnet-5", "opus", "sonnet"].every((m) => cl.modelWindow(m) === 1000000));

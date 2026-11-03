@@ -22,7 +22,7 @@ Every worker works to `CONVENTIONS.md` at the repo root; every verifier checks t
 
 ## Taste beyond code
 
-Creative, editorial, and business work carries more taste than naming and layout, and it arrives late unless asked for early. For those domains the checklist above is replaced or extended by the house defaults, asked the same way (batches of four, only what evidence leaves open):
+Creative, editorial and business work carries more taste than naming and layout, and it arrives late unless asked early. For those domains the checklist above is replaced or extended by the house defaults, asked the same way (batches of four, only what evidence leaves open):
 
 - references: three to five examples the human loves and one they hate, with what makes each so
 - 3D and render: camera height and lens, framing, lighting direction and mood, materials realism, props always present, scale, handles and details on the hero object, output resolution and format
@@ -31,7 +31,7 @@ Creative, editorial, and business work carries more taste than naming and layout
 - business: audience, decision the document must enable, currency and units, rounding, optimism policy for assumptions, risk appetite
 - anything the human wants forbidden outright
 
-Longer material (reference images, a brand book) lives in a doc `CONVENTIONS.md` links, for example `docs/taste/`. Every brief names these docs; the test-piece milestone (`review.md`) is where they get checked first.
+Longer material (reference images, a brand book) lives in a doc `CONVENTIONS.md` links, such as `docs/taste/`. Every brief names these docs; the test-piece milestone (`review.md`) is where they get checked first.
 
 ## Enforcement
 

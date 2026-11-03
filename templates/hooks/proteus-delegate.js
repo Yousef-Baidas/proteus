@@ -6,7 +6,9 @@
 // a spent budget, a refused depth or a harness with no delegation, 2 on usage.
 // --tier is a rung of the harness's model ladder (proteus-lib.js modelPolicy); --budget is required, a positive number
 // of dollars, handed to the CLI as its spend cap. The harness adapter builds the command (delegate in
-// proteus-harness-<name>.js); it never uses a bare mode or a permission bypass, so hooks and deny rules still apply.
+// proteus-harness-<name>.js); it never uses a bare mode or a permission bypass, so hooks and deny rules still apply. On
+// Claude Code it passes --strict-mcp-config, so the child loads no MCP servers: that cut a read-only Haiku call from
+// about 218k cached tokens to 14k. The CLI checks the budget cap between turns, so one call can overshoot it.
 // The prompt goes in on stdin, never argv. Tools default to Read, Grep and Glob; the Agent tool is never allowed.
 // The child's environment is inherited, plus PROTEUS_DELEGATE_DEPTH one higher than here; at depth 3 this refuses.
 // Only the child's stdout is parsed (its stderr can carry warnings and is dropped); output that does not parse is

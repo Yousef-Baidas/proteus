@@ -1,6 +1,6 @@
 # Docs diet
 
-Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into every session of every agent. Each line there is paid for on every turn, and the model's attention thins as they grow.
+Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into every session of every agent. Each line is paid for on every turn, and attention thins as they grow.
 
 ## Budget
 
@@ -23,14 +23,13 @@ When `doc-bloat` is not `none`, the lead files one ticket (profile: the team tha
 | history, a plan, a status, a to-do, a roadmap, a journey map, a changelog | the tracker: an issue, a milestone, or the wayfinder map issue |
 | stale, duplicated, or derivable from the code or `git log` | deleted |
 
-The worker's PR description is the classification table with a line count per destination, so the verifier can check nothing was lost: every removed line maps to a destination or to `deleted` with a reason. The human reviews the diff because `CLAUDE.md` is theirs.
+The worker's PR description is the classification table with a line count per destination, so the verifier can check that every removed line maps to a destination or to `deleted` with a reason. The human reviews the diff because `CLAUDE.md` is theirs.
 
 ## Landmarks without bloat
 
-A long project still needs to know how it got here. Landmarks are kept, as pointers, not prose:
+Landmarks are kept as pointers, not prose:
 
 - The root doc may end with a `## Landmarks` list of at most ten lines, each one line: `<date> <what changed> — <issue, ADR, or PR link>`. Older entries drop off; the link keeps the detail.
 - The wayfinder map is an issue labelled `wayfinder:map`, not a file. Its closed destinations are the journey.
 - Milestones and their review issues are the record of what shipped and what the human said.
 
-Nothing is lost by moving it to the tracker; it stops costing every session.

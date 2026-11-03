@@ -15,6 +15,7 @@
     "./agents/proteus-frontend-verifier.md",
     "./agents/proteus-frontend-worker.md",
     "./agents/proteus-guide.md",
+    "./agents/proteus-helper.md",
     "./agents/proteus-qa-verifier.md",
     "./agents/proteus-scout.md",
     "./agents/proteus-security-verifier.md",

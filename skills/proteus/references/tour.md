@@ -1,15 +1,15 @@
 # Tour
 
-Read only when the human types `tour` (or `/proteus tour`, `$proteus tour` on Codex), or answers yes to the offer. Two modes: `new` walks the whole of Proteus, `whats-new` covers what changed since the human's last tour. `tour=whats-new:N` in `proteus-state`, or `tour whats-new` with a `toured` commit in `~/.claude/proteus.json`, picks the second; everything else is `new`. `tour off` or `skip tour`: run the done command below, say "Tour off; type `tour` any time.", and go back to the work order.
+Read only when the human types `tour` (or `/proteus tour`, `$proteus tour` on Codex), or answers yes to the offer. Two modes: `new` walks the whole of Proteus, `whats-new` covers what changed since the human's last tour. `tour=whats-new:N` in `proteus-state`, or `tour whats-new` with a `toured` commit in `~/.claude/proteus.json`, picks the second; all else is `new`. `tour off` or `skip tour`: run the done command below, say "Tour off; type `tour` any time.", and go back to the work order.
 
-The checkout is `proteus-src` in `proteus-state`; with no state line (typed `/proteus` outside a Proteus repo), it is `home` in `~/.claude/proteus.json`.
+The checkout is `proteus-src` in `proteus-state`; with no state line (`/proteus` typed outside a Proteus repo) it is `home` in `~/.claude/proteus.json`.
 
 ## How to run it
 
-- One stop per message. Each stop is at most six short lines in plain words, no file dumps, then one `AskUserQuestion` (Codex: the same three as a numbered line): `Next` (recommended), `Skip to the end`, `Stop here`. The free-text answer is the human's question.
-- A question: answer it in at most six lines, from the reference that covers it (read that file now if it is not in context, rather than answer from memory). Then ask the same picker again. A question outside proteus: answer briefly, then continue.
-- An open run keeps going: workers do not pause for the tour, and a worker report or a pinned question the run waits on comes first; resume the tour after it.
-- Nothing here is an action. The tour runs no ticket, writes no file, and changes no setting; the human asking for one ends the tour and becomes the work order.
+- One stop per message. A stop is at most six short plain lines, no file dumps, then one `AskUserQuestion` (Codex: the same three as a numbered line): `Next` (recommended), `Skip to the end`, `Stop here`. The free-text answer is the human's question.
+- A question: answer it in at most six lines, from the reference that covers it (read that file now if it is not in context, not from memory). Then ask the same picker again. A question outside proteus: answer briefly, then continue.
+- An open run keeps going: workers do not pause for the tour, and a worker report or pinned question the run waits on comes first; resume the tour after.
+- Nothing here acts. The tour runs no ticket, writes no file and changes no setting; a human asking for one ends the tour and becomes the work order.
 - End, whichever way (`Skip to the end`, `Stop here`, last stop): `node <proteus-src>/install.js --tour-done`, then one line: "Tour done; type `tour` any time to see it again." The offer then stays off until a new feature lands.
 
 ## new

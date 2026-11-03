@@ -1,6 +1,6 @@
 # Audience
 
-People who are not technical cannot judge a decision written in technical terms, so they accept blindly. Every decision that reaches the human is worded at their level, the technical detail kept underneath. Prompt-only, except the profile and learn stores.
+People who are not technical cannot judge a decision written in technical terms, so they accept blindly. Every decision reaching the human is worded at their level, the technical detail kept underneath. Prompt-only, except the profile and learn stores.
 
 The profile: `node <hooks>/proteus-profile.js show|set|know|forget|terms` (`--help`), one per project and machine; `audience=` on `proteus-state` is `<familiarity>/<learning>` or `unset`.
 
@@ -17,7 +17,7 @@ At bootstrap, or the first session with `audience=unset`: two or three relaxed q
 ## Updating
 
 - The human uses a term correctly or says they understand one → `know <term>`.
-- They ask for more or less detail, or to start or stop teaching → `set`. They can change it at any time by asking.
+- They ask for more or less detail, or to start or stop teaching → `set`. They may change it by asking.
 - Never move it toward less explanation on one message alone.
 
 ## Decision cards
@@ -42,7 +42,7 @@ Any decision (a question, a change summary, a merge ask, a milestone review) is 
 
 ## Going deeper
 
-Deeper teaching hands off to the optional `teach` skill. Only the human can start it; offer it only when they ask to go past an explanation or learn the project properly. `node <hooks>/proteus-learn.js path|prepare|seed|status|seen` (`--help`).
+Deeper teaching hands off to the optional `teach` skill. Only the human starts it; offer it only when they ask to go past an explanation or to learn the project. `node <hooks>/proteus-learn.js path|prepare|seed|status|seen` (`--help`).
 
 - **Prepare**: `prepare`, then `seed --mission <file> --resources <file> --glossary <file>` with drafts in temp files, from the project's goal, planning documents, decisions and terms, and the profile: a mission in the skill's format, from the human's stated reason (ask if unknown); resources pointing at the project's own documents; a glossary of its terms. Seeded files are the skill's: never edit them again.
 - **Hand over**: tell the human to open `path` in a plain session (`harnesses.md`, "Plain session, no lead hooks"; a lead session there is under the lead's guards) and run `/teach <topic>`.

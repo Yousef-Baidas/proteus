@@ -168,6 +168,10 @@
       "cb744c335552648e644f1d55e98c3833bba375c7",
       "f7552cefe19bb783999101e6ba4c48ec7ec4c00a"
     ],
+    "agents/proteus-helper.md": [
+      "3ef89d4da296f2d73a0192cd9daf49ff4a0dc33f",
+      "82b014f3d9cf8c7e5c226f0d12e4bb022b559c73"
+    ],
     "agents/proteus-qa-verifier.md": [
       "14fe8b1697ae2ed873bddc9b8eee33348d2fd1f2",
       "3b608ec2c734b140a740ab7d7e718f0d00087f80",
@@ -507,7 +511,8 @@
     ],
     "templates/hooks/proteus-delegate.js": [
       "0d5d6741ae3cbd0503658bd1acdcfa21d189e992",
-      "4fd25c9d13fe41621d68e9bf499f016300d3c1b5"
+      "4fd25c9d13fe41621d68e9bf499f016300d3c1b5",
+      "eb2908c8a31d4d665b1f6cbe502446656a9c03df"
     ],
     "templates/hooks/proteus-gates-cache.js": [
       "2381dd4c00d385148521efe32a0be9e13dc43d19",
@@ -529,6 +534,7 @@
       "1634c624ce3d04fc032868ba4d011ea69e043c5c",
       "1684d334884f053ff546ba351a47d8e421327697",
       "1d709f56df236b4ddc6334549a7759c0217412bc",
+      "277c24c07d4ae0f4ca33e09a4f6a257c368452d2",
       "28b220cba82394c7bb9032a1cf7be17f06e06331",
       "2a1911d4b6d42e128bf58562a1411f7edd15022b",
       "2d3ee9c849f245169f15db368dccfb8088de2f48",
@@ -661,6 +667,7 @@
     "templates/hooks/proteus-lead-guard.js": [
       "03a73cbe39301c55e4aa568f8d549f90913e11c8",
       "07f485754b3bd39c579ace0926e4a066429c50e0",
+      "0b541fa2fb9dd8be120fa7e2ceef1ed4a99289f4",
       "0fb6001e20af5effd3e1d7835a742cb5be61574c",
       "1c7e2b186cd0fff7dae9a0ec6a2c29803dfa88cc",
       "24e8cee1a844d2816b51b36c3909f395faad68fe",
@@ -788,6 +795,7 @@
       "7cf3c4a89345a1d9d0c5e51ceed238603b256ea4",
       "7f4d92f0b09068740f13cf6545ee8bc56da143a0",
       "861c7e4b4e30c146ca42c8c1044bf5a3440282f6",
+      "8748ec78d823edbcd17bb9f9dc79b2c376f0d689",
       "886a4b33883db9d54ff6068adf380aa35eb7350d",
       "89f1cbe0db1f0d2e58f28762e8d9e60653ed66a7",
       "8e9de778dbd8d06ee520385c2ac883cd892f4632",

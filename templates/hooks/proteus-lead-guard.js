@@ -6,7 +6,7 @@
 //    owned-path records (.proteus/owned/<id>) and its scratch, <git-common-dir>/proteus/scratch/<key>/ (leadScratch).
 // 2. The model ladder (proteus-lib modelCaps): every Agent call names its model; one above the
 //    lead's, a solo model (Fable by default: the lead is its one instance), or one under the
-//    floor (Sonnet by default, so Haiku) is refused. So is a `proteus-container.js run` (the lead's shell)
+//    floor (Sonnet by default, so Haiku) is refused, except a proteus-helper, which may use one rung under it. So is a `proteus-container.js run` (the lead's shell)
 //    without --model, or with one that is not the build or judge tier's (containerDenial).
 // 3. Context at PROTEUS_HANDOFF_HARD (default 90% of the lead's window, lib.handoffLines: 180000
 //    on 200k) or above: no new Agent spawns. While a linked skill has drifted from
@@ -117,7 +117,7 @@ else lib.run((ev, ad) => {
   }
 
   if (ev.tool === "spawn") {
-    const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel);
+    const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel, ev.spawnType);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
     if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more. Finish the step, log the position on the run log, /handoff, and let a fresh lead dispatch; workers in flight keep running.`);
@@ -186,8 +186,8 @@ function realTarget(abs) {
   }
 }
 
-// the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor
-function modelDenial(c, name) {
+// the ladder: every spawn names its model, never above the lead's rung, never a solo model, never under the floor (a proteus-helper: one rung under it)
+function modelDenial(c, name, type = "") {
   if (!c.ladder.length) return ""; // no ladder and no known lead model
   const t = (x) => `"${x.model}"${x.effort ? ` with ${c.effortParam} "${x.effort}"` : ""}`;
   const use = `use ${t(c.tiers.judge)} for verdicts, contracts, escalations, conflicts and the scout, ${t(c.tiers.build)} for tickets, ${t(c.tiers.helper)} for wave QA, the guide and helpers`;
@@ -196,7 +196,7 @@ function modelDenial(c, name) {
   if (r < 0) return `model "${name}" is not on the ladder (${c.ladder.join(" < ")}); ${use}.`;
   if (c.solo.includes(c.ladder[r])) return `${c.ladder[r]} runs once per project${c.leadRung === r ? " and the lead is it" : ""}; ${use}. The human lifts this with a \`models: solo=none\` line in AGENTS.md.`;
   if (r > c.cap) return `model "${name}" is above the lead (${c.lead || "unknown"}); nothing above ${c.top}: ${use}.`;
-  if (r < c.floor) return `model "${name}" is under the floor (${c.floorName}); it does not produce or review work: ${use}.`;
+  if (r < (lib.isHelperAgent(type) ? c.helperFloor : c.floor)) return `model "${name}" is under the floor (${c.floorName}); it does not produce or review work: ${use}.`;
   return "";
 }
 
