@@ -8,16 +8,15 @@
 // sandbox, #226), then prints what is left for the lead, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
 //   ASK human #<n> <issue url>                               a ready step:human ticket: the human does it, opens the PR
-//   ASK human merge PR#<n> <url>                             a green PR under merge: human (#307): the human merges it
-//   ASK human PR#<n> <url>[ policy:<id>] reply: ACCEPT <sha12>  a green PR held by ask: every, or ask: risky naming
-//                                                             the ask rule it hits, until the human posts that line
 //   STOP <agent> <reason> / NUDGE <agent> <reason>            a STALL-AGAIN / STALL agent (the watchdog's read)
 //   MERGE PR#<n> <head sha12> verdict=<state> by=<login>       a PR proteus-merge.js would pick, when no suite is known
 //   MERGED PR#<n> <head sha12> verdict=<state> by=<login>      evidence: a PR this call merged (proteus-merge.js's batch)
 //   RUN <command>                                            a sandboxed step for the lead's own shell: the batch's
 //                                                             proteus-run-tree.js <sha> and suite in .worktrees/_run,
 //                                                             printed again while the batch awaits its result
-//   DECIDE suite|merge: <reason>                             no gate command in ## Learned, or a batch that stopped
+//   DECIDE suite|merge: <reason>                             no gate command in ## Learned, a batch that stopped, or
+//                                                             a green PR held (Policy.held: local mode, a security path
+//                                                             with no security verifier's signoff yet)
 //   DECIDE #<n> owned line differs from record                an open ticket whose Owned: line is not its record's
 //   DECIDE #<n> slice: tier <t> too large; split it[, or sub-lead: <cmd>]
 //                                                             a ready slice ticket (a slice: label) that is hard or full;
@@ -97,9 +96,8 @@ proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is nev
 a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice: split it, or start
 a sub-lead with the command it names (proteus-sublead.js --help); none at depth 3.
 A ready step:human ticket prints ASK human #<n> <url>, never SPAWN worker: the human opens its PR.
-The policy (proteus-policy.js show) holds green PRs: merge human prints ASK human merge PR#<n> <url>;
-ask every, or ask risky for a PR an ask rule covers, ASK human PR#<n> <url> [policy:<id>]
-reply: ACCEPT <sha12>, until the human's comment on the PR is that line for its current head.
+No green PR waits for the human. In local mode a green PR changing a security path prints
+DECIDE merge: PR #<n> held: ... until the security verifier's MERGE is on its head.
   run      the run; defaults to the open proteus/<run> branch
   --json   the same as a JSON array of { kind, ... }
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
@@ -446,9 +444,9 @@ function next(arg) {
   try { waiting = common ? readState(common, run) : null; } catch (e) { waiting = { refused: e.message }; }
   const merged = new Set();
   const byN = new Map(prs.map((p) => [p.number, p]));
-  // the policy's holds (#307): the batch's own when it runs, else read here for the MERGE lines
+  // the holds (Policy.held): the batch's own when it runs, else read here for the MERGE lines
   const green = waiting ? [] : pick(prs, issues, run, names);
-  let holds = green.length && !suite ? held(green, root, Policy.load({ root }).policy) : [];
+  let holds = green.length && !suite ? held(green, root) : [];
   const picked = green.filter((m) => !holds.some((h) => h.n === m.n)).map((m) => {
     const p = byN.get(m.n), head = String(p.headRefOid || "");
     return { pr: m.n, head, ...verdictOf(root, head, p.statusCheckRollup || []) };
@@ -461,7 +459,7 @@ function next(arg) {
   } else if (picked.length) {
     const said = [], res = {};
     const code = batch({ arg: arg || run, suite, result: "", at: "" }, { say: (l) => said.push(l), err: (l) => said.push(l) }, res);
-    holds = (res.held || []).filter((h) => !/^(moved|unknown)$/.test(h.why)); // not the human's: those wait a round
+    holds = (res.held || []).filter((h) => !/^(moved|unknown)$/.test(h.why)); // those wait a round
     const ev = new Map(picked.map((m) => [m.pr, m]));
     for (const m of res.merged || []) {
       merged.add(m.n);
@@ -548,7 +546,7 @@ function next(arg) {
     }
     out.push({ kind: "SPAWN", role: "worker", ticket: t.n, team: t.team, difficulty: t.difficulty, speculative: t.speculative, worktree: wt, brief: briefCmd("worker", t.n) });
   }
-  const asked = holds.map((h) => ({ kind: "ASK", human: true, pr: h.n, url: issueUrl(root, h.n, "pull"), why: h.why, sha: h.sha || "" }));
+  const asked = holds.map((h) => ({ kind: "DECIDE", about: "merge", reason: Policy.heldLine(h) }));
   out.splice(askAt, 0, ...asked, ...humans);
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
@@ -987,8 +985,7 @@ function brief(role, target, arg) {
 
 const line = (a) => {
   switch (a.kind) {
-    case "ASK": return a.pr ? `ASK human ${a.why === "merge" ? "merge " : ""}PR#${a.pr} ${a.url}${a.why.startsWith("policy:") ? ` ${a.why}` : a.why === "unread" ? " policy: changed paths unreadable" : a.why.endsWith("security") ? ` ${a.why}` : ""}${a.sha ? ` reply: ACCEPT ${a.sha}` : ""}`
-      : a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
+    case "ASK": return a.human ? `ASK human #${a.n} ${a.url}` : `ASK ${a.url} ${a.title}`;
     case "STOP": case "NUDGE": return `${a.kind} ${a.agent} ${a.reason}`;
     case "MERGE": case "MERGED": return `${a.kind} PR#${a.pr} ${a.head.slice(0, 12)} verdict=${a.verdict} by=${a.by}`;
     case "RUN": return `RUN ${a.command}`;

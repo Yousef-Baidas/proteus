@@ -15,8 +15,8 @@
 // CHANGES or ANSWER, on a proteus-review or proteus-question issue, under the human's own gh login (GH_CONFIG_DIR
 // dropped, or "humanGh" in proteus.json), and only when that login is the human. In a session the PreToolUse hook asks
 // the human first and denies agents (proteus-lib humanPost); in the human's own terminal it just runs.
-// A pull request <n> (not such an issue) takes the policy's merge verdict (#307): the first line is ACCEPT <sha12> for its
-// current head, as next's ASK human line prints it, or CHANGES. An ACCEPT for any other head is refused.
+// A pull request <n> (not such an issue; in local mode the close PR into the default branch) takes a merge verdict: the
+// first line is ACCEPT <sha12> for its current head, or CHANGES. An ACCEPT for any other head is refused.
 // Exits 0 posted, 1 refused or failed (nothing posted), 2 on bad usage.
 // In local mode (#310) human verdicts come only from the verdict record (lib.humanVerdicts), never a comment, whoever it
 // names; AUTO-ACCEPT and AUTO-HOLD still come from comments, merged by time. --post appends to the record first, then

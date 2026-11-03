@@ -52,7 +52,7 @@ const [GR, GD] = guested("guest");
 put(path.join(GR, "teams", "policy.json"), policy("hands-off"));
 put(path.join(GD, "teams", "policy.json"), policy("careful"));
 let s = show(SRC, GR);
-ok("guest: load reads the guest dir's teams/policy.json, not the repo's", s.policy.preset === "careful" && s.policy.merge === "human" && s.files.project === path.join(GD, "teams", "policy.json"), JSON.stringify(s));
+ok("guest: load reads the guest dir's teams/policy.json, not the repo's", s.policy.preset === "careful" && s.files.project === path.join(GD, "teams", "policy.json"), JSON.stringify(s));
 const PLAIN = repo("plain");
 put(path.join(PLAIN, "teams", "policy.json"), policy("hands-off"));
 s = show(SRC, PLAIN);

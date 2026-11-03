@@ -33,22 +33,21 @@ const cli = (cwd, ...args) => lib.run(SCRIPT, "", { cwd, args });
 
 // presets
 const presets = JSON.parse(fs.readFileSync(path.join(ROOT, "templates", "policy", "presets.json"), "utf8"));
-ok("presets: hands-off, balanced and careful ship with the design's merge and ask and no rules",
-  presets["hands-off"].merge === "lead" && presets["hands-off"].ask === "never" && presets.balanced.merge === "lead" && presets.balanced.ask === "risky"
-  && presets.careful.merge === "human" && presets.careful.ask === "every" && Object.values(presets).every((p) => Array.isArray(p.rules) && !p.rules.length && !P.validate(p).length), JSON.stringify(presets));
+ok("presets: hands-off, balanced and careful ship valid, with no merge or ask setting (#368) and no rules",
+  ["hands-off", "balanced", "careful"].every((k) => presets[k]) && Object.values(presets).every((p) => Array.isArray(p.rules) && !p.rules.length && !("merge" in p) && !("ask" in p) && !P.validate(p).length), JSON.stringify(presets));
 
 // merge precedence
 setUser(undefined);
 let r = P.load({ root: repo(), home: HOME });
-ok("load: with no files the default is balanced", r.policy.preset === "balanced" && r.policy.merge === "lead" && r.policy.ask === "risky" && r.sources.merge === "preset balanced" && !r.errors.length, JSON.stringify(r));
+ok("load: with no files the default is balanced", r.policy.preset === "balanced" && r.sources.preset === "default" && !r.errors.length, JSON.stringify(r));
 setUser({ version: 1, preset: "careful" });
 r = P.load({ root: repo(), home: HOME });
-ok("load: the user file's preset applies", r.policy.preset === "careful" && r.policy.merge === "human" && r.policy.ask === "every" && r.sources.preset === "user", JSON.stringify(r));
+ok("load: the user file's preset applies", r.policy.preset === "careful" && r.sources.preset === "user", JSON.stringify(r));
 setUser({ version: 1, preset: "careful", ask: "risky" });
-r = P.load({ root: repo({ version: 1, merge: "lead" }), home: HOME });
-ok("load: the user file overrides the preset and the project overrides both", r.policy.merge === "lead" && r.sources.merge === "project" && r.policy.ask === "risky" && r.sources.ask === "user", JSON.stringify(r));
+r = P.load({ root: repo({ version: 1, merge: "human" }), home: HOME });
+ok("load: a retired merge or ask (#368) is accepted and ignored", !r.errors.length && !("merge" in r.policy) && !("ask" in r.policy) && r.policy.preset === "careful", JSON.stringify(r));
 r = P.load({ root: repo({ version: 1, preset: "hands-off" }), home: HOME });
-ok("load: a project preset wins over the user's, and the user's explicit values still override it", r.policy.preset === "hands-off" && r.sources.preset === "project" && r.policy.merge === "lead" && r.policy.ask === "risky" && r.sources.ask === "user", JSON.stringify(r));
+ok("load: a project preset wins over the user's", r.policy.preset === "hands-off" && r.sources.preset === "project", JSON.stringify(r));
 
 // rules by id
 setUser({ version: 1, rules: [rule("shared", "block"), rule("user-only", "ask")] });
@@ -58,9 +57,9 @@ ok("load: a project rule replaces the user rule with the same id; the rest of bo
   && r.sources.rules.shared === "project" && r.sources.rules["user-only"] === "user" && r.sources.rules["project-only"] === "project", JSON.stringify(r));
 
 // invalid files are ignored with an error, never half-applied
-setUser({ version: 1, merge: "human", rules: [rule("Bad_Id", "block")] });
-r = P.load({ root: repo({ version: 1, ask: "every" }), home: HOME });
-ok("load: an invalid user file is ignored whole and its error is returned", r.policy.merge === "lead" && !r.policy.rules.length && r.policy.ask === "every"
+setUser({ version: 1, preset: "careful", rules: [rule("Bad_Id", "block")] });
+r = P.load({ root: repo({ version: 1, rules: [rule("kept", "ask")] }), home: HOME });
+ok("load: an invalid user file is ignored whole and its error is returned", r.policy.preset === "balanced" && r.policy.rules.length === 1 && r.policy.rules[0].id === "kept"
   && r.errors.length === 1 && r.errors[0].file === USER && /kebab-case/.test(r.errors[0].error), JSON.stringify(r));
 setUser(undefined);
 r = P.load({ root: repo("{ not json"), home: HOME });
@@ -80,8 +79,6 @@ const CASES = [
   ["a wrong version", { version: 2 }, /"version" must be 1/],
   ["an unknown setting", { version: 1, extra: 1 }, /unknown setting "extra"/],
   ["an unknown preset", { version: 1, preset: "other" }, /"preset" must be one of/],
-  ["a bad merge", { version: 1, merge: "anyone" }, /"merge" must be lead or human/],
-  ["a bad ask", { version: 1, ask: "sometimes" }, /"ask" must be one of/],
   ["rules not a list", { version: 1, rules: {} }, /"rules" must be a list/],
   ["a rule that is not an object", { version: 1, rules: ["x"] }, /rule 1 must be an object/],
   ["an unknown rule field", { version: 1, rules: [rule("a", "block", { extra: 1 })] }, /unknown field "extra"/],
@@ -124,12 +121,12 @@ ok("evaluate: a path given with backslashes is read as repo-relative with forwar
 
 // render
 {
-  const p = { version: 1, preset: "careful", merge: "human", ask: "every", rules: [rule("zeta", "block", { why: "second" }), { id: "alpha", effect: "ask", tool: "edit", paths: ["a/"], why: "first" }] };
+  const p = { version: 1, preset: "careful", rules: [rule("zeta", "block", { why: "second" }), { id: "alpha", effect: "ask", tool: "edit", paths: ["a/"], why: "first" }] };
   const a = P.render(p), b = P.render({ ...p, rules: [...p.rules].reverse() });
   ok("render: deterministic, whatever the rules' order", a === b && a === P.render(JSON.parse(JSON.stringify(p))), a);
   ok("render: plain-language headings, each rule's effect and why, and the not-a-security-boundary line",
-    /^## Who merges$/m.test(a) && /^## How often the human is asked$/m.test(a) && /^## Rules$/m.test(a) && /not a security boundary/.test(a)
-    && /### alpha[\s\S]*Effect: Allowed only after the human approves\.[\s\S]*Why: first[\s\S]*### zeta[\s\S]*Effect: Refused\.[\s\S]*Why: second/.test(a) && /The human merges every pull request/.test(a), a);
+    /^## Who merges$/m.test(a) && !/How often the human is asked/.test(a) && /^## Rules$/m.test(a) && /not a security boundary/.test(a)
+    && /### alpha[\s\S]*Effect: Allowed only after the human approves\.[\s\S]*Why: first[\s\S]*### zeta[\s\S]*Effect: Refused\.[\s\S]*Why: second/.test(a) && /The lead merges a pull request into the run branch/.test(a), a);
 }
 
 // CLI
@@ -141,7 +138,7 @@ setUser(undefined);
   try { j = JSON.parse(r.out); } catch {}
   ok("cli: show --json prints the effective policy and its sources", r.code === 0 && j && j.policy.preset === "hands-off" && j.sources.rules.blk === "project", r.out + r.err);
   r = cli(d, "show");
-  ok("cli: show prints each value with its source", r.code === 0 && /^preset  hands-off  \(project\)$/m.test(r.out) && /^ask     never  \(preset hands-off\)$/m.test(r.out) && /^rule    blk  block shell  \(project\)$/m.test(r.out), r.out + r.err);
+  ok("cli: show prints each value with its source", r.code === 0 && /^preset  hands-off  \(project\)$/m.test(r.out) && !/^(merge|ask) /m.test(r.out) && /^rule    blk  block shell  \(project\)$/m.test(r.out), r.out + r.err);
   r = cli(d, "check", JSON.stringify({ tool: "shell", command: "danger now" }));
   ok("cli: check prints the effect, the rule and its why", r.code === 0 && JSON.parse(r.out).effect === "block" && JSON.parse(r.out).rule === "blk" && JSON.parse(r.out).why === "a reason", r.out + r.err);
   r = cli(d, "check", "{ nope");
@@ -176,20 +173,20 @@ setUser(undefined);
   setUser(undefined);
 }
 
-// install.js --doctor's policy row (#307): the effective preset, merge and ask with their sources; an ignored file warns
+// install.js --doctor's policy row (#307): the effective preset and its source; an ignored file warns
 {
   const R = path.join(W, "doctor");
   lib.g(W, "init", "-q", "-b", "main", R);
   lib.run(path.join(ROOT, "install.js"), "", { cwd: R, args: ["--project"] });
   const row = () => (lib.run(path.join(ROOT, "install.js"), "", { cwd: R, args: ["--doctor"] }).out.match(/^\w+\s+policy: .*$/m) || [""])[0];
   let d = row();
-  ok("doctor: the policy row gives the default preset's merge and ask, each with its source", /^ok\s+policy: preset balanced \(default\), merge lead \(preset balanced\), ask risky \(preset balanced\)$/.test(d), d);
+  ok("doctor: the policy row gives the default preset with its source", /^ok\s+policy: preset balanced \(default\)$/.test(d), d);
   fs.writeFileSync(path.join(R, "teams", "policy.json"), JSON.stringify({ version: 1, preset: "careful", ask: "risky" }));
   d = row();
-  ok("doctor: a project policy's preset and override show where each comes from", /^ok\s+policy: preset careful \(project\), merge human \(preset careful\), ask risky \(project\)$/.test(d), d);
-  fs.writeFileSync(path.join(R, "teams", "policy.json"), JSON.stringify({ version: 1, ask: "sometimes" }));
+  ok("doctor: a project policy's preset shows where it comes from, a retired ask no warning", /^ok\s+policy: preset careful \(project\)$/.test(d), d);
+  fs.writeFileSync(path.join(R, "teams", "policy.json"), JSON.stringify({ version: 1, preset: "sometimes" }));
   d = row();
-  ok("doctor: an invalid policy file is a WARN naming the file and the error, the defaults in force", /^WARN\s+policy: preset balanced \(default\), .*policy\.json ignored: "ask" must be one of never, risky, every — correct it through node .*proteus-policy\.js write <draft\.json>$/.test(d), d);
+  ok("doctor: an invalid policy file is a WARN naming the file and the error, the defaults in force", /^WARN\s+policy: preset balanced \(default\); .*policy\.json ignored: "preset" must be one of .* — correct it through node .*proteus-policy\.js write <draft\.json>$/.test(d), d);
 }
 
 lib.summary();
