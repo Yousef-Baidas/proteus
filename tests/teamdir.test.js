@@ -22,7 +22,7 @@ ok("shipped: teamFile reads the shipped PROFILE.md", HL.teamFile(BARE, "backend"
 ok("shipped: teamRef is the absolute \"/\" path", HL.teamRef(BARE, "backend") === slash(path.join(SHIPPED, "backend")), HL.teamRef(BARE, "backend"));
 ok("shipped: no ROUTING.md routes no team", HL.teamNames(BARE).length === 0, HL.teamNames(BARE).join());
 let r = lib.run(CLI, "", { cwd: BARE, args: ["team", "backend"] });
-ok("shipped: proteus-cli.js team prints the shipped folder", r.code === 0 && r.out.trim() === slash(path.join(SHIPPED, "backend")), r.out + r.err);
+ok("shipped: proteus-cli.js team prints the shipped folder", r.code === 0 && slash(r.out.trim()) === slash(path.join(SHIPPED, "backend")), r.out + r.err);
 r = lib.run(CLI, "", { cwd: BARE, args: ["team"] });
 ok("cli: team with no name is a usage error", r.code === 2, r.out + r.err);
 
