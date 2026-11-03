@@ -53,7 +53,8 @@
 // SPAWN, ASK, DECIDE, STOP, NUDGE or MERGE with nothing run that round, or result printed STOP or failed (DECIDE
 // merge:), or only BLOCKED; a failed non-suite RUN or run-tree stops it with `BLOCKED RUN exited <code>: <command>`.
 // Guards: PROTEUS_DRIVE_MAX rounds (default 50), the same list twice with nothing run, a RUN back after it ran; each
-// a NOTE drive: line. It prints what it did as `DID <line>` (the suite's result: DID NOTE result ...), then the lead's lines (--json: one array, done: true on
+// a NOTE drive: line. It prints what it did as `DID <line>` (the suite's result: DID NOTE result ...; over three go to <scratch>/drive.txt behind one
+// `DID <n> steps, each in <file>` line, the MERGED and failed ones still printed), then the lead's lines (--json: one array, done: true on
 // the handled); exit 0 when it stops, non-zero only on its own error. It spawns, posts, approves and merges nothing
 // beyond what next and result do.
 // brief renders the ## Worker or ## Verifier block of references/roles.md, read at run time, every <slot> filled from
@@ -106,7 +107,8 @@ The suite is the gate command of AGENTS.md ## Learned.
 drive calls next in a loop and does its RUN lines (a suite's then its result), WAIT and SWEPT, NOTE,
 MERGED itself, in the caller's shell; it stops on SPAWN, ASK, DECIDE, STOP, NUDGE or MERGE, a failed
 RUN (BLOCKED), a RUN that comes back, no progress or PROTEUS_DRIVE_MAX rounds (50), and prints what it
-did as DID lines, then the lead's lines. Exit 0 when it stops; non-zero only on its own error.
+did as DID lines (over three: one line naming the run's scratch file holding them, then the MERGED and failed
+ones), then the lead's lines. Exit 0 when it stops; non-zero only on its own error.
 brief writes the worker's (or the PR's verifier's) brief from roles.md into the run's scratch dir and
 prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief: ... and exits 1.
 close gates step 8 on its final pass: close: ready when the run log's newest close-passes line for the
@@ -618,7 +620,7 @@ function drive(arg, io = {}) {
   const w = io.root ? { root: io.root } : where(arg);
   if (w.err) return w;
   const done = [], owed = [], ran = new Set();
-  const stop = (rest) => ({ code: 0, done, out: [...owed, ...rest] });
+  const stop = (rest) => ({ code: 0, done, out: [...owed, ...rest], root: w.root, run: w.run });
   const note = (reason) => ({ kind: "NOTE", reason: `drive: ${reason}` });
   const blocked = (a, x) => ({ kind: "BLOCKED", reason: `RUN exited ${x.code}: ${a.command}${x.why ? `: ${x.why}` : ""}` });
   let prev = null, left = [];
@@ -997,6 +999,19 @@ const line = (a) => {
   }
 };
 
+// file-first (#366): over DID_SHOWN DID lines go to <scratch>/drive.txt, and the lead sees one count line with its path,
+// then only the DID lines it acts on (MERGED's cleanup, a non-zero exit). No scratch dir: every line, as before.
+const DID_SHOWN = 3;
+function didLines(done, d) {
+  const all = done.map((x) => `DID ${line(x)}${x.exit ? ` (exit ${x.exit})` : ""}`);
+  if (all.length <= DID_SHOWN || !d.run || !d.root) return all;
+  const made = spawnSync(process.execPath, [SCRATCH, "--path", d.run], { cwd: d.root, encoding: "utf8", windowsHide: true, timeout: 30000 });
+  const dir = made.status === 0 ? last(made.stdout) : "";
+  const file = dir && path.join(dir, "drive.txt");
+  if (!file || !writeNew(file, all.map(plain).join("\n") + "\n")) return all;
+  return [`DID ${all.length} steps, each in ${file}`, ...all.filter((_, i) => done[i].kind === "MERGED" || done[i].exit)];
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (!argv.length || argv.includes("--help") || argv.includes("-h")) { console.log(HELP); return argv.length ? 0 : 2; }
@@ -1045,7 +1060,7 @@ function main() {
     try { d = drive(arg); } catch (e) { d = { code: 1, err: `drive: ${e.message}`, done: [] }; }
     const done = d.done || [];
     if (json) console.log(JSON.stringify([...done, ...(d.out || [])], null, 2));
-    else for (const a of [...done.map((x) => `DID ${line(x)}${x.exit ? ` (exit ${x.exit})` : ""}`), ...(d.out || []).map(line)]) console.log(plain(a));
+    else for (const a of [...didLines(done, d), ...(d.out || []).map(line)]) console.log(plain(a));
     if (d.err) { console.error(plain(d.err)); return d.code || 1; }
     return 0;
   }

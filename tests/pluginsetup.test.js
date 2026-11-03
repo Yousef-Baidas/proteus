@@ -56,6 +56,7 @@ ok("fresh: the statusLine in settings.local.json runs the repo's teams/ copy of 
 ok("fresh: teams/ with ROUTING.md, the worktree template, the commit-msg hook and the gates wiring",
   ["ROUTING.md", "link-skills.js", "templates/hooks/worktree-settings.local.json", "templates/hooks/commit-msg.js", "templates/hooks/proteus-statusline.js", "templates/lefthook.yml", "templates/ci"].every((f) => exists(R, "teams", ...f.split("/"))));
 ok("fresh: no hooks or agents in the repo", !exists(R, ".claude", "hooks") && !exists(R, ".claude", "agents") && !(json(R, ".claude", "settings.local.json") || {}).hooks);
+ok("fresh: settings.local.json caps the auto-compact window at 200k (#366)", (json(R, ".claude", "settings.local.json") || {}).autoCompactWindow === 200000 && /^compact  -> .*set autoCompactWindow 200000/m.test(r.out), r.out.slice(-800));
 ok("fresh: settings.local.json is git-excluded", (read(R, ".git", "info", "exclude") || "").split("\n").includes(".claude/settings.local.json"));
 ok("fresh: prints --protect and --verifier-app as next steps", /--protect\b/.test(r.out) && /--verifier-app <appId> <keyPath>/.test(r.out), r.out.slice(-800));
 ok("fresh: runs no gh but the read-only guest-mode probe (the GitHub steps are the human's)",
@@ -86,7 +87,12 @@ ok("existing: exits 0", r.code === 0, both(r).slice(-1500));
 ok("existing: other keys kept", JSON.stringify(es.permissions) === JSON.stringify(mine.permissions) && JSON.stringify(es.env) === JSON.stringify(mine.env), JSON.stringify(es));
 ok("existing: other plugins and marketplaces kept, proteus@proteus turned on", es.enabledPlugins["other@x"] === true && es.enabledPlugins["proteus@proteus"] === true
   && JSON.stringify(es.extraKnownMarketplaces.x) === JSON.stringify(mine.extraKnownMarketplaces.x) && !!es.extraKnownMarketplaces.proteus, JSON.stringify(es));
-ok("existing: the repo's own statusLine and local keys kept", JSON.stringify(json(E, ".claude", "settings.local.json")) === JSON.stringify({ statusLine: { type: "command", command: "echo mine" }, model: "m" }), read(E, ".claude", "settings.local.json"));
+ok("existing: the repo's own statusLine and local keys kept, the compact window added", JSON.stringify(json(E, ".claude", "settings.local.json")) === JSON.stringify({ statusLine: { type: "command", command: "echo mine" }, model: "m", autoCompactWindow: 200000 }), read(E, ".claude", "settings.local.json"));
+const K = repo("own-window");
+fs.mkdirSync(path.join(K, ".claude"));
+fs.writeFileSync(path.join(K, ".claude", "settings.local.json"), JSON.stringify({ modelSettings: { opus: { autoCompactWindow: 500000 } } }));
+r = setup(K);
+ok("own window: a window the human set, even per model, is left as it is", r.code === 0 && !("autoCompactWindow" in (json(K, ".claude", "settings.local.json") || {})) && !/^compact  ->/m.test(r.out), r.out.slice(-800));
 const F = repo("fork");
 fs.mkdirSync(path.join(F, ".claude"));
 const fork = { extraKnownMarketplaces: { proteus: { source: { source: "github", repo: "me/proteus" } } } };

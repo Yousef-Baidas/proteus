@@ -2,12 +2,12 @@
 
 `<hooks>`, spawn, model and stop names per `harnesses.md`. Every brief opens with `Hooks: <hooks>.`, the `hooks=` path from `proteus-state` copied literally; never `teams/templates/hooks` (CI's copy) or a plugin cache.
 
-The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carry the four rules below and the standing rules at the end, so a brief does not repeat them. The hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the third. An agent type without them (a project's own agent file, a generic helper) gets the matching lines pasted where its template says "as above".
+The agent files (`agents/*.md`, and on Codex the TOML roles made from them) carry the four rules below and the standing rules at the end, so a brief does not repeat them. The hooks enforce the first (not on Codex, whose hooks cannot see a background shell) and back up the second and fourth. An agent type without them (a project's own agent file, a generic helper) gets the matching lines pasted where its template says "as above".
 
 - **Long jobs**: a foreground shell call, timeout up to 10 minutes, or a detached job (`nohup … &`) whose PID or log you poll until it ends (Codex: poll a running command with `write_stdin` until it exits), all in this turn. No background shell or watcher (`run_in_background`, `Monitor`); never end a turn waiting on a notification: nothing wakes you.
-- **Report once**: the full report goes on the tracker once (issue comment or PR review). Your final turn text is one line: `DONE #<n> sent`, `VERDICT #<n> sent`, `RED #<n> sent`, `NEEDS #<n> sent`, `BLOCKED #<n> <why>`. Then stop. Caveman shortens prose, not reports: keep every field the template names, in order, output lines verbatim: the lead and verifier parse them.
 - **Scratch**: temp files, renders, clones and inspection worktrees go in `$(node <hooks>/proteus-scratch.js --path <key>)`, not a bare `/tmp` or `mktemp`: `/tmp` is RAM; leftovers fill it. The key is the ticket's `<run>-<id>` (the contracts worker uses each ticket's), or `<run>` for QA and the guide; the lead deletes it at merge or close.
 - **Classifier denial**: a tool call the auto mode classifier denies stays denied. Don't retry, reword or split it, or route it through another tool or agent: the classifier reads each as working around it. Final turn text `BLOCKED #<n> classifier <tag>: <action>` (no ticket: `<run>`), then stop; the lead asks the human.
+- **Report once**: the full report goes on the tracker once (issue comment or PR review), every template field in order, output lines verbatim (caveman shortens prose only). Hand back at most 10 lines: status line first (`DONE`, `VERDICT`, `RED` or `NEEDS #<n> sent`; `BLOCKED #<n> <why>`), then the report's link or path. Then stop.
 
 A brief carries pointers (issue, `file:line`, command), not raw logs or long output; the agent reads those through context-mode, or through a scratch file and `grep` when the plugin is absent.
 
@@ -171,7 +171,7 @@ Final turn text: `DONE retro <n> proposals`, `DONE retro none`, or `BLOCKED retr
 
 ## Standing rules (agent files)
 
-Each shipped agent file carries the four rules at the top and its role's block below, word for word (`tests/automode.test.js` checks it). Change one here and in every agent file together.
+Each shipped agent file carries the four rules, its role's block below them and `Report once` (the hand-back) last, word for word (`tests/automode.test.js` checks it). Change one here and in every agent file together.
 
 ### Worker (`proteus-worker`, `proteus-<team>-worker`)
 - Nothing outside your ticket exists; the brief names it, your team, worktree and owned paths.
