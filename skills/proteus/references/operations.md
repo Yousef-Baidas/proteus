@@ -46,9 +46,9 @@ Finding ids are `<h>-F<k>` (`proteus-intake.js --help`). "note predates finding 
 
 ## Stall check
 
-A worker that ends its turn waiting on a background job never wakes up. Two layers:
+A worker that ends its turn waiting on a background job never wakes. Two layers:
 
-- **Mechanical.** In worker worktrees the hooks refuse background shells and a stop that talks about waiting instead of reporting.
+- **Mechanical.** In worker worktrees the hooks refuse background shells and a stop that waits instead of reporting.
 - **Watchdog.** Each tool call and stop of an agent you spawned stamps its beat; `next` reads them every call. `NUDGE <agent>` (no tool call for 40 minutes, or stopped 10 minutes ago without a report) → message it: `status? report DONE/RED/NEEDS now, or continue in the foreground`; it stays quiet 20 minutes unless silent. `STOP <agent> <reason>` (STALL-AGAIN: silent again) → stop it, `--forget <agent>`, and dispatch a fresh worker on the same worktree (no escalation rung). Except after a classifier denial: an agent whose last output is `BLOCKED … classifier …` or a denied call waits on the human, not stalled: `--forget` it, relay the denial (`SKILL.md`, Asking the human) and dispatch nothing on that ticket until the human answers. An agent you stop yourself: `--forget` it; it stays forgotten. `WAIT` is the watchdog's `--wait`: no model turn, it exits on the first stall (or gives up after a day); then `next`. A busy but slow worker is not a stall; `status` shows each ticket's age against the median.
 
 ## Scratch
@@ -67,7 +67,7 @@ An `install.js` run that changes `~/.claude/agents`, a plugin update or re-pin, 
 
 ## Revision mode
 
-For a review round of small taste tweaks ("warmer", "cut two seconds") where a ticket per tweak would outlast the tweak. The human asks for it, or asks to skip verification or go faster during review. A pipeline mode, not a deviation; log its start and end on the run log.
+For a review round of small taste tweaks where a ticket per tweak would outlast the tweak. The human asks for it, or asks to skip verification or go faster during review. A pipeline mode, not a deviation; log its start and end on the run log.
 
 1. Open one revision issue `Revision <run>/<milestone> r<k>` labelled `proteus`, record the team's owned paths for it as `.proteus/owned/rev<k>` (a lead-docs PR, `stack.md`), and branch `proteus-work/<run>/rev<k>` from `proteus/<run>` once that merged.
 2. One standing worker of the owning team (`build`; `judge` if the tweaks touch shared structure) takes tweaks one at a time from the issue comments. Each is an idempotent change in the team's owned paths that rebuilds the result from the repo, not a file under `out/`, `/tmp`, or a GUI-only change. It commits and posts the evidence as a comment before the next.

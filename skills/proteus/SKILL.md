@@ -19,7 +19,7 @@ Run `node <hooks>/proteus-cli.js drive [run]` in the background (a suite can out
 | `MERGE` | would merge, no suite known | `flow.md` §7 |
 | `MERGED` | merged: its cleanup after a pass | `flow.md` §7 |
 | `RUN` | `drive` runs it; one it returns came back: find why | `flow.md` §7 |
-| `DECIDE` | yours: suite, batch, owned line, brief slot | `flow.md` §3, §7 |
+| `DECIDE` | yours: suite, batch, owned line, brief slot, slice | `flow.md` §3, §7, `teams.md` |
 | `SPAWN` | its `brief:`, then spawn on the role's tier | `flow.md` §3, §4, §6 |
 | `PROMPT` | the spawn's prompt, verbatim | `roles.md` |
 | `BLOCKED` | nothing; `prep:`, `RUN exited` are yours | `flow.md` §4 |

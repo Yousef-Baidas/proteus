@@ -1,6 +1,6 @@
 # Teams
 
-A team is a folder `teams/<team>/` holding `PROFILE.md` (role, owns, rules, green additions, verifier checklist), optionally `CRAFT.md` (the team's research-backed playbook), `skills.txt`, `required.txt`, and `.claude/skills/` plus `.agents/skills/` (that team's skills, linked into both by `teams/link-skills.js`). Claude Code loads a nested `.claude/skills/` only when an agent first reads a file there. Codex never loads them (a spawned worker keeps the lead's cwd), so a Codex worker lists `teams/<team>/.agents/skills/` after `PROFILE.md` and reads each fitting `<name>/SKILL.md` itself, resolving relative references from that skill's folder. Workers and verifiers read `teams/<team>/PROFILE.md` as their first action; the lead reads nothing under `teams/` but `ROUTING.md`, so team skills and playbooks cost it nothing, descriptions included. In guest mode `teams/` sits in the guest dir outside the repo (`bootstrap.md`), so on both CLIs a worker reads its skills the way a Codex worker does, from absolute paths.
+A team is a folder `teams/<team>/` holding `PROFILE.md` (role, owns, rules, green additions, verifier checklist), optionally `CRAFT.md` (the team's research-backed playbook), `skills.txt`, `required.txt`, and `.claude/skills/` plus `.agents/skills/` (that team's skills, linked into both by `teams/link-skills.js`). Claude Code loads a nested `.claude/skills/` only when an agent first reads a file there. Codex never loads them (a spawned worker keeps the lead's cwd), so a Codex worker lists `teams/<team>/.agents/skills/` after `PROFILE.md` and reads each fitting `<name>/SKILL.md` itself, resolving relative references from that skill's folder. Workers and verifiers read `teams/<team>/PROFILE.md` first; the lead reads nothing under `teams/` but `ROUTING.md`, so team skills and playbooks cost it nothing, descriptions included. In guest mode `teams/` sits in the guest dir outside the repo (`bootstrap.md`), so on both CLIs a worker reads its skills the way a Codex worker does, from absolute paths.
 
 ## Agents
 
@@ -51,7 +51,7 @@ Per team, `teams/<team>/skills.txt`, one `<owner/repo> <skill-name>` per line, r
 
 `teams/<team>/required.txt`, same format, is the pipeline's: `install-anti-slop` for devops on code, `thermo-nuclear-code-quality-review` for qa on code. The scout does not rewrite it, it does not count against the cap, and `install.js --project` refreshes it. A missing required skill skips that check, never the run: the lead writes `skill: skipped (<name>)` on the run log; the human decides at the next gate.
 
-A `skills.txt` line may end with `@<40-hex commit sha>`: `--install` runs `npx skills add <owner/repo>#<sha>`, which fetches that commit, and the lock keeps the sha beside the hash.
+A `skills.txt` line may end with `@<40-hex commit sha>`: `--install` runs `npx skills add <owner/repo>#<sha>` and the lock keeps the sha beside the hash.
 
 Authored skills live in `teams/<team>/skills/<name>/SKILL.md`, committed and never published. When nothing found qualifies and research turns up craft knowledge beyond the model's defaults, the scout drafts one (markdown only, citing its sources) and a worker writes it on approval. `link-skills.js` links and locks them like found ones (`"source": "authored"`), counts them toward the cap, and refuses the team when one shares a name with a listed skill (`dup: <team> <name>`). It runs `proteus-skill-scan.js` on each first: a finding prints `scan: <team>/<name> FINDINGS <n>` and links nothing for the team until the human runs `--relock`, which records `"scan": "<sha256>"` for that content, so any later edit is blocked again.
 
@@ -60,14 +60,14 @@ Models per role follow the ladder in `SKILL.md` rule 2. On a Sonnet lead all thr
 ## Routing
 
 - Tag at `/to-tickets`: `profile:<team>` from `ROUTING.md`. A ticket needing two teams is two tickets with a contract between them.
-- Slice ticket, the one exception: when that contract would be larger than the change. Tier Quick or Standard only; labels `profile:<owning team>` plus `slice:<team>[,<team>]` naming the others; its owned paths may fall in any named team's `Owns`, nowhere else. One worker and one verifier, both from the owning team; the verifier checks every named team's checklist. The security trigger is unchanged. `next` refuses `slice:` on a hard or full ticket (`DECIDE #<n> slice`).
+- Slice ticket, the one exception: when that contract would be larger than the change. Tier Quick or Standard only; labels `profile:<owning team>` plus `slice:<team>[,<team>]` naming the others; its owned paths may fall in any named team's `Owns`, nowhere else. One worker and one verifier, both from the owning team; the verifier checks every named team's checklist. The security trigger is unchanged. `next` refuses `slice:` on a hard or full ticket (`DECIDE #<n> slice`): split it if the pieces are independent and small; if it needs its own planning and many tickets, hand it to a sub-lead, the line's command.
 - Cross-cutting change (a rename across the codebase, a dependency bump, a license header): one ticket, owned by the team that owns the mechanism (dependencies: devops), `difficulty:mechanical`. `Owned:` per `flow.md` §3. Its check proves the change mechanical: the same transformation in every file and nothing else.
 - `security` is not tagged; the lead attaches it as a second verifier by the rule above. Both verdicts must be `MERGE`.
 - `qa` runs once per wave, not per ticket. Per-ticket checks already are the QA.
 
 ## Confinement
 
-`~/.claude/skills/` loads in every session, lead included. To keep a domain skill out of the lead entirely, it must live only under the team's folder. `--confine` removes the global link for every skill it linked into a team (links only; real directories are left alone). On Codex `~/.agents/skills/` loads for the lead too and `--confine` cannot hide team skills from it. The lead keeps: Proteus, the mattpocock skills, caveman, ponytail, rtk, context-mode, graphify.
+`~/.claude/skills/` loads in every session, lead included. To keep a domain skill out of the lead entirely, it must live only under the team's folder. `--confine` removes the global link for every skill it linked into a team (links only, never a real directory). On Codex `~/.agents/skills/` loads for the lead too and `--confine` cannot hide team skills from it. The lead keeps: Proteus, the mattpocock skills, caveman, ponytail, rtk, context-mode, graphify.
 
 Bootstrap is the one exception: the scaffold worker may read several teams' `PROFILE.md` to set up checks for each.
 

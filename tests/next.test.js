@@ -10,6 +10,7 @@ const path = require("path");
 const lib = require(path.join(__dirname, "lib.js"));
 const { ok, g } = lib;
 const SCRIPT = path.join(__dirname, "..", "templates", "hooks", "proteus-cli.js");
+const SUBLEAD = path.join(__dirname, "..", "templates", "hooks", "proteus-sublead.js");
 const W = lib.workdir("next");
 // next sweeps the sandbox scratch root under os.tmpdir() (#319): its children get their own, never the real one
 const TMPD = path.join(W, "tmp");
@@ -260,9 +261,20 @@ ok("prep: no SPAWN worker #5 once its branch has a work commit past the contract
 // a slice ticket (teams.md) is Quick or Standard only: a slice: label on a hard or full one is DECIDE, no prep
 const sliced = (n, d, extra = "") => issue(n, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: `difficulty:${d}` }, { name: "slice:frontend,devops" }], body: `Owned: src/t${n}.js${extra}` });
 r = next({ issues: [sliced(9, "hard"), sliced(10, "standard", "\nTier: full"), sliced(11, "standard")], prs: [], reviews: [], inbox: [] });
-ok("slice: a hard slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #9 slice: tier hard too large") && !fs.existsSync(WT(9)) && !lines(r).some((l) => l.startsWith("SPAWN worker #9")), r.out);
-ok("slice: a full-tier slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes("DECIDE #10 slice: tier full too large") && !fs.existsSync(WT(10)) && !lines(r).some((l) => l.startsWith("SPAWN worker #10")), r.out);
+ok("slice: a hard slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes(`DECIDE #9 slice: tier hard too large; split it, or sub-lead: node ${SUBLEAD} start 9 r1 --budget <usd>`) && !fs.existsSync(WT(9)) && !lines(r).some((l) => l.startsWith("SPAWN worker #9")), r.out);
+ok("slice: a full-tier slice ticket is DECIDE, no worktree, no SPAWN", lines(r).includes(`DECIDE #10 slice: tier full too large; split it, or sub-lead: node ${SUBLEAD} start 10 r1 --budget <usd>`) && !fs.existsSync(WT(10)) && !lines(r).some((l) => l.startsWith("SPAWN worker #10")), r.out);
 ok("slice: a standard slice ticket is prepared and spawned", lines(r).includes(`SPAWN worker #11 team=backend difficulty=standard worktree=${WT(11)} brief: node ${SCRIPT} brief worker 11`), r.out);
+// a sub-lead (proteus-sublead.js): once its sub-run branch is out the ticket is BLOCKED, not DECIDE again; at depth 3
+// the line offers no sub-lead
+g(REPO, "branch", "proteus/r1.9", "proteus/r1");
+r = next({ issues: [sliced(9, "hard")], prs: [], reviews: [], inbox: [] });
+ok("slice: a slice ticket with a sub-run branch out is BLOCKED sub-lead", lines(r).includes("BLOCKED #9 sub-lead proteus/r1.9 running") && !lines(r).some((l) => l.startsWith("DECIDE #9")), r.out);
+g(REPO, "branch", "-D", "proteus/r1.9");
+fs.mkdirSync(path.join(COMMON, "proteus", "subleads"), { recursive: true });
+fs.writeFileSync(path.join(COMMON, "proteus", "subleads", "r1.json"), JSON.stringify({ depth: 3 }));
+r = next({ issues: [sliced(9, "hard")], prs: [], reviews: [], inbox: [] });
+ok("slice: at depth 3 the DECIDE line offers no sub-lead", lines(r).includes("DECIDE #9 slice: tier hard too large; split it"), r.out);
+fs.rmSync(path.join(COMMON, "proteus", "subleads"), { recursive: true });
 // a human-operated step (step:human) is the human's: ASK, never SPAWN worker or a prepared worktree; its PR, verified
 const human = issue(6, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }, { name: "step:human" }], body: "Owned: src/t6.js" });
 r = next({ issues: [human], prs: [], reviews: [], inbox: [{ number: 30, title: "which db?", labels: [{ name: "needs-human" }, { name: "proteus-question" }] }] });
