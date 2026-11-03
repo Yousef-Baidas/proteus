@@ -5,10 +5,10 @@
 // verifier posts it green only for MERGE) and, for a ticket whose body lacks `Review: light`, the security verifier's
 // MERGE on proteus/security (#364), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge
-// --match-head-commit <the head it checked>`, so a head pushed since waits a round, held as "head moved"; a
-// conflict or any other failed merge stops the batch. The project policy (proteus-policy.js, #307) holds some back,
-// each named on a line: every one under merge human; under ask every each, and under ask risky each whose changed
-// paths an ask rule covers, until the human's newest verdict on the PR (Policy.held) is ACCEPT <sha12> for its head.
+// --match-head-commit <the head it checked> --body <its evidence>`: the PR, the head and the green checks and
+// signoffs it merged on (#279, #368), so the merge reads as a reviewed one. A head pushed since waits a round, held as
+// "head moved"; a conflict or any other failed merge stops the batch. No PR waits for the human (#368); in local mode
+// Policy.held holds a security change back until the security verifier signs its head off, named on a line.
 // It runs outside the sandbox, so it does only that, an
 // ls-remote, a fetch that writes objects only, and its state file: no git call with a work tree, no ref read by a
 // short name, nothing run from .worktrees/_run or a PR (#226). The fetch writes no ref, reflog or FETCH_HEAD, fetches
@@ -158,10 +158,14 @@ function pick(prs, issues, run, names) {
   }).map((p) => {
     const ticket = ticketOf(String(p.headRefName || ""), p.body || "");
     const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(p.headRefOid)) ? String(p.headRefOid) : "";
-    return { n: p.number, head: String(p.headRefName || ""), oid, ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [] };
+    const checks = [...new Set(p.statusCheckRollup.map((c) => String(c.context || c.name)))].sort();
+    return { n: p.number, head: String(p.headRefName || ""), oid, ticket, deps: ticket && byN.has(ticket) ? deps(byN.get(ticket).body) : [], checks };
   });
   return mergeOrder(ready, open);
 }
+
+// the merge commit's body: what the merge rests on, one line
+const evidence = (p) => `Reviewed merge of PR #${p.n} at ${p.oid.slice(0, 12)}: ${(p.checks || []).join(", ")} green.`;
 
 function main() {
   const argv = process.argv.slice(2);
@@ -299,7 +303,7 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   if (!Array.isArray(issues)) return fail("tracker unreachable (gh issue list failed)");
 
   const ready = pick(prs, issues, run, names);
-  const hold = Policy.held(ready, root, Policy.load({ root }).policy);
+  const hold = Policy.held(ready, root);
   for (const p of ready) if (!p.oid && !hold.some((h) => h.n === p.n)) hold.push({ n: p.n, why: "unknown" });
   out.held = hold;
   const holding = (h) => say(Policy.heldLine(h));
@@ -318,7 +322,7 @@ function batch({ arg, suite, result, at }, io = {}, out = {}) {
   let stop = "";
   for (const p of picked) {
     // pinned to the head the pick or the hold check read: a push since fails the merge, and the PR waits a round
-    const m = lib.ghTry(["pr", "merge", String(p.n), "--merge", "--match-head-commit", p.oid], root, 120000);
+    const m = lib.ghTry(["pr", "merge", String(p.n), "--merge", "--match-head-commit", p.oid, "--body", evidence(p)], root, 120000);
     const now = m.ok ? "" : lib.gh(["pr", "view", String(p.n), "--json", "headRefOid", "-q", ".headRefOid"], root, 30000);
     if (now && now !== p.oid) {
       const h = { n: p.n, why: "moved" };

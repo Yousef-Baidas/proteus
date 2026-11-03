@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// The project policy engine (#307): who merges, how often the human is asked, and the rules that block, ask or
-// allow a shell call or an edit. A module and a CLI; the lead guard and the worker guard call guard(ev, ad) after their
-// own checks, so a refusal of theirs always stands.
+// The project policy engine (#307): the rules that block, ask or allow a shell call or an edit, and held, what a merge
+// waits for. No PR into a run branch waits for the human (#368). A module and a CLI; the lead guard and the worker
+// guard call guard(ev, ad) after their own checks, so a refusal of theirs always stands.
 //   node <hooks>/proteus-policy.js show [--json]           the effective policy and where each value came from
 //   node <hooks>/proteus-policy.js check '<json event>'    { tool: "shell"|"edit", command?, path? } -> its effect
 //   node <hooks>/proteus-policy.js write <draft.json> [--user]
@@ -26,11 +26,10 @@ const FILE = "proteus-policy.json";
 const PROJECT_FILE = "teams/policy.json";
 const PROJECT_DOC = "teams/POLICY.md";
 const DEFAULT_PRESET = "balanced";
-const MERGES = ["lead", "human"];
-const ASKS = ["never", "risky", "every"];
 const EFFECTS = ["block", "ask", "allow"];
 const TOOLS = ["shell", "edit", "any"];
-const TOP_KEYS = ["version", "preset", "merge", "ask", "rules"];
+const TOP_KEYS = ["version", "preset", "rules"];
+const RETIRED = ["merge", "ask"]; // per-PR human merges and accepts (#368): still read, so an old file stays valid, and ignored
 const RULE_KEYS = ["id", "effect", "tool", "command", "paths", "why"];
 const KEBAB = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -64,11 +63,9 @@ function globError(g) {
 function validate(obj, names = Object.keys(presets(""))) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return ["the policy must be a JSON object"];
   const errs = [];
-  for (const k of Object.keys(obj)) if (!TOP_KEYS.includes(k)) errs.push(`unknown setting "${k}"; the settings are ${TOP_KEYS.join(", ")}`);
+  for (const k of Object.keys(obj)) if (!TOP_KEYS.includes(k) && !RETIRED.includes(k)) errs.push(`unknown setting "${k}"; the settings are ${TOP_KEYS.join(", ")}`);
   if (obj.version !== 1) errs.push(`"version" must be 1`);
   if ("preset" in obj && !names.includes(obj.preset)) errs.push(`"preset" must be one of ${names.join(", ") || "the shipped presets"}`);
-  if ("merge" in obj && !MERGES.includes(obj.merge)) errs.push(`"merge" must be ${MERGES.join(" or ")}`);
-  if ("ask" in obj && !ASKS.includes(obj.ask)) errs.push(`"ask" must be one of ${ASKS.join(", ")}`);
   if (!("rules" in obj)) return errs;
   if (!Array.isArray(obj.rules)) return [...errs, `"rules" must be a list`];
   const seen = new Set();
@@ -114,13 +111,12 @@ function resolve(layers, all) {
   const named = [...layers].reverse().find((l) => l.data && l.data.preset);
   const preset = named ? named.data.preset : DEFAULT_PRESET;
   const base = all[preset] || {};
-  const policy = { version: 1, preset, merge: base.merge, ask: base.ask, rules: [] };
-  const sources = { preset: named ? named.name : "default", merge: `preset ${preset}`, ask: `preset ${preset}`, rules: {} };
+  const policy = { version: 1, preset, rules: [] };
+  const sources = { preset: named ? named.name : "default", rules: {} };
   const rules = new Map();
   for (const r of Array.isArray(base.rules) ? base.rules : []) { rules.set(r.id, r); sources.rules[r.id] = `preset ${preset}`; }
   for (const l of layers) {
     if (!l.data) continue;
-    for (const k of ["merge", "ask"]) if (k in l.data) { policy[k] = l.data[k]; sources[k] = l.name; }
     for (const r of l.data.rules || []) { rules.set(r.id, r); sources.rules[r.id] = l.name; }
   }
   policy.rules = [...rules.values()];
@@ -163,15 +159,6 @@ function evaluate(policy, ev) {
   return best ? { effect: best.effect, rule: best } : { effect: "none" };
 }
 
-const MERGE_TEXT = {
-  lead: "The lead merges a pull request once its checks and review pass.",
-  human: "The human merges every pull request; the lead asks instead of merging.",
-};
-const ASK_TEXT = {
-  never: "Only at milestone reviews.",
-  risky: "Before merging a change that touches what an ask rule covers, and at milestone reviews.",
-  every: "Before every merge, and at milestone reviews.",
-};
 const EFFECT_TEXT = { block: "Refused.", ask: "Allowed only after the human approves.", allow: "Adds no restriction." };
 const code = (s) => "`" + String(s).replace(/`/g, "'") + "`";
 
@@ -189,11 +176,7 @@ function render(policy) {
     "",
     "## Who merges",
     "",
-    MERGE_TEXT[p.merge] || "Not set.",
-    "",
-    "## How often the human is asked",
-    "",
-    ASK_TEXT[p.ask] || "Not set.",
+    "The lead merges a pull request into the run branch once its checks and signoffs pass; the human merges the run branch into the default branch.",
     "",
     "## Rules",
     "",
@@ -369,8 +352,6 @@ function main(argv) {
     warn(r.errors);
     if (rest.includes("--json")) { console.log(JSON.stringify(r, null, 2)); return 0; }
     console.log(`preset  ${r.policy.preset}  (${r.sources.preset})`);
-    console.log(`merge   ${r.policy.merge || "unset"}  (${r.sources.merge})`);
-    console.log(`ask     ${r.policy.ask || "unset"}  (${r.sources.ask})`);
     for (const x of r.policy.rules) console.log(`rule    ${x.id}  ${x.effect} ${x.tool}  (${r.sources.rules[x.id]})`);
     console.log(`files   user ${r.files.user}; project ${r.files.project}`);
     return 0;
@@ -405,21 +386,21 @@ function main(argv) {
   return 2;
 }
 
+const SIGNOFF = "the security verifier's MERGE (proteus-signoff.js --security) on its head lets it merge";
+const ACCEPTED = "their `ACCEPT <sha12>` verdict for its head lets it merge";
 const HELD = {
-  merge: "the policy has the human merge every PR",
   moved: "its head moved after the check; it waits for the next round",
   unknown: "gh gave no head commit to pin the merge to",
-  accept: "the policy has the human take every PR; their `ACCEPT <sha12>` verdict for its head lets it merge",
-  security: "it changes a path in the security block of teams/ROUTING.md; their `ACCEPT <sha12>` verdict for its head lets it merge",
-  "unread-security": "gh could not read the base's security block or what this PR changes, so it counts as a security change; their `ACCEPT <sha12>` verdict for its head lets it merge",
-  every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
-  deps: "it adds or upgrades a dependency no human approved; a `DEPENDENCY <name>` line for each in their verdict on it, or their `ACCEPT <sha12>` verdict for its head, lets it merge",
-  "unread-deps": "the dependency check could not read its diff (gh pr diff failed), so it is held; their `ACCEPT <sha12>` verdict for its head lets it merge",
-  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
+  security: `it changes a path in the security block of teams/ROUTING.md; ${SIGNOFF}`,
+  "unread-security": `gh could not read the base's security block or what this PR changes, so it counts as a security change; ${SIGNOFF}`,
+  human: `it goes into the default branch and changes a path in the security block of teams/ROUTING.md; ${ACCEPTED}`,
+  "unread-human": `it goes into the default branch and gh could not read the base's security block or what this PR changes; ${ACCEPTED}`,
+  deps: `it adds or upgrades a dependency planning did not approve; ask the human as a planning question: a \`DEPENDENCY <name>\` line for each in their verdict on it, or ${ACCEPTED}`,
+  "unread-deps": `the dependency check could not read its diff (gh pr diff failed), so it is held; ${ACCEPTED}`,
 };
 
 // what a hold says, proteus-merge.js's line and the stand-in's `pr merge` refusal
-const heldLine = (h) => `PR #${h.n} held${/^(moved|unknown)$/.test(h.why) ? "" : " for the human"}: ${HELD[h.why === "merge" && h.sha ? "accept" : h.why] || `the policy's ask rule ${h.why.slice(7)} covers what it changes`}`;
+const heldLine = (h) => `PR #${h.n} held${/(human|deps)$/.test(h.why) ? " for the human" : ""}: ${HELD[h.why] || h.why}`;
 
 // the human's login, as proteus-verdict.js trusts it: "human" in proteus.json, else gh's own login while the agents
 // share it (no agentGh); "" when there is none, so no comment counts
@@ -429,12 +410,11 @@ function humanOf(root) {
 }
 
 // what stands in for the proteus/security status in local mode (#310): "security" when PR #n changes a path in the
-// security block of its base's teams/ROUTING.md, both ends of a rename, as proteus-security.js and the signoff's
+// security block of base's teams/ROUTING.md, both ends of a rename, as proteus-security.js and the signoff's
 // securityMirror read it; "unread-security" when that cannot be told; "" when it does not, or the base has no block
-function securityHold(n, root) {
-  const base = lib.ghTry(["pr", "view", String(n), "--json", "baseRefName", "-q", ".baseRefName"], root, 30000);
-  if (!base.ok || !base.out.trim()) return "unread-security";
-  const file = lib.ghTry(["api", `repos/{owner}/{repo}/contents/teams/ROUTING.md?ref=${encodeURIComponent(base.out.trim())}`, "-q", ".content"], root, 30000);
+function securityHold(n, root, base) {
+  if (!base) return "unread-security";
+  const file = lib.ghTry(["api", `repos/{owner}/{repo}/contents/teams/ROUTING.md?ref=${encodeURIComponent(base)}`, "-q", ".content"], root, 30000);
   if (!file.ok && !/\(HTTP 404\)/.test(file.err)) return "unread-security";
   const globs = file.ok ? lib.parseSecurity(Buffer.from(file.out, "base64").toString("utf8")) : null;
   if (!globs || !globs.length) return "";
@@ -474,62 +454,52 @@ function unapprovedDeps(changes, names) {
   return changes.filter((c) => (c.kind === "lock" ? !names.length : !named(c.line)));
 }
 
-// the policy's hold on the picked PRs (#307), [{ n, why, sha }] (sha: the head's sha12, "" when gh cannot say): merge human holds every one ("merge"); ask every holds each
-// ("every"), and ask risky each whose changed paths an ask rule covers ("policy:<id>", or "unread" when gh cannot list
-// them), until the human's newest verdict on the PR (lib.humanVerdicts) is ACCEPT <head sha12>; ask never holds none. In
-// local mode, where no host takes the human's merge or posts proteus/security, the recorded ACCEPT is that act: merge
-// human ("merge", with its sha) and a security change (securityHold) wait for it too, whatever the modes say. A PR
-// adding or upgrading a dependency ("deps", or "unread-deps" when gh cannot give its diff) waits, whatever the modes
-// say, until the human's verdicts on it approve each one (approvedDeps) or ACCEPT its head (#367). Here
-// rather than in proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
-function held(picked, root, policy) {
+// a dependency PR #n adds or upgrades that the human did not approve (#367): "deps", "unread-deps" when gh cannot give
+// its diff (a dependency gate that opens on an error is none), "" when none. said(): the human's verdicts on it
+function depHold(n, root, said) {
+  const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000);
+  if (!diff.ok) return "unread-deps";
+  const deps = depChanges(diff.out);
+  return deps.length && unapprovedDeps(deps, approvedDeps(said())).length ? "deps" : "";
+}
+
+// the holds on the picked PRs, [{ n, why, sha }] (sha: the head's sha12). No PR into a run branch waits for the human
+// (#368) but one adding a dependency planning did not approve (depHold, every mode, #367): a `DEPENDENCY <name>` line
+// for each in the human's verdicts on it, or their ACCEPT <head sha12>, releases it. On a host the ruleset's required
+// proteus/security covers a security change. In local mode no host posts that status, so a security change
+// (securityHold) waits: into a run branch, for the security verifier's proteus/security success on its head; into any
+// other base (the default branch, the human's merge), for the human's newest recorded verdict on the PR
+// (lib.humanVerdicts) being ACCEPT <head sha12>. The merge is pinned to that head. Here rather than in
+// proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
+function held(picked, root) {
   if (!picked.length) return [];
   const local = lib.localCommon(root);
-  if (policy.merge === "human" && !local) return picked.map((p) => ({ n: p.n, why: "merge" }));
-  const asks = { rules: (policy.rules || []).filter((r) => r.effect === "ask" && Array.isArray(r.paths)) };
-  const asking = policy.ask === "every" || (policy.ask === "risky" && asks.rules.length > 0);
-  const why = (n) => {
-    if (policy.merge === "human") return "merge";
-    const risk = local ? securityHold(n, root) : "";
-    if (risk) return risk;
-    // an unreadable diff holds: a dependency gate that opens on an error is none
-    const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000);
-    if (!diff.ok) return "unread-deps";
-    const deps = depChanges(diff.out);
-    if (deps.length && unapprovedDeps(deps, approvedDeps(view(n).said)).length) return "deps";
-    if (!asking) return "";
-    if (policy.ask === "every") return "every";
-    const r = lib.ghTry(["pr", "diff", String(n), "--name-only"], root, 30000);
-    if (!r.ok) return "unread";
-    for (const f of r.out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)) {
-      const v = evaluate(asks, { tool: "edit", path: f });
-      if (v.rule) return `policy:${v.rule.id}`;
-    }
-    return "";
-  };
-  // the PR's head and whether the human accepted that head: their newest verdict on the PR is `ACCEPT <sha12>` for
-  // it. A bare ACCEPT, another head's sha, or CHANGES holds; their order alone decides, never a commit date.
-  // said: all their verdicts on it, oldest first; read once per PR
   let human = null;
-  const seen = new Map();
-  const view = (n) => {
-    if (seen.has(n)) return seen.get(n);
-    if (human === null) human = local ? "" : humanOf(root);
-    let v = null;
-    try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
-    const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
-    const said = !local && !human ? [] : lib.humanVerdicts(root, n, (v && v.comments) || [], human);
-    const last = said[said.length - 1];
-    const out = { sha, full, said, ok: !!sha && !!last && last.first === `ACCEPT ${sha}` };
-    seen.set(n, out);
-    return out;
-  };
   return picked.flatMap((p) => {
-    const w = why(p.n);
-    if (!w) return [];
-    const v = view(p.n);
-    if (v.ok) p.oid = v.full; // the merge is pinned to the head the human accepted
-    return v.ok ? [] : [{ n: p.n, why: w, sha: v.sha }];
+    let v = null, said = null;
+    try { v = JSON.parse(lib.gh(["pr", "view", String(p.n), "--json", "baseRefName,headRefOid,statusCheckRollup"], root, 30000)); } catch {}
+    // the human's verdicts on it, oldest first, read once: the local record, or their login's comments on a host
+    const verdicts = () => {
+      if (said) return said;
+      if (local) return (said = lib.humanVerdicts(root, p.n));
+      if (human === null) human = humanOf(root);
+      let c = null;
+      if (human) try { c = JSON.parse(lib.gh(["pr", "view", String(p.n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
+      return (said = human ? lib.humanVerdicts(root, p.n, (c && c.comments) || [], human) : []);
+    };
+    const dep = depHold(p.n, root, verdicts);
+    const base = String((v && v.baseRefName) || ""), risk = local ? securityHold(p.n, root, base) : "";
+    if (!risk && !dep) return [];
+    const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
+    const accepted = !!sha && (verdicts().slice(-1)[0] || {}).first === `ACCEPT ${sha}`;
+    if (dep && !accepted) return [{ n: p.n, why: dep, sha }];
+    if (!full) return [{ n: p.n, why: "unknown", sha }];
+    if (p.oid && p.oid !== full) return [{ n: p.n, why: "moved", sha }];
+    const run = base.startsWith(lib.CURRENT.branch);
+    const ok = !risk || (run ? (v.statusCheckRollup || []).some((c) => (c.context || c.name) === "proteus/security" && /^success$/i.test(String(c.state || c.conclusion || ""))) : accepted);
+    if (!ok) return [{ n: p.n, why: run ? risk : risk.replace("security", "human"), sha }];
+    p.oid = full; // the merge is pinned to the head that was signed, approved or accepted
+    return [];
   });
 }
 

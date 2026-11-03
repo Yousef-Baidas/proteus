@@ -159,6 +159,9 @@ ok("none: a PR without proteus/verdict is not ready; exit 0", s.r.code === 0 && 
 // a diff gh cannot give: the dependency check holds the PR rather than let it through (#367)
 s = setup("undiffed", [{ t: 1, pr: 10, files: { "b.txt": "b\n" }, diff: false }]);
 ok("undiffed: an unreadable diff holds the PR with one line naming the dependency check and ACCEPT", s.merges.length === 1 && /PR #10 held for the human: the dependency check could not read its diff.*`ACCEPT <sha12>`/.test(s.r.out) && !gone(s.root, 1), `${s.r.code} ${s.r.out} ${s.r.err}`);
+// a dependency planning did not approve: held on a host's run branch too, the one PR that waits for the human (#368)
+s = setup("undeps", [{ t: 1, pr: 10, files: { "package.json": "{\n  \"dependencies\": { \"left-pad\": \"1.0.0\" }\n}\n" } }]);
+ok("undeps: an unapproved dependency into a run branch is held for the human", s.merges.length === 1 && /PR #10 held for the human: it adds or upgrades a dependency planning did not approve/.test(s.r.out), `${s.r.code} ${s.r.out} ${s.r.err}`);
 
 // the lead's checkout on the run branch: the script runs no git there; the lead fast-forwards it
 let leadAt;

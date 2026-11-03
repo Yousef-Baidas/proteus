@@ -262,7 +262,7 @@ if (process.env.FAKE_GH_MERGE) {
     out({ headRefName: p.headRefName, state: p.merged ? "MERGED" : "OPEN" });
   }
   if ((m = /^pr view (\d+) --json headRefOid -q \.headRefOid$/.exec(a))) { const p = s.prs.find((x) => x.number === +m[1]); process.stdout.write(p ? git("rev-parse", `refs/heads/${p.headRefName}`).stdout.trim() : ""); process.exit(0); }
-  if ((m = /^pr merge (\d+) --merge(?: --match-head-commit (\S+))?$/.exec(a))) {
+  if ((m = /^pr merge (\d+) --merge(?: --match-head-commit (\S+))?(?: --body (.*))?$/s.exec(a))) {
     const p = s.prs.find((x) => x.number === +m[1]);
     if (p.pushOnMerge) { // a push lands between the check and the merge
       const c = git("commit-tree", `refs/heads/${p.headRefName}^{tree}`, "-p", `refs/heads/${p.headRefName}`, "-m", "pushed since").stdout.trim();
@@ -281,7 +281,7 @@ if (process.env.FAKE_GH_MERGE) {
       process.stderr.write(`X Pull request o/r#${p.number} is not mergeable: the merge commit cannot be cleanly created.\n`);
       process.exit(1);
     }
-    const c = git("commit-tree", tree.stdout.split("\n")[0], "-p", `refs/heads/${p.baseRefName}`, "-p", `refs/heads/${p.headRefName}`, "-m", `Merge pull request #${p.number} from o/${p.headRefName}`).stdout.trim();
+    const c = git("commit-tree", tree.stdout.split("\n")[0], "-p", `refs/heads/${p.baseRefName}`, "-p", `refs/heads/${p.headRefName}`, "-m", `Merge pull request #${p.number} from o/${p.headRefName}`, ...(m[3] ? ["-m", m[3]] : [])).stdout.trim();
     git("update-ref", `refs/heads/${p.baseRefName}`, c);
     git("branch", "-D", p.headRefName);
     p.merged = true;
