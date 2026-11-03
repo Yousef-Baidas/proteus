@@ -74,7 +74,7 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 ## Flow
 
 0. **Bootstrap** to the `Ready` line of `bootstrap.md`: roster approved, the domain's mechanical gates installed. Not there → stop.
-1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human runs and checks it, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, your preference does not.
+1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human runs and checks it, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, not your preference.
 2. **Tickets**: `/to-spec`, `/to-tickets`; prototype first.
 3. **Contracts**: you decide each ticket's interface and check; a contracts worker commits them, red.
 4. **Dispatch** each `SPAWN worker` on `build` into a protected `proteus/<run>`.
@@ -82,4 +82,4 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 6. **Verify** per rule 4.
 7. **Merge**: `drive` batches, runs the suite; QA per wave and milestone.
 7½. **Human review** of every milestone (`review.md`).
-8. **Close**: final QA, debt settled, lessons, the close PR, the report.
+8. **Close**: README, final QA, debt, lessons, the close PR, the report.

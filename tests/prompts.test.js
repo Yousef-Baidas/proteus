@@ -77,8 +77,8 @@ ok("flow.md points to §10b at the QA milestone pass and at close", /word `miles
 const step8 = (/^## 8\. Close\n([\s\S]*)/m.exec(flow) || [])[1] || "";
 const qaAgent = read("agents", "proteus-qa-verifier.md");
 ok("close: a worker writes the README before the final pass, which follows it", /worker writes or updates the README: install, start, use, check.*Then the final pass.*word `close`.*follows the README/.test(step8), step8);
-ok("close: the QA verifier follows the README literally on a clean checkout; a missing one or a failing step is WAVE-RED", /`close` mode: on a clean checkout.*follow `README\.md` literally.*missing README or a step that fails as written is `WAVE-RED`/.test(qaAgent), qaAgent);
-ok("intake: the information gate asks how the human runs the result", /\(b\) how a human runs and checks it/.test(skill));
+ok("close: the QA verifier follows the README literally on a clean checkout; a missing one or a failing step is WAVE-RED", /`close` mode: follow `README\.md` literally on a clean checkout; a missing README or a failing step is `WAVE-RED`/.test(qaAgent), qaAgent);
+ok("intake: the information gate asks how the human runs the result", /\(b\) how a human runs and checks it/.test(skill) && /8\. \*\*Close\*\*: README, final QA/.test(skill));
 ok("docs diet: a README is always allowed", /`README\.md` is always allowed/.test(read("skills", "proteus", "references", "docs-diet.md")));
 
 // lefthook install writes the shared git hooks, which agents may not do (#269): workers prove the hook, the human installs it
