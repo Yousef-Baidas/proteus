@@ -101,6 +101,8 @@ function world(name, { init = true } = {}) {
   g(W, "init", "-q", "--bare", "-b", "main", target);
   g(dir, "config", "user.name", "Repo Person");
   g(dir, "config", "user.email", "repo@example.com");
+  // no auto maintenance: a commit starts it detached, and its transient objects/maintenance.lock lands in a snapshot
+  g(dir, "config", "maintenance.auto", "false");
   fs.writeFileSync(path.join(dir, "AGENTS.md"), "# Agents\n\n## Learned\n- gate: `node gate.js`\n");
   fs.writeFileSync(path.join(dir, "gate.js"), "process.exitCode = 0;\n");
   g(dir, "add", ".");

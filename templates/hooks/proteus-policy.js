@@ -395,10 +395,19 @@ const HELD = {
   "unread-security": `gh could not read the base's security block or what this PR changes, so it counts as a security change; ${SIGNOFF}`,
   human: `it goes into the default branch and changes a path in the security block of teams/ROUTING.md; ${ACCEPTED}`,
   "unread-human": `it goes into the default branch and gh could not read the base's security block or what this PR changes; ${ACCEPTED}`,
+  deps: `it adds or upgrades a dependency planning did not approve; ask the human as a planning question: a \`DEPENDENCY <name>\` line for each in their verdict on it, or ${ACCEPTED}`,
+  "unread-deps": `the dependency check could not read its diff (gh pr diff failed), so it is held; ${ACCEPTED}`,
 };
 
 // what a hold says, proteus-merge.js's line and the stand-in's `pr merge` refusal
-const heldLine = (h) => `PR #${h.n} held${h.why.endsWith("human") ? " for the human" : ""}: ${HELD[h.why] || h.why}`;
+const heldLine = (h) => `PR #${h.n} held${/(human|deps)$/.test(h.why) ? " for the human" : ""}: ${HELD[h.why] || h.why}`;
+
+// the human's login, as proteus-verdict.js trusts it: "human" in proteus.json, else gh's own login while the agents
+// share it (no agentGh); "" when there is none, so no comment counts
+function humanOf(root) {
+  const human = String(lib.proteusConfig().human || "").trim();
+  return human || (lib.agentGhDir() ? "" : lib.gh(["api", "user", "--jq", ".login"], root, 6000));
+}
 
 // what stands in for the proteus/security status in local mode (#310): "security" when PR #n changes a path in the
 // security block of base's teams/ROUTING.md, both ends of a rename, as proteus-security.js and the signoff's
@@ -414,32 +423,86 @@ function securityHold(n, root, base) {
   return listed.out.split(/\r?\n/).map((l) => l.trim()).some((p) => p && globs.some((g) => lib.tierMatch(g, p))) ? "security" : "";
 }
 
+// dependency consent (#367): manifests and lockfiles, any ecosystem, known by file name alone
+const MANIFEST = /^(package\.json|bower\.json|deno\.jsonc?|requirements[\w.-]*\.(txt|in)|constraints[\w.-]*\.txt|pyproject\.toml|Pipfile|setup\.(py|cfg)|environment\.ya?ml|go\.mod|Cargo\.toml|Gemfile|[\w.-]+\.gemspec|composer\.json|pom\.xml|build\.gradle(\.kts)?|libs\.versions\.toml|[\w.-]+\.(cs|fs|vb)proj|Directory\.Packages\.props|packages\.config|pubspec\.yaml|mix\.exs|Package\.swift|Podfile|Cartfile|deps\.edn|project\.clj|build\.sbt|[\w.-]+\.cabal|stack\.yaml|vcpkg\.json|conanfile\.(txt|py)|DESCRIPTION)$/;
+const LOCKFILE = /^(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.lock|poetry\.lock|Pipfile\.lock|uv\.lock|pdm\.lock|go\.sum|go\.work\.sum|Cargo\.lock|Gemfile\.lock|composer\.lock|gradle\.lockfile|packages\.lock\.json|pubspec\.lock|mix\.lock|Package\.resolved|Podfile\.lock|Cartfile\.resolved|flake\.lock|renv\.lock|conan\.lock)$/;
+const depKind = (file) => { const b = String(file).split("/").pop(); return LOCKFILE.test(b) ? "lock" : MANIFEST.test(b) ? "manifest" : ""; };
+// what a unified diff adds to them: [{ file, kind, line }], a manifest's added lines that are not blank or a comment,
+// and one entry per lockfile it touches at all (a binary lockfile shows no lines). A line the same file also removes,
+// but for a trailing comma, is no change (a list that grew by one)
+function depChanges(patch) {
+  const out = [], gone = new Set();
+  const norm = (s) => s.slice(1).trim().replace(/,$/, "");
+  let file = "", kind = "";
+  for (const l of String(patch || "").split(/\r?\n/)) {
+    const m = /^diff --git a\/.+ b\/(.+)$/.exec(l);
+    if (m) { file = m[1]; kind = depKind(file); if (kind === "lock") out.push({ file, kind, line: "" }); continue; }
+    if (kind !== "manifest" || l.startsWith("+++") || l.startsWith("---")) continue;
+    if (l.startsWith("-")) gone.add(`${file}\0${norm(l)}`);
+    const t = l.startsWith("+") ? norm(l) : "";
+    if (t && !/^(#|\/\/|--|;)/.test(t)) out.push({ file, kind, line: t });
+  }
+  return out.filter((c) => c.kind === "lock" || !gone.has(`${c.file}\0${c.line}`));
+}
+// the dependencies the human approved on a PR: each `DEPENDENCY <name> [<name>...]` line in their verdicts
+const approvedDeps = (said) => said.flatMap((v) => String(v.body).split(/\r?\n/).map((l) => /^DEPENDENCY\s+(.+)$/.exec(l.trim())).filter(Boolean).flatMap((m) => m[1].split(/[\s,]+/).filter(Boolean)));
+// the changes no approval covers: a manifest line naming no approved dependency; a lockfile when none is approved
+// (a lockfile's churn follows from the approved ones)
+function unapprovedDeps(changes, names) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = (line) => names.some((n) => new RegExp(`(^|[^\\w.@/-])${esc(n)}($|[^\\w.-])`, "i").test(line));
+  return changes.filter((c) => (c.kind === "lock" ? !names.length : !named(c.line)));
+}
+
+// a dependency PR #n adds or upgrades that the human did not approve (#367): "deps", "unread-deps" when gh cannot give
+// its diff (a dependency gate that opens on an error is none), "" when none. said(): the human's verdicts on it
+function depHold(n, root, said) {
+  const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000);
+  if (!diff.ok) return "unread-deps";
+  const deps = depChanges(diff.out);
+  return deps.length && unapprovedDeps(deps, approvedDeps(said())).length ? "deps" : "";
+}
+
 // the holds on the picked PRs, [{ n, why, sha }] (sha: the head's sha12). No PR into a run branch waits for the human
-// (#368); on a host the ruleset's required proteus/security covers a security change, so nothing is held there. In
-// local mode no host posts that status, so a security change (securityHold) waits: into a run branch, for the security
-// verifier's proteus/security success on its head; into any other base (the default branch, the human's merge), for
-// the human's newest recorded verdict on the PR (lib.humanVerdicts) being ACCEPT <head sha12>. The merge is pinned to
-// that head. Here rather than in proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to
-// run from a copy
+// (#368) but one adding a dependency planning did not approve (depHold, every mode, #367): a `DEPENDENCY <name>` line
+// for each in the human's verdicts on it, or their ACCEPT <head sha12>, releases it. On a host the ruleset's required
+// proteus/security covers a security change. In local mode no host posts that status, so a security change
+// (securityHold) waits: into a run branch, for the security verifier's proteus/security success on its head; into any
+// other base (the default branch, the human's merge), for the human's newest recorded verdict on the PR
+// (lib.humanVerdicts) being ACCEPT <head sha12>. The merge is pinned to that head. Here rather than in
+// proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
 function held(picked, root) {
-  if (!picked.length || !lib.localCommon(root)) return [];
+  if (!picked.length) return [];
+  const local = lib.localCommon(root);
+  let human = null;
   return picked.flatMap((p) => {
-    let v = null;
+    let v = null, said = null;
     try { v = JSON.parse(lib.gh(["pr", "view", String(p.n), "--json", "baseRefName,headRefOid,statusCheckRollup"], root, 30000)); } catch {}
-    const base = String((v && v.baseRefName) || ""), risk = securityHold(p.n, root, base);
-    if (!risk) return [];
+    // the human's verdicts on it, oldest first, read once: the local record, or their login's comments on a host
+    const verdicts = () => {
+      if (said) return said;
+      if (local) return (said = lib.humanVerdicts(root, p.n));
+      if (human === null) human = humanOf(root);
+      let c = null;
+      if (human) try { c = JSON.parse(lib.gh(["pr", "view", String(p.n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
+      return (said = human ? lib.humanVerdicts(root, p.n, (c && c.comments) || [], human) : []);
+    };
+    const dep = depHold(p.n, root, verdicts);
+    const base = String((v && v.baseRefName) || ""), risk = local ? securityHold(p.n, root, base) : "";
+    if (!risk && !dep) return [];
     const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
+    const accepted = !!sha && (verdicts().slice(-1)[0] || {}).first === `ACCEPT ${sha}`;
+    if (dep && !accepted) return [{ n: p.n, why: dep, sha }];
     if (!full) return [{ n: p.n, why: "unknown", sha }];
     if (p.oid && p.oid !== full) return [{ n: p.n, why: "moved", sha }];
     const run = base.startsWith(lib.CURRENT.branch);
-    const ok = run ? (v.statusCheckRollup || []).some((c) => (c.context || c.name) === "proteus/security" && /^success$/i.test(String(c.state || c.conclusion || "")))
-      : (lib.humanVerdicts(root, p.n).pop() || {}).first === `ACCEPT ${sha}`;
+    const ok = !risk || (run ? (v.statusCheckRollup || []).some((c) => (c.context || c.name) === "proteus/security" && /^success$/i.test(String(c.state || c.conclusion || ""))) : accepted);
     if (!ok) return [{ n: p.n, why: run ? risk : risk.replace("security", "human"), sha }];
-    p.oid = full; // the merge is pinned to the head that was signed or accepted
+    p.oid = full; // the merge is pinned to the head that was signed, approved or accepted
     return [];
   });
 }
 
-module.exports = { held, heldLine, load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
+module.exports = { held, heldLine, depChanges, approvedDeps, unapprovedDeps, load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

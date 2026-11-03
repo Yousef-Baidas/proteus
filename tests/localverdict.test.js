@@ -441,6 +441,57 @@ const ago = (ms) => new Date(Date.now() - ms).toISOString();
   ok("e2e: the batch's suite result ends it", r.code === 0, r.out + r.err);
 }
 
+// ---- dependency consent (#367): a PR adding or upgrading a dependency waits for the human, whatever the modes say
+{
+  const a = repo("deps");
+  const off = { merge: "lead", ask: "never", rules: [] };
+  const write2 = (file, text) => { fs.mkdirSync(path.dirname(path.join(a.dir, file)), { recursive: true }); fs.writeFileSync(path.join(a.dir, file), text); };
+  // a base branch with a manifest (main changes only through a merge); each PR branches from it
+  lib.g(a.dir, "checkout", "-q", "-b", "base", "main");
+  write2("package.json", '{\n  "dependencies": {\n    "left-pad": "1.0.0"\n  }\n}\n');
+  lib.g(a.dir, "add", "package.json"); lib.g(a.dir, "commit", "-q", "-m", "chore: manifest"); lib.g(a.dir, "push", "-q", "origin", "base:base");
+  lib.g(a.dir, "checkout", "-q", "main");
+  const pr = (files) => {
+    const branch = `dep-${++a.n}`;
+    lib.g(a.dir, "checkout", "-q", "-b", branch, "base");
+    for (const [f, t] of Object.entries(files)) write2(f, t);
+    lib.g(a.dir, "add", "--", ...Object.keys(files)); lib.g(a.dir, "commit", "-q", "-m", `feat: ${branch}`);
+    lib.g(a.dir, "push", "-q", "origin", `${branch}:${branch}`);
+    lib.g(a.dir, "checkout", "-q", "main");
+    const made = a.gh(["pr", "create", "--base", "base", "--head", branch, "--title", `feat: ${branch}`, "--body", "b"]);
+    const m = /\/pull\/(\d+)$/.exec(made.out.trim());
+    if (!m) throw new Error(made.out + made.err);
+    return { n: Number(m[1]) };
+  };
+  const added = '{\n  "dependencies": {\n    "left-pad": "1.0.0",\n    "express": "4.19.0"\n  }\n}\n';
+  let p = pr({ "package.json": added });
+  let h = a.held(p, off);
+  ok("deps: an added dependency without approval is held, ask never too", h.length === 1 && h[0].why === "deps", JSON.stringify(h));
+  write(a, entry(p.n, "ACCEPT\nDEPENDENCY lodash\n"));
+  ok("deps: an approval for another dependency holds it", a.held(p, off).length === 1);
+  write(a, entry(p.n, "ACCEPT\nDEPENDENCY express\n"));
+  ok("deps: the human's approval for it lets it through", a.held(p, off).length === 0, JSON.stringify(a.held(p, off)));
+  p = pr({ "package.json": '{\n  "dependencies": {\n    "left-pad": "1.3.0"\n  }\n}\n' });
+  ok("deps: an upgrade is held too", (a.held(p, off)[0] || {}).why === "deps");
+  p = pr({ "package.json": added, "package-lock.json": '{\n  "packages": {\n    "node_modules/express": {},\n    "node_modules/body-parser": {}\n  }\n}\n' });
+  ok("deps: the manifest and its lockfile, unapproved, are held", a.held(p, off).length === 1);
+  write(a, entry(p.n, "ACCEPT\nDEPENDENCY express\n"));
+  ok("deps: lockfile churn from an approved dependency passes", a.held(p, off).length === 0, JSON.stringify(a.held(p, off)));
+  p = pr({ "yarn.lock": "body-parser@1:\n  version 1.20.0\n" });
+  ok("deps: a lockfile change with no approval is held", (a.held(p, off)[0] || {}).why === "deps");
+  p = pr({ "src/app.js": "x\n", "docs/requirements.md": "express\n" });
+  ok("deps: a PR touching no manifest or lockfile is not held", a.held(p, off).length === 0);
+  p = pr({ "go.mod": "module m\n\nrequire github.com/x/y v1.2.0\n" });
+  ok("deps: another ecosystem's manifest, by file name", (a.held(p, off)[0] || {}).why === "deps");
+  const sha = lib.g(a.dir, "rev-parse", `origin/dep-${a.n}`).slice(0, 12);
+  write(a, entry(p.n, `ACCEPT ${sha}\n`));
+  ok("deps: the human's ACCEPT of its head lets it through", a.held(p, off).length === 0, JSON.stringify(a.held(p, off)));
+  // the model cannot write the record: a store comment is no approval
+  p = pr({ "Cargo.toml": "[dependencies]\nserde = \"1\"\n" });
+  a.comment(p.n, "ACCEPT\nDEPENDENCY serde\n");
+  ok("deps: a comment in the store approves nothing", a.held(p, off).length === 1);
+}
+
 // ---- the stand-in's rule targets are the installer's
 {
   ok("rules: a run branch needs them, the default branch does not", hooksLib.requiredChecks("proteus/rr").length === hooksLib.REQUIRED_CHECKS.length && hooksLib.requiredChecks("main").length === 0);

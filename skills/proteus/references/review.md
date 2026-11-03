@@ -44,7 +44,7 @@ Any of these produce the verdict comment.
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |
 
-No PR into `proteus/<run>` waits for the human. In local mode the close PR's verdict is on the PR, first line `ACCEPT <sha12>` for its current head or `CHANGES`; the lead posts the human's decision from chat with `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>`, then the command its refusal prints.
+No PR into `proteus/<run>` waits for the human, except one adding or upgrading a dependency planning did not approve: it is held in every mode, the lead asks it as a planning question, and a `DEPENDENCY <name>` line for each in the human's verdict on the PR, or `ACCEPT <sha12>` for its head, releases it. In local mode the close PR's verdict is on the PR, first line `ACCEPT <sha12>` for its current head or `CHANGES`; the lead posts the human's decision from chat with `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>`, then the command its refusal prints.
 
 ## Unattended
 
