@@ -12,7 +12,9 @@
 // (lib.appToken; GH_TOKEN on the one gh call, never on disk or argv), and the ruleset counts only the App's two
 // statuses, so a status a worker posts with the agents' token does not count. A token that cannot be minted fails
 // the signoff: never a quiet fall back to the agents' login. With the App, a MERGE without --security also carries
-// CI's no-security-path success over as the App's (securityMirror), and is refused until CI has posted.
+// CI's no-security-path success over as the App's (securityMirror), and is refused until CI has posted. Any MERGE
+// without --security carries the security verifier's MERGE on an earlier head over when the change since is
+// whitespace only (whitespaceOnly, #364).
 // In local mode (#310) it posts through the stand-in, never with the App. Without an App it posts as the agents' login (lib.agentGhDir, else this process's gh). The hooks refuse a
 // hand-posted status (lib.branchDenial) and this script from anyone but a verifier (lib.signoffDenial, the lead
 // guard); without the App that is a guard, not a boundary: a worker sharing the agents' token can post a status
@@ -59,11 +61,18 @@ async function main(argv) {
       if (mirror.why) { console.error(`proteus-signoff: ${mirror.why}`); return 1; }
     }
   }
+  const kept = word === "MERGE" && !security ? whitespaceOnly(cwd, pr, head, repo, run, !!app) : "";
   const post = (ctx, state, description) => lib.gh(["api", "-X", "POST", `repos/${repo}/statuses/${head}`, "-f", `state=${state}`, "-f", `context=${ctx}`, "-f", `description=${description}`, "--jq", ".state"], cwd, 30000, as, token);
   const by = security ? "the security verifier" : "the verifier";
   const state = post(context, WORDS[word], `${word} by ${by}`);
   if (state !== WORDS[word]) { console.error(`proteus-signoff: posting ${context} on ${head.slice(0, 12)} failed (gh api returned "${state}"); the PR has no verdict status. Retry, or report the error to the lead.`); return 1; }
   console.log(`proteus-signoff: ${context} = ${state} (${word}) on PR #${pr} at ${head.slice(0, 12)}${app ? ` as App ${app.appId}` : ""}`);
+  if (kept) {
+    const got = post("proteus/security", "success", `MERGE by the security verifier, carried from ${kept.slice(0, 12)}: whitespace-only since`);
+    if (got !== "success") { console.error(`proteus-signoff: carrying the security verifier's MERGE over from ${kept.slice(0, 12)} failed (gh api returned "${got}"); the verdict is posted, the PR still lacks proteus/security. Run the same signoff again.`); return 1; }
+    console.log(`proteus-signoff: proteus/security = success carried over from the security verifier's MERGE on ${kept.slice(0, 12)} (git diff -w to this head is empty)`);
+    return 0;
+  }
   if (mirror && mirror.note) console.log(`proteus-signoff: ${mirror.note}`);
   if (mirror && mirror.carry) {
     const got = post("proteus/security", "success", CARRIED);
@@ -98,6 +107,32 @@ function securityMirror(pr, head, repo, run) {
   if (!listed) return { why: `cannot list PR #${pr}'s files; nothing posted. Retry.` };
   const hits = [...new Set(listed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))].filter((p) => globs.some((g) => lib.tierMatch(g, p)));
   return hits.length ? { note: `proteus/security not carried over: ${hits.slice(0, 3).join(", ")}${hits.length > 3 ? ", ..." : ""} match the security block of ${base}'s teams/ROUTING.md though CI said none; the security verifier signs off with --security.` } : { carry: true };
+}
+
+// A security signoff stays valid across a whitespace-only push (#364): on a verifier's MERGE, when the head has no
+// security verifier's signoff of its own, the newest earlier commit of the PR the security verifier signed is found;
+// when that signoff is MERGE (with the App, the App's) and `git diff -w <it> <head>` is empty in this checkout, its
+// sha, which main carries over to the head. "" otherwise: no signoff, a later BACK-TO-WORKER, a real change, or git
+// or gh cannot say
+const SIGNED = /^(MERGE|BACK-TO-WORKER|CONTRACT-WRONG) by the security verifier\b/;
+function whitespaceOnly(cwd, pr, head, repo, run, app) {
+  const security = (sha) => {
+    let list = null;
+    try { list = JSON.parse(run(["api", `repos/${repo}/commits/${sha}/statuses`])); } catch {}
+    const s = (Array.isArray(list) ? list : []).find((x) => x && x.context === "proteus/security" && SIGNED.test(String(x.description || ""))); // newest first
+    const login = String((s && s.creator && s.creator.login) || "");
+    return s && (!app || (login.endsWith("[bot]") && login !== CI_LOGIN)) ? s : null;
+  };
+  if (security(head)) return ""; // the head's own signoff stands, MERGE or not
+  const shas = run(["api", "--paginate", `repos/${repo}/pulls/${pr}/commits`, "--jq", ".[].sha"]).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[0-9a-f]{40}$/.test(l));
+  const common = lib.gitCommonDir(lib.gitRoot(cwd) || cwd);
+  for (const sha of shas.reverse().filter((x) => x !== head)) {
+    const s = security(sha);
+    if (!s) continue;
+    if (!lib.SECURITY_SIGNED.test(s.description) || !common) return "";
+    return lib.gitTry(common, ["diff", "-w", "--quiet", "--no-ext-diff", "--no-textconv", sha, head], { timeout: 30000 }).ok ? sha : "";
+  }
+  return "";
 }
 
 // a MERGE is refused while the PR's head branch has a guard-violation record (proteus-shell-check.js) whose
