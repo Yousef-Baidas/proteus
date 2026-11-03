@@ -96,7 +96,7 @@ plib.saveSandbox(COMMON, "s-on", "on");
 plib.saveSandbox(COMMON, "s-off", "off");
 plib.saveSandbox(COMMON, "s-na", "unavailable");
 const hook = (script, session, mode, extra) => lib.run(script, { hook_event_name: "PreToolUse", session_id: session, cwd: REPO, ...(mode && { permission_mode: mode }), ...extra }, { cwd: REPO });
-const spawn = (type, session, mode = "bypassPermissions") => hook(LG, session, mode, { tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: type } });
+const spawn = (type, session, mode = "bypassPermissions") => hook(LG, session, mode, { tool_name: "Agent", tool_input: { model: "opus", prompt: lib.spec(REPO), subagent_type: type } });
 const LAUNCH = /claude --settings \S+ --permission-mode bypassPermissions/;
 {
   let r = spawn("proteus-worker", "s-none");

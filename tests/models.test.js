@@ -27,7 +27,7 @@ const tr = (m, n = 10000) => {
   return f;
 };
 const spawn = (model, tp, opts = {}) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", transcript_path: tp, cwd: REPO, tool_name: "Agent",
-  tool_input: { model, subagent_type: "proteus-worker", prompt: "x" } }, { cwd: REPO, ...opts });
+  tool_input: { model, subagent_type: "proteus-worker", prompt: lib.spec(REPO) } }, { cwd: REPO, ...opts });
 
 // ---- aliases: a Mythos id sits on Fable's rung
 const L = ["haiku", "sonnet", "opus", "fable"];
@@ -81,7 +81,7 @@ ok("rungOf: an alias to a rung the ladder lacks matches nothing", plib.rungOf(["
 {
   const TO = tr("claude-opus-5-5");
   const as = (type, model, tp = TO, opts = {}) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", transcript_path: tp, cwd: REPO, tool_name: "Agent",
-    tool_input: { model, subagent_type: type, prompt: "x" } }, { cwd: REPO, ...opts });
+    tool_input: { model, subagent_type: type, prompt: lib.spec(REPO) } }, { cwd: REPO, ...opts });
   const under = (r) => r.code === 2 && /under the floor/.test(r.err);
   ok("helper: proteus-helper on Haiku is allowed", as("proteus-helper", "haiku").code === 0 && as("proteus:proteus-helper", "haiku").code === 0);
   ok("helper: a worker, a verifier, no type and a similar name on Haiku are refused",
