@@ -145,4 +145,13 @@ ok("verifier: a delegated answer is evidence checked against the code; findings 
 ok("verifier: the kept categories are never delegated", ["Authorization", "permissions", "private or personal data", "secrets or credentials", "data loss"].every((w) => risk.includes(w)) && /never delegate/.test(risk), risk);
 ok("verifier: a small diff may skip delegating, not the list; a recheck reuses the earlier list", /small diff may skip delegating, not the list/.test(risk) && /recheck, reuse the earlier list/.test(risk) && /only for new code/.test(risk), risk);
 
+// saved attacks become tests (#344 step 5): the verifier keeps its reproduction as a test, the worker lands it
+const verifierRules = roles.split("### Verifier")[1] || "", workerRules = (roles.split("### Worker")[1] || "").split("### Verifier")[0];
+const evidence = (/^- Evidence rules:.*$/m.exec(verifierRules) || [""])[0];
+ok("verifier: a finding resting on a reproduction is a test in the project's test style in scratch, listed under Tests:", /reproduction you ran/.test(evidence) && /project's test style/.test(evidence) && /scratch dir/.test(evidence) && /`Tests:` below `Risks:` as `- <path>`/.test(evidence), evidence);
+ok("verifier: a recheck runs the earlier tests first and attacks only what they miss", /run the tests it names first, attack only code they miss/.test(risk), risk);
+const kept = (/^- A reviewer's test.*$/m.exec(workerRules) || [""])[0];
+ok("worker: a reviewer's test joins the suite with the fix, unchanged but for place and name, red then green, named in the report", /joins the suite with the fix/.test(kept) && /unchanged but for place and name/.test(kept) && /red before the fix, green after/.test(kept) && /report names it/.test(kept), kept);
+ok("worker: never weakens or deletes a reviewer's test; disagreement goes in the report and the verifier decides", /Never weaken or delete/.test(kept) && /say why in the report/.test(kept) && /verifier decides/.test(kept), kept);
+
 summary();

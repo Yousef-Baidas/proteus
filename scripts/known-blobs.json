@@ -73,6 +73,7 @@
       "478c2bd97ccea894ff6e39dfa162e5d87f99dda8",
       "48d67020e05bffe1d9ead7fff2de897b5f498824",
       "62a9546a7f39045a5a270fc3b09763ebed467c32",
+      "6b8232ff7efd66107ff92121c37f9bbe75e92067",
       "6bdc4de84cc5778490f28d6551fb7b437df99c53",
       "805a2b0ae724ade35ab5ceb87441d3512554b733",
       "a4bc35d7b38c214382b468071ddd9a506bf5cf0d",
@@ -99,12 +100,14 @@
       "a07a7c8b4599af96f5e07dd2a81016c8688bac44",
       "b06e0422870d2f906077fd3173a6a1b5dd4348e8",
       "cec173e74657cd37b0e6b0d20a60e30adaa8f3cc",
+      "d10d1c46e70d729ad1656cf4fdd7ec400d5c190b",
       "de94531dd4a2f52212b84073a297f9c56ddeb737",
       "fc40a9e0b32f40dda6e5c857c2ed5ab9ee1d4131"
     ],
     "agents/proteus-devops-worker.md": [
       "01260f65c4f9bbb61104bed4f49e98111042706c",
       "0fd5b71ed61ea26133d9d9dad07418e63b53ff89",
+      "166318766fccfb6a30022a6899c47a1501fc202b",
       "1f984d50f63ec804299753540f0bd0a57e6d2837",
       "53d06e91dfc0763633b02e097b676a594b59f953",
       "7c622b06191d318d05cf4487dde864c54f77197a",
@@ -137,6 +140,7 @@
       "bce00894e6501b6e8ec8a42f26fb8f72abe239d1",
       "cc95a830d7d78c7a3450c1ee115ffed2b87b27d2",
       "cdda11fbcda2c9ea6fabc1e7d474190b2744afc2",
+      "d490baaaa75eb1d73ad35ad83a38508e72fa93ce",
       "d6e4aa16ae4577f1f053ae2f1c9e8c82bd9f88c9",
       "e83eab959f58de1de73ff7f9004199f68f5027e7"
     ],
@@ -150,6 +154,7 @@
       "6478f3d4c39e37566de7b8a6d4b69fff50b4dab6",
       "8de24922eab05c824a60477785241f9ae0a69c7e",
       "a0f61b1613c11854bfb7d3173171187b43109721",
+      "b3038f67698272a9e544f525385d784541bf8f46",
       "b368b6710cc9f760a297c12a54536f264a4ff549",
       "c282a4d64e56559402cfe23952056de1f6ce81c5",
       "e094e01120b13cb17fd1ae31baecdbcf2525f38a",
@@ -172,9 +177,11 @@
       "abaa55eead5a78f324c0c6729fa2dc58556178bb",
       "aef6c41494d5e1721488831393299462254cd776",
       "cb744c335552648e644f1d55e98c3833bba375c7",
+      "f4eb327863abebd21286ed12fa182c1fc0c44494",
       "f7552cefe19bb783999101e6ba4c48ec7ec4c00a"
     ],
     "agents/proteus-helper.md": [
+      "019aa5122206f7d91db3234c4e35593766af9dcb",
       "3ef89d4da296f2d73a0192cd9daf49ff4a0dc33f",
       "4349e063d9fdef8ff679d16f3c2eabd7e3944532",
       "82b014f3d9cf8c7e5c226f0d12e4bb022b559c73"
@@ -187,6 +194,7 @@
       "56a8485860e35fd2f5acf9e0ad53a0742ecfb436",
       "56f0e490a9916f0b0a4c1bd85cb45c647ea50d08",
       "66c8b94e8ab86c76ee1a7ad0a7d7e9c9026af7c7",
+      "85aa13b2866b3767148e1b2b644f56ab6b7badba",
       "8af418feb8a6290a87042b5d4a83d4c4ac2b29c8",
       "8b92fa663002db8b3dec78bc597aee6629eb07aa",
       "97aaed644754fcdce4a9a300498906b49d9f080f",
@@ -200,6 +208,7 @@
       "0cfad86e09d7ece8c65993596a11aec69dfa96bb",
       "166640d0a603693c507731fa1e3905f8f622f8a3",
       "1708ef98872a74f09dc9c0dfa820b89bfb54863e",
+      "361e501c9a74779451ea923275bb2c4b3033afe3",
       "36617d441757659ce7014e620c2abc8eabcc852c",
       "3e91a5c05519bc33eacd38900c899c163694629c",
       "587203c805468d48d9d9f85be216a37432f6b14b",
@@ -216,6 +225,7 @@
     ],
     "agents/proteus-security-verifier.md": [
       "0aac65b09bb27dc626ac5c06857730d2523e69ff",
+      "1094e0b937a127af39ac3caaa1b6b2ccee2de8b2",
       "10b6ef3243c8dc6b6b4618125a58185fa653c021",
       "1166ba4bdb5dcf09d86960e3888c6af52c63b7d7",
       "214e2e9f1cdb2bb16c91dc7b8807df562045bb76",
@@ -243,6 +253,7 @@
     "agents/proteus-verifier.md": [
       "261b9eb5c4a85e6e91612d2829fe0605ad93c4df",
       "298945cbd89efabcbb4059a96f7c44d2e42eb0ef",
+      "300685078d8a5c5aa5fa9e690f7bfb2f5628cae1",
       "31e3600fe7a1721698b6944d849a4861ab9c2e58",
       "3cceddc42e540b2b3bf6c63ae15f1ec4949b2037",
       "3dc1038aa88d531fac67399b2ef24b20ba011748",
@@ -266,6 +277,7 @@
     "agents/proteus-worker.md": [
       "02e29f5f699a1deb8592e1995915da0504a3b8eb",
       "0c95388abfe1af004c19e542cadb0dcc0fef63c7",
+      "0e1c926c6d4cf651cd92994fd58924e9884507eb",
       "2173977fe8da8a8f06f81d4d2f09e26e0de038e6",
       "5b6bbfe4da605c94faf1dfdcfbfb1bbab28af103",
       "5cfb9ee081cda56e1e189e013efb77b6babebb0e",
@@ -485,6 +497,7 @@
       "d2d687b75b7e916ec4be4197c8dc9de39c3f56cd",
       "e8735ab9b3deb8ee55a6e8bff63dc81eeb740a55",
       "e881f0b97741e9206f9ee7c4627c30ccd46ffbec",
+      "f07301c708071721e0b9d18082d01641434c90fe",
       "fcf11a04b3f981743ca756dc25d0e4794fbf7938"
     ],
     "templates/hooks/proteus-close-report.js": [
