@@ -69,6 +69,7 @@ ok("install one guard entry", j1.hooks.PreToolUse.filter((e) => JSON.stringify(e
 ok("install rewrites the old $CLAUDE_PROJECT_DIR command to an absolute one (#96)", j1.hooks.PreToolUse[0].hooks[0].command === `node "${H.replace(/\\/g, "/")}/proteus-lead-guard.js"`, JSON.stringify(j1.hooks.PreToolUse[0]));
 ok("install writes no $CLAUDE_PROJECT_DIR command (#96)", !s1.includes("$CLAUDE_PROJECT_DIR"));
 ok("install statusLine absolute", j1.statusLine && j1.statusLine.command === `node "${H.replace(/\\/g, "/")}/proteus-statusline.js"`, JSON.stringify(j1.statusLine));
+ok("install caps the lead's auto-compact window at 200k (#366)", j1.autoCompactWindow === 200000, JSON.stringify(j1.autoCompactWindow));
 ok("install copies all but itself", fs.readdirSync(SRC).filter((f) => f !== "install-lead-hooks.js").every((f) => fs.existsSync(hook(f))) && !fs.existsSync(hook("install-lead-hooks.js")));
 r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO });
 ok("install idempotent", fs.readFileSync(SET, "utf8") === s1 && r.code === 0);
@@ -77,9 +78,9 @@ const REPO2 = path.join(W, "repo2"); fs.mkdirSync(path.join(REPO2, ".claude"), {
 fs.writeFileSync(path.join(REPO2, ".claude", "settings.local.json"), "{ bad json");
 r = run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO2 });
 ok("install invalid json → exit 1, untouched", r.code === 1 && fs.readFileSync(path.join(REPO2, ".claude", "settings.local.json"), "utf8") === "{ bad json", r.err);
-fs.writeFileSync(path.join(REPO2, ".claude", "settings.local.json"), JSON.stringify({ statusLine: { type: "command", command: "mine" } }));
+fs.writeFileSync(path.join(REPO2, ".claude", "settings.local.json"), JSON.stringify({ statusLine: { type: "command", command: "mine" }, autoCompactWindow: 400000 }));
 run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO2 });
-ok("install keeps existing statusLine", JSON.parse(fs.readFileSync(path.join(REPO2, ".claude", "settings.local.json"), "utf8")).statusLine.command === "mine");
+ok("install keeps existing statusLine and compact window", JSON.parse(fs.readFileSync(path.join(REPO2, ".claude", "settings.local.json"), "utf8")).statusLine.command === "mine" && JSON.parse(fs.readFileSync(path.join(REPO2, ".claude", "settings.local.json"), "utf8")).autoCompactWindow === 400000);
 fs.writeFileSync(path.join(REPO2, ".claude", "settings.local.json"), JSON.stringify({ statusLine: { type: "command", command: "mine" }, hooks: { PreToolUse: [{ matcher: "Edit|Write|MultiEdit|NotebookEdit|Agent|Task|Bash|Monitor", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/proteus-lead-guard.js"' }] }] } }));
 run(path.join(SRC, "install-lead-hooks.js"), "", { cwd: REPO2 });
 ok("install upgrades previous matcher (adds Read)", JSON.parse(fs.readFileSync(path.join(REPO2, ".claude", "settings.local.json"), "utf8")).hooks.PreToolUse.filter((e) => JSON.stringify(e).includes("proteus-lead-guard")).map((e) => e.matcher).join() === "Edit|Write|MultiEdit|NotebookEdit|Agent|Task|Bash|Monitor|Read");
@@ -222,7 +223,7 @@ r = run(LG, pre("Edit", { file_path: path.join(REPO, "src/a.ts") }, sub));
 ok("guard: subagent edit main checkout during run denied", r.code === 2 && /workers edit only inside their worktree \(none found from your cwd; comment NEEDS on the issue and stop\)\. src\/a\.ts is in the main checkout/.test(r.err), r.err);
 r = run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: T190 }));
 ok("guard: context 190k blocks spawn", r.code === 2 && /context at 190k/.test(r.err), r.err);
-ok("guard: the context refusal says finish the step, log the position, /handoff", /Finish the step, log the position on the run log, \/handoff/.test(r.err), r.err);
+ok("guard: the context refusal says log the position and compact, no new session", /Finish the step and log the position on the run log; the session compacts/.test(r.err) && !/handoff|fresh lead|new session/.test(r.err), r.err);
 ok("guard: context after compaction ok", code(pre("Agent", { model: "opus", subagent_type: "proteus-worker" }, { transcript_path: TCOMP })) === 0);
 ok("guard: PROTEUS_HANDOFF_HARD env", run(LG, pre("Agent", { model: "opus", subagent_type: "proteus-worker" }), { env: { PROTEUS_HANDOFF_HARD: "90000" } }).code === 2);
 // model ladder: the lead's model from the transcript's newest main-thread reply
@@ -510,7 +511,7 @@ ok("journal: appended", JSON.parse(fs.readFileSync(JF, "utf8").trim().split("\n"
 ok("journal: no nudge for slash / short", run(JR, ups("/proteus-review something long enough to pass forty chars")).out === "" && run(JR, ups("status")).out === "");
 ok("journal: task notification not journaled", (run(JR, ups("<task-notification>done</task-notification>", { source: "system" })), !fs.readFileSync(JF, "utf8").includes("task-notification")));
 r = run(JR, ups("go", { transcript_path: T160 }));
-ok("journal: meter warns at 160k", /context at 160k/.test(ctxOf(r)), r.out);
+ok("journal: meter warns at 160k: compaction expected, no handoff", /context at 160k; compaction is near/.test(ctxOf(r)) && !/handoff|fresh lead/.test(ctxOf(r)), r.out);
 ok("journal: meter silent at 100k / after compaction", run(JR, ups("go")).out === "" && run(JR, ups("go", { transcript_path: TCOMP })).out === "");
 ok("journal: tail-only read (big file)", run(JR, ups("go", { transcript_path: TBIG })).out === "");
 ok("journal: subagent silent", run(JR, ups("a long prompt from somewhere that is not the human at all", sub)).out === "");
@@ -598,6 +599,21 @@ const TTM = tr("tm.jsonl", [asst(1000, "The export job is still running; I'll re
 r = run(ST, { hook_event_name: "TeammateIdle", session_id: "tm1", cwd: REPO, transcript_path: TTM, teammate_name: "w1", team_name: "t" });
 ok("stall: TeammateIdle exit 2", r.code === 2 && /Poll it now/.test(r.err), r.code + r.err);
 ok("stall: TeammateIdle no loop", run(ST, { hook_event_name: "TeammateIdle", session_id: "tm1", cwd: REPO, transcript_path: TTM, teammate_name: "w1" }).code === 0);
+// the hand-back cap (#366): a worker's or verifier's hand-back is at most 10 lines, sent back once
+{
+  const long = ["DONE #12 sent", ...Array.from({ length: 14 }, (_, i) => `- detail ${i}`)].join("\n");
+  const r1 = run(ST, stop(long, { agent_id: "hb1", agent_type: "proteus-worker" }));
+  ok("stall: a 15-line DONE hand-back from a worker is sent back with the cap", blocked(r1) && /at most 10 lines: your status line first/.test(JSON.parse(r1.out).reason), r1.out);
+  ok("stall: the same long hand-back passes the second time (no loop)", !blocked(run(ST, stop(long, { agent_id: "hb1", agent_type: "proteus-worker" }))));
+  ok("stall: an over-long single line from a verifier is sent back", blocked(run(ST, stop(`VERDICT #3 sent ${"x".repeat(2100)}`, { agent_id: "hb2", agent_type: "proteus-backend-verifier" }))));
+  ok("stall: a short hand-back passes", !blocked(run(ST, stop("DONE #12 sent\nhttps://example.invalid/issues/12#c1", { agent_id: "hb3", agent_type: "proteus-worker" }))));
+  ok("stall: a long report from a non-pipeline agent passes", !blocked(run(ST, stop(long, { agent_id: "hb4", agent_type: "proteus-scout" }))));
+  ok("stall: stop_hook_active passes a long hand-back", !blocked(run(ST, stop(long, { agent_id: "hb5", agent_type: "proteus-worker", stop_hook_active: true }))));
+  const hand = (message, agent_type) => run(ST, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, agent_id: "hb6", agent_type, tool_name: "SubagentHandback", tool_input: { message } });
+  const d = hand(long, "proteus-verifier");
+  ok("stall: SubagentHandback over the cap is denied with the cap", d.code === 2 && /at most 10 lines/.test(d.err), d.code + d.err);
+  ok("stall: SubagentHandback within the cap, or from a non-pipeline agent, passes", hand("VERDICT #3 sent\nhttps://example.invalid/pull/3", "proteus-verifier").code === 0 && hand(long, "proteus-helper").code === 0);
+}
 ok("stall: worker Stop in worktree", blocked(run(WH("proteus-stall.js"), { hook_event_name: "Stop", session_id: "w9", cwd: WT, stop_hook_active: false, last_assistant_message: "Waiting on the background process to finish." }, { cwd: WT })));
 
 // ---- status
