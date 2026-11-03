@@ -63,8 +63,8 @@
 // tests-<pr>[-security].md, for the verifier to reuse (#344). It writes where agents can, so it runs in the lead's
 // sandboxed shell: a SPAWN line names its brief command and next never runs it. A step:human ticket has no worker
 // brief: `DECIDE #<n> human step: no worker brief`, exit 1.
-// close decides step 8's close passes from the run log's milestone-passes lines and origin's tip: `close: skip <why>`,
-// exit 0, or `close: run <why>`, exit 1, on any doubt or failure too. It writes nothing but fetched objects.
+// close gates step 8 on its final pass (#344) from the run log's close-passes lines and origin's tip: `close: ready
+// <why>`, exit 0, or `close: run <why>`, exit 1, on any doubt or failure too. It writes nothing but fetched objects.
 // Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code; brief: also a DECIDE);
 // 2 on usage or no run.
 "use strict";
@@ -107,10 +107,10 @@ RUN (BLOCKED), a RUN that comes back, no progress or PROTEUS_DRIVE_MAX rounds (5
 did as DID lines, then the lead's lines. Exit 0 when it stops; non-zero only on its own error.
 brief writes the worker's (or the PR's verifier's) brief from roles.md into the run's scratch dir and
 prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief: ... and exits 1.
-close decides step 8's close passes: close: skip when every milestone has a milestone-passes line on the
-run log and origin's tip differs from the newest line's commit only by added lead records; else close: run.
+close gates step 8 on its final pass: close: ready when the run log's newest close-passes line for the
+run names a commit that origin's tip differs from only by added lead records; else close: run.
 Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code); 2 on usage or no run.
-close: exit 0 to skip, 1 to run the passes, a failure included; 2 on usage or no run.`;
+close: exit 0 when ready, 1 to run the passes, a failure included; 2 on usage or no run.`;
 const VERDICT = "proteus/verdict";
 // a human-operated step (#82): no worker, no contracts, no brief; the human commits the evidence and opens the PR
 const isHuman = (issue) => ((issue || {}).labels || []).some((l) => l.name === "step:human");
@@ -212,22 +212,20 @@ function notRecord(raw) {
   }
   return "";
 }
-// step 8's close passes, skipped only on a tree the milestone passes approved (a run-log line per milestone, the newest
-// naming the commit): { skip, why }. Whatever cannot be shown runs them
+// step 8's final pass (#344): ready only on a tree the close passes approved, the run log's newest close-passes line
+// for this run naming a commit on the run branch that the tip extends by added lead records alone: { ready, why }.
+// Whatever cannot be shown runs them; after a red pass's fix tickets the why names a changed path, the rerun's cue
 function closeDecision({ root, common, run, names }) {
-  const go = (why) => ({ skip: false, why });
-  const issues = parse(lib.gh(["issue", "list", "--label", names.label, "--state", "all", "--json", "number,title,state,milestone,labels", "--limit", "500"], root, 30000));
-  if (!Array.isArray(issues)) return go("tracker unreadable");
-  const milestones = [...new Set(lib.runTickets(issues, run, names).map((i) => i.milestone.title))];
-  if (!milestones.length) return go("no milestones");
+  const go = (why) => ({ ready: false, why });
   const logs = parse(lib.gh(["issue", "list", "--label", names.log, "--state", "all", "--json", "number,title,comments", "--limit", "100"], root, 30000));
-  const log = lib.runLogOf(Array.isArray(logs) ? logs : [], run);
+  if (!Array.isArray(logs)) return go("tracker unreadable");
+  const log = lib.runLogOf(logs, run);
   if (!log) return go("no run log");
   const trusted = trustedLogins(root);
   const lines = (log.comments || []).filter((c) => c && c.author && trusted.has(c.author.login))
-    .flatMap((c) => [...String(c.body || "").matchAll(/^milestone-passes: (\S+) ([0-9a-f]{40}(?:[0-9a-f]{24})?)\s*$/gm)]);
-  const missing = milestones.filter((m) => !lines.some((l) => l[1] === m));
-  if (missing.length) return go(`no milestone-passes line for ${missing.join(", ")}`);
+    .flatMap((c) => [...String(c.body || "").matchAll(/^close-passes: (\S+) ([0-9a-f]{40}(?:[0-9a-f]{24})?)\s*$/gm)])
+    .filter((l) => l[1] === run);
+  if (!lines.length) return go("no close-passes line: the final pass has not run");
   const sha = lines[lines.length - 1][2], branch = `${names.branch}${run}`;
   const tip = originOf(common).tip(branch);
   if (!tip) return go(`cannot read origin/${branch}`);
@@ -236,7 +234,7 @@ function closeDecision({ root, common, run, names }) {
   if (!diff.ok) return go("cannot compare the trees");
   const changed = notRecord(diff.out);
   if (changed) return go(`${changed} changed since ${sha.slice(0, 12)}`);
-  return { skip: true, why: `tree at ${tip.slice(0, 12)} is what the milestone passes approved at ${sha.slice(0, 12)}, plus lead records` };
+  return { ready: true, why: `tree at ${tip.slice(0, 12)} is what the close passes approved at ${sha.slice(0, 12)}, plus lead records` };
 }
 
 // a tree's entries from ls-tree -z, each { mode, type, obj, name, line }; null when spec names no tree
@@ -993,9 +991,9 @@ function main() {
     const w = where(argv[1] || "");
     if (w.err) { console.error(plain(w.err)); return w.code; }
     let d;
-    try { d = closeDecision(w); } catch (e) { d = { skip: false, why: e.message }; }
-    console.log(plain(`close: ${d.skip ? "skip" : "run"} ${d.why}`));
-    return d.skip ? 0 : 1;
+    try { d = closeDecision(w); } catch (e) { d = { ready: false, why: e.message }; }
+    console.log(plain(`close: ${d.ready ? "ready" : "run"} ${d.why}`));
+    return d.ready ? 0 : 1;
   }
   if (argv[0] !== "next" && argv[0] !== "drive") { console.error(`${USAGE}\nunknown command ${plain(argv[0])}`); return 2; }
   let arg = "", json = false;
