@@ -40,7 +40,7 @@ const WT = (n) => path.join(REPO, ".worktrees", String(n));
 
 const ms = { title: "r1/core", number: 1 };
 const labels = (...l) => ["proteus", "profile:backend", ...l].map((name) => ({ name }));
-const body = (n, extra = "") => `Owned: src/t${n}.js tests/t${n}.test.js\nCheck: \`tests/t${n}.test.js::adds\` returns 3 for 1 and 2${extra}`;
+const body = (n, extra = "") => `Owned: src/t${n}.js tests/t${n}.test.js\nCheck: \`tests/t${n}.test.js::adds\` returns 3 for 1 and 2\nReview: light${extra}`;
 const ISSUES = [
   { number: 5, title: "t5: add", state: "OPEN", milestone: ms, labels: labels("difficulty:standard"), body: body(5) },
   { number: 6, title: "t6: typo", state: "OPEN", milestone: ms, labels: labels("needs-research"), body: body(6, "\nTier: quick") },

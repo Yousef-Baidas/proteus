@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Stop / SubagentStop / TeammateIdle hook: an agent that ends its turn "waiting on"
+// Stop / SubagentStop / TeammateIdle / PreToolUse (SubagentHandback) hook: an agent that ends its turn "waiting on"
 // a background job never wakes (the notification cannot arrive after the turn ends), so the
 // stop is blocked once with an order to poll in the foreground.
-// Lead's session: SubagentStop + TeammateIdle. Worker worktrees: Stop.
+// Lead's session: SubagentStop + TeammateIdle + PreToolUse SubagentHandback. Worker worktrees: Stop.
 // Never loops: stop_hook_active → pass; the same message is never blocked twice.
 // Final reports (DONE, VERDICT, RED, NEEDS, WAVE-…, MERGE, BACK-TO-WORKER, CONTRACT-WRONG) never block.
 // A subagent's stop also updates its beat for proteus-watchdog.js: a stop that passes hands the agent's final
@@ -10,6 +10,9 @@
 // (#179; no hook field names the hand-back, the passing stop with a final message is it); a stop that passes
 // with no text marks it ended, a blocked stop counts as activity. A subagent's stop that passes also ends
 // its shell calls for proteus-shell-check.js (closeAgent).
+// Hand-back cap (#366): a worker's or verifier's hand-back over HAND_BACK lines or HAND_BACK_CHARS is sent
+// back once with an order to cut it to a status line and the report's link: on SubagentStop (keepGoing, even
+// a final report) and on PreToolUse of the SubagentHandback tool (deny). Exit 0, or 2 on that deny.
 "use strict";
 const crypto = require("crypto");
 const path = require("path");
@@ -20,12 +23,28 @@ const FINAL = /^\s*(\*\*)?(DONE|VERDICT|RED|NEEDS|WAVE-|MERGE|BACK-TO-WORKER|CON
 const WAITING_ON = /\b(waiting (on|for) (the |a |my |its |this )?(background|job|render|build|process|task|run|download|upload|export|bake|training|deploy|ci|pipeline|poll|command|script|server)|still (running|rendering|building|in progress))\b/i;
 const WAIT_VERB = /\b(wait(ing)?|will (check|report|poll|resume|update|follow up|continue)|i'll (check|report|poll|resume|continue|let you know)|once (it|the [\w-]+|that) (finishes|completes|is done|ends)|when (it|the [\w-]+|that) (finishes|completes|is done|ends)|notif(y|ied|ication)|monitor(ing)?|check back)\b/i;
 const BACKGROUND = /\b(background(ed)?|job|render(ing)?|process|build|task|pid|nohup|in progress|running)\b/i;
+const HAND_BACK = 10;
+const HAND_BACK_CHARS = 2000;
+const CAP_REASON = `Your hand-back is over ${HAND_BACK} lines or ${HAND_BACK_CHARS} characters, and the lead reads every one. Put the full report on the tracker (or a scratch file), then hand back at most ${HAND_BACK} lines: your status line first, then its link or path.`;
+const overCap = (t) => t.trim().split("\n").length > HAND_BACK || t.trim().length > HAND_BACK_CHARS;
 
 lib.run((ev, ad) => {
+  const capped = lib.isPipelineAgent(lib.agentTypeOf(ev));
+  if (ev.kind === "pre-tool") {
+    const ti = ev.raw && ev.raw.tool_input;
+    const msg = ti && typeof ti.message === "string" ? ti.message : "";
+    if (capped && overCap(msg)) ad.deny(CAP_REASON);
+    return;
+  }
   const text = String(ad.lastAssistantText(ev) || "");
   // the stop passes: its final message, if any, is what the lead gets back
   const pass = () => { lib.beat(ev, text.trim() ? "done" : "ended"); return closeFlights(ev); };
-  if (FINAL.test(text) || ev.stopActive || !text.trim()) return pass();
+  if (ev.stopActive || !text.trim()) return pass();
+  if (ev.kind === "subagent-stop" && capped && overCap(text) && !seenBefore(ev, text)) {
+    lib.beat(ev, "tool");
+    return ad.keepGoing(ev, CAP_REASON);
+  }
+  if (FINAL.test(text)) return pass();
   const end = text.slice(-800); // the waiting sentence sits at the end of the message
   const waiting = WAITING_ON.test(end) || (WAIT_VERB.test(end) && (BACKGROUND.test(end) || ev.busy));
   if (!waiting || seenBefore(ev, text)) return pass();

@@ -108,7 +108,7 @@ ok("modelWindow: 200k for Haiku and older Opus and Sonnet, 0 for an unknown id",
 {
   const T190 = tr("claude-opus-5-5", 190000), T280 = tr("claude-opus-5-5", 280000), TU = path.join(T, "unknown-190k.jsonl"), TS = tr("claude-sonnet-4-6", 190000), TS1 = tr("claude-sonnet-4-6[1m]", 190000);
   fs.writeFileSync(TU, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [], usage: { input_tokens: 190000 } } }) + "\n");
-  const hard = (r) => r.code === 2 && /context at \d+k: \/handoff/.test(r.err);
+  const hard = (r) => r.code === 2 && /context at \d+k: compact/.test(r.err);
   ok("handoff: an Opus 5.5 lead at 190k with no cap may spawn (1M window)", spawn("sonnet", T190).code === 0);
   ok("handoff: an unknown model or a 200k model at 190k may not (200k window)", hard(spawn("sonnet", TU)) && hard(spawn("sonnet", TS)) && spawn("sonnet", TS1).code === 0);
   const CH = path.join(W, "cap-home"); fs.mkdirSync(path.join(CH, ".claude"), { recursive: true });

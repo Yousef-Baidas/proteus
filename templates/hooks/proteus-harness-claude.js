@@ -260,14 +260,23 @@ function modelWindow(model) {
 // the window the human capped Claude Code at, or 0: CLAUDE_CODE_AUTO_COMPACT_WINDOW, else
 // autoCompactWindow in the settings files (local, project, user; a modelSettings entry for this
 // model before the plain key), and at most 200k under CLAUDE_CODE_DISABLE_1M_CONTEXT
+// the settings files that can set autoCompactWindow, nearest first
+function compactSettings(root) {
+  const files = [path.join(root, ".claude", "settings.local.json"), path.join(root, ".claude", "settings.json"), path.join(home, "settings.json")];
+  return files.map((f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")) || {}; } catch { return {}; } });
+}
+// compaction is expected (#366): setup gives the lead this auto-compact window unless the human set one, in the
+// env or any settings file, for every model or one
+const LEAD_COMPACT_WINDOW = 200000;
+const hasCompactWindow = (root) => +process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW > 0 || compactSettings(root).some((s) =>
+  +s.autoCompactWindow > 0 || (s.modelSettings && typeof s.modelSettings === "object" && Object.values(s.modelSettings).some((m) => m && +m.autoCompactWindow > 0)));
+
 function contextCap(ev, model) {
   const off = String(process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || "").toLowerCase();
   const no1m = off && off !== "0" && off !== "false" ? 200000 : Infinity;
   let cap = +process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
   if (!(cap > 0)) {
-    const root = (ev && ev.root) || process.cwd();
-    const files = [path.join(root, ".claude", "settings.local.json"), path.join(root, ".claude", "settings.json"), path.join(home, "settings.json")];
-    const all = files.map((f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")) || {}; } catch { return {}; } });
+    const all = compactSettings((ev && ev.root) || process.cwd());
     const id = String(model || "").toLowerCase().replace(/\[1m\]$/, "");
     const per = (s) => s.modelSettings && s.modelSettings[id] && s.modelSettings[id].autoCompactWindow;
     cap = +(all.map(per).find((n) => +n > 0) || all.map((s) => s.autoCompactWindow).find((n) => +n > 0) || 0);
@@ -322,6 +331,7 @@ const LEAD_HOOKS = [
   ["PostToolUseFailure", "proteus-shell-check.js", "Bash"],
   ["PostToolUse", "proteus-verdict-record.js", "Bash"],
   ["SubagentStop", "proteus-stall.js"],
+  ["PreToolUse", "proteus-stall.js", "SubagentHandback"],
   ["TeammateIdle", "proteus-stall.js"],
 ];
 
@@ -377,6 +387,7 @@ function registerLead(root) {
     const script = path.resolve(path.dirname(file), "hooks", "proteus-statusline.js").split(path.sep).join("/");
     s.statusLine = { type: "command", command: `node "${script}"` };
   }
+  if (!hasCompactWindow(root)) s.autoCompactWindow = LEAD_COMPACT_WINDOW;
   if (JSON.stringify(s) === before) return { file, changed: false };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(s, null, 2) + "\n");
@@ -466,6 +477,6 @@ function delegate(opts) {
 
 module.exports = {
   name, bypass, models, spawnEffort, projectRoot, event, deny, ask, noAsk, postRecords, context, keepGoing, postBlock,
-  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap,
+  contextTokens, lastAssistantText, lastHumanPrompt, sessionModel, briefText, modelWindow, contextCap, hasCompactWindow, LEAD_COMPACT_WINDOW,
   home, skillDirs, agentsDir, hooksDir, teamSkills, skipHooks, agentFile, skillRoots, contextModeOn, registerLead, allowDir, prepareWorker, ownedFile, LEAD_HOOKS, pluginHooks, exportEnv, prependPath, delegate,
 };

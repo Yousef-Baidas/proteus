@@ -31,7 +31,7 @@ The PUT needs an admin's login. Under `identity=separate` it fails with 403 or 4
 
 The verifier App closes that (#81; setup in `docs/github.md`, recorded with `install.js --verifier-app <appId> <keyPath>`). `--protect` then pins `proteus/verdict` and `proteus/security` to the App (`integration_id`; `gates` stays CI's). `proteus-signoff.js` mints an installation token for the repo's owner, limited to that repo and `statuses: write`, and posts with it as `GH_TOKEN` in the one `gh` call's environment; the token is never written, printed or put on a command line. No token → exit 1 with the reason and nothing posted, never under the agents' login. A status any other login posts on those contexts no longer counts. The App gets no approving review: the pinned statuses are the lock, and approving needs `pull_requests: write`. `--doctor` checks the key, a token for the repo's owner and the pinned ruleset; `--protect` warns when that owner has no installation recorded.
 
-With the App, CI's own `proteus/security` no longer counts, so a verifier's `MERGE` without `--security` carries CI's success over, posting it as the App, when CI found no security path touched and the PR's files, listed through the API, match no glob of the base branch's security block. CI's failure is never carried over, and a `MERGE` before CI has posted is refused.
+With the App, CI's own `proteus/security` no longer counts, so a verifier's `MERGE` without `--security` carries CI's success over, posting it as the App, when CI found no security path touched and the PR's files, listed through the API, match no glob of the base branch's security block. CI's failure is never carried over, and a `MERGE` before CI has posted is refused. It also carries a security `MERGE` over a push with empty `git diff -w`.
 
 What the App leaves open: agents run as the human's OS user, so they could read the key file. The hooks block that (`hooks.md`), but not a process outside them or a command reaching it by variable, glob or interpreter. Keep the key 0600 outside every repo. The verifier reads `gh pr checks <pr> --json name,state` instead of re-running the suite; it re-runs only what reproduces a finding, or the whole suite when the checks list is empty.
 
@@ -68,7 +68,7 @@ Scaffold ticket: install lefthook with the stack's package manager; copy `teams/
 
 `teams/security/PROFILE.md` runs `semgrep --config p/owasp-top-ten --config p/secrets --json --quiet $(gh pr diff <pr> --name-only)` first and attaches findings, then reads. Missing semgrep → `pipx install semgrep` or note once and continue.
 
-Which PRs get the security verifier is CI's call first (§1): a changed path in the `security` block, or a scanner finding, turns `proteus/security` red. The two jobs protect the token, not the verdict: a scanner a hostile head subverts can forge a clean artifact. The `scan` job runs `proteus-scan.js` on the head, semgrep as an image pinned by digest and every download checked against a sha256:
+Which PRs get the security verifier: any without `Review: light` and any CI marks (§1): a changed path in the `security` block, or a scanner finding, turns `proteus/security` red. The two jobs protect the token, not the verdict: a scanner a hostile head subverts can forge a clean artifact. The `scan` job runs `proteus-scan.js` on the head, semgrep as an image pinned by digest and every download checked against a sha256:
 
 - semgrep (`p/owasp-top-ten`, `p/secrets`) on the changed files;
 - gitleaks on the PR's commits from a mirror clone with no working tree, so a secret a later commit deleted still counts; a base or head commit missing from the mirror fails the job;
@@ -82,7 +82,7 @@ node teams/templates/hooks/proteus-scan.js --dir . --all --out <tmp dir>
 node teams/templates/hooks/proteus-baseline.js security --record --match "^finding " -- node teams/templates/hooks/proteus-security.js --list <tmp dir>
 ```
 
-A recorded finding stays quiet while its tool, rule and path stay the same, digits included (a CVE id is the rule, so another CVE in the same lockfile is new); fixing it and re-recording tightens the baseline. On a PR CI did not mark (`SKILL.md` principle 4), the security verifier's `--security` signoff replaces CI's success.
+A recorded finding stays quiet while its tool, rule and path stay the same, digits included (a CVE id is the rule, so another CVE in the same lockfile is new); fixing it and re-recording tightens the baseline. On a PR CI did not mark, the security verifier's `--security` signoff replaces CI's success.
 
 ## 5. Cost
 

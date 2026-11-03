@@ -102,7 +102,7 @@ ok("steps: the gate runs in .worktrees/_run, its code returned as the suite's", 
 
 // ---- the CLI on a real merge batch
 const ms = { title: "r1/core", number: 1 };
-const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js` });
+const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js\nReview: light` });
 const VERDICT = { __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" };
 const CI = { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" };
 const put = (dir, files) => { for (const [f, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), body); };
@@ -138,6 +138,8 @@ function batchRepo(name, tickets, ready) {
   return { root, cli, tip, prs };
 }
 const lines = (r) => r.out.trim().split("\n").filter(Boolean);
+// file-first (#366): the DID lines behind the count line, read from the file it names, then stdout's own
+const detail = (L) => { const m = /^DID \d+ steps, each in (.+)$/.exec(L[0] || ""); return m ? [...fs.readFileSync(m[1], "utf8").trim().split("\n"), ...L] : L; };
 
 let b = batchRepo("pass", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }, { t: 6, pr: 60, files: { "c.txt": "six\n" } }], [8]);
 let r = b.cli("drive");
@@ -145,8 +147,9 @@ let L = lines(r);
 const tip = b.tip();
 ok("cli pass: exits 0", r.code === 0, `${r.code} ${r.out} ${r.err}`);
 ok("cli pass: the batch's MERGED lines as DID", L.filter((l) => /^DID MERGED PR#(50|60) /.test(l)).length === 2, r.out);
-ok("cli pass: the suite's RUN as DID, on the batch's tip", L.some((l) => l.startsWith("DID RUN ") && l.includes(`proteus-run-tree.js ${tip}, then in .worktrees/_run: node suite.js`)), r.out);
-ok("cli pass: result pass at the tip, the batch done", L.some((l) => l.startsWith(`DID NOTE result pass --at ${tip}: `) && /suite green/.test(l)) && !fs.existsSync(path.join(b.root, ".git", "proteus", "merge", "r1.json")), r.out);
+ok("cli pass: over three DID lines go to a scratch file, one count line first naming it", /^DID \d+ steps, each in .*drive\.txt$/.test(L[0]) && !L.some((l) => l.startsWith("DID RUN ")), r.out);
+ok("cli pass: the suite's RUN as DID, on the batch's tip", detail(L).some((l) => l.startsWith("DID RUN ") && l.includes(`proteus-run-tree.js ${tip}, then in .worktrees/_run: node suite.js`)), r.out);
+ok("cli pass: result pass at the tip, the batch done", detail(L).some((l) => l.startsWith(`DID NOTE result pass --at ${tip}: `) && /suite green/.test(l)) && !fs.existsSync(path.join(b.root, ".git", "proteus", "merge", "r1.json")), r.out);
 ok("cli pass: _run holds the tested tip", g(path.join(b.root, ".worktrees", "_run"), "rev-parse", "HEAD") === tip);
 ok("cli pass: then the lead's line, the ready ticket's SPAWN, last and not DID", L[L.length - 1].startsWith("SPAWN worker #8 ") && !L.some((l) => l.startsWith("DID SPAWN")), r.out);
 r = b.cli("drive", "--json");
@@ -158,8 +161,8 @@ b = batchRepo("bisect", [{ t: 5, pr: 50, files: { "b.txt": "five\n" } }, { t: 6,
 const top = (() => { r = b.cli("drive"); return b.tip(); })();
 L = lines(r);
 ok("cli fail: exits 0, stopped for the lead", r.code === 0, `${r.code} ${r.out} ${r.err}`);
-ok("cli fail: result fail at the tip", L.some((l) => l.startsWith(`DID NOTE result fail --at ${top}: `)), r.out);
-ok("cli fail: the bisect step ran too, and result pass on it", L.some((l) => /^DID NOTE result pass --at [0-9a-f]{40}: /.test(l) && !l.includes(top)), r.out);
+ok("cli fail: result fail at the tip", detail(L).some((l) => l.startsWith(`DID NOTE result fail --at ${top}: `)), r.out);
+ok("cli fail: the bisect step ran too, and result pass on it", detail(L).some((l) => /^DID NOTE result pass --at [0-9a-f]{40}: /.test(l) && !l.includes(top)), r.out);
 ok("cli fail: then DECIDE merge: naming the first bad PR", L[L.length - 1].startsWith("DECIDE merge: ") && /first bad PR #60/.test(L[L.length - 1]), r.out);
 
 r = lib.run(SCRIPT, "", { cwd: b.root, args: ["drive", "--bogus"] });
