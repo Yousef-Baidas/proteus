@@ -44,7 +44,7 @@ Any of these produce the verdict comment.
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |
 
-A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. The lead posts the human's decision from chat (`flow.md`, Asking the human).
+A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. Any policy holds an added or upgraded dependency until that ACCEPT or a `DEPENDENCY <name>` line for each. The lead posts the human's decision from chat (`flow.md`, Asking the human).
 
 ## Unattended
 

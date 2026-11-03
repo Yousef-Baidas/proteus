@@ -413,7 +413,7 @@ const HELD = {
   security: "it changes a path in the security block of teams/ROUTING.md; their `ACCEPT <sha12>` verdict for its head lets it merge",
   "unread-security": "gh could not read the base's security block or what this PR changes, so it counts as a security change; their `ACCEPT <sha12>` verdict for its head lets it merge",
   every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
-  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
+  deps: "it adds or upgrades a dependency no human approved; a `DEPENDENCY <name>` line for each in their verdict on it, or their `ACCEPT <sha12>` verdict for its head, lets it merge",  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
 };
 
 // what a hold says, proteus-merge.js's line and the stand-in's `pr merge` refusal
@@ -441,11 +441,44 @@ function securityHold(n, root) {
   return listed.out.split(/\r?\n/).map((l) => l.trim()).some((p) => p && globs.some((g) => lib.tierMatch(g, p))) ? "security" : "";
 }
 
+// dependency consent (#367): manifests and lockfiles, any ecosystem, known by file name alone
+const MANIFEST = /^(package\.json|bower\.json|deno\.jsonc?|requirements[\w.-]*\.(txt|in)|constraints[\w.-]*\.txt|pyproject\.toml|Pipfile|setup\.(py|cfg)|environment\.ya?ml|go\.mod|Cargo\.toml|Gemfile|[\w.-]+\.gemspec|composer\.json|pom\.xml|build\.gradle(\.kts)?|libs\.versions\.toml|[\w.-]+\.(cs|fs|vb)proj|Directory\.Packages\.props|packages\.config|pubspec\.yaml|mix\.exs|Package\.swift|Podfile|Cartfile|deps\.edn|project\.clj|build\.sbt|[\w.-]+\.cabal|stack\.yaml|vcpkg\.json|conanfile\.(txt|py)|DESCRIPTION)$/;
+const LOCKFILE = /^(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.lock|poetry\.lock|Pipfile\.lock|uv\.lock|pdm\.lock|go\.sum|go\.work\.sum|Cargo\.lock|Gemfile\.lock|composer\.lock|gradle\.lockfile|packages\.lock\.json|pubspec\.lock|mix\.lock|Package\.resolved|Podfile\.lock|Cartfile\.resolved|flake\.lock|renv\.lock|conan\.lock)$/;
+const depKind = (file) => { const b = String(file).split("/").pop(); return LOCKFILE.test(b) ? "lock" : MANIFEST.test(b) ? "manifest" : ""; };
+// what a unified diff adds to them: [{ file, kind, line }], a manifest's added lines that are not blank or a comment,
+// and one entry per lockfile it touches at all (a binary lockfile shows no lines). A line the same file also removes,
+// but for a trailing comma, is no change (a list that grew by one)
+function depChanges(patch) {
+  const out = [], gone = new Set();
+  const norm = (s) => s.slice(1).trim().replace(/,$/, "");
+  let file = "", kind = "";
+  for (const l of String(patch || "").split(/\r?\n/)) {
+    const m = /^diff --git a\/.+ b\/(.+)$/.exec(l);
+    if (m) { file = m[1]; kind = depKind(file); if (kind === "lock") out.push({ file, kind, line: "" }); continue; }
+    if (kind !== "manifest" || l.startsWith("+++") || l.startsWith("---")) continue;
+    if (l.startsWith("-")) gone.add(`${file}\0${norm(l)}`);
+    const t = l.startsWith("+") ? norm(l) : "";
+    if (t && !/^(#|\/\/|--|;)/.test(t)) out.push({ file, kind, line: t });
+  }
+  return out.filter((c) => c.kind === "lock" || !gone.has(`${c.file}\0${c.line}`));
+}
+// the dependencies the human approved on a PR: each `DEPENDENCY <name> [<name>...]` line in their verdicts
+const approvedDeps = (said) => said.flatMap((v) => String(v.body).split(/\r?\n/).map((l) => /^DEPENDENCY\s+(.+)$/.exec(l.trim())).filter(Boolean).flatMap((m) => m[1].split(/[\s,]+/).filter(Boolean)));
+// the changes no approval covers: a manifest line naming no approved dependency; a lockfile when none is approved
+// (a lockfile's churn follows from the approved ones)
+function unapprovedDeps(changes, names) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = (line) => names.some((n) => new RegExp(`(^|[^\\w.@/-])${esc(n)}($|[^\\w.-])`, "i").test(line));
+  return changes.filter((c) => (c.kind === "lock" ? !names.length : !named(c.line)));
+}
+
 // the policy's hold on the picked PRs (#307), [{ n, why, sha }] (sha: the head's sha12, "" when gh cannot say): merge human holds every one ("merge"); ask every holds each
 // ("every"), and ask risky each whose changed paths an ask rule covers ("policy:<id>", or "unread" when gh cannot list
 // them), until the human's newest verdict on the PR (lib.humanVerdicts) is ACCEPT <head sha12>; ask never holds none. In
 // local mode, where no host takes the human's merge or posts proteus/security, the recorded ACCEPT is that act: merge
-// human ("merge", with its sha) and a security change (securityHold) wait for it too, whatever the modes say. Here
+// human ("merge", with its sha) and a security change (securityHold) wait for it too, whatever the modes say. A PR
+// adding or upgrading a dependency ("deps") waits, whatever the modes
+// say, until the human's verdicts on it approve each one (approvedDeps) or ACCEPT its head (#367). Here
 // rather than in proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
 function held(picked, root, policy) {
   if (!picked.length) return [];
@@ -453,11 +486,14 @@ function held(picked, root, policy) {
   if (policy.merge === "human" && !local) return picked.map((p) => ({ n: p.n, why: "merge" }));
   const asks = { rules: (policy.rules || []).filter((r) => r.effect === "ask" && Array.isArray(r.paths)) };
   const asking = policy.ask === "every" || (policy.ask === "risky" && asks.rules.length > 0);
-  if (!asking && !local) return [];
   const why = (n) => {
     if (policy.merge === "human") return "merge";
     const risk = local ? securityHold(n, root) : "";
-    if (risk || !asking) return risk;
+    if (risk) return risk;
+    // an unreadable diff fails open, as hooks do: the next round reads it again
+    const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000), deps = diff.ok ? depChanges(diff.out) : [];
+    if (deps.length && unapprovedDeps(deps, approvedDeps(view(n).said)).length) return "deps";
+    if (!asking) return "";
     if (policy.ask === "every") return "every";
     const r = lib.ghTry(["pr", "diff", String(n), "--name-only"], root, 30000);
     if (!r.ok) return "unread";
@@ -469,15 +505,20 @@ function held(picked, root, policy) {
   };
   // the PR's head and whether the human accepted that head: their newest verdict on the PR is `ACCEPT <sha12>` for
   // it. A bare ACCEPT, another head's sha, or CHANGES holds; their order alone decides, never a commit date.
+  // said: all their verdicts on it, oldest first; read once per PR
   let human = null;
+  const seen = new Map();
   const view = (n) => {
+    if (seen.has(n)) return seen.get(n);
     if (human === null) human = local ? "" : humanOf(root);
     let v = null;
     try { v = JSON.parse(lib.gh(["pr", "view", String(n), "--json", "comments,headRefOid"], root, 30000)); } catch {}
     const full = v && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(v.headRefOid)) ? String(v.headRefOid) : "", sha = full.slice(0, 12);
-    if ((!local && !human) || !sha) return { sha, ok: false };
-    const said = lib.humanVerdicts(root, n, (v && v.comments) || [], human).pop();
-    return { sha, full, ok: !!said && said.first === `ACCEPT ${sha}` };
+    const said = !local && !human ? [] : lib.humanVerdicts(root, n, (v && v.comments) || [], human);
+    const last = said[said.length - 1];
+    const out = { sha, full, said, ok: !!sha && !!last && last.first === `ACCEPT ${sha}` };
+    seen.set(n, out);
+    return out;
   };
   return picked.flatMap((p) => {
     const w = why(p.n);
@@ -488,6 +529,6 @@ function held(picked, root, policy) {
   });
 }
 
-module.exports = { held, heldLine, load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
+module.exports = { held, heldLine, depChanges, approvedDeps, unapprovedDeps, load, validate, evaluate, render, resolve, presets, userFile, guard, FILE, PROJECT_FILE, PROJECT_DOC };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
