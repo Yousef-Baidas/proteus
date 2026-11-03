@@ -211,6 +211,13 @@ if (process.env.FAKE_GH_NEXT) {
     process.stdout.write(p.files.map((f) => f + "\n").join(""));
     process.exit(0);
   }
+  // a PR's whole diff, its "diff" (else the call fails), for the local security check
+  if ((m = /^pr diff (\d+)$/.exec(a))) {
+    const p = (s.prs || []).find((x) => x.number === +m[1]);
+    if (!p || typeof p.diff !== "string") { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
+    process.stdout.write(p.diff);
+    process.exit(0);
+  }
   if ((m = /^pr view (\d+) --json comments,headRefOid$/.exec(a))) { const p = (s.prs || []).find((x) => x.number === +m[1]) || {}; out({ comments: p.comments || [], headRefOid: p.headRefOid || "" }); }
   // `pr create --base <b> --head <h> --title <t> --body <body>` opens PR 100, 101, ... on the head origin has
   if (a.startsWith("pr create ") && process.env.FAKE_GH_PR_CREATE !== "fail") {

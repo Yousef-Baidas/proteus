@@ -15,6 +15,11 @@
 // ok:false, and so is a child still running after 10 minutes (PROTEUS_DELEGATE_TIMEOUT_MS overrides, for tests): the
 // child and everything it started are killed, and output over 64 MB is cut the same way.
 // The child's text is data: control characters are stripped from result (its newlines and tabs kept) and from model.
+// --tier local (#344) is no rung: one HTTP call to the local model "local" in proteus.json names (lib.localModel), the
+// same for every harness. No tools (--tools is ignored), no --budget needed, costUsd 0, the same timeout and size cap;
+// not configured, unreachable or any other failure is ok:false, exit 1, so the caller falls back. Its answer may only
+// add work or pick among the options the caller listed, never skip a review, verifier, gate or check, and never be a
+// verdict; a caller that doubts it reruns the job on the next rung up.
 // --run <run> appends { time, tier, model, costUsd, ok, depth } as one line to delegate-ledger.jsonl in that run's
 // scratch dir (proteus-scratch.js --path <run>); with no run it resolves to, nothing is written.
 "use strict";
@@ -25,7 +30,7 @@ lib.homeOnly(__filename); // #234: never a copy outside the main checkout's hook
 const { spawn } = require("child_process");
 const harness = require(path.join(__dirname, "proteus-harness.js"));
 
-const USAGE = "usage: node proteus-delegate.js --tier <rung> --budget <usd> --prompt-file <file> [--cwd <dir>] [--tools <comma list>] [--schema <json file>] [--run <run>]";
+const USAGE = "usage: node proteus-delegate.js --tier <rung>|local --budget <usd> --prompt-file <file> [--cwd <dir>] [--tools <comma list>] [--schema <json file>] [--run <run>]";
 const MAX_DEPTH = 3;
 const TIMEOUT_MS = Number(process.env.PROTEUS_DELEGATE_TIMEOUT_MS) > 0 ? Number(process.env.PROTEUS_DELEGATE_TIMEOUT_MS) : 10 * 60e3;
 const MAX_OUT = 64 << 20;
@@ -102,8 +107,9 @@ function call(spec, input, cwd, env, retry = false) {
 
 async function main() {
   const a = parse(process.argv.slice(2));
-  if (!a.budget || !(Number(a.budget) > 0) || !Number.isFinite(Number(a.budget))) usage("--budget is required and must be a positive number of dollars");
   if (!a.tier) usage("--tier is required");
+  const local = a.tier.toLowerCase() === "local";
+  if ((!local || a.budget !== undefined) && (!a.budget || !(Number(a.budget) > 0) || !Number.isFinite(Number(a.budget)))) usage("--budget is required and must be a positive number of dollars");
   if (!a.promptFile) usage("--prompt-file is required");
   const budget = Number(a.budget);
   const cwd = a.cwd || process.cwd();
@@ -120,6 +126,14 @@ async function main() {
   const base = { ok: false, result: "", costUsd: 0, model: "", tier, depth };
   if (depth >= MAX_DEPTH) answer({ ...base, result: `refused: delegation depth ${depth} is at the limit of ${MAX_DEPTH}` }, 1);
 
+  if (local) {
+    const cfg = lib.localModel();
+    if (!cfg || cfg.error) answer({ ...base, result: plain(cfg ? cfg.error : "no local model configured: \"local\" in ~/.claude/proteus.json") }, 1);
+    const r = await lib.localChat(cfg, prompt, { timeoutMs: TIMEOUT_MS, maxBytes: MAX_OUT, schema: schema ? JSON.parse(schema) : null });
+    const out = { ...base, ok: r.ok, result: plainText(r.ok ? r.result : r.error), model: plain(r.ok ? r.model : cfg.model) };
+    ledger(a.run, cwd, { tier, model: out.model, costUsd: 0, ok: out.ok, depth });
+    answer(out, out.ok ? 0 : 1);
+  }
   const spec = harness.delegate({ tier, budget, tools: toolList(a.tools), schema });
   if (spec.error) answer({ ...base, result: plain(spec.error) }, 1);
   const ladder = lib.modelPolicy(cwd).ladder;
