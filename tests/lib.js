@@ -134,13 +134,21 @@ function sshSigner(dir, name = "maintainer") {
   return { allowed, tag: (cwd, tag) => g(cwd, "-c", "gpg.format=ssh", "-c", `user.signingkey=${key}`, "tag", "-s", tag, "-m", `release ${tag}`) };
 }
 
+// an approved spec in repo's scratch, <common>/proteus/scratch/<key>/spec.md, made once: its path is what a verifier
+// spawn's prompt must name for the lead guard to let it through (#365)
+function spec(repo, key = "t1") {
+  const f = path.join(g(repo, "rev-parse", "--path-format=absolute", "--git-common-dir"), "proteus", "scratch", key, "spec.md");
+  if (!fs.existsSync(f)) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, "# spec\n"); }
+  return f;
+}
+
 function summary() {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 }
 
 module.exports = {
-  ok, run, g, workdir, tempdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH, sshSigner,
+  ok, run, g, spec, workdir, tempdir, summary, fakeCli, fakeScript, homeEnv, SYS_PATH, sshSigner,
   get ENV() { need(); return ENV; },
   get BIN() { need(); return BIN; },
   get HOME() { need(); return HOME; },

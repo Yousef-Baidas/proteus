@@ -130,7 +130,7 @@ ok("sweep: nothing deleted prints nothing", kinds(r).join() === "WAIT" && fs.exi
 // from a spawn whose prompt carries the tokens next printed
 const TP = path.join(W, "lead.jsonl");
 fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
-const spawn = (type, name, prompt) => lib.run(path.join(path.dirname(SCRIPT), "proteus-lead-guard.js"), { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "opus", subagent_type: type, name, prompt } }, { cwd: REPO });
+const spawn = (type, name, prompt) => lib.run(path.join(path.dirname(SCRIPT), "proteus-lead-guard.js"), { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "opus", subagent_type: type, name, prompt: `${prompt} ${lib.spec(REPO)}` } }, { cwd: REPO });
 let s = spawn("proteus-verifier", "verify-13", `Review SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)} against its contract.`);
 const rec = (name) => { try { return JSON.parse(fs.readFileSync(path.join(LEAD, "spawns", `spawn-${name}.json`), "utf8")); } catch { return null; } };
 ok("verifier: the lead guard records the spawn's PR and head", s.code === 0 && rec("verify-13") && rec("verify-13").pr === 13 && rec("verify-13").head === SHA("b").slice(0, 12), JSON.stringify(rec("verify-13")) + s.err);

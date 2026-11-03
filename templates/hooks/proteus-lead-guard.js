@@ -51,6 +51,9 @@
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
 //   included, except what lib.leadEditDenial always refuses (.claude, .codex, gates, CI, links, outside the repo).
+// 11. Every verifier spawn's prompt names an existing <git-common-dir>/proteus/scratch/<key>/spec.md, the approved spec
+//    (lib.specNamed, #365), so its spec pass checks the ticket against the requirement. Linked worktrees too.
+//    Subagents never read or name the run's acceptance checks (lib.holdoutDenial), verifiers and proteus-acceptance excepted.
 // Linked worktrees skip rules 1-3, 7 and 8's spawn check. PROTEUS=0 sessions (the human's review session) get rule 4's verdict checks
 // and nothing else.
 // Exit 2 = block; the message on stderr reaches the model as the tool's error.
@@ -113,8 +116,14 @@ else lib.run((ev, ad) => {
   if (secret) ad.deny(secret);
 
   const root = lib.projectRoot(ev);
+  // rule 11: a verifier spawn names the approved spec
+  const spec = () => {
+    const common = lib.isVerifier(ev.spawnType) && lib.gitCommonDir(root);
+    if (common && !lib.specNamed(ev.spawnPrompt, common)) ad.deny(`a ${lib.agentName(ev.spawnType)} spawn names the approved spec: put the path of $(node <hooks>/proteus-scratch.js --path <run>)/spec.md in its prompt (roles.md Acceptance).` + BYPASS);
+  };
   if (lib.isLinked(root)) {
     if (ev.tool === "edit") { const ask = policy(ev, ad, true); if (ask) ad.ask(ask); }
+    if (ev.tool === "spawn") spec();
     return ev.tool === "spawn" ? lib.recordSpawn(ev) : undefined;
   }
 
@@ -129,6 +138,7 @@ else lib.run((ev, ad) => {
       const drift = lib.lockDrift(root);
       if (drift.length) ad.deny(`no ${ev.spawnType} spawn while team skills differ from their pins. ${lib.relockHint(drift)}` + BYPASS);
     }
+    spec();
     return lib.recordSpawn(ev); // a spawn let through: its name -> subagent_type, for lib.agentTypeOf (#180)
   }
 

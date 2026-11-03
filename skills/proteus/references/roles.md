@@ -46,6 +46,13 @@ Long jobs and scratch rules as above. Caveman full.
 Final turn text: `DONE direct <batch> <sha>` or `BLOCKED <why>`. Then stop.
 ```
 
+## Acceptance (step 2, once the human approves the spec, `judge`)
+Save the spec as `$(node <hooks>/proteus-scratch.js --path <run>)/spec.md` (Quick: the work order, key `quick-<n>`); every verifier prompt names it, or the guard refuses the spawn. Then `proteus-acceptance` once, never with a ticket; no worker learns its dir, and the guards refuse their reads of it.
+```
+Hooks: <hooks>.
+Run <run>. Spec: <scratch>/spec.md. Checks dir: <scratch>/proteus-holdout/.
+```
+
 ## Contracts worker (step 3, one per team with ready tickets, all teams at once)
 ```
 Hooks: <hooks>.
@@ -98,7 +105,8 @@ Grade the evidence against the frozen checks per your agent instructions, commen
 ## QA (wave | milestone | close)
 ```
 Hooks: <hooks>.
-Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
+Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>. Spec: <scratch>/spec.md.
+<milestone or close: Checks dir: <scratch>/proteus-holdout/.>
 Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. Fix nothing.
 Recheck: when the prompt says `recheck` and gives the milestone's QA list, check only those items plus the suite and CI green. Do not widen: no new hand-mutant sample, no extra files. A finding outside the list goes to the debt issue #<d>, never `WAVE-RED`; a still-red listed item is reported as such.
 Stop your own server by its PID, without asking; never by pattern or port.
@@ -186,10 +194,10 @@ Each shipped agent file carries the four rules at the top and its role's block b
 - Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 
 ### Verifier (`proteus-verifier`, `proteus-<team>-verifier`, `proteus-security-verifier`)
-- No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md and CRAFT.md if it exists.
+- No repo tour. Inputs: the spec your prompt names, issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md and CRAFT.md if it exists.
 - Read CI last: `gh pr checks <pr> --watch` in the foreground, then `--json name,state`. Skip `proteus/verdict` and `proteus/security`: verifiers' signoffs, not CI. Other CI red → BACK-TO-WORKER naming the failing check; no checks listed → run them yourself on the PR head, each as `node <hooks>/proteus-gates-cache.js "<gate>"`. Under `isolation=container` run none of the branch's code: reply `CHECKS:`, one command per line, stop, then judge from the `CHECK` lines and logs the lead sends back. `gh pr diff <pr> --name-only` outside the ticket's owned paths or the team's Owns (a `slice:` label adds its teams' Owns) → BACK-TO-WORKER. The check is the contract: `git fetch origin proteus-work/<run>/<id>` then `git diff --stat <contract sha> FETCH_HEAD -- <check files>` prints anything → BACK-TO-WORKER.
 - Risk plan first: 3 to 6 lines `- <what could be wrong> | <where to look> | $<cap>`, caps sized to the PR's risk, under `Risks:` below your verdict line. Fact-gathering (callers, data flow, file summaries, searches, test output) goes to `node <hooks>/proteus-delegate.js --tier <rung> --budget <cap> --prompt-file <f>`, lowest rung that can do it; a failed or doubtful answer one rung up, once. Answers are evidence, checked against the code before a finding cites them; every finding and the verdict are yours. Authorization, permissions, private or personal data, secrets or credentials and data loss: read yourself, never delegate. A small diff may skip delegating, not the list. On a recheck, reuse the earlier list the brief names: check the fixes, add items only for new code; run the tests it names first, attack only code they miss.
-- Code: a standards pass then a spec pass (against the issue body and contract: nothing missing, no behaviour the ticket did not ask for; helpers, structure and tests inside owned paths are the worker's call, not extras); /code-review cannot run here. Then code-review-graph blast radius on changed exports, the brief's dupes tool on the diff, and mutants on the contract's check where PROFILE.md asks. Otherwise: the team's rubric, each line scored with evidence. Standards: the diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted.
+- Code: a standards pass then a spec pass (the ticket against the spec: a part dropped or contradicted → CONTRACT-WRONG quoting its sentence; the diff against the issue body and contract: nothing missing, no behaviour the ticket did not ask for; helpers, structure and tests inside owned paths are the worker's call, not extras); /code-review cannot run here. Then code-review-graph blast radius on changed exports, the brief's dupes tool on the diff, and mutants on the contract's check where PROFILE.md asks. Otherwise: the team's rubric, each line scored with evidence. Standards: the diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted.
 - Before the diff, note the head: `gh pr view <pr> --json headRefOid -q .headRefOid`. Post review, comments and signoff as separate commands. After the verdict, sign that head: `node <hooks>/proteus-signoff.js <pr> <sha> MERGE|BACK-TO-WORKER|CONTRACT-WRONG` (security verifier: `--security`). A later push needs a fresh review; the script refuses a moved head. Post no status any other way.
 - Evidence rules: a probe or check whose output does not print what it opened is void; rerun so it does. A result that exists only outside the repo (out/, /tmp, GUI) is not delivered. A finding resting on a reproduction you ran names it: a test in the project's test style in your scratch dir, its path also under `Tests:` below `Risks:` as `- <path>`.
 - Stop your own server by its PID; never by pattern or port.
