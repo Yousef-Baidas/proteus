@@ -8,7 +8,8 @@
 // origin.git is the `origin` remote. tracker/pulls/<n>.json holds a PR, numbered with the issues; tracker/statuses/
 // <sha>.json its commit's statuses; checks/<sha>.claim and .log one check run. All of it is agent-reachable and
 // read as untrusted, so an approval never rests on it: `pr review` is a plain record that `pr merge` does not read,
-// and `pr merge` refuses what the policy holds (Policy.held), which reads the human's verdicts from their record.
+// and `pr merge` refuses what Policy.held holds: a security change until the security verifier's signoff (into a run
+// branch) or the human's recorded ACCEPT (into any other base).
 // pre-receive exits 1 naming a refused ref, and fails closed outside origin.git; post-receive always exits 0.
 // A check runs the default branch's gate commands on a head with the caller's privileges, so nothing here but
 // `pr create`, post-receive and `pr checks --rerun` starts one: never a read, and never a Claude hook, which runs
@@ -266,9 +267,9 @@ function build(core) {
   const identity = (s) => ["name", "email"].map((k) => lib.gitIn(s.common, ["config", `user.${k}`], 3000, { user: true }));
   // the one direct ref write into the origin, so pre-receive never sees it. update-ref with the old value: a push
   // that got in first wins, and this fails
-  function commitMerge(s, ref, oldBase, head, tree, n, title) {
+  function commitMerge(s, ref, oldBase, head, tree, n, title, body = "") {
     const [name, email] = identity(s);
-    const [args, opts] = lib.gitCall(s.origin, ["commit-tree", tree, "-p", oldBase, "-p", head, "-m", `Merge pull request #${n} from ${ref.headRefName}`, "-m", title], { timeout: GIT_MS, stdio: ["ignore", "pipe", "pipe"] });
+    const [args, opts] = lib.gitCall(s.origin, ["commit-tree", tree, "-p", oldBase, "-p", head, "-m", `Merge pull request #${n} from ${ref.headRefName}`, "-m", body || title], { timeout: GIT_MS, stdio: ["ignore", "pipe", "pipe"] });
     const who = name || FALLBACK_NAME, mail = email || FALLBACK_EMAIL;
     opts.env = { ...opts.env, GIT_AUTHOR_NAME: who, GIT_AUTHOR_EMAIL: mail, GIT_COMMITTER_NAME: who, GIT_COMMITTER_EMAIL: mail };
     const c = spawnSync("git", args, opts), made = String(c.stdout).trim();
@@ -280,12 +281,12 @@ function build(core) {
   // proteus-merge.js honours. held reads through the stand-in, so never under the lock
   function policyHead(s, n, head) {
     const root = lib.mainRoot(s.common), p = { n };
-    const [hold] = Policy.held([p], root, Policy.load({ root }).policy);
+    const [hold] = Policy.held([p], root);
     if (hold) fail(Policy.heldLine(hold));
     return p.oid || head;
   }
   function merge(s, argv) {
-    const o = flags(argv, { ...REPO, "--merge|-m": 0, "--match-head-commit": 1 }, "pr merge");
+    const o = flags(argv, { ...REPO, "--merge|-m": 0, "--match-head-commit": 1, "--body|-b": 1 }, "pr merge");
     onlyHere(s, o, "pr merge");
     const n = prArg(s, o, "pr merge");
     if (!o["--merge"]) fail("--merge required when not running interactively");
@@ -314,7 +315,7 @@ function build(core) {
       if (spentFirstGate(s, gatesOf(checks))) fail(`Pull request #${n} is not mergeable: the default branch has a gate now, so this head's first-gate pass no longer counts; rerun its check`);
       const t = mergeTree(s, base, head);
       if (t.conflict) fail(`Pull request #${n} is not mergeable: the merge commit cannot be cleanly created.`);
-      commitMerge(s, p, base, head, t.tree, n, p.title);
+      commitMerge(s, p, base, head, t.tree, n, p.title, o["--body"]);
       const at = now();
       writePull(s, { ...p, state: "MERGED", headRefOid: head, baseRefOid: base, updatedAt: at, closedAt: at });
     });

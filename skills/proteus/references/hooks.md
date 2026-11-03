@@ -94,6 +94,6 @@ Every guard decision that turns on an agent's name reads it through `lib.agentNa
 ## Policy (#307)
 
 - `proteus-policy.js` is the policy engine; no guard calls it yet. `show [--json]` prints the effective policy and where each value came from, `check '<json event>'` the effect for `{ "tool": "shell"|"edit", "command", "path" }`, `render` the project's `POLICY.md`, and `write <draft.json> [--user]` writes a draft only when it validates (exit 2 and nothing written otherwise).
-- Layers, each overriding the last: the preset (`templates/policy/presets.json`: `hands-off`, `balanced` by default, `careful`), the user file `proteus-policy.json` beside `proteus.json`, and the project's `teams/policy.json`. Rules merge by `id`; when several match, block beats ask beats allow.
+- Layers, each overriding the last: the preset (`templates/policy/presets.json`, `balanced` by default), the user file `proteus-policy.json` beside `proteus.json`, and the project's `teams/policy.json`. Rules merge by `id`; when several match, block beats ask beats allow.
 - An invalid file counts as absent and its errors are reported. `teams/POLICY.md` is rendered from `teams/policy.json` on every write; nobody edits it by hand.
 - The policy guards against mistakes, not an adversary: a pattern can be worked around. The fixed core in `enforcement.md` stays the hard boundary.

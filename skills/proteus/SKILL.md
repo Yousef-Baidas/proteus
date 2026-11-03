@@ -35,9 +35,9 @@ Run `node <hooks>/proteus-cli.js drive [run]` in the background (a suite can out
 4. **Verifiers judge in fresh context.** Every ticket's verifier runs on `judge`, did not write it, and reads only the ticket, contract, diff and report. A ticket touching auth, input parsing, secrets, file or network I/O, money, personal data, or anything published also gets `proteus-security-verifier`, and both must say `MERGE`. CI decides most of that: a PR changing a path the `security` block of `teams/ROUTING.md` matches, or one CI's scanners (semgrep, gitleaks, osv-scanner, zizmor) find something new in, gets a red `proteus/security` status that only the security verifier's signoff turns green; the lead adds the security verifier wherever else it judges one is due. Why: an author's context carries its blind spots, and security needs a reviewer whose only job it is.
 5. **Agents talk through artifacts.** Tickets, contracts, reports and verdicts on the tracker, which survives a session; no agent messages another. Every ticket is a tracer bullet: one paragraph, one failing check, one owning team and path set. Bigger → split.
 6. **No state in the repo.** Tickets, milestones, maps, logs, reports, verdicts, reviews and debt live on the tracker (`tracker.md`). The repo gets deliverables, checks, contracts, `teams/`, and the lead docs of rule 1, root docs under budget (`docs-diet.md`). Why: repo state goes stale and conflicts on merge; the tracker keeps one copy.
-7. **The human holds the gates.** The human approves the spec, reviews every milestone (`review.md`), merges `proteus/<run>` into `main`, owns `CONVENTIONS.md`, `teams/` and its skills lists after bootstrap, and decides every new dependency. You never merge into or push to `main`, and never change branch protection beyond the run's own rule; the hooks refuse it and say what to do instead. Why: these are the calls an agent cannot take back.
+7. **The human holds the gates.** The human approves the spec, accepts milestones by use (`review.md`), merges `proteus/<run>` into `main`, owns `CONVENTIONS.md`, `teams/` and its skills lists after bootstrap. You never merge into or push to `main`, and never change branch protection beyond the run's own rule; the hooks refuse it. Why: these are the calls an agent cannot take back.
 
-Settled defaults, no question and no deviation to log: the first milestone of a taste-driven run (anything a human judges by eye or ear) is a test piece and a human gate even when unattended; a brief or plan that only restates an approved spec counts as APPROVE; the human asking to skip verification or go faster during review means revision mode (`operations.md`), not an improvised path.
+Settled defaults, no question or log: the first milestone of a taste-driven run (anything a human judges by eye or ear) is a test piece and a human gate even when unattended; a brief or plan that only restates an approved spec counts as APPROVE; the human asking to skip verification or go faster during review means revision mode (`operations.md`), not an improvised path.
 
 Your own hands: `gh` and `git` reads capped with `--json … -q` or `| tail -5`; the `proteus-*.js` scripts (`<hooks>` per `harnesses.md`; each has `--help`); tracker text, prompts, and the docs of rule 1. Anything longer, a deliverable edit, or an image → a subagent that reports one line; big outputs via context-mode or a scratch file read with `grep`.
 
@@ -56,7 +56,7 @@ Names here are Claude Code's; on Codex CLI read `harnesses.md` first, every sess
 
 ## Asking the human
 
-A question lives in a picker when the run cannot move without it, else in a question issue that parks only the tickets depending on it (`flow.md`). Ask only what a settled default, `## Learned`, a lesson, `CONVENTIONS.md` or `/research` cannot answer. Anything reaching the human follows `audience.md` at the `audience=` level.
+After planning, ask only before an irreversible, security-sensitive or outside-the-repo action, or when the plan breaks or misses a design, scope or trade-off choice (a planning question, parking only the work it affects; `flow.md`). A ruling only settles an implementation detail inside a decision the human already made; log it (`tracker.md`). Never ask what a default, `## Learned`, a lesson, `CONVENTIONS.md` or `/research` answers. Anything reaching the human follows `audience.md` at the `audience=` level.
 - **Auto mode denial** (Claude Code): a call or spawn the classifier denies is not retried, reworded, split, or routed through another tool or agent; each reads as a workaround, and 3 denials in a row or 20 in a session pause auto mode. One line to the human: what was denied, its reason tag, why the run needs it; then wait or do other work. A human message naming the action clears it. A worker's `BLOCKED #<n> classifier …` is the same: relay it, don't re-spawn. A refused check is skipped instead (`enforcement.md` §10c).
 
 ## Commands
@@ -65,7 +65,7 @@ Handled first, whenever typed: `status`, `questions` or `inbox`, `pause` (or its
 
 ## Surviving compaction
 
-Hooks re-inject this skill, the run-log tail and the human's last ten messages. Log on the run-log issue, as it happens, each decision `next` cannot derive: grilled decisions before `/to-spec` exists, an `UNATTENDED` grant and its limit, every deviation allowed, a parked `NEEDS`, the fork point, and every human hand edit to an artifact. After a compaction, run `next`; trust it, the run log and the journal over the summary. On the meter's warning, finish the step, `/handoff`, and the fresh lead runs `next`.
+Hooks re-inject this skill, the run-log tail and the human's last ten messages. Log on the run-log issue, as it happens, each decision `next` cannot derive (`tracker.md`). After a compaction, run `next`; trust it, the run log and the journal over the summary. On the meter's warning, finish the step, `/handoff`, and the fresh lead runs `next`.
 
 ## Tiers
 
@@ -74,7 +74,7 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 ## Flow
 
 0. **Bootstrap** to the `Ready` line of `bootstrap.md`: roster approved, the domain's mechanical gates installed. Not there → stop.
-1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human checks it is done, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget and dependencies, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, your preference does not.
+1. **Orient** on `AGENTS.md`, `CONTEXT.md`, ADRs and taste docs, then the information gate, every work order, before any spec: state without guessing (a) the outcome the human will see, (b) how a human checks it is done, (c) what is out of scope, (d) the areas and teams it touches, (e) constraints on tools, data, budget, dependencies, files added to the repo, and how the human runs the result, (f) zero open questions, (g) a threat model on security paths or the Full tier (`flow.md` §1). Any blank → grill the human. A question of fact → `/research` in a `helper`; its finding decides, your preference does not.
 2. **Tickets**: `/to-spec`, `/to-tickets`; prototype first.
 3. **Contracts**: you decide each ticket's interface and check; a contracts worker commits them, red.
 4. **Dispatch** each `SPAWN worker` on `build` into a protected `proteus/<run>`.
