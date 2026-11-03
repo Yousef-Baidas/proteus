@@ -29,7 +29,7 @@ Final turn text: `ACCEPTANCE <run> <n> checks, <m> untestable`, then stop.
 
 ## Script first
 
-- **Script first**: a deterministic procedure the lead or a worker has run twice becomes a ticket for a program: a script or small CLI in the project's `scripts/` (team tooling: `teams/<team>/bin/`), with `--help` and an exit code. Then briefs call the program. Only the ambiguous step stays with a model, writing its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment.
+- **Script first**: a deterministic procedure the lead or a worker has run twice becomes a ticket for a program: a script or small CLI in the project's `scripts/`, with `--help` and an exit code. Then briefs call the program. Only the ambiguous step stays with a model, writing its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment.
 
 ## Principles
 

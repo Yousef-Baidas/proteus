@@ -113,7 +113,7 @@ A team is a folder, not an extra agent. `teams/<team>/` holds `PROFILE.md` (real
 
 `teams/ROUTING.md` maps each deliverable type or path to one team; the lead routes every ticket by it and verifiers refuse a diff outside the team's `Owns`. Two generic agents, `proteus-worker` and `proteus-verifier`, serve any team by name; the software teams also ship named agents, and a repo can add its own `.claude/agents/proteus-<team>-worker.md`. Security and QA are verifiers only: security runs as a second verifier on sensitive tickets; QA runs once per wave on the integration branch and checks that every deliverable rebuilds from the repo alone. Verifiers carry `memory: local`, so recurring findings persist on your machine (git-ignored).
 
-`teams/<team>/skills.txt` lists the skills as `<owner/repo> <skill-name>`; `node teams/link-skills.js` links them from `~/.agents/skills` (where `npx skills add` puts them) into the team's `.claude/skills/` and, for Codex, `.agents/skills/`, `--install` fetches what is missing, `--confine` drops their global links so they exist only inside their team folder. See `references/teams.md`.
+A team's `skills.txt` (the shipped one, unless the repo keeps its own in `teams/<team>/`) lists the skills as `<owner/repo> <skill-name>`; `install.js --project` links them from `~/.agents/skills` (where `npx skills add` puts them) into the team's `.claude/skills/` and, for Codex, `.agents/skills/`, `--install` fetches what is missing, `--confine` drops their global links so they exist only inside their team folder. See `references/teams.md`.
 
 ### Skills are picked for your project, not mine
 
@@ -123,7 +123,7 @@ The shipped `skills.txt` files are only a starting set for software. At bootstra
 
 Two skills are the pipeline's, not the scout's; they live in `teams/<profile>/required.txt` and never count against the cap.
 
-- [anti-slop](https://github.com/dmmulroy/anti-slop) — on JS/TS the scaffold or stabilise ticket vendors its oxlint rules into the lint gate. After that slop fails lint in the worker, in lefthook, and in CI, at zero agent tokens.
+- [anti-slop](https://github.com/dmmulroy/anti-slop) — opt-in at planning (it adds dev dependencies and config files): on JS/TS the scaffold or stabilise ticket vendors its oxlint rules into the lint gate. After that slop fails lint in the worker, in lefthook, and in CI, at zero agent tokens.
 - [thermo-nuclear-code-quality-review](https://github.com/cursor/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review) — the QA pass applies it on the lead's tier to every milestone diff; its blockers are tickets and the human gate stays shut until they merge. Per milestone, not per ticket: on a forty-line diff it demands rewrites nobody asked for.
 
 A required skill that is not installed skips its check and never stops the run. So does a pentest the safety system refuses. Each skip is logged, comes first in the next review, and is listed in the close report, so you decide there. Nothing installs itself, and a refused pentest is not retried.

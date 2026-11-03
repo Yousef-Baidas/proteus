@@ -86,7 +86,7 @@ const boot = read("skills", "proteus", "references", "bootstrap.md");
 const sec3 = (/^## 3\. lefthook[^\n]*\n[\s\S]*?(?=\n## )/m.exec(enf) || [""])[0];
 ok("scaffold: the worker proves commit-msg with lefthook run on a bad and a good message", /`lefthook run commit-msg <file>` fails on a bad message and passes a good one/.test(sec3), sec3);
 ok("scaffold: no instruction tells a worker to run lefthook install", /Never `lefthook install`/.test(sec3) && !/fill the `EDIT` lines, `lefthook install`/.test(sec3), sec3);
-ok("bootstrap: the lead tells the human once to run lefthook install after the scaffold or stabilise merge", /After the merge \(scaffold or stabilise\), tell the human once, in one line: run `lefthook install` in the main checkout[^\n]*never the lead's or a worker's/.test(boot), boot);
+ok("bootstrap: the lead tells the human once to run lefthook install after the scaffold or stabilise merge", /After the merge \(scaffold or stabilise\), if it added `lefthook.yml`, tell the human once, in one line: run `lefthook install` in the main checkout[^\n]*never the lead's or a worker's/.test(boot), boot);
 
 // add team <role> (#10): a lead command, the scout's single-team mode, and the one ticket that writes the team
 const scout = read("agents", "proteus-scout.md");

@@ -164,14 +164,17 @@ ok("verifier: the report's own placeholders are kept", b.includes("1. <file:line
 ok("verifier: no isolation line without isolation: container", !/CHECKS:/.test(b), b);
 ok("verifier: no slice line without a slice: label", !/^Also (read|check) /m.test(b), b);
 
-// a slice ticket (teams.md): both briefs name every slice team's PROFILE.md
+// a slice ticket (teams.md): both briefs name every slice team's PROFILE.md; neither team is the repo's own, so it is
+// the shipped folder's, by absolute path (#367), while the repo's own backend stays teams/backend
+const shipped = (t) => `${path.join(HOOKS, "..", "teams", t).split(path.sep).join("/")}/PROFILE.md`;
+const SLICE_PROFILES = `${shipped("frontend")}, ${shipped("devops")}.`;
 const SLICED = { ...STATEJSON, issues: [{ ...ISSUES[0], labels: labels("difficulty:standard", "slice:frontend,devops") }, ...ISSUES.slice(1)] };
 r = run(["brief", "worker", "5"], {}, SLICED);
 b = read(briefFile("brief-5.md"));
-ok("slice: the worker brief names each slice team's profile", r.code === 0 && b.split("\n").includes("Also read teams/frontend/PROFILE.md, teams/devops/PROFILE.md."), r.out + r.err + b);
+ok("slice: the worker brief names each slice team's profile", r.code === 0 && b.split("\n").includes(`Also read ${SLICE_PROFILES}`), r.out + r.err + b);
 r = run(["brief", "verifier", "12"], {}, SLICED);
 b = read(briefFile("verify-12.md"));
-ok("slice: the verifier brief names each slice team's profile and checklist", r.code === 0 && b.split("\n").includes("Also check teams/frontend/PROFILE.md, teams/devops/PROFILE.md."), r.out + r.err + b);
+ok("slice: the verifier brief names each slice team's profile and checklist", r.code === 0 && b.split("\n").includes(`Also check ${SLICE_PROFILES}`), r.out + r.err + b);
 fs.writeFileSync(path.join(REPO, "AGENTS.md"), `${LEARNED}isolation: container\n`);
 r = run(["brief", "verifier", "12"]);
 b = read(briefFile("verify-12.md"));

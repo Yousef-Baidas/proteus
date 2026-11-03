@@ -18,7 +18,7 @@ const agent = (f) => read("agents", f);
 
 const rule = roles.split("\n").find((l) => l.startsWith("- **Script first**")) || "";
 ok("roles.md: the script-first rule names the program, its home, --help and an exit code", /run twice/.test(rule) && /becomes a ticket for a program/.test(rule) &&
-  /`scripts\/`/.test(rule) && /`teams\/<team>\/bin\/`/.test(rule) && /`--help` and an exit code/.test(rule), rule);
+  /`scripts\/`/.test(rule) && /`--help` and an exit code/.test(rule), rule);
 ok("roles.md: briefs call the program; only the ambiguous step stays with a model, writing a file the program reads",
   /briefs call the program/.test(rule) && /Only the ambiguous step stays with a model/.test(rule) && /a file the program reads/.test(rule), rule);
 ok("roles.md: the verifier rejects a brief or skill that is a program in English", /verifier rejects a brief or skill that is a program in English: steps with no judgment/.test(rule), rule);

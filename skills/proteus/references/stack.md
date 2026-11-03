@@ -12,7 +12,7 @@
 | fallow (JS/TS) | `health` at close | `dead-code` on owned paths | `dupes` on diff |
 | vulture / vulture-rs (Python) | close | `--min-confidence 80` owned paths | diff |
 | ripgrep | yes | yes | yes |
-| anti-slop oxlint rules (JS/TS) | – | via lint gate | via CI |
+| anti-slop oxlint rules (JS/TS, opt-in) | – | via lint gate | via CI |
 | thermo-nuclear review | – | – | QA, per milestone |
 | improve-codebase-architecture | – | – | QA, at close |
 

@@ -1,5 +1,6 @@
 // Team file upstream (#97): node tests/teamupstream.test.js (needs git). ROUTING.md, PROFILE.md and
-// skills.txt are the repo's once copied, so --project never overwrites them. teams/.proteus-base.json
+// skills.txt are the repo's once copied (ROUTING.md by the first --project; a team's files once the human ejects it by
+// copying its PROFILE.md in, #367, which the next --project completes with skills.txt), so --project never overwrites them. teams/.proteus-base.json
 // records the shipped text each came from; when a release changes one the repo has edited, --project
 // and --update put the new text beside it as <file>.upstream (and the old as <file>.base), git-excluded,
 // print the git merge-file line (or, when git tracks no copy and the merge is clean, merge it in place), and
@@ -46,13 +47,19 @@ const repo = (name) => {
 const inst = (cwd, args = ["--project"], env = {}) => lib.run(INST, "", { cwd, args, env });
 const shipEdit = (rel, line, msg) => { fs.appendFileSync(SHIP(rel), `\n${line}\n`); g(PH, "commit", "-qam", msg); };
 const exclude = (d) => read(path.join(d, ".git", "info", "exclude")) || "";
+// the human's eject: the shipped PROFILE.md copied into teams/<team>/
+const eject = (d, team) => { fs.mkdirSync(path.join(d, "teams", team), { recursive: true }); fs.copyFileSync(SHIP(`${team}/PROFILE.md`), path.join(d, "teams", team, "PROFILE.md")); };
 
 const PR = repo("app");
 const T = (...p) => path.join(PR, "teams", ...p);
 const record = () => JSON.parse(read(T(".proteus-base.json")) || "{}");
 
-// a first --project copies the files and records what they came from
+// a first --project copies ROUTING.md and no team folder; after an eject the next one records what each came from
 let r = inst(PR);
+ok("record: a first --project copies no team's files", r.code === 0 && !fs.existsSync(T("backend", "PROFILE.md")) && !fs.existsSync(T("qa", "PROFILE.md")) &&
+  !fs.existsSync(T("backend", "skills.txt")) && !!record()["ROUTING.md"], both(r) + JSON.stringify(record()));
+eject(PR, "backend"); eject(PR, "qa");
+r = inst(PR);
 let rec = record();
 ok("record: --project writes teams/.proteus-base.json with each copied team file", r.code === 0 &&
   ["ROUTING.md", "backend/PROFILE.md", "backend/skills.txt", "qa/PROFILE.md"].every((k) => rec[k] && /^[0-9a-f]{64}$/.test(rec[k].sha256)), both(r) + JSON.stringify(rec));
@@ -142,6 +149,8 @@ const regen = () => {
 // untracked teams/ (#154): a clean three-way merge goes into the copy, no .upstream or .base left
 const UR = repo("loose");
 r = inst(UR);
+eject(UR, "qa");
+r = inst(UR);
 const UT = (...p) => path.join(UR, "teams", ...p);
 const qaProf = lf(read(UT("qa", "PROFILE.md")));
 fs.writeFileSync(UT("qa", "PROFILE.md"), `LOOSE-EDIT line.\n${qaProf}`);
@@ -185,9 +194,11 @@ ok("tracked: a re-run offers nothing again", !/upstream ->/.test(r.out) && read(
 
 // guest mode: teams/ and the record live in the guest dir; .upstream goes there, named by absolute path
 const GR = repo("guestapp"), GD = path.join(W, "guestdir");
-g(GR, "remote", "add", "origin", "https://example.invalid/guestapp.git"); // devops is copied where a remote is
+g(GR, "remote", "add", "origin", "https://example.invalid/guestapp.git"); // devops is routed where a remote is; ejected below
 r = inst(GR, ["--project", "--guest", GD]);
 const GT = (...p) => path.join(GD, "teams", ...p);
+eject(GD, "devops");
+r = inst(GR, ["--project", "--guest", GD]);
 ok("guest: the record is in the guest dir, none in the repo", r.code === 0 && fs.existsSync(GT(".proteus-base.json")) && !fs.existsSync(path.join(GR, "teams")), both(r));
 fs.appendFileSync(GT("devops", "PROFILE.md"), "\nguest edit\n");
 shipEdit("devops/PROFILE.md", "SHIPPED-DEVOPS line.", "feat: devops profile");

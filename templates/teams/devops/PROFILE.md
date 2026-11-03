@@ -1,6 +1,6 @@
 # devops profile
 
-Reading this file loads the skills in `teams/devops/.claude/skills/`. Read it once, first.
+Your skills are linked in this project's `teams/devops/.claude/skills/`: list it and read each fitting `SKILL.md`. Read this file once, first.
 
 Real-world role: platform / release engineer.
 Owns: CI, containers, deploy config, environment.
@@ -12,6 +12,6 @@ Rules:
 - Pin versions: base images, actions, tool binaries.
 - Deploy targets and credentials are the human's: comment `NEEDS <target>: <command>` on the issue and stop.
 
-- Scaffold or stabilise ticket on a JS/TS repo: run `install-anti-slop` so its oxlint rules are part of the lint gate (`references/enforcement.md` §9). A rule that contradicts `CONVENTIONS.md` is switched off in the config with the convention quoted beside it, not worked around in code.
+- The anti-slop oxlint rules only when the human opted in at planning (`references/enforcement.md` §9). A rule that contradicts `CONVENTIONS.md` is switched off in the config with the convention quoted beside it, not worked around in code.
 
 Green adds: container builds, pipeline config validates, fresh clone runs the smoke test with the documented command.

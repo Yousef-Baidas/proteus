@@ -480,6 +480,41 @@ function guestDir(root) {
 }
 const docRoot = (root) => guestDir(root) || root;
 
+// ---- team files (#367): a team's folder (PROFILE.md, CRAFT.md, skills.txt, required.txt) is the shipped one beside
+// these hooks (templates/teams/<team>) unless the project keeps its own teams/<team>/PROFILE.md, the human's opt-in
+// eject. Nothing is copied into the repo for it; the skill links stay machine-local under the project's teams/<team>/.
+const SHIPPED_TEAMS = path.join(__dirname, "..", "teams");
+const TEAM_NAME = /^[A-Za-z0-9][\w-]*$/;
+const ownTeam = (root, team) => fs.existsSync(path.join(docRoot(root), "teams", team, "PROFILE.md"));
+function teamDir(root, team) {
+  const own = path.join(docRoot(root), "teams", String(team));
+  if (!TEAM_NAME.test(String(team)) || ownTeam(root, team)) return own;
+  const shipped = path.join(SHIPPED_TEAMS, team);
+  return fs.existsSync(path.join(shipped, "PROFILE.md")) ? shipped : own;
+}
+// one file of a team: the project's own teams/<team>/<file> (a skills.txt the scout rewrote), else teamDir's
+function teamFile(root, team, file) {
+  const own = path.join(docRoot(root), "teams", String(team), file);
+  return TEAM_NAME.test(String(team)) && fs.existsSync(own) ? own : path.join(teamDir(root, team), file);
+}
+// how a brief names a team's folder: teams/<team> for the project's own copy, else the absolute path, "/"-separated
+function teamRef(root, team) {
+  const d = teamDir(root, team), rel = path.relative(root, d);
+  return (rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : d).split(path.sep).join("/");
+}
+// the teams a project works with: its own (teams/<team>/PROFILE.md) and the shipped ones its teams/ROUTING.md routes
+// to (a table row ending in the team), plus the shipped ones never routed to (the verifying teams); only its own
+// without a ROUTING.md (not set up)
+function teamNames(root) {
+  const base = path.join(docRoot(root), "teams"), dirs = (d) => { try { return fs.readdirSync(d).filter((t) => TEAM_NAME.test(t)); } catch { return []; } };
+  const own = dirs(base).filter((t) => ownTeam(root, t)), shipped = dirs(SHIPPED_TEAMS).filter((t) => fs.existsSync(path.join(SHIPPED_TEAMS, t, "PROFILE.md")));
+  const text = (d) => { try { return fs.readFileSync(path.join(d, "ROUTING.md"), "utf8"); } catch { return null; } };
+  const routes = (t, s) => s.split(/\r?\n/).some((l) => new RegExp(`^\\|.*\\|\\s*${t}\\s*\\|$`).test(l.trimEnd()));
+  const routing = text(base), table = text(SHIPPED_TEAMS) || "";
+  const routed = routing === null ? [] : shipped.filter((t) => routes(t, routing) || !routes(t, table));
+  return [...new Set([...own, ...routed])].sort();
+}
+
 // a run is open: a run or worker branch exists under either scheme
 const runOpen = (common) => runRefs(common).length > 0;
 
@@ -3778,7 +3813,7 @@ module.exports = {
   run, projectRoot, repoRoot, claudeDir, isLinked, isLead, gitCommonDir, mainRoot, stateDir, readJSON, writeJSON, beatsDir, beat, forget, forgotten,
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
-  configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
+  configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, SHIPPED_TEAMS, teamDir, teamFile, teamRef, teamNames, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   reviewOf, SECURITY_SIGNED, NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, localPath, localMode, localCommon, localEnv, ghArgv, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, saveLeadMode, leadModeSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,

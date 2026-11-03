@@ -146,7 +146,9 @@ function profiles(teams) {
 
 // remove(link, root, segs) does every removal: removeLink by default; install.js passes its own guard.
 // A team skills dir is used only when ownDir(root, teams/<p>/<d>) holds: a link on the way skips it.
-function run({ root = process.cwd(), install = false, confine = false, relock = false, log = console.log, remove = removeLink } = {}) {
+// names and shipped (install.js, from proteus-lib.js teamNames and teamDir, #367): the teams to link besides the dirs
+// here, and the folder whose lists a team uses when teams/<team>/ has none of its own; links still go under teams/<team>/
+function run({ root = process.cwd(), install = false, confine = false, relock = false, log = console.log, remove = removeLink, names = [], shipped = null } = {}) {
   const teams = path.join(root, "teams");
   if (!isDir(teams)) throw new Error("no teams/ here; run from the repo root");
   const missing = [];
@@ -162,9 +164,9 @@ function run({ root = process.cwd(), install = false, confine = false, relock = 
   let before = "";
   if (lockOk) try { before = fs.readFileSync(lockFile, "utf8"); lock = JSON.parse(before); } catch {}
   if (!lock || typeof lock.skills !== "object" || !lock.skills) lock = { version: 1, skills: {} };
-  for (const p of profiles(teams)) {
-    const dir = path.join(teams, p);
-    const files = listFiles(dir);
+  for (const p of [...new Set([...profiles(teams), ...names])].sort()) {
+    const here = listFiles(path.join(teams, p));
+    const files = here.length || !shipped ? here : listFiles(shipped(p));
     const own = authored(root, p);
     if (!files.length && !own.length) continue;
     if (files.length) lists++;
