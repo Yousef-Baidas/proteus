@@ -5,6 +5,7 @@ Root docs (`CLAUDE.md` on Claude Code, `AGENTS.md` on both) are loaded into ever
 ## Budget
 
 - Root `CLAUDE.md` and `AGENTS.md`: about 150 lines each, together under 250. The autostart reports `doc-bloat=<file:lines>` over that.
+- `README.md` is always allowed: the owner doc close writes (`flow.md` §8), install, start, use and how to check it works, nothing else. Sessions do not load it, so the line budget above does not apply.
 - No variants: `CLAUDE_1.md`, `CLAUDE-old.md`, `AGENTS2.md` and the like are not created; split content goes where the table below says.
 - `CONTEXT.md` (domain glossary) and `CONVENTIONS.md` (taste) have no fixed budget but the same rule: every line must change what an agent does.
 
