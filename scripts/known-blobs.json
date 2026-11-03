@@ -169,6 +169,7 @@
       "4b07672af0891b4ddbd13f6a11f852dd30b0a4e3",
       "537123bc82f78da1c50cee22503acd465e7c0e3c",
       "7a42f06bb015b79c4b7e58f8e92dee5fd0bd05ac",
+      "7ba8ebe8aa3aebd418da8619bf40f656e689c65d",
       "820c553ca8da6970179609bf1db5785051273927",
       "9085a9296b951dcbd1dfa507bb21ec4dc382a204",
       "96012da4266056baa86f362755b7c0e7b8ef47ee",
@@ -493,6 +494,7 @@
       "953ca5d1245f06729d2313115149b32d518edb92",
       "992906555944080f73205604b2cae6c1a2cd22ee",
       "9f39a97a1a61ae2ffa6fc2e020c1eb9129ead92c",
+      "a14bbe3a608e25a06c489ce292825ec59548b2dc",
       "a85a0f011784bd9b8d4b6cab70e13a19c86d6b2e",
       "acf07914f10bac774ebe71d8ed9d5fad252779ed",
       "ae609d6fddf37bfecc30004259d7f2e5179d8bd1",
@@ -912,6 +914,7 @@
       "68f39cad3889ccca75f0076ae440c463471473a4",
       "9979c656843e4b4d629adcd5378df90128cacf43",
       "a108c3683324b4398d829a30e817f93ab9b7d34d",
+      "e384c152f7f59072c8f85b51261a50a54b22dca6",
       "f23d4a9479f44b18e4532ad15e42851221c2410b",
       "fae2e050ed14d9cfd54222d2d62d58f47e7853ee"
     ],
@@ -922,6 +925,7 @@
       "e768373f92b542f70774888dd324a3bf809c98d9"
     ],
     "templates/hooks/proteus-merge.js": [
+      "16b10594b0b1fd1048fd09d3a2c626ffd61423ef",
       "1970518875cc6eb2262732e4ee232f65bb4bd8f4",
       "19e224c02af401bdbd0c085defe89bdd07a9ab2a",
       "249d3993052f783984ccdde6b33c102f3462b6a9",
@@ -960,6 +964,7 @@
       "5640455538e6aa08a3503b5333d9dbf82b370ed7",
       "aff125887e0e2a6ac522bc8ea04e53bb31b13817",
       "e0aa37f175d812ebf4d6daa3001ea32283381bff",
+      "ecfe4ec80926267488872813c14f3661bc81f5b6",
       "fa208e5f28c612240b3be05376958e309cdaf234"
     ],
     "templates/hooks/proteus-profile.js": [
@@ -1084,6 +1089,7 @@
       "b2dbfe792cb64223e64f8129729cd6e0f2d65abb"
     ],
     "templates/hooks/proteus-verdict.js": [
+      "0e5e5d3b5afdd741cd7b98d163d9e4b126a056ba",
       "2e1b2f66ec04a87d051ec68744e342d2991b6de3",
       "5717c3f868dfea581efb7b8062fe1a26e2e43e73",
       "7ec48fdd43a14ba8110e3b443a7b30e08dbd5d22",
@@ -1150,6 +1156,9 @@
       "669d7cbe1f95f9e6a4081f6687ee997d9e2f1d92",
       "735b6dcb26444b74c3f20cc8b2f4ff92e423c6dc",
       "b6723dce16fc26a8bdec7d58a276a913380f4b8f"
+    ],
+    "templates/policy/presets.json": [
+      "c6e0614c7e1c0a9b0cbe5bc1378b333e8f824584"
     ],
     "templates/teams/.gitignore": [
       "44548143410d7fa5439a5abaa839ca63d243fe2b"
