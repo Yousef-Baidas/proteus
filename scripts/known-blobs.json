@@ -64,6 +64,9 @@
     "agents/hive-worker.md": [
       "80b215d1e9a9f0eda81132cf597f9e7aea4d7da1"
     ],
+    "agents/proteus-acceptance.md": [
+      "e5b3a58c0785245122133fb016223fbc5f609ca6"
+    ],
     "agents/proteus-backend-verifier.md": [
       "0685ac98bccb44fb8ce4550f752dcce27e64ee5b",
       "0b3121707990c475aef2f216a8d43119c8aefc97",
