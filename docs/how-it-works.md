@@ -38,6 +38,8 @@ Three rules hold in every domain: everything reproducible lives in git (scripts,
 
 `PROTEUS=0 claude` opens a plain session with none of them, for the review session or for working by hand.
 
+The lead's loop runs through `proteus-cli.js drive`, started in the background. It calls `next` again and again and does the mechanical lines itself, in the lead's own sandboxed shell: worktree prep, the merge batch's suite and its pass or fail report, the bisect steps, the stall wait. It returns only when a line needs the lead's model or you (a spawn, a question, a decision, a stalled agent), when a step fails, or when it stops making progress, and it lists what it already did. It spawns, posts and merges nothing beyond what `next` would. `next` still prints the same lines without running them.
+
 The hooks are CommonJS. A `package.json` of `{"type": "commonjs"}` goes beside them (`.claude/hooks/`, `teams/templates/hooks/`, a worker's worktree) and beside `teams/link-skills.js`, so they still run in a repo whose own `package.json` sets `"type": "module"`. The one in `teams/templates/hooks/` is committed with the rest, for CI's commit-msg gate.
 
 ## Models
@@ -242,7 +244,7 @@ templates/
     proteus-local-export.js   install.js --export: moves a local repo to a code host
     proteus-gh.js           gh writes with backoff on GitHub's secondary rate limits
     proteus-verdict.js      reads a verdict or answer only from the human's login; --post posts yours
-    proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls; `close`: skip or run the close passes
+    proteus-cli.js          `next`: the loop's driver; prepares worktrees, writes owned records, runs the merge batch, reads stalls; `drive`: `next` in a loop, running its mechanical lines; `close`: skip or run the close passes
     proteus-worktree.js     prepares a worker worktree and its hooks (`next` runs it)
     proteus-tier.js         classifies a change's tier; fails one that outgrew it
     proteus-delegate.js     one bounded headless call on a cheaper model: budget cap, read-only tools, depth limit, a ledger
