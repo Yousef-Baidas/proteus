@@ -51,10 +51,10 @@ No `repo-files:` in `## Learned`: at planning, ask once which files Proteus may 
 
 `teams/policy.json` missing, or the human asks to change the policy: one short exchange in the human's terms, each choice a decision card (`audience.md`). Prompt-only; the write is the enforced part.
 
-1. Offer the presets: `hands-off` (the lead merges; the human is asked only at milestone reviews), `balanced` (the default; the lead merges, and the human is also asked before a change a rule marks as needing them), `careful` (the human merges every pull request and is asked before each).
-2. Ask what in this project cannot be undone, and how often they want to be asked.
+1. Say who merges: the lead into the run branch once green, the human into `main`.
+2. Ask what in this project cannot be undone.
 3. Draft rules from what the project contains: `block` for what must never happen, `ask` for what needs the human first, each with a `why` in plain words. Name categories, never invent examples.
-4. Show the rendered policy: the preset, who merges, how often the human is asked, and each rule with its effect and why.
+4. Show the rendered policy: who merges and each rule with its effect and why.
 5. Write it with `node <hooks>/proteus-policy.js write <draft.json>`, which the human approves in a dialog.
 
 A later change is the same steps from 2, through the same write. Never edit `teams/policy.json` or `teams/POLICY.md` by hand.
@@ -64,7 +64,7 @@ A later change is the same steps from 2, through the same write. Never edit `tea
 Lead docs (`CONTEXT.md`, `CONVENTIONS.md`, `AGENTS.md`, ADRs, lessons) and bootstrap's `teams/` reach `main` only through the human's merge. Nobody pushes `main`.
 
 - No `proteus/<run>` yet: commit on local `main`. They reach GitHub on the run branch, which `stack.md` cuts from local `main`.
-- `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Tier: full` for `CONVENTIONS.md` or `teams/`. CI checks that branch against the lead's own list (these docs, `teams/`, the owned-path records `.proteus/owned/`, and the `lead-edits:` globs of the base's `AGENTS.md`), not a body line; a run cut before the records still needs an `Owned:` line naming the files. Like a ticket's PR it needs a verifier's signoff: spawn `proteus-verifier` on it (the records against the tickets, the docs against `CONVENTIONS.md`), whose `MERGE` posts `proteus/verdict`. It merges on green `gates`, `proteus/verdict` and `proteus/security`, with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed>`.
+- `proteus/<run>` exists: commit on `proteus-work/<run>/lead-docs`, cut from it, and open a PR into it with `Tier: full` for `CONVENTIONS.md` or `teams/`. CI checks that branch against the lead's own list (these docs, `teams/`, the owned-path records `.proteus/owned/`, and the `lead-edits:` globs of the base's `AGENTS.md`), not a body line; a run cut before the records still needs an `Owned:` line naming the files. Like a ticket's PR it needs a verifier's signoff: spawn `proteus-verifier` on it (the records against the tickets, the docs against `CONVENTIONS.md`), whose `MERGE` posts `proteus/verdict`. It merges on green `gates`, `proteus/verdict` and `proteus/security`, with `gh pr merge <pr> --merge --match-head-commit <the sha you pushed> --body "Reviewed merge of PR #<pr> at <sha12>: gates, proteus/security, proteus/verdict green."` (the evidence the auto-mode classifier reads, #279).
 - Fresh local project: nothing merges until `main` has a gate. Once the stack is known, open a PR from `origin/main` that sets the gate line and changes nothing else; its `gh pr merge` command goes with your next question, the human's one action at the start. A gate needing a file no ticket has made yet: a worker commits the smallest one on the first record PR's branch and you push it, unasked; reviews and holds stand.
 - Quick and Direct branches are cut from `origin/main`, not local `main`: lead docs riding along would fail CI's owned check. They wait on local `main` for the next run branch.
 

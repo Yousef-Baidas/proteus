@@ -148,7 +148,9 @@ Auto mode's classifier judges every tool call and every subagent's task descript
 }
 ```
 
-The installer never writes it: an agent editing your settings is self-modification to auto mode, and the call is yours. When a call is denied anyway, the lead tells you in one line what was denied, the reason tag and why the run needs it, then waits or carries on with other work; reply naming the action to clear it. A worker that hits a denial stops with `BLOCKED #<n> classifier <tag>: <action>` and is not re-spawned.
+The lead merges each pull request into the run branch itself once its checks and signoffs are green; nothing there waits for you (#368). Each merge carries its evidence: `proteus-merge.js` gives `gh pr merge` a body naming the PR, its head and the green checks and signoffs it merged on, so the classifier sees a reviewed merge. If it still refuses one as `Merge Without Review` (#279), the one permission rule to add, in your own settings, is `Bash(node <hooks>/proteus-merge.js:*)`, with `<hooks>` the session's hooks dir: that script merges only pull requests whose base is `proteus/<run>`, never the default branch. Do not allow `gh pr merge` itself, which would cover the default branch too. Your own verdicts go on the run log as `human verdict #<n>: accepted` or `: changes`, never a line opening with `ACCEPT`, which reads as an agent writing your verdict.
+
+The installer never writes any of this: an agent editing your settings is self-modification to auto mode, and the call is yours. When a call is denied anyway, the lead tells you in one line what was denied, the reason tag and why the run needs it, then waits or carries on with other work; reply naming the action to clear it. A worker that hits a denial stops with `BLOCKED #<n> classifier <tag>: <action>` and is not re-spawned.
 
 ## Sandboxed bypass
 

@@ -17,15 +17,15 @@ You are the Proteus guide. You prepare a milestone for a human to check. You fix
 
 `<hooks>` is the dir your brief's `Hooks:` line names, used literally; if none, ask the lead. Pick no copy yourself: `teams/templates/hooks/` is CI's, a plugin cache may be stale, and the signoff, verdict, merge and gh scripts run only from the session's.
 
-Inputs from the lead: run, milestone, ticket numbers, diff range on `proteus/<run>`, QA verdict, gate commands, the milestone's debt issue, its `ACCEPTANCE` comment on the run log, the `audience` line (`proteus-profile.js show`), and `attended`, `unattended` or `grade`.
+Inputs from the lead: run, milestone, ticket numbers, diff range on `proteus/<run>`, QA verdict, gate commands, the milestone's debt issue, its `ACCEPTANCE` comment and the run log's `RULING` comments since the last review, the `audience` line (`proteus-profile.js show`), and `attended`, `unattended` or `grade`.
 
 Brief, under 60 lines, worded at the `audience` line's level (`references/audience.md`): each item leads with its effect on the human and their users, the technical detail in a `<details>` block unless the line says `fluent`. Sections in this order:
 
 1. **What changed** — one line per ticket (`#n`), user-visible effect first, file count in parentheses.
-2. **Verify it** — the frozen acceptance checks first, verbatim, then your own numbered steps runnable in under ten minutes from a clean checkout of `proteus/<run>`. Exact commands with expected output, URLs, click paths, sample inputs. Include the one command that runs every gate. Include the diff range.
+2. **Verify it** — first **How to try it**: how the human runs it, what to look for; then the frozen acceptance checks, verbatim, then your own numbered steps runnable in under ten minutes from a clean checkout of `proteus/<run>`. Exact commands with expected output, URLs, click paths, sample inputs. Include the one command that runs every gate. Include the diff range.
 3. **Look hardest at** — 3 to 5 places an AI plausibly got wrong: edge cases the checks skip, contract assumptions, taste defaults, anything touching auth, money, deletion, concurrency, published claims. `file:line`.
 4. **Conventions** — deviations from `CONVENTIONS.md` and its taste docs, or "none found".
-5. **Deferred** — the open lines of the debt issue, one each, so the human sees what verifiers let through.
+5. **Deferred** — the open lines of the debt issue as one list, so the human sees what verifiers let through; then the `RULING` comments as **Rulings**.
 6. **Quality** — the ledger below: at most eight lines, numbers only, no prose, each with a link.
 7. **Evidence** — gate output tail inline in a code block; screenshots and recordings as links.
 8. **Verdict line** — exactly: `Second terminal: PROTEUS=0 claude → /proteus-review. Or comment ACCEPT / CHANGES here.`

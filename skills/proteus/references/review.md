@@ -1,6 +1,6 @@
 # Human review gate
 
-Agents verify tickets; the human verifies milestones. The loop halts at every gate until a verdict exists. From the Standard tier up (`SKILL.md` rule 3) every run has milestones and gates, however small (one ticket is one milestone). Direct and Quick have neither: the human's merge of their PR into `main` is the review (`flow.md`, Tiers).
+Agents verify tickets; the human accepts milestones by use. The loop halts at every gate until a verdict exists. From the Standard tier up (`SKILL.md` rule 3) every run has milestones and gates, however small (one ticket is one milestone). Direct and Quick have neither: the human's merge of their PR into `main` is the review (`flow.md`, Tiers).
 
 The lead does not talk the human through a review: it has no diff, and every relayed line costs it twice. The human talks to the **review session** or the review issue.
 
@@ -23,7 +23,7 @@ The final pass, step 8's close passes, is required. Findings → tickets, then a
 Fires after the last ticket of a milestone merges into `proteus/<run>` and QA says `WAVE-GREEN`. Standard batches the ceremony: milestones finishing in the same wave share one milestone QA pass and one review issue, `Review: <run>/<m1>+<m2>`, a section each, and one verdict covers them all. Full, and every test piece, gates each milestone alone.
 
 0. After one fix cycle with a listed QA item still red (`flow.md`), the gate opens anyway: pass the guide the open items, and the brief puts them first, each marked fix, debt or drop for the human to decide. Every `<check>: skipped (<reason>)` run-log line goes to the guide too, marked run or accept; unattended, it sits under `## Not verified`.
-1. Spawn `proteus-guide` with run, milestone, ticket numbers, diff range, QA verdict, gate commands, mode, debt issue, the `ACCEPTANCE` comment, the `proteus-profile.js show` line. It opens the review issue `Review: <run>/<milestone>` (label `proteus-review`, `needs-human`) with the brief, evidence links, the open debt lines, and the **Quality** ledger: at most eight lines of numbers counted from CI, the tracker and git (gates, mutation survivors, deep-review blockers, security findings, rework, baseline, debt), each linked, so the human sees how far to trust it without reading code. Exits.
+1. Spawn `proteus-guide` with run, milestone, ticket numbers, diff range, QA verdict, gate commands, mode, debt issue, the `ACCEPTANCE` comment, the `proteus-profile.js show` line, the run log's `RULING` comments since the last review. It opens the review issue `Review: <run>/<milestone>` (label `proteus-review`, `needs-human`) with the brief, evidence links, the open debt lines, and the **Quality** ledger: at most eight lines of numbers counted from CI, the tracker and git (gates, mutation survivors, deep-review blockers, security findings, rework, baseline, debt), each linked, so the human sees how far to trust it without reading code. Exits.
 2. `PushNotification`: `review ready: <milestone> — <issue url>`. Tell the human in plain words to start a second session and run `/proteus-review` in it, never to open the host; then the exact command, from Channels below.
 3. Wait: a background shell with the poll from `tracker.md` (Codex: `harnesses.md`), until a verdict comment exists. Dispatch only **speculative** tickets: next-milestone tickets whose owned paths miss every file this milestone changed (`git diff --name-only <merge-base>..proteus/<run>`), labelled `speculative` and logged on the run log. They run steps 3 to 6 now; their PRs merge only after `ACCEPT`, so a `CHANGES` costs their work, not a wrong merge. `CHANGES` → close the PR of each one whose paths or `depends-on` the changes touch; dispatch it again after the round. None after a test piece.
 4. Verdict comment, first line:
@@ -44,7 +44,7 @@ Any of these produce the verdict comment.
 | issue only | read the brief on GitHub, comment `ACCEPT` or `CHANGES` + lines. No AI involved. |
 | evidence only | open the linked screenshots, then comment. |
 
-A pull request the policy holds (`ASK human PR#<n> <url> … reply: ACCEPT <sha12>`) takes the same verdict on the PR itself, bound to its head: the first line is exactly `ACCEPT <sha12>` for the current head, or `CHANGES`. A bare `ACCEPT`, another head's sha (a push since) or another login holds it. The lead posts the human's decision from chat (`flow.md`, Asking the human).
+No PR into `proteus/<run>` waits for the human. In local mode the close PR's verdict is on the PR, first line `ACCEPT <sha12>` for its current head or `CHANGES`; the lead posts the human's decision from chat with `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>`, then the command its refusal prints.
 
 ## Unattended
 
