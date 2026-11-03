@@ -10,7 +10,7 @@
 ## Asking the human
 
 - **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
-- **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
+- **Question issue** (the rest: a parked `NEEDS`, a dependency request with its OSV result, a `CONTRACT-UNCLEAR` you cannot settle, a missing `ROUTING.md` row, a roster change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per message.
 - An `ASK human` line reaches the human as a card (`audience.md`); on a `reply: ACCEPT <sha12>` one, once they decide, post it yourself on the main thread, `node <hooks>/proteus-verdict.js <pr> --post --body-file <f>` then the command its refusal prints: the dialog shows the exact text and only their click posts it; with no dialog they run that command.
 - An answer stating a standing rule becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
 
@@ -19,7 +19,7 @@
 `proteus-tier.js` reads the `tiers` block in `teams/ROUTING.md`; no block → Standard. The human's `full:` prefix raises a work order to Full; `quick:` lowers Standard to Quick, never Full. Session start and the information gate apply to every tier.
 
 - **Direct** (docs and typos within the block's limits): no ticket, contract, verifier, milestone or guide. A batch branch `proteus-work/direct/<batch>` from `origin/main`, its worktree prepared with `proteus-worktree.js <wt> --tier direct <paths>` (each later change re-runs it with every path so far). One `helper` with the Direct prompt (`roles.md`) opens or extends one PR into `main`, its body the digest; CI runs the mechanical gates, the human's merge is the review. Add to a batch only while its PR is open.
-- **Quick** (small, one team): one ticket, no milestone, one worker on `proteus-work/quick/<n>` from `origin/main`, worktree prepared with `--tier quick` (`--human` after `quick:`). No contracts, debt, QA or guide; a verifier on `build` only when CI cannot show the outcome (spec: `roles.md` Acceptance). The PR into `main` carries `Owned:` and `Tier: quick` (`quick (human)`) lines; the human merges.
+- **Quick** (small, one team): one ticket, no milestone, one worker on `proteus-work/quick/<n>` from `origin/main`, worktree prepared with `--tier quick` (`--human` after `quick:`). No contracts, debt, QA or guide; a verifier on `build` only when CI cannot show the outcome. The PR into `main` carries `Owned:` and `Tier: quick` (`quick (human)`) lines; the human merges.
 - **Standard**: steps 0–8, `Tier: standard` on each PR; milestones finishing in the same wave share one QA pass and one review issue.
 - **Full**: steps 0–8 as written, `Tier: full` on each PR.
 
@@ -33,7 +33,7 @@ Read `bootstrap.md`, `tracker.md`, `domains.md`, `teams.md`; detect blank / mid-
 
 Read `AGENTS.md`, `CONTEXT.md`, relevant ADRs, and the taste docs `CONVENTIONS.md` names; their defaults go into every brief and spec. Unfamiliar repo → `graphify` once; workers get no repo tour (`stack.md`).
 
-Grill (`/grill-with-docs`, or `/grilling` on a blank repo) one question at a time until every gate item is filled. Bigger than one milestone or session → `/wayfinder`, then the gate per destination. Unattended with a blank left → park the work order, take the next. Already grilled (per the run log) → skip.
+Grill (`/grill-with-docs`, or `/grilling` on a blank repo) one question at a time until every gate item is filled. Bigger than one milestone or session → `/wayfinder`, then the gate per destination. Unattended with a blank left → park the work order, take the next. Already grilled (run log) → skip.
 
 Goal mode: `goal: <name> <min|max> <target>` makes ticket 1 the scorecard program, frozen once merged; rounds follow by schedule (`operations.md`, Goal loop).
 
@@ -56,7 +56,7 @@ Fewest tickets that isolate risk, over `/to-tickets`' own slicing: a milestone's
 
 Prototype first (`review.md`): the first wave builds a rough, working whole; later waves harden it.
 
-Script first (`roles.md`): the trigger is a procedure's second occurrence in the run, by you or a worker. Open the program ticket then, logged on the run log as `script-ticket: <procedure> #<n>`; later briefs call the program.
+Script first (`roles.md`): the trigger is a procedure's second occurrence in the run. Open the program ticket then, logged on the run log as `script-ticket: <procedure> #<n>`; later briefs call the program.
 
 ## 3. Contracts
 
@@ -92,4 +92,4 @@ Milestone complete and `WAVE-GREEN` → the gate in `review.md`. `CHANGES revisi
 
 ## 8. Close
 
-Last milestone accepted → the final pass (`review.md`): `proteus-qa-verifier` on `judge` with the word `close` and the checks dir (`enforcement.md` §10 on code), beside it `proteus-security-verifier` in `close` mode over the whole repo (`enforcement.md` §10b); red → tickets. Every open debt line is fixed, re-scoped into a future run's issue, or dropped by the human. Lessons pass (`lessons.md`, At step 8). On `close: ready` from `node <hooks>/proteus-cli.js close`, open the PR from `proteus/<run>` to `main` linking the milestones, its body ending with the `gh api -X DELETE …/protection` command if the run set protection; local mode posts their `ACCEPT <sha12>` on it first; the human merges it with one command. Delete `proteus-evidence/<run>` and `.worktrees/_run`, `node <hooks>/proteus-scratch.js --sweep <run>`. Close report: `node <hooks>/proteus-close-report.js <run>` on the run log and the close PR; propose the routing changes it points to (`enforcement.md` §5), and "redesign teams" on a `SUGGEST re-scout:` line. Retro: a `helper` with its `roles.md` prompt runs `node <hooks>/proteus-retro.js` on the close report's data, one proposal per recurring group, all as one comment on the close PR, a `- [ ]` checklist. The human ticks the ones to keep; only those are filed, and nothing is applied unasked. No groups → no comment; the run log gets `retro: none`.
+Last milestone accepted → a worker writes or updates the README: install, start, use, check. Then the final pass (`review.md`): `proteus-qa-verifier` on `judge` with the word `close` and the checks dir (`enforcement.md` §10 on code), which follows the README, beside it `proteus-security-verifier` in `close` mode over the whole repo (`enforcement.md` §10b); red → tickets. Every open debt line is fixed, moved to a future run's issue, or dropped by the human. Lessons pass (`lessons.md`, At step 8). On `close: ready` from `node <hooks>/proteus-cli.js close`, open the PR from `proteus/<run>` to `main` linking the milestones, its body ending with the `gh api -X DELETE …/protection` command if the run set protection; local mode posts their `ACCEPT <sha12>` on it first; the human merges it. Delete `proteus-evidence/<run>` and `.worktrees/_run`, `node <hooks>/proteus-scratch.js --sweep <run>`. Close report: `node <hooks>/proteus-close-report.js <run>` on the run log and the close PR; propose the routing changes it points to (`enforcement.md` §5), and "redesign teams" on a `SUGGEST re-scout:` line. Retro: a `helper` with its `roles.md` prompt runs `node <hooks>/proteus-retro.js` on the close report's data, one proposal per recurring group, all as one comment on the close PR, a `- [ ]` checklist. The human ticks the ones to keep; only those are filed, and nothing is applied unasked. No groups → no comment; the run log gets `retro: none`.

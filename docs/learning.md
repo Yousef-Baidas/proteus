@@ -2,6 +2,14 @@
 
 Proteus explains its decisions in plain words as it goes. When you want more than that, it can set up a place to learn your project properly, and hand you over to a teaching skill.
 
+## Learn mode
+
+When you tell Proteus you want to learn along the way, it also changes how it works with you:
+
+- At a design decision it lays out the options and their trade-offs without saying which it would pick. You choose. Ask for its recommendation and it gives one.
+- Each milestone review opens with a short explanation of what was built and why, then one or two questions to check you followed it.
+- When it finds a bug that is not a security problem and does not hold up other work, it offers you the chance to find the cause first, with hints if you ask. Say no and the fix goes ahead as usual.
+
 ## What it does
 
 Ask the lead to go deeper, or say you want to learn the project properly. The lead only offers this when you ask. It then:
