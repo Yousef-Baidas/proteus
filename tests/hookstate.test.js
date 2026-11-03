@@ -528,7 +528,10 @@ const ALLOW = {
   "proteus-learn.js:saveSeen": "<common>/proteus for learn-seen.json, a lead CLI, never a hook; both dirs lstat'd real and owned",
   "proteus-policy.js:writePolicy": "write's validated draft as teams/policy.json and POLICY.md, or the user file; a CLI, never a hook",
   "proteus-skill-scan.js:osv": "--osv's config and report in a fresh mkdtemp dir under os.tmpdir(), removed after; a CLI, never a hook",
-  "proteus-worktree.js:head": "a worker worktree's files, run by the lead before the worker starts",
+  "proteus-sublead.js:realDir": "a lead CLI, never a hook: <common>/proteus, its subleads/ and a sub-run checkout's .claude/, each made then lstat'd real",
+  "proteus-sublead.js:saveState": "a lead CLI, never a hook: <common>/proteus/subleads/<run>.json, 'wx' after an rm, never through a link",
+  "proteus-sublead.js:copySettings": "a lead CLI, never a hook: the lead's settings.local.json into a sub-run checkout it made, 'wx' after an rm",
+  "proteus-worktree.js:head":"a worker worktree's files, run by the lead before the worker starts",
   "proteus-worktree.js:installPreCommit": "a worker worktree's hook, run by the lead before the worker starts",
 };
 const WFN = "writeFile|appendFile|rename|unlink|rm|rmdir|cp|copyFile|mkdir|symlink|link|truncate";

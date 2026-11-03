@@ -19,7 +19,10 @@
 //                                                             printed again while the batch awaits its result
 //   DECIDE suite|merge: <reason>                             no gate command in ## Learned, or a batch that stopped
 //   DECIDE #<n> owned line differs from record                an open ticket whose Owned: line is not its record's
-//   DECIDE #<n> slice: tier <t> too large                     a ready slice ticket (a slice: label) that is hard or full
+//   DECIDE #<n> slice: tier <t> too large; split it[, or sub-lead: <cmd>]
+//                                                             a ready slice ticket (a slice: label) that is hard or full;
+//                                                             <cmd> is proteus-sublead.js start, left out at depth 3;
+//                                                             BLOCKED #<n> sub-lead <branch> running once one is out
 //   SPAWN verifier PR#<n> #<ticket> head=<sha12>[ security=local] brief: <cmd>  an open PR with no proteus/verdict
 //                                                             and no verifier spawn recorded for its head; security=local:
 //                                                             the local model flagged it, spawn the security verifier too
@@ -77,6 +80,7 @@ const Policy = require(path.join(__dirname, "proteus-policy.js"));
 const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 const Scratch = require(path.join(__dirname, "proteus-scratch.js"));
+const Sub = require(path.join(__dirname, "proteus-sublead.js"));
 
 const USAGE = "usage: node proteus-cli.js next [run] [--json] | drive [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run] | close [run]";
 const HELP = `${USAGE}
@@ -87,7 +91,8 @@ At most once an hour next sweeps scratch (proteus-scratch.js --sweep --all-done,
 SWEPT <count> <MB> MB when it deleted something, NOTE <reason> when it failed.
 Open tickets with an Owned: line and no record on proteus/<run> get one record PR per wave, from
 proteus-work/<run>/owned-<k>; they stay BLOCKED until it merges. A record is never rewritten:
-a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice.
+a changed Owned: line prints DECIDE #<n>. A slice: label on a hard or full ticket prints DECIDE #<n> slice: split it, or start
+a sub-lead with the command it names (proteus-sublead.js --help); none at depth 3.
 A ready step:human ticket prints ASK human #<n> <url>, never SPAWN worker: the human opens its PR.
 The policy (proteus-policy.js show) holds green PRs: merge human prints ASK human merge PR#<n> <url>;
 ask every, or ask risky for a PR an ask rule covers, ASK human PR#<n> <url> [policy:<id>]
@@ -511,7 +516,14 @@ function next(arg) {
     const tier = tierLine ? tierLine[1].toLowerCase() : "standard";
     // a slice ticket (teams.md, Routing) is Quick or Standard only
     const big = t.difficulty === "hard" ? "hard" : tier === "full" ? "full" : "";
-    if (big && sliceTeams(((byIssue.get(t.n) || {}).labels || []).map((l) => l.name)).length) { out.push({ kind: "DECIDE", ticket: t.n, reason: `slice: tier ${big} too large` }); continue; }
+    if (big && sliceTeams(((byIssue.get(t.n) || {}).labels || []).map((l) => l.name)).length) {
+      // split it, or hand it to a sub-lead (proteus-sublead.js); its sub-run's branch is the sign one is out
+      const sub = `${names.branch}${Sub.subName(run, t.n)}`;
+      if (w.refs.includes(sub)) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: `sub-lead ${sub} running` }); continue; }
+      const cmd = Sub.startCmd(common, run, t.n);
+      out.push({ kind: "DECIDE", ticket: t.n, reason: `slice: tier ${big} too large; split it${cmd ? `, or sub-lead: ${cmd}` : ""}` });
+      continue;
+    }
     if (!prepared(wt, branch)) {
       const why = !lib.TIERS.includes(tier) ? `Tier: ${tier} is not one of ${lib.TIERS.join(", ")}`
         : !fs.existsSync(wt) && !base ? `no ${names.branch}${run} to cut the worktree from` : "";

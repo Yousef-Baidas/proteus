@@ -45,7 +45,8 @@
 //   `memory: local` agent's own .claude/agent-memory-local/<type>/, lib.ownMemory). All else passes. Each call stamps the agent's beat (lib.beat) for the watchdog.
 //   Under AGENTS.md `isolation: container`, a verifier's shell runs no gate or test (verifierGate): the lead runs it as a container check.
 //   A shell call let through gets the fingerprint proteus-shell-check.js compares after it (PostToolUse).
-//   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart).
+//   The lead's own shell call let through opens a window in lead-flight.json (proteus-shell-check.js leadStart);
+//   one naming proteus-sublead.js stores the session's permission mode (lib.saveLeadMode).
 // Guest mode (lib.guestDir): the lead's docs and teams/ live in the guest dir outside the repo. Rule 1 applies
 //   there, and the repo's own copies of those docs are refused; a subagent edit in the guest dir counts as one in the main checkout.
 // lead-edits (lib.leadEdits): repo files matching the globs on AGENTS.md's `lead-edits:` line pass rule 1, guest mode
@@ -103,6 +104,7 @@ else lib.run((ev, ad) => {
     if (/proteus-signoff\.js/.test(ev.command) && lib.signsOff(ev.command)) ad.deny(lib.SIGNOFF_MSG.lead);
     const why = noRunner(ev) || lib.verdictPost(ev.command, ev.cwd) || lib.branchDenial(ev.command, ev.cwd) || containerDenial(ev);
     if (why) ad.deny(why);
+    if (/proteus-sublead\.js/.test(ev.command)) leadMode(ev);
     const ask = policy(ev, ad, true);
     return shellCheck("leadStart", ev).then(() => { if (ask) ad.ask(ask); });
   }
@@ -157,6 +159,12 @@ else lib.run((ev, ad) => {
   const ask = policy(ev, ad, true);
   if (ask) ad.ask(ask);
 });
+
+// the lead's permission mode for proteus-sublead.js start (#344), stored where its shell cannot write
+function leadMode(ev) {
+  const dir = lib.shellCwd(ev), common = lib.gitCommonDir(dir);
+  if (common) try { lib.saveLeadMode(common, dir, ev.permissionMode); } catch {}
+}
 
 // the project policy (proteus-policy.js guard, #307), after this guard's own checks so a refusal of theirs stands:
 // refuses through ad.deny, or returns the text of an "ask" for the lead's own call. A hook copy without it (an old
