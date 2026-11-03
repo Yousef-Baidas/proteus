@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // The lead's loop: node <hooks>/proteus-cli.js next [run] [--json]
+//                  node <hooks>/proteus-cli.js drive [run] [--json]
 //                  node <hooks>/proteus-cli.js result pass|fail --at <sha> [run]
 //                  node <hooks>/proteus-cli.js brief worker <n> [run] | brief verifier <pr> [run]
 //                  node <hooks>/proteus-cli.js close [run]
@@ -40,6 +41,16 @@
 // tickets' workers, then their --forget as a RUN line. At most once an hour, proteus-scratch.js's sweep --all-done
 // and --stale (#319): next runs in the lead's sandboxed shell, the one place a sweep may run (#237). --json prints
 // next's lines as an array of { kind, ... }.
+// drive (#344) calls next in process, in a loop, and runs what needs no model in its own shell, so in the caller's
+// sandbox: each RUN line from the argv next put on it (a suite RUN: run-tree, then the gate command in
+// .worktrees/_run, then result pass on exit 0, else fail, at the sha it named; result's --forget runs too, its
+// bisect step comes back from next), WAIT's watchdog, and SWEPT, NOTE, MERGED as records. It stops when a list holds
+// SPAWN, ASK, DECIDE, STOP, NUDGE or MERGE with nothing run that round, or result printed STOP or failed (DECIDE
+// merge:), or only BLOCKED; a failed non-suite RUN or run-tree stops it with `BLOCKED RUN exited <code>: <command>`.
+// Guards: PROTEUS_DRIVE_MAX rounds (default 50), the same list twice with nothing run, a RUN back after it ran; each
+// a NOTE drive: line. It prints what it did as `DID <line>` (the suite's result: DID NOTE result ...), then the lead's lines (--json: one array, done: true on
+// the handled); exit 0 when it stops, non-zero only on its own error. It spawns, posts, approves and merges nothing
+// beyond what next and result do.
 // brief renders the ## Worker or ## Verifier block of references/roles.md, read at run time, every <slot> filled from
 // the tracker, the owned record, the repo and AGENTS.md ## Learned, into <scratch>/brief-<n>.md or verify-<pr>.md
 // (proteus-scratch.js --path <run>), and prints `PROMPT <the spawn prompt>`; a slot with no source prints
@@ -65,7 +76,7 @@ const C = require(path.join(__dirname, "proteus-confine.js"));
 const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 const Scratch = require(path.join(__dirname, "proteus-scratch.js"));
 
-const USAGE = "usage: node proteus-cli.js next [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run] | close [run]";
+const USAGE = "usage: node proteus-cli.js next [run] [--json] | drive [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run] | close [run]";
 const HELP = `${USAGE}
 next prepares the ready tickets' worktrees and starts the merge batch, then prints the lead's next
 actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN verifier, SPAWN worker,
@@ -84,6 +95,10 @@ reply: ACCEPT <sha12>, until the human's comment on the PR is that line for its 
 result reports the suite the RUN line printed: pass ends the batch and prints STOP for the merged
 tickets' agents; fail bisects, printing the next RUN line. --at is the sha the RUN line named.
 The suite is the gate command of AGENTS.md ## Learned.
+drive calls next in a loop and does its RUN lines (a suite's then its result), WAIT and SWEPT, NOTE,
+MERGED itself, in the caller's shell; it stops on SPAWN, ASK, DECIDE, STOP, NUDGE or MERGE, a failed
+RUN (BLOCKED), a RUN that comes back, no progress or PROTEUS_DRIVE_MAX rounds (50), and prints what it
+did as DID lines, then the lead's lines. Exit 0 when it stops; non-zero only on its own error.
 brief writes the worker's (or the PR's verifier's) brief from roles.md into the run's scratch dir and
 prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief: ... and exits 1.
 close decides step 8's close passes: close: skip when every milestone has a milestone-passes line on the
@@ -153,6 +168,8 @@ function gates(root) {
 const gateCommand = (root) => gates(root).join(" && ");
 // the batch's two sandboxed commands for sha, as proteus-merge.js prints them
 const suiteRun = (root, suite, sha) => `node ${fw(path.relative(root, RUN_TREE))} ${sha}, then in .worktrees/_run: ${suite}`;
+// the suite's RUN action: its line, and for drive the sha it tests, run-tree's argv and the gate command for _run
+const suiteAct = (root, suite, sha) => ({ kind: "RUN", command: suiteRun(root, suite, sha), suite: true, at: sha, argv: [[process.execPath, RUN_TREE, sha]], gate: suite });
 // proteus-merge.js's line without its own suite commands, which the RUN line carries
 const mergeSaid = (said) => said.map((l) => l.replace(/; suite: run node .*$/, "")).join("; ");
 
@@ -396,7 +413,7 @@ function next(arg) {
     return { pr: m.n, head, ...verdictOf(root, head, p.statusCheckRollup || []) };
   });
   if (waiting && waiting.refused) out.push({ kind: "DECIDE", about: "merge", reason: `refused: ${waiting.refused}` });
-  else if (waiting) out.push(suite ? { kind: "RUN", command: suiteRun(root, suite, waiting.at) } : { kind: "DECIDE", about: "suite", reason: "no gate command in ## Learned" });
+  else if (waiting) out.push(suite ? suiteAct(root, suite, waiting.at) :{ kind: "DECIDE", about: "suite", reason: "no gate command in ## Learned" });
   else if (picked.length && !suite) {
     for (const m of picked) out.push({ kind: "MERGE", ...m });
     out.push({ kind: "DECIDE", about: "suite", reason: "no gate command in ## Learned" });
@@ -409,7 +426,7 @@ function next(arg) {
       merged.add(m.n);
       out.push({ kind: "MERGED", ...(ev.get(m.n) || { pr: m.n, head: "?", verdict: "?", by: "?" }) });
     }
-    if (res.at) out.push({ kind: "RUN", command: suiteRun(root, suite, res.at) });
+    if (res.at) out.push(suiteAct(root, suite, res.at));
     if (code !== 0) out.push({ kind: "DECIDE", about: "merge", reason: mergeSaid(said) });
   }
 
@@ -470,7 +487,8 @@ function next(arg) {
       if (why) { failed.push({ kind: "BLOCKED", ticket: t.n, reason: `prep: ${why}` }); continue; }
       if (profile) {
         const add = fs.existsSync(wt) ? [] : [`git worktree add -b ${sq(branch)} ${sq(wt)} ${base}`];
-        out.push({ kind: "RUN", command: [...add, `node ${sq(WORKTREE)} ${sq(wt)} --tier ${tier} ${t.owned.map(sq).join(" ")}`, `node ${sq(copy)} ${sq(root)}`].join(" && ") });
+        const argv = [...(add.length ? [["git", "worktree", "add", "-b", branch, wt, base]] : []), [process.execPath, WORKTREE, wt, "--tier", tier, ...t.owned], [process.execPath, copy, root]];
+        out.push({ kind: "RUN", command: [...add, `node ${sq(WORKTREE)} ${sq(wt)} --tier ${tier} ${t.owned.map(sq).join(" ")}`, `node ${sq(copy)} ${sq(root)}`].join(" && "), argv });
         continue;
       }
       const err = prep(root, common, base, wt, branch, tier, t.owned);
@@ -482,7 +500,7 @@ function next(arg) {
   out.splice(askAt, 0, ...asked, ...humans);
   out.push(...failed);
   for (const b of blocked) out.push({ kind: "BLOCKED", ticket: b.n, reason: b.reason });
-  if (out.every((a) => a.kind === "BLOCKED")) out.push({ kind: "WAIT", command: `node ${WATCHDOG} --wait` });
+  if (out.every((a) => a.kind === "BLOCKED")) out.push({ kind: "WAIT", command: `node ${WATCHDOG} --wait`, argv: [[process.execPath, WATCHDOG, "--wait"]] });
   out.push(...swept);
   return { code: 0, out };
 }
@@ -494,12 +512,15 @@ function result(arg, verdict, at) {
   if (w.err) return w;
   const { root, common, run, names } = w;
   const suite = gateCommand(root);
-  if (!suite) return { code: 0, out: ["DECIDE suite: no gate command in ## Learned"] };
+  if (!suite) return { code: 0, out: ["DECIDE suite: no gate command in ## Learned"], acts: [{ kind: "DECIDE", about: "suite", reason: "no gate command in ## Learned" }] };
   const said = [], res = {};
   const code = batch({ arg: arg || run, suite, result: verdict, at }, { say: (l) => said.push(l), err: (l) => said.push(l) }, res);
-  const out = [mergeSaid(said)];
-  if (res.at) out.push(`RUN ${suiteRun(root, suite, res.at)}`);
-  if (verdict !== "pass" || code !== 0 || !res.done) return { code, out };
+  const out = [mergeSaid(said)], acts = [];
+  if (res.at) {
+    acts.push(suiteAct(root, suite, res.at));
+    out.push(`RUN ${suiteRun(root, suite, res.at)}`);
+  }
+  if (verdict !== "pass" || code !== 0 || !res.done) return { code, out, acts };
   // the merged PRs as gh reports them, never as the state names them (an agent can write it), and their tickets
   const prs = new Set(), tickets = new Set();
   for (const n of res.done) {
@@ -510,9 +531,99 @@ function result(arg, verdict, at) {
     if (t) tickets.add(t);
   }
   const stop = spawns(common).filter((r) => (lib.isVerifier(r.type) && prs.has(r.pr)) || (isWorker(r.type) && tickets.has(r.ticket))).map((r) => r.name);
-  for (const a of stop) out.push(`STOP ${a}`);
-  if (stop.length) out.push(`RUN node ${WATCHDOG} --forget ${stop.map(sq).join(" ")}`);
-  return { code, out };
+  for (const a of stop) {
+    out.push(`STOP ${a}`);
+    acts.push({ kind: "STOP", agent: a, reason: "merged" });
+  }
+  if (stop.length) {
+    const command = `node ${WATCHDOG} --forget ${stop.map(sq).join(" ")}`;
+    out.push(`RUN ${command}`);
+    acts.push({ kind: "RUN", command, argv: [[process.execPath, WATCHDOG, "--forget", ...stop]] });
+  }
+  return { code, out, acts };
+}
+
+// ---- drive: next's loop with its mechanical lines run here, in the caller's shell and sandbox; it returns when a
+// line needs the lead's model or the human
+
+const LEAD_KINDS = new Set(["SPAWN", "ASK", "DECIDE", "STOP", "NUDGE", "MERGE"]);
+const RECORDS = new Set(["SWEPT", "NOTE", "MERGED"]);
+const BIG = 256 * 1024 * 1024;
+// a RUN or WAIT action's argv steps, from the project root, then a suite's gate command in .worktrees/_run through
+// the platform's shell, as the lead's shell would run it: { code, why, gate } (gate: the suite itself ran)
+function runSteps(root, a) {
+  for (const [file, ...args] of a.argv || []) {
+    const r = lib.spawnArgv(file, args, { cwd: root, maxBuffer: BIG });
+    if (r.status !== 0) return { code: r.status === null ? 1 : r.status, why: last(r.stderr || r.stdout) || (r.error ? r.error.message : ""), gate: false };
+  }
+  if (!a.gate) return { code: 0, why: "", gate: false };
+  const r = spawnSync(a.gate, { cwd: path.join(lib.worktreesDir(root), "_run"), shell: true, encoding: "utf8", windowsHide: true, maxBuffer: BIG });
+  return { code: r.status === null ? 1 : r.status, why: last(r.stderr || r.stdout), gate: true };
+}
+
+// { code, done: [handled actions], out: [the lead's actions] }, or { code, err, done } on a driver error. io replaces
+// next, result, runSteps, the root and the cap, for tests
+function drive(arg, io = {}) {
+  const nx = io.next || next, rs = io.result || result, exec = io.exec || runSteps;
+  const max = io.max || lib.envInt("PROTEUS_DRIVE_MAX", 50);
+  const w = io.root ? { root: io.root } : where(arg);
+  if (w.err) return w;
+  const done = [], owed = [], ran = new Set();
+  const stop = (rest) => ({ code: 0, done, out: [...owed, ...rest] });
+  const note = (reason) => ({ kind: "NOTE", reason: `drive: ${reason}` });
+  const blocked = (a, x) => ({ kind: "BLOCKED", reason: `RUN exited ${x.code}: ${a.command}${x.why ? `: ${x.why}` : ""}` });
+  let prev = null, left = [];
+  for (let i = 0; i < max; i++) {
+    const r = nx(arg);
+    if (r.err) return { ...r, done };
+    const list = r.out;
+    for (const a of list) if (RECORDS.has(a.kind)) done.push({ ...a, done: true });
+    const todo = list.filter((a) => !RECORDS.has(a.kind));
+    const rest = (j) => todo.slice(j + 1);
+    left = [];
+    let acted = false;
+    for (let j = 0; j < todo.length; j++) {
+      const a = todo[j];
+      if (a.kind === "WAIT") {
+        exec(w.root, a); // exit 1 is the watchdog's stall report, which the next call reads
+        done.push({ ...a, done: true });
+        acted = true;
+        continue;
+      }
+      if (a.kind !== "RUN") { left.push(a); continue; }
+      if (ran.has(a.command)) return stop([...left, a, ...rest(j), note("this RUN came back after it ran, with no new result")]);
+      ran.add(a.command);
+      acted = true;
+      const x = exec(w.root, a);
+      if (!(a.suite && x.gate)) {
+        if (x.code !== 0) return stop([blocked(a, x), ...left, ...rest(j)]);
+        done.push({ ...a, done: true, exit: 0 });
+        continue;
+      }
+      // the suite ran: its result, as `result pass|fail --at <sha>`; its bisect step comes back from next, its STOP
+      // lines are the lead's, its --forget runs here
+      done.push({ ...a, done: true, exit: x.code });
+      const verdict = x.code === 0 ? "pass" : "fail";
+      const res = rs(arg, verdict, a.at);
+      if (res.err) return { ...res, done };
+      done.push({ kind: "NOTE", reason: `result ${verdict} --at ${a.at}: ${res.out[0] || ""}`, result: verdict, at: a.at, done: true });
+      for (const b of res.acts || []) {
+        if (b.kind !== "RUN") { owed.push(b); continue; }
+        if (b.suite) continue;
+        const y = exec(w.root, b);
+        if (y.code !== 0) return stop([blocked(b, y), ...left, ...rest(j)]);
+        done.push({ ...b, done: true, exit: 0 });
+      }
+      if (res.code !== 0 && !owed.some((b) => b.kind === "DECIDE")) owed.push({ kind: "DECIDE", about: "merge", reason: res.out[0] || `result exited ${res.code}` });
+    }
+    if (owed.length) return stop(left);
+    if (!acted) {
+      if (left.some((a) => LEAD_KINDS.has(a.kind)) || (left.length && left.every((a) => a.kind === "BLOCKED"))) return stop(left);
+      if (prev !== null && prev === JSON.stringify(list)) return stop([...left, note("no progress, the same lines twice")]);
+    }
+    prev = acted ? null : JSON.stringify(list);
+  }
+  return stop([...left, note(`stopped after ${max} rounds (PROTEUS_DRIVE_MAX)`)]);
 }
 
 // ---- brief worker <n> | brief verifier <pr>: the role's block of roles.md, read here at run time (never copied into
@@ -817,7 +928,7 @@ const line = (a) => {
     case "SPAWN": return a.role === "verifier"
       ? `SPAWN verifier PR#${a.pr} #${a.ticket || "?"} head=${a.head.slice(0, 12)} brief: ${a.brief}`
       : `SPAWN worker #${a.ticket} team=${a.team} difficulty=${a.difficulty}${a.speculative ? " speculative" : ""} worktree=${a.worktree} brief: ${a.brief}`;
-    case "BLOCKED": return `BLOCKED #${a.ticket} ${a.reason}`;
+    case "BLOCKED": return a.ticket ? `BLOCKED #${a.ticket} ${a.reason}` : `BLOCKED ${a.reason}`;
     case "SWEPT": return `SWEPT ${a.count} ${a.mb} MB`;
     case "NOTE": return `NOTE ${a.reason}`;
     default: return `WAIT ${a.command}`;
@@ -860,12 +971,21 @@ function main() {
     console.log(plain(`close: ${d.skip ? "skip" : "run"} ${d.why}`));
     return d.skip ? 0 : 1;
   }
-  if (argv[0] !== "next") { console.error(`${USAGE}\nunknown command ${plain(argv[0])}`); return 2; }
+  if (argv[0] !== "next" && argv[0] !== "drive") { console.error(`${USAGE}\nunknown command ${plain(argv[0])}`); return 2; }
   let arg = "", json = false;
   for (const a of argv.slice(1)) {
     if (a === "--json") json = true;
     else if (!arg && !a.startsWith("-")) arg = a;
     else { console.error(`${USAGE}\nunknown argument ${plain(a)}`); return 2; }
+  }
+  if (argv[0] === "drive") {
+    let d;
+    try { d = drive(arg); } catch (e) { d = { code: 1, err: `drive: ${e.message}`, done: [] }; }
+    const done = d.done || [];
+    if (json) console.log(JSON.stringify([...done, ...(d.out || [])], null, 2));
+    else for (const a of [...done.map((x) => `DID ${line(x)}${x.exit ? ` (exit ${x.exit})` : ""}`), ...(d.out || []).map(line)]) console.log(plain(a));
+    if (d.err) { console.error(plain(d.err)); return d.code || 1; }
+    return 0;
   }
   const r = next(arg);
   if (r.err) { console.error(plain(r.err)); return r.code; }
@@ -874,5 +994,5 @@ function main() {
   return 0;
 }
 
-module.exports = { next, result, brief, gateCommand, recordMessage, roleBlock, slotsOf, sliceTeams, FILL, WHEN, KEPT, OPTIONAL };
+module.exports = { next, result, drive, runSteps, brief, gateCommand, recordMessage, roleBlock, slotsOf, sliceTeams, FILL, WHEN, KEPT, OPTIONAL };
 if (require.main === module) process.exitCode = main();

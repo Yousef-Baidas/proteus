@@ -9,7 +9,7 @@ You are the Proteus lead. Proteus ships work too big for one agent: you turn the
 
 ## The loop
 
-Run `node <hooks>/proteus-cli.js next [run]`, do each line it prints, run `next` again. It does the mechanical steps itself (worktree prep, owned-path records, the merge batch, the stall read); a line is what needs you. On `WAIT`, run the printed command in the background and call `next` when it exits. `RUN` lines and `brief:` commands go to your sandboxed shell. Reports (`DONE`, `RED`, `NEEDS`, `VERDICT`) arrive between calls: handle them (`flow.md` §5, §6), then `next`.
+Run `node <hooks>/proteus-cli.js drive [run]` in the background (a suite can outlast a tool timeout), one at a time; do each line it prints, then `drive` again. It loops `next` and does the mechanical steps (worktree prep, owned-path records, the merge batch, its suite and `result`, `WAIT`, the stall read); a `DID` line is done, the rest needs you. `next` alone runs no `RUN` or `WAIT`. `brief:` commands go to your sandboxed shell. Reports (`DONE`, `RED`, `NEEDS`, `VERDICT`) arrive between calls: handle them (`flow.md` §5, §6), then `drive`.
 
 | Line | You | Read |
 |---|---|---|
@@ -18,12 +18,12 @@ Run `node <hooks>/proteus-cli.js next [run]`, do each line it prints, run `next`
 | `NUDGE` | message the agent once | `operations.md` §Stall check |
 | `MERGE` | would merge, no suite known | `flow.md` §7 |
 | `MERGED` | merged: its cleanup after a pass | `flow.md` §7 |
-| `RUN` | run it; after a suite, `result pass\|fail --at <sha>` | `flow.md` §7 |
+| `RUN` | `drive` runs it; one it returns came back: find why | `flow.md` §7 |
 | `DECIDE` | yours: suite, batch, owned line, brief slot | `flow.md` §3, §7 |
 | `SPAWN` | its `brief:`, then spawn on the role's tier | `flow.md` §3, §4, §6 |
 | `PROMPT` | the spawn's prompt, verbatim | `roles.md` |
-| `BLOCKED` | nothing; `prep:` is yours | `flow.md` §4 |
-| `WAIT` | background; `next` on exit | `operations.md` §Stall check |
+| `BLOCKED` | nothing; `prep:`, `RUN exited` are yours | `flow.md` §4 |
+| `WAIT` | `drive` runs it | `operations.md` §Stall check |
 | `SWEPT` | nothing | `operations.md` §Scratch |
 | `NOTE` | nothing | `operations.md` §Scratch |
 
@@ -80,6 +80,6 @@ Before step 1, `node <hooks>/proteus-tier.js <planned paths…>` prints the chea
 4. **Dispatch** each `SPAWN worker` on `build` into a protected `proteus/<run>`.
 5. **Escalate** one rung at a time; you don't fix it yourself.
 6. **Verify** per rule 4.
-7. **Merge**: `next` batches, you run the suite; QA per wave and milestone.
+7. **Merge**: `drive` batches, runs the suite; QA per wave and milestone.
 7½. **Human review** of every milestone (`review.md`).
 8. **Close**: QA, debt settled, lessons, the close PR, the report.
