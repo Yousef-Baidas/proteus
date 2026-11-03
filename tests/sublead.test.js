@@ -1,6 +1,7 @@
 // Sub-lead tests: node tests/sublead.test.js (needs git). proteus-sublead.js against a repo with a proteus/r1 run branch
 // and a local bare origin: the depth check (by name and by record, refused at 3), start's checkout, branch, pushed ref,
-// state and beat, the headless session's argv (budget, no credential, no bare mode) through a fake claude, the runtime
+// state and beat, the headless session's argv (budget, no credential, no bare mode) through a fake claude, its
+// permission mode against the lead's as the lead guard recorded it (refused when unknown or not auto/bypass), the runtime
 // bound, and pr's one PR into the parent run with the sub-run's owned records left out. No model or network call.
 "use strict";
 const fs = require("fs");
@@ -93,6 +94,39 @@ for (const [name, args] of [["no budget", ["start", "9", "r1"]], ["zero budget",
   ok(`usage: ${name} exits 2, no session`, r.code === 2 && !calls().length, r.out + r.err);
 }
 
+// ---- the permission mode: never more permissive than the lead's, as the lead guard recorded it
+const PROFILE = "/p/profile.json";
+const LIST = ["default", "acceptEdits", "plan", "dontAsk", "", "bogus"];
+ok("mode: lead on bypassPermissions with the sandbox profile gets that profile and bypassPermissions",
+  JSON.stringify(Sub.permArgs("bypassPermissions", PROFILE)) === JSON.stringify(["--settings", PROFILE, "--permission-mode", "bypassPermissions"]));
+ok("mode: lead on auto gets auto, with or without a profile, never bypass", [PROFILE, ""].every((p) => JSON.stringify(Sub.permArgs("auto", p)) === JSON.stringify(["--permission-mode", "auto"])));
+ok("mode: lead on bypassPermissions without a profile is refused", typeof Sub.permArgs("bypassPermissions", "") === "string");
+ok("mode: any other or unknown mode is refused, profile or not", LIST.every((m) => [PROFILE, ""].every((p) => typeof Sub.permArgs(m, p) === "string")));
+const HL = require(path.join(__dirname, "..", "templates", "hooks", "proteus-lib.js"));
+const LG = path.join(__dirname, "..", "templates", "hooks", "proteus-lead-guard.js");
+const leadCall = (mode, cwd = REPO) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s-lead", cwd, permission_mode: mode, tool_name: "Bash",
+  tool_input: { command: `node ${SCRIPT} start 9 r1 --budget 1` } }, { cwd });
+r = go(["start", "9", "r1", "--budget", "1"]);
+ok("mode: no recorded mode, start refuses, exit 1, no session, no checkout",
+  r.code === 1 && /^SUBLEAD refused: the lead's permission mode is unknown; a headless sub-lead cannot answer permission prompts/m.test(r.out) && !calls().length && !fs.existsSync(path.join(REPO, ".worktrees")), r.out + r.err);
+fs.mkdirSync(path.join(COMMON, "proteus"), { recursive: true });
+fs.writeFileSync(path.join(COMMON, "proteus", "lead-mode.json"), JSON.stringify({ [fs.realpathSync.native(REPO)]: { mode: "auto", at: Date.now() } }));
+r = go(["start", "9", "r1", "--budget", "1"]);
+ok("mode: a record where agents can write is never read, start refuses", r.code === 1 && /unknown/.test(r.out) && !calls().length, r.out + r.err);
+for (const m of ["default", "acceptEdits", "plan"]) {
+  const lg = leadCall(m);
+  r = go(["start", "9", "r1", "--budget", "1"]);
+  ok(`mode: lead on ${m}, start refuses, exit 1, no session`, lg.code === 0 && r.code === 1 && new RegExp(`permission mode is ${m};`).test(r.out) && !calls().length, r.out + r.err + lg.err);
+}
+HL.saveLeadMode(COMMON, REPO, "auto", Date.now() - 600e3);
+ok("mode: a record older than 5 minutes is not read", HL.leadModeSeen(COMMON, REPO) === "");
+const OTHER = path.join(W, "other");
+g(W, "init", "-q", "-b", "main", OTHER);
+HL.saveLeadMode(COMMON, OTHER, "bypassPermissions");
+ok("mode: a record is per checkout", HL.leadModeSeen(COMMON, REPO) === "" && HL.leadModeSeen(COMMON, OTHER) === "bypassPermissions");
+let lg = leadCall("auto");
+ok("mode: the lead guard stores the lead's mode for its checkout, under proteus-lead", lg.code === 0 && HL.leadModeSeen(COMMON, REPO) === "auto" && HL.leadModeSeen(COMMON, path.join(REPO, "a.txt")) === "auto", lg.err);
+
 // ---- start
 r = go(["start", "9", "r1", "--budget", "3.5", "--model", "claude-test-1"], { env: { SECRET_TOKEN: "s3cr3t-value" } });
 const CO = path.join(REPO, ".worktrees", "r1.9");
@@ -124,6 +158,34 @@ const t0 = Date.now();
 r = go(["start", "9", "r1", "--budget", "1"], { env: { FAKE_MODE: "hang", PROTEUS_SUBLEAD_TIMEOUT_MS: "1500" } });
 ok("runtime: a session past its minutes is stopped, exit 1", r.code === 1 && /^SUBLEAD r1\.9 failed: past its 240 minutes, stopped$/m.test(r.out) && Date.now() - t0 < 20000, r.out + r.err);
 ok("runtime: the beat is removed after a stop", !fs.existsSync(BEAT));
+
+// ---- the sandbox profile: used only when the lead itself runs bypassPermissions
+const PROFILES = path.join(lib.HOME, ".claude", "proteus-sandbox");
+fs.mkdirSync(PROFILES, { recursive: true });
+const PROF = path.join(PROFILES, `repo-${require(path.join(__dirname, "..", "templates", "hooks", "proteus-confine.js")).sandboxKey(COMMON)}.json`);
+fs.writeFileSync(PROF, '{"sandbox":{"enabled":true}}\n');
+const argvOf = () => { const a = (calls()[0] || { argv: [] }).argv; const at = (f) => { const i = a.indexOf(f); return i < 0 ? null : a[i + 1]; }; return { a, at }; };
+fs.rmSync(LOG, { force: true });
+lg = leadCall("auto");
+r = go(["start", "9", "r1", "--budget", "1"]);
+let v = argvOf();
+ok("mode: lead on auto with a sandbox profile present runs auto, never bypass or the profile",
+  lg.code === 0 && r.code === 0 && v.at("--permission-mode") === "auto" && !v.a.includes("bypassPermissions") && !v.a.includes("--settings"), r.out + JSON.stringify(v.a));
+fs.rmSync(LOG, { force: true });
+lg = leadCall("bypassPermissions");
+r = go(["start", "9", "r1", "--budget", "1"]);
+v = argvOf();
+ok("mode: lead on bypassPermissions with the profile runs that profile and bypassPermissions",
+  lg.code === 0 && r.code === 0 && v.at("--permission-mode") === "bypassPermissions" && slash(v.at("--settings")) === slash(PROF), r.out + JSON.stringify(v.a));
+fs.rmSync(LOG, { force: true });
+lg = leadCall("default");
+r = go(["start", "9", "r1", "--budget", "1"]);
+ok("mode: lead on default with the profile present is refused, no session", lg.code === 0 && r.code === 1 && /permission mode is default;/.test(r.out) && !calls().length, r.out + r.err);
+fs.rmSync(PROFILES, { recursive: true });
+fs.rmSync(LOG, { force: true });
+lg = leadCall("bypassPermissions");
+r = go(["start", "9", "r1", "--budget", "1"]);
+ok("mode: lead on bypassPermissions without the profile is refused, no session", lg.code === 0 && r.code === 1 && /without the repo's sandbox profile/.test(r.out) && !calls().length, r.out + r.err);
 
 // ---- pr: the sub-run's result as one PR into the parent run
 g(CO, "checkout", "-q", "proteus/r1.9");

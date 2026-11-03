@@ -12,9 +12,11 @@
 // start, from the lead's shell, run in the background: the checkout <root>/.worktrees/<sub-run> on the new branch,
 // the branch pushed to origin, the depth and caps recorded, the main checkout's .claude/settings.local.json copied in
 // (its hooks name the main checkout's hooks dir by absolute path), then one headless Claude Code session there:
-// `claude -p --output-format stream-json --verbose --max-budget-usd <usd>`, with --model when given, and the
-// repo's sandbox profile with bypassPermissions as the lead's own launch when install.js --sandbox wrote one, else
-// --permission-mode auto. Never a bare mode, a credential or a credential file: the session inherits this process's
+// `claude -p --output-format stream-json --verbose --max-budget-usd <usd>`, with --model when given, never in a
+// mode more permissive than the lead's: the lead guard stores the lead's mode as this shell call arrives, where
+// neither agents nor a sandboxed shell can write (lib.saveLeadMode). Lead on bypassPermissions with the repo's
+// sandbox profile (install.js --sandbox): that profile and bypassPermissions; lead on auto: auto; any other mode, or
+// none recorded for this checkout in the last 5 minutes: refused, exit 1 (permArgs). Never a bare mode, a credential or a credential file: the session inherits this process's
 // environment, the prompt goes in on stdin. Its runtime is bounded by --minutes (default 240, at most 1440;
 // PROTEUS_SUBLEAD_TIMEOUT_MS overrides, for tests): past it, or on SIGINT/SIGTERM to this process, the session and all
 // it started are killed. The CLI checks the budget between turns, so a session can overshoot it by one turn.
@@ -184,12 +186,23 @@ function session(cmd, args, input, o, retry = false) {
   });
 }
 
+// the sub-lead's permission flags, never more permissive than the lead's mode as the lead guard recorded it; a
+// string (the refusal) when that mode has no headless equivalent: a session started with -p answers no prompt
+function permArgs(mode, profile) {
+  if (mode === "bypassPermissions" && profile) return ["--settings", profile, "--permission-mode", "bypassPermissions"];
+  if (mode === "auto") return ["--permission-mode", "auto"];
+  if (mode === "bypassPermissions") return "the lead runs bypassPermissions without the repo's sandbox profile (install.js --sandbox); a sub-lead runs only under it";
+  return `the lead's permission mode is ${mode ? plain(mode) : "unknown"}; a headless sub-lead cannot answer permission prompts, so it runs only when the lead runs auto, or bypassPermissions with the sandbox profile. Start it from the lead's own shell`;
+}
+
 async function start(o) {
   const w = where(o.run);
   if (w.err) return w;
   const { root, common, run } = w;
   const why = refusal(common, run);
   if (why) return { code: 1, out: [`SUBLEAD refused: ${why}`] };
+  const modeArgs = permArgs(lib.leadModeSeen(common, process.cwd()), lib.profileFile(common));
+  if (typeof modeArgs === "string") return { code: 1, out: [`SUBLEAD refused: ${modeArgs}`] };
   const sub = subName(run, o.ticket), branch = `${lib.CURRENT.branch}${sub}`, parent = `${lib.CURRENT.branch}${run}`;
   const depth = depthOf(common, run) + 1;
   const main = lib.mainRoot(common) || root;
@@ -213,11 +226,9 @@ async function start(o) {
     copySettings(main, checkout);
   } catch (e) { return fail(e.message); }
 
-  const profile = lib.profileFile(common);
   const args = ["-p", "--output-format", "stream-json", "--verbose", "--max-budget-usd", String(o.budget)];
   if (o.model) args.push("--model", o.model);
-  if (profile) args.push("--settings", profile, "--permission-mode", "bypassPermissions");
-  else args.push("--permission-mode", "auto");
+  args.push(...modeArgs);
   const agent = `sublead-${sub}`;
   const beat = beater(common, agent, { agent, type: "proteus-sublead", spawn: started, session: "", cwd: checkout, first: started });
   console.log(`SUBLEAD ${sub} started depth=${depth} branch=${branch} checkout=${checkout} budget=$${o.budget} minutes=${o.minutes}`);
@@ -350,5 +361,5 @@ async function main() {
   return r.code;
 }
 
-module.exports = { depthOf, refusal, startCmd, subName, prompt, MAX_DEPTH };
+module.exports = { depthOf, refusal, permArgs, startCmd, subName, prompt, MAX_DEPTH };
 if (require.main === module) main().then((c) => { process.exitCode = c; }, (e) => { console.error(plain(e && e.message)); process.exitCode = 1; });

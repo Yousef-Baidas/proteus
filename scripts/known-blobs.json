@@ -709,6 +709,7 @@
       "3e7fb662d9e69e2d13815f8e7e4dddc5b1f2a278",
       "4372e9cbeccd168d9b840799dc4fc2c8f151e93f",
       "4a802d5fa8a24d5ea5ed78f8d08b049ef80ec665",
+      "4b6044b64788d4f8d6d3c7001e7d50aac4b3426d",
       "4f367914eba944ea7fb2963d1f9a797541be9754",
       "53a031644f6d23483a42b3ea6fff60df3b16e91c",
       "5672632b66d8b0d8d1fb1d28a476850e6192aa20",
@@ -857,6 +858,7 @@
       "bfb87b64d2f37b565b5ec23ad61a712c4fe13ab4",
       "c00fe191d580e77e95f2f9fa6cb474c9acc7fad4",
       "c07ac02506676ab7d30bc0728f4f02d81c580bd9",
+      "c0f45bf803740f99f556c8c62a295828b68bdb81",
       "c1051f5b047d5b3acf8c9bd35c55fac1256504e1",
       "c3f761a6c0f2de2aef5a60869137839ed2ab6e6d",
       "c43efa0d28d022fcc95edd87dc0a0cb69382194c",
@@ -1057,6 +1059,9 @@
       "7d064927c41472a79883195909739d0b58649be5",
       "855f95d05a6f4d9138160c619fbebc8338aec1b4",
       "b1a1118a552a52002d644638ceb954033dcb0169"
+    ],
+    "templates/hooks/proteus-sublead.js": [
+      "a4d04a898848cb916975da69d7c033af41940700"
     ],
     "templates/hooks/proteus-teamfit.js": [
       "7faaa4dbf5d322c756603f89ec72e39789438517",

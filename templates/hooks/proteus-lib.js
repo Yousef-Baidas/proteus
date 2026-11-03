@@ -1185,6 +1185,24 @@ function sandboxSeen(root, session) {
   const e = common && session ? (readJSON(leadPath(common, SANDBOX_FILE), {}) || {})[session] : null;
   return e && typeof e.state === "string" ? e.state : "";
 }
+// the lead's permission mode as its shell call naming proteus-sublead.js arrived (#344): the lead guard stores the
+// hook input's mode per checkout (the git root of the call's cwd) in proteus-lead/lead-mode.json (leadWrite), which
+// no agent and no sandboxed shell can write; start reads it so a sub-lead never runs in a mode the lead did not have
+const LEAD_MODE_FILE = "lead-mode.json";
+const modeKey = (dir) => { const r = dir && gitRoot(dir); return r ? realNative(r) : ""; };
+function saveLeadMode(common, dir, mode, now = Date.now()) {
+  const key = modeKey(dir);
+  if (!key) return;
+  const f = leadPath(common, LEAD_MODE_FILE);
+  const all = Object.entries(readJSON(f, {}) || {}).filter(([k]) => k !== key).slice(-19);
+  leadJSON(common, f, Object.fromEntries([...all, [key, { mode: String(mode || ""), at: now }]]));
+}
+// the mode recorded for dir's checkout within maxAge ms, "" when none
+function leadModeSeen(common, dir, maxAge = 300e3, now = Date.now()) {
+  const key = modeKey(dir);
+  const e = common && key ? (readJSON(leadPath(common, LEAD_MODE_FILE), {}) || {})[key] : null;
+  return e && typeof e.mode === "string" && Number.isFinite(e.at) && now - e.at >= 0 && now - e.at <= maxAge ? e.mode : "";
+}
 // the profile install.js --sandbox wrote for common, "" when it has none
 function profileFile(common) {
   const dir = path.join(claudeDir(), "proteus-sandbox");
@@ -3673,7 +3691,7 @@ module.exports = {
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
   NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, localPath, localMode, localCommon, localEnv, ghArgv, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
-  which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, sandboxLaunch,
+  which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, saveLeadMode, leadModeSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
