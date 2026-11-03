@@ -12,6 +12,7 @@ const { ok, g } = lib;
 const W = lib.workdir("teamfit");
 const INSTALL = path.join(ROOT, "install.js");
 const TF = require(path.join(ROOT, "templates", "hooks", "proteus-teamfit.js"));
+const HL = require(path.join(ROOT, "templates", "hooks", "proteus-lib.js"));
 const exists = (...p) => fs.existsSync(path.join(...p));
 const read = (...p) => { try { return fs.readFileSync(path.join(...p), "utf8"); } catch { return ""; } };
 const both = (r) => `${r.out}${r.err}`;
@@ -121,10 +122,13 @@ ok("cap: past it every team is kept and the reason says so", x.capped && Object.
 // ---- install.js --project: first install by evidence
 const project = (cwd, env = {}) => lib.run(INSTALL, "", { cwd, args: ["--project"], env });
 const plugin = (cwd, args = []) => lib.run(INSTALL, "", { cwd, args: ["--plugin-setup", ...args] });
-const teamsIn = (d) => ["frontend", "backend", "devops", "security", "qa"].filter((t) => exists(d, "teams", t));
+// the shipped teams a repo works with (lib.teamNames: its own and the ones ROUTING.md routes to); no folder is copied (#367)
+const teamsIn = (d) => ["frontend", "backend", "devops", "security", "qa"].filter((t) => HL.teamNames(d).includes(t));
+const copied = (d) => ["frontend", "backend", "devops", "security", "qa"].filter((t) => exists(d, "teams", t, "PROFILE.md"));
 const CLI = repo({ "pyproject.toml": "[project]\nname='a'\ndependencies = [\"click\"]\n", "a/cli.py": "x\n" }, { remote: true });
 let r = project(CLI);
 ok("--project: a Python CLI with a remote gets devops, qa and security", r.code === 0 && teamsIn(CLI).join() === "devops,security,qa", both(r).slice(-1500));
+ok("--project: no team folder is copied into the repo", !copied(CLI).length && !exists(CLI, "teams", "devops", "skills.txt"), copied(CLI).join());
 ok("--project: ROUTING.md has no frontend or backend rows; the devops rows stay",
   !/\|\s*(frontend|backend)\s*\|\s*$/m.test(read(CLI, "teams", "ROUTING.md")) && /\|\s*devops\s*\|\s*$/m.test(read(CLI, "teams", "ROUTING.md")) && /the team that owns the path/.test(read(CLI, "teams", "ROUTING.md")), read(CLI, "teams", "ROUTING.md").slice(0, 900));
 ok("--project: one line per team left out, with the reason",
@@ -133,13 +137,13 @@ r = project(CLI);
 ok("--project: a second run (a refresh) adds nothing and rewrites no row", r.code === 0 && teamsIn(CLI).join() === "devops,security,qa" && /^left out frontend: not in this repo's roster, and a refresh never adds a team$/m.test(r.out), both(r).slice(-1500));
 const CAP = repo({ "main.py": "x\n" });
 r = project(CAP, { PROTEUS_TEAMFIT_CAP_MS: "0" });
-ok("--project: past the scan's cap every team is copied and the output says so", r.code === 0 && teamsIn(CAP).length === 5 && /^teams    : every shipped team kept: the evidence scan passed its 0 ms cap$/m.test(r.out), both(r).slice(-1500));
+ok("--project: past the scan's cap every team is routed and the output says so", r.code === 0 && teamsIn(CAP).length === 5 && /^teams    : every shipped team routed: the evidence scan passed its 0 ms cap$/m.test(r.out), both(r).slice(-1500));
 
 // ---- --plugin-setup: greenfield, dry run
 const GF = repo({ "README.md": "# a\n" });
 r = plugin(GF, ["--dry-run"]);
 ok("--plugin-setup --dry-run: names the teams it would copy and leave out, writes no teams/",
-  r.code === 0 && !exists(GF, "teams") && /teams devops, qa, security\)/.test(r.out) && /^would leave out: left out frontend: no code yet/m.test(r.out), both(r).slice(-1500));
+  r.code === 0 && !exists(GF, "teams") && /own team folders none, the rest read from Proteus\)/.test(r.out) && /^would leave out: left out frontend: no code yet/m.test(r.out), both(r).slice(-1500));
 r = plugin(GF);
 ok("--plugin-setup: greenfield gets security, qa and devops", r.code === 0 && teamsIn(GF).join() === "devops,security,qa" && /^left out backend: no code yet/m.test(r.out), both(r).slice(-1500));
 
@@ -153,8 +157,8 @@ for (const [how, fn] of [["--plugin-setup", plugin], ["--project", project]]) {
   const LL = repo(roster, { remote: true });
   const before = read(LL, "teams", "ROUTING.md");
   r = fn(LL);
-  ok(`lang-learn: ${how} on a scout roster without frontend adds no frontend (nor security or qa), though the repo has UI`,
-    r.code === 0 && !exists(LL, "teams", "frontend") && !exists(LL, "teams", "security") && !exists(LL, "teams", "qa") && teamsIn(LL).join() === "backend,devops", both(r).slice(-1500));
+  ok(`lang-learn: ${how} on a scout roster without frontend routes no frontend and copies no team folder, though the repo has UI`,
+    r.code === 0 && !exists(LL, "teams", "frontend") && copied(LL).join() === "backend,devops" && teamsIn(LL).join() === "backend,devops,security,qa", both(r).slice(-1500));
   ok(`lang-learn: ${how} keeps the roster's ROUTING.md and PROFILE.md, refreshes its shipped teams' required.txt, names frontend as left out`,
     read(LL, "teams", "ROUTING.md") === before && read(LL, "teams", "backend", "PROFILE.md") === "# backend\n" && exists(LL, "teams", "devops", "required.txt") &&
     /^left out frontend: not in this repo's roster/m.test(r.out), r.out.slice(-1500));
@@ -163,13 +167,20 @@ for (const [how, fn] of [["--plugin-setup", plugin], ["--project", project]]) {
 // ---- --doctor: a shipped team that fits nothing
 const OLD = repo({ "package.json": pkg({ react: "18" }), "index.js": "x\n" }, { remote: true });
 project(OLD);
-ok("doctor setup: the UI repo got frontend", exists(OLD, "teams", "frontend"));
+ok("doctor setup: the UI repo got frontend", teamsIn(OLD).includes("frontend"), teamsIn(OLD).join());
 fs.writeFileSync(path.join(OLD, "package.json"), pkg({ commander: "12" }));
 g(OLD, "commit", "-qam", "no ui");
 const doctor = (cwd) => lib.run(INSTALL, "", { cwd, args: ["--doctor"] });
 r = doctor(OLD);
 const tf = (r.out.split(/\r?\n/).find((l) => /fits nothing here/.test(l)) || "");
 ok("--doctor: warns that frontend fits nothing here, with the reason", tf.replace(/^WARN\s+/, "WARN ").startsWith("WARN team frontend fits nothing here (no UI dependency or UI files, no ROUTING row matches a tracked file)"), r.out.slice(-3000));
+ok("--doctor: a team read from Proteus is dropped by its ROUTING rows alone, no folder to remove",
+  r.out.includes("if the repo has no use for it, delete its rows from teams/ROUTING.md") && !r.out.includes("rm -rf"), r.out.slice(-3000));
+// the human ejects frontend (#367): its folder is the repo's, so the line names its removal
+fs.mkdirSync(path.join(OLD, "teams", "frontend"), { recursive: true });
+fs.copyFileSync(path.join(ROOT, "templates", "teams", "frontend", "PROFILE.md"), path.join(OLD, "teams", "frontend", "PROFILE.md"));
+g(OLD, "add", "-A"); g(OLD, "commit", "-qm", "eject frontend");
+r = doctor(OLD);
 ok("--doctor: the warning gives the exact removal command, and removes nothing",
   r.out.includes("git rm -r -q --ignore-unmatch -- teams/frontend; ") && (process.platform === "win32" ? r.out.includes('cmd /c rmdir /s /q "teams\\frontend"') : r.out.includes('rm -rf "teams/frontend"')) && exists(OLD, "teams", "frontend"), r.out.slice(-3000));
 fs.mkdirSync(path.join(OLD, "src", "components"), { recursive: true });

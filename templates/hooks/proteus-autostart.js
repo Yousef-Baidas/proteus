@@ -465,10 +465,12 @@ function localState(ad, root, runs, home, pending, drift) {
   const read = (f) => { try { return fs.readFileSync(path.join(base, f), "utf8"); } catch { return ""; } };
   const ls = (d) => { try { return fs.readdirSync(path.join(base, d)); } catch { return []; } };
   const agents = read("AGENTS.md") + "\n" + read("CLAUDE.md"); // older installs keep ## Learned in CLAUDE.md
-  const profiles = (() => { try { return fs.readdirSync(path.join(base, "teams"), { withFileTypes: true }).filter((e) => e.isDirectory() && fs.existsSync(path.join(base, "teams", e.name, "skills.txt"))).map((e) => e.name); } catch { return []; } })();
-  const shipped = profiles.filter((p) => /shipped default/.test(read(`teams/${p}/skills.txt`).split("\n")[0]));
+  // a team's lists are the project's own copy or the shipped one (lib.teamFile, #367)
+  const team = (p, f) => { try { return fs.readFileSync(lib.teamFile(root, p, f), "utf8"); } catch { return ""; } };
+  const profiles = [...new Set([...lib.teamNames(root), ...ls("teams")])].sort().filter((p) => fs.existsSync(lib.teamFile(root, p, "skills.txt")));
+  const shipped = profiles.filter((p) => /shipped default/.test(team(p, "skills.txt").split("\n")[0]));
   // a team whose lists name no skill (the scout may pick zero) has nothing to link
-  const lists = (p) => ["skills.txt", "required.txt"].some((f) => read(`teams/${p}/${f}`).split("\n").some((l) => l.trim() && !l.trim().startsWith("#")));
+  const lists = (p) => ["skills.txt", "required.txt"].some((f) => team(p, f).split("\n").some((l) => l.trim() && !l.trim().startsWith("#")));
   const unlinked = profiles.filter((p) => lists(p) && ls(ad.teamSkills(path.join("teams", p))).length === 0);
   // root agent docs over budget, and any CLAUDE_*.md / CLAUDE-*.md split at all
   const bloat = guest ? [] : ls(".").filter((f) => /^(CLAUDE|AGENTS).*\.md$/.test(f)).map((f) => {

@@ -4,6 +4,7 @@
 //                  node <hooks>/proteus-cli.js result pass|fail --at <sha> [run]
 //                  node <hooks>/proteus-cli.js brief worker <n> [run] | brief verifier <pr> [run]
 //                  node <hooks>/proteus-cli.js close [run]
+//                  node <hooks>/proteus-cli.js team <team>
 // next does the mechanical steps that are due and run in this script's context, proteus-merge.js's (outside the
 // sandbox, #226), then prints what is left for the lead, one line per action, in this order:
 //   ASK <issue url> <title>                                  an open needs-human issue (the inbox cache)
@@ -82,7 +83,7 @@ const { stalls } = require(path.join(__dirname, "proteus-watchdog.js"));
 const Scratch = require(path.join(__dirname, "proteus-scratch.js"));
 const Sub = require(path.join(__dirname, "proteus-sublead.js"));
 
-const USAGE = "usage: node proteus-cli.js next [run] [--json] | drive [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run] | close [run]";
+const USAGE = "usage: node proteus-cli.js next [run] [--json] | drive [run] [--json] | result pass|fail --at <sha> [run] | brief worker <n>|verifier <pr> [run] | close [run] | team <team>";
 const HELP = `${USAGE}
 next prepares the ready tickets' worktrees and starts the merge batch, then prints the lead's next
 actions, one line each: ASK, STOP, NUDGE, MERGE or MERGED, RUN, DECIDE, SPAWN verifier, SPAWN worker,
@@ -111,7 +112,8 @@ prints PROMPT <the spawn prompt>; a slot with no source prints DECIDE #<n> brief
 close gates step 8 on its final pass: close: ready when the run log's newest close-passes line for the
 run names a commit that origin's tip differs from only by added lead records; else close: run.
 Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code); 2 on usage or no run.
-close: exit 0 when ready, 1 to run the passes, a failure included; 2 on usage or no run.`;
+close: exit 0 when ready, 1 to run the passes, a failure included; 2 on usage or no run.
+team prints the team's folder: the project's teams/<team> when it has its own PROFILE.md, else the shipped one. Exit 0.`;
 const VERDICT = "proteus/verdict";
 // a human-operated step (#82): no worker, no contracts, no brief; the human commits the evidence and opens the PR
 const isHuman = (issue) => ((issue || {}).labels || []).some((l) => l.name === "step:human");
@@ -715,7 +717,8 @@ const FILL = {
   pr: (c) => need("pr", c.pr && String(c.pr)),
   "absolute path": (c) => need("absolute path", c.worktree()),
   "the ticket's tier": (c) => c.tier,
-  "slice profiles": (c) => sliceTeams(c.labels).map((t) => `teams/${t}/PROFILE.md`).join(", "),
+  "team dir": (c) => lib.teamRef(c.root, need("team", c.team)),
+  "slice profiles": (c) => sliceTeams(c.labels).map((t) => `${lib.teamRef(c.root, t)}/PROFILE.md`).join(", "),
   "contract sha": (c) => need("contract sha", c.contract()),
   "file:line pointers": (c) => need("file:line pointers", c.checkFiles().join(", ")),
   "file::name or command": (c) => need("file::name or command", c.check),
@@ -770,7 +773,7 @@ function briefContext(w, issues, n, extra = {}) {
   const runRefs = [`refs/remotes/origin/${names.branch}${run}`, `refs/heads/${names.branch}${run}`].filter((r) => lib.gitTry(common, ["rev-parse", "--verify", "-q", r]).ok);
   const team = label("profile:");
   const ctx = {
-    hooks: lib.realNative(__dirname), gates: gates(root), run, n: issue.number ? n : 0, team, labels,
+    root, hooks: lib.realNative(__dirname), gates: gates(root), run, n: issue.number ? n : 0, team, labels,
     difficulty: label("difficulty:"), tier: tierLine ? tierLine[1].toLowerCase() : "standard",
     check: checkLine ? checkLine[1].trim() : "",
     codex: require(path.join(__dirname, "proteus-harness.js")).name === "codex",
@@ -795,7 +798,7 @@ function briefContext(w, issues, n, extra = {}) {
     }),
     safety: () => {
       let text = "";
-      try { text = fs.readFileSync(path.join(lib.docRoot(root), "teams", team, "PROFILE.md"), "utf8"); } catch {}
+      try { text = fs.readFileSync(path.join(lib.teamDir(root, team), "PROFILE.md"), "utf8"); } catch {}
       return team ? text.split(/\r?\n/).filter((l) => l.startsWith("Safety:")).join("\n") : "";
     },
     // the open debt issue of the ticket's milestone, when there is exactly one
@@ -1020,6 +1023,11 @@ function main() {
     if (r.err) { console.error(plain(r.err)); return r.code; }
     for (const l of r.out) console.log(plain(l));
     return r.code;
+  }
+  if (argv[0] === "team") {
+    if (argv.length !== 2 || argv[1].startsWith("-")) { console.error(USAGE); return 2; }
+    console.log(plain(lib.teamDir(path.resolve(lib.projectRoot()), argv[1])));
+    return 0;
   }
   if (argv[0] === "close") {
     if (argv.length > 2 || (argv[1] || "").startsWith("-")) { console.error(USAGE); return 2; }

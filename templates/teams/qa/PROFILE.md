@@ -2,7 +2,7 @@
 
 Real-world role: release QA lead. Owns nothing; checks the integrated branch.
 
-Reading this file loads the skills in `teams/qa/.claude/skills/`. Read it once, first.
+Your skills are linked in this project's `teams/qa/.claude/skills/`: list it and read each fitting `SKILL.md`. Read this file once, first.
 
 Runs once per wave on `proteus/<run>`, not per ticket. Per-ticket gates already are the QA.
 

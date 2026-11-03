@@ -1,3 +1,2 @@
 # pipeline-required; not the scout's to change. <owner/repo> <skill-name> per line.
-# JS/TS repos only: the scaffold or stabilise ticket vendors the anti-slop oxlint rules into the lint gate.
-dmmulroy/anti-slop install-anti-slop
+# none: the anti-slop oxlint rules are opt-in (references/enforcement.md §9), linked only once the human opts in.

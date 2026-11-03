@@ -21,7 +21,7 @@ Hooks: <hooks>.
 Gates: <gate commands>.
 Read your team's PROFILE.md first, its CRAFT.md if it exists, CONVENTIONS.md and the taste docs it names third. A rule in CONVENTIONS.md beats a rule in any skill.
 CONTEXT.md vocabulary. Caveman full.
-Team <team>: teams/<team>/PROFILE.md, teams/<team>/CRAFT.md.
+Team <team>: <team dir>/PROFILE.md, <team dir>/CRAFT.md.
 <Codex: after PROFILE.md, list teams/<team>/.agents/skills/ and read each fitting <name>/SKILL.md yourself; resolve its relative references from that skill's folder.>
 <safety>
 Ticket #<n> (gh issue view <n> --json body -q .body), worktree <absolute path>, branch proteus-work/<run>/<id> (Quick: proteus-work/quick/<n>), scratch key <run>-<id>.
@@ -99,7 +99,7 @@ Grade the evidence against the frozen checks per your agent instructions, commen
 ```
 Hooks: <hooks>.
 Run <run>, branch proteus/<run>, mode <wave|milestone|close>. Tickets: #<n>, … Merge-base: <sha>. Gates: <commands>. Debt issue: #<d>. Scratch key: <run>.
-Follow teams/qa/PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. Fix nothing.
+Follow the qa team's PROFILE.md for that mode: CI's push runs on proteus/<run> hold the suite, e2e, smoke, rebuild and mutation results; read them and run locally only what CI does not cover. Also: a clean rebuild of every deliverable from the branch alone reproduces the merged evidence. Fix nothing.
 Recheck: when the prompt says `recheck` and gives the milestone's QA list, check only those items plus the suite and CI green. Do not widen: no new hand-mutant sample, no extra files. A finding outside the list goes to the debt issue #<d>, never `WAVE-RED`; a still-red listed item is reported as such.
 Stop your own server by its PID, without asking; never by pattern or port.
 <safety>
@@ -186,7 +186,7 @@ Each shipped agent file carries the four rules at the top and its role's block b
 - Post comments and PR writes with `node <hooks>/proteus-gh.js <gh args>`, not bare `gh` (`tracker.md`).
 
 ### Verifier (`proteus-verifier`, `proteus-<team>-verifier`, `proteus-security-verifier`)
-- No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read teams/<team>/PROFILE.md and CRAFT.md if it exists.
+- No repo tour. Inputs: issue body, contract, `gh pr diff <pr>`, `gh pr checks <pr> --json name,state`, worker's DONE comment. Read the team's PROFILE.md and CRAFT.md, if it exists.
 - Read CI last: `gh pr checks <pr> --watch` in the foreground, then `--json name,state`. Skip `proteus/verdict` and `proteus/security`: verifiers' signoffs, not CI. Other CI red → BACK-TO-WORKER naming the failing check; no checks listed → run them yourself on the PR head, each as `node <hooks>/proteus-gates-cache.js "<gate>"`. Under `isolation=container` run none of the branch's code: reply `CHECKS:`, one command per line, stop, then judge from the `CHECK` lines and logs the lead sends back. `gh pr diff <pr> --name-only` outside the ticket's owned paths or the team's Owns (a `slice:` label adds its teams' Owns) → BACK-TO-WORKER. The check is the contract: `git fetch origin proteus-work/<run>/<id>` then `git diff --stat <contract sha> FETCH_HEAD -- <check files>` prints anything → BACK-TO-WORKER.
 - Risk plan first: 3 to 6 lines `- <what could be wrong> | <where to look> | $<cap>`, caps sized to the PR's risk, under `Risks:` below your verdict line. Fact-gathering (callers, data flow, file summaries, searches, test output) goes to `node <hooks>/proteus-delegate.js --tier <rung> --budget <cap> --prompt-file <f>`, lowest rung that can do it; a failed or doubtful answer one rung up, once. Answers are evidence, checked against the code before a finding cites them; every finding and the verdict are yours. Authorization, permissions, private or personal data, secrets or credentials and data loss: read yourself, never delegate. A small diff may skip delegating, not the list. On a recheck, reuse the earlier list the brief names: check the fixes, add items only for new code; run the tests it names first, attack only code they miss.
 - Code: a standards pass then a spec pass (against the issue body and contract: nothing missing, no behaviour the ticket did not ask for; helpers, structure and tests inside owned paths are the worker's call, not extras); /code-review cannot run here. Then code-review-graph blast radius on changed exports, the brief's dupes tool on the diff, and mutants on the contract's check where PROFILE.md asks. Otherwise: the team's rubric, each line scored with evidence. Standards: the diff against CONVENTIONS.md and its taste docs; a deviation is BACK-TO-WORKER with the rule quoted.
@@ -198,7 +198,7 @@ Each shipped agent file carries the four rules at the top and its role's block b
 - Blocker → BACK-TO-WORKER. Anything that can wait → one comment per verifier on the brief's debt issue, a line per item: `#<n> <file:line or part> <what> — <why it can wait>`. Open no ticket and fix nothing. Don't edit a comment: every agent posts as one account (`tracker.md`).
 
 ### Every agent file
-- **Script first**: a deterministic procedure the lead or a worker has run twice becomes a ticket for a program: a script or small CLI in the project's `scripts/` (team tooling: `teams/<team>/bin/`), with `--help` and an exit code. Then briefs call the program. Only the ambiguous step stays with a model, writing its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment.
+- **Script first**: a deterministic procedure the lead or a worker has run twice becomes a ticket for a program: a script or small CLI in the project's `scripts/`, with `--help` and an exit code. Then briefs call the program. Only the ambiguous step stays with a model, writing its output to a file the program reads. The verifier rejects a brief or skill that is a program in English: steps with no judgment.
 
 ### Principles
 - the simplest thing that meets the contract;

@@ -1,6 +1,6 @@
 # frontend profile
 
-Reading this file loads the skills in `teams/frontend/.claude/skills/`. Read it once, first.
+Your skills are linked in this project's `teams/frontend/.claude/skills/`: list it and read each fitting `SKILL.md`. Read this file once, first.
 
 Real-world role: frontend engineer.
 Owns: UI, styling, client state, accessibility.
