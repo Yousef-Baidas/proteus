@@ -10,10 +10,12 @@ const lib = require(path.join(__dirname, "lib.js"));
 const { ok, run, g } = lib;
 const { spawnSync, spawn } = require("child_process");
 const HOOKS = path.join(__dirname, "..", "templates", "hooks");
-const { mergeOrder, checkState, writeState } = require(path.join(HOOKS, "proteus-merge.js"));
+const { mergeOrder, checkState, writeState, pick } = require(path.join(HOOKS, "proteus-merge.js"));
+const libHooks = require(path.join(HOOKS, "proteus-lib.js"));
 const SCRIPT = path.join(HOOKS, "proteus-merge.js"), RUN_TREE = path.join(HOOKS, "proteus-run-tree.js"), GATES = path.join(HOOKS, "proteus-gates-cache.js");
 
-const GREEN = [{ __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }, { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" }];
+const SIGNED = { __typename: "StatusContext", context: "proteus/security", state: "SUCCESS", description: "MERGE by the security verifier" };
+const GREEN = [SIGNED, { __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" }, { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" }];
 const write = (dir, files) => { for (const [f, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), body); };
 const dirLink = (target, at) => fs.symlinkSync(target, at, process.platform === "win32" ? "junction" : "dir");
 const listing = (d) => fs.readdirSync(d).sort().join(",");
@@ -86,6 +88,20 @@ const gone = (root, t) => !fs.existsSync(path.join(root, ".worktrees", String(t)
 // order: depends-on first, ticket numbers otherwise; an open depends-on outside the batch leaves the PR out
 const order = mergeOrder([{ n: 41, ticket: 5, deps: [6] }, { n: 40, ticket: 4, deps: [] }, { n: 42, ticket: 6, deps: [] }, { n: 43, ticket: 7, deps: [99] }], new Set([4, 5, 6, 7, 99]));
 ok("order: a depends-on merges first, one waiting outside the batch is left out", order.map((p) => p.n).join() === "40,42,41", JSON.stringify(order));
+
+// #364: the ticket's Review: line decides whether the security verifier's MERGE is required
+const VERDICT_ONLY = GREEN.filter((c) => c !== SIGNED);
+const CI_NONE = { ...SIGNED, description: "no security path touched" };
+const picked = (body, checks) => pick([{ number: 50, headRefName: "proteus-work/r1/9", headRefOid: "a".repeat(40), body: "Closes #9", isDraft: false, statusCheckRollup: checks }],
+  [{ number: 9, state: "OPEN", body }], "r1", libHooks.CURRENT).map((p) => p.n).join();
+ok("review: a light ticket merges with the verifier's signoff alone", picked("Owned: x\nReview: light", VERDICT_ONLY) === "50");
+ok("review: a light ticket still merges on CI's no-path success", picked("**Review:** Light", [...VERDICT_ONLY, CI_NONE]) === "50");
+ok("review: a full ticket waits without the security verifier's MERGE", picked("Review: full", VERDICT_ONLY) === "");
+ok("review: CI's no-path success does not stand in for it on a full ticket", picked("Review: full", [...VERDICT_ONLY, CI_NONE]) === "");
+ok("review: a full ticket merges with the security verifier's MERGE", picked("Review: full", GREEN) === "50");
+ok("review: a carried whitespace-only signoff counts", picked("Review: full", [...VERDICT_ONLY, { ...SIGNED, description: "MERGE by the security verifier, carried from aaaaaaaaaaaa: whitespace-only since" }]) === "50");
+ok("review: a missing Review: line counts as full", picked("Owned: x", VERDICT_ONLY) === "" && picked("Owned: x", GREEN) === "50");
+ok("review: reviewOf reads light only when the body says so", libHooks.reviewOf("x\n- Review: light") === "light" && libHooks.reviewOf("Review: lightweight") === "full" && libHooks.reviewOf("") === "full" && libHooks.reviewOf(null) === "full");
 
 // green batch: three ready PRs in dependency order; a FAILURE verdict and a pending check stay open
 let s = setup("green", [

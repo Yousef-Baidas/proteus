@@ -2,7 +2,8 @@
 // The merge batch of flow.md step 7:
 // node <hooks>/proteus-merge.js [run] --suite "<suite command>" [--result pass|fail --at <sha>]
 // Picks the open PRs into proteus/<run> whose checks and statuses are all green, proteus/verdict among them (the
-// verifier posts it green only for MERGE), and merges them in dependency order (the "Depends on:" line of each
+// verifier posts it green only for MERGE) and, for a ticket whose body lacks `Review: light`, the security verifier's
+// MERGE on proteus/security (#364), and merges them in dependency order (the "Depends on:" line of each
 // ticket's issue; a PR whose depends-on ticket is open and not in the batch waits) with `gh pr merge --merge
 // --match-head-commit <the head it checked>`, so a head pushed since waits a round, held as "head moved"; a
 // conflict or any other failed merge stops the batch. The project policy (proteus-policy.js, #307) holds some back,
@@ -43,7 +44,8 @@ Merges the ready PRs into proteus/<run> and prints the commands that test the re
   --result  pass or fail: what the printed suite did in .worktrees/_run. Fail on the tip bisects the
             batch's merges, one printed step at a time, to the first bad one
   --at      the full sha the suite ran on, as printed; a result for any other commit is refused
-A PR is ready when every check and status on its head is green and proteus/verdict is among them;
+A PR is ready when every check and status on its head is green and proteus/verdict is among them
+(a ticket without a "Review: light" line also needs the security verifier's MERGE on proteus/security);
 it merges after the PRs of the tickets its own depends on, pinned to the head checked (a head pushed
 since waits a round: "held: its head moved"); a conflict stops the batch.
 The project policy holds a PR for the human: merge human always; ask every, or ask risky when
@@ -146,9 +148,13 @@ function pick(prs, issues, run, names) {
   };
   const byN = new Map(issues.map((i) => [i.number, i]));
   const open = new Set(issues.filter((i) => String(i.state).toUpperCase() === "OPEN").map((i) => i.number));
+  // a full-review ticket's PR (#364) also needs the security verifier's MERGE on its head, not CI's no-path success
+  const signed = (checks) => checks.some((c) => c.context === "proteus/security" && lib.SECURITY_SIGNED.test(String(c.description || "")));
   const ready = prs.filter((p) => {
     const checks = p.statusCheckRollup || [];
-    return Number.isInteger(p.number) && p.number > 0 && !p.isDraft && checks.length && checks.every(green) && checks.some((c) => (c.context || c.name) === "proteus/verdict");
+    const ticket = byN.get(ticketOf(String(p.headRefName || ""), p.body || ""));
+    return Number.isInteger(p.number) && p.number > 0 && !p.isDraft && checks.length && checks.every(green) && checks.some((c) => (c.context || c.name) === "proteus/verdict")
+      && (!ticket || lib.reviewOf(ticket.body) === "light" || signed(checks));
   }).map((p) => {
     const ticket = ticketOf(String(p.headRefName || ""), p.body || "");
     const oid = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(String(p.headRefOid)) ? String(p.headRefOid) : "";
