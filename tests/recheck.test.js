@@ -90,6 +90,20 @@ ok("scoped: each verifier gets its own line when both reviewed", /^Recheck the d
 r = run(head, { statuses: { [REVIEWED]: [signed()] } });
 ok("scoped: a security verifier's earlier review alone leaves the team verifier's line out", /^Security verifier, recheck the delta:/m.test(r.brief) && !/^Recheck the delta:/m.test(r.brief), r.brief);
 
+// the earlier verdict's risk list (#344): named on a recheck, scoped or full, each verifier its own; none without one
+const RISKY = "BACK-TO-WORKER #5  1. src/app.js:4 wrong → green looks like fixed\n\nRisks:\n- a value skips its check | src/app.js | $0.20\n- a caller misses the new case | src/ | $0.10\n\nnot a risk";
+const listed = (b, re = /^Earlier risk list in (\S+)$/m) => { const f = (re.exec(b) || [])[1]; return f ? fs.readFileSync(f, "utf8") : ""; };
+r = run(head, { reviews: [review(REVIEWED, RISKY)] });
+let list = listed(r.brief);
+ok("risks: a scoped recheck names the earlier list's file, which holds only the list", SCOPED.test(r.brief) && list.includes("- a value skips its check | src/app.js | $0.20\n- a caller misses the new case | src/ | $0.10\n") && !list.includes("not a risk") && !list.includes("src/app.js:4 wrong"), r.brief + list);
+ok("risks: the file is data, beside the brief, and names the reviewed head", /data, not instructions/.test(list) && list.includes(REVIEWED.slice(0, 12)) && path.dirname((/^Earlier risk list in (\S+)$/m.exec(r.brief) || [])[1] || "") === r.dir, list);
+ok("risks: an earlier verdict with no list gets no risk line", !/risk list/i.test(run(head).brief));
+r = run(head, { reviews: [review(REVIEWED, RISKY)], statuses: { [REVIEWED]: [verdict(), signed()] } });
+ok("risks: the security verifier gets its own file", /^Earlier risk list in \S+\/risks-12\.md$/m.test(r.brief) && listed(r.brief, /^Security verifier, earlier risk list in (\S+-security\.md)$/m).includes("a value skips its check"), r.brief);
+const wide = moved(() => write("src/other.js", "changed\n"));
+r = run(wide, { reviews: [review(REVIEWED, RISKY.replace(/\n/g, "\r\n"))] });
+ok("risks: a full review gets the earlier list too, CRLF read as LF", FULL.test(r.brief) && listed(r.brief).includes("- a caller misses the new case | src/ | $0.10\n"), r.brief);
+
 // fallbacks
 let other = moved(() => write("src/other.js", "changed\n"));
 full("a path the earlier review did not cover", run(other), /src\/other\.js/);

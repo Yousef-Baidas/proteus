@@ -137,4 +137,12 @@ ok("flow.md: the contracts worker does not push; the commit reaches origin with 
   ok("loop: every line kind proteus-cli.js prints has a row in SKILL.md's loop table", missing.length === 0, missing.join(" "));
 }
 
+// the verifier as its own lead (#344): a risk plan, delegated fact-gathering, its own judgment
+const risk = (/^- Risk plan first:.*$/m.exec(roles.split("### Verifier")[1] || "") || [""])[0];
+ok("verifier: a risk list of 3 to 6 items, each with what, where and a cap, under Risks:", /3 to 6/.test(risk) && /<what could be wrong> \| <where to look> \| \$<cap>/.test(risk) && /`Risks:`/.test(risk) && /sized to the PR's risk/.test(risk), risk);
+ok("verifier: fact-gathering goes to proteus-delegate.js, lowest rung, one rung up once", /node <hooks>\/proteus-delegate\.js --tier <rung> --budget <cap> --prompt-file <f>/.test(risk) && /lowest rung/.test(risk) && /one rung up, once/.test(risk), risk);
+ok("verifier: a delegated answer is evidence checked against the code; findings and verdict stay the verifier's", /evidence, checked against the code before a finding cites/.test(risk) && /every finding and the verdict are yours/.test(risk), risk);
+ok("verifier: the kept categories are never delegated", ["Authorization", "permissions", "private or personal data", "secrets or credentials", "data loss"].every((w) => risk.includes(w)) && /never delegate/.test(risk), risk);
+ok("verifier: a small diff may skip delegating, not the list; a recheck reuses the earlier list", /small diff may skip delegating, not the list/.test(risk) && /recheck, reuse the earlier list/.test(risk) && /only for new code/.test(risk), risk);
+
 summary();
