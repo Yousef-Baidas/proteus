@@ -37,7 +37,7 @@ const ago = (m) => new Date(Date.now() - m * 60000).toISOString();
 const SHA = (c) => c.repeat(40);
 
 const ms = { title: "r1/core", number: 1 };
-const issue = (n, o = {}) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js`, ...o });
+const issue = (n, o = {}) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js\nReview: light`, ...o });
 const VERDICT = { __typename: "StatusContext", context: "proteus/verdict", state: "SUCCESS" };
 const CI = { __typename: "CheckRun", name: "gates", status: "COMPLETED", conclusion: "SUCCESS" };
 const pr = (n, ticket, sha, checks) => ({ number: n, headRefName: `proteus-work/r1/${ticket}`, headRefOid: sha, body: `Closes #${ticket}`, isDraft: false, statusCheckRollup: checks });
@@ -76,6 +76,11 @@ ok("busy: STOP for the agent still stalled after its STALL", L.some((l) => /^STO
 ok("busy: NUDGE for the newly stalled agent, none for the active one", L.some((l) => l.startsWith("NUDGE w-stalled no tool call for 60m")) && !r.out.includes("w-fine"), r.out);
 ok("busy: MERGE for the green PR with its head, verdict and poster", L.includes(`MERGE PR#12 ${SHA("a").slice(0, 12)} verdict=success by=verifier-app[bot]`), r.out);
 ok("busy: SPAWN verifier for the PR with no verdict, not for the green one", L.includes(`SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)} brief: node ${SCRIPT} brief verifier 13`) && !L.some((l) => l.startsWith("SPAWN verifier PR#12")), r.out);
+// #364: a ticket without `Review: light` names the security verifier on its SPAWN line
+for (const [body, want, why] of [["Owned: src/t2.js\nReview: full", " security=full", "Review: full"], ["Owned: src/t2.js", " security=full", "no Review: line"], ["Owned: src/t2.js\nReview: light", "", "Review: light"]]) {
+  const rr = next({ ...BUSY, issues: [issue(1), issue(2, { body }), issue(3), BUSY.issues[3]] });
+  ok(`review: ${why} gives SPAWN verifier${want || " with no security verifier"}`, lines(rr).includes(`SPAWN verifier PR#13 #2 head=${SHA("b").slice(0, 12)}${want} brief: node ${SCRIPT} brief verifier 13`), rr.out);
+}
 ok("busy: SPAWN worker for the ready ticket only, with its worktree", L.includes(`SPAWN worker #3 team=backend difficulty=standard worktree=${path.join(REPO, ".worktrees", "3")} brief: node ${SCRIPT} brief worker 3`) && !L.some((l) => /^SPAWN worker #(1|2|4)\b/.test(l)), r.out);
 ok("busy: BLOCKED for the ticket waiting on another", L.includes("BLOCKED #4 waits on #3"), r.out);
 ok("busy: with no gate command, MERGE lines and DECIDE, nothing merged", L.includes("DECIDE suite: no gate command in ## Learned"), r.out);
@@ -276,7 +281,7 @@ r = next({ issues: [sliced(9, "hard")], prs: [], reviews: [], inbox: [] });
 ok("slice: at depth 3 the DECIDE line offers no sub-lead", lines(r).includes("DECIDE #9 slice: tier hard too large; split it"), r.out);
 fs.rmSync(path.join(COMMON, "proteus", "subleads"), { recursive: true });
 // a human-operated step (step:human) is the human's: ASK, never SPAWN worker or a prepared worktree; its PR, verified
-const human = issue(6, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }, { name: "step:human" }], body: "Owned: src/t6.js" });
+const human = issue(6, { labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }, { name: "step:human" }], body: "Owned: src/t6.js\nReview: light" });
 r = next({ issues: [human], prs: [], reviews: [], inbox: [{ number: 30, title: "which db?", labels: [{ name: "needs-human" }, { name: "proteus-question" }] }] });
 ok("human: a ready step:human ticket is ASK human with its URL, after the inbox's ASK", lines(r).join("|") === "ASK https://github.com/o/r/issues/30 which db?|ASK human #6 https://github.com/o/r/issues/6", r.out + r.err);
 ok("human: no SPAWN worker (so no contracts worker) and no worktree", !lines(r).some((l) => l.startsWith("SPAWN")) && !fs.existsSync(WT(6)), r.out);

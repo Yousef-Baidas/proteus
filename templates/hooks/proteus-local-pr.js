@@ -200,7 +200,7 @@ function build(core) {
   const prUrl = (s, n) => `${repoUrl(s)}/pull/${n}`;
   const comment = (s, n, c) => ({ id: `IC_local_${c.id}`, author: { login: LOGIN }, authorAssociation: "OWNER", body: c.body, createdAt: c.createdAt, includesCreatedEdit: false, isMinimized: false, minimizedReason: "", reactionGroups: [], url: `${prUrl(s, n)}#issuecomment-${c.id}`, viewerDidAuthor: true });
   const review = (r) => ({ id: `PRR_local_${r.id}`, author: { login: LOGIN }, authorAssociation: "OWNER", body: r.body, submittedAt: r.submittedAt, includesCreatedEdit: false, reactionGroups: [], state: r.state, commit: { oid: r.commit } });
-  const rollup = (list) => latest(list).map((c) => ({ __typename: "StatusContext", context: c.context, startedAt: c.createdAt, state: upper(c.state), targetUrl: c.targetUrl }));
+  const rollup = (list) => latest(list).map((c) => ({ __typename: "StatusContext", context: c.context, description: c.description, startedAt: c.createdAt, state: upper(c.state), targetUrl: c.targetUrl }));
   // the costly fields are getters, so a --json that leaves them out runs no git
   function prJSON(s, p) {
     let merge = null;

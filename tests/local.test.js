@@ -164,7 +164,7 @@ g(REPO, "checkout", "-q", "main");
 g(REPO, "remote", "add", "origin", "https://github.com/o/r.git");
 const STATE = path.join(W, "gh.json");
 const ms = { title: "r1/core", number: 1 };
-const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js` });
+const issue = (n) => ({ number: n, title: `ticket ${n}`, state: "OPEN", milestone: ms, labels: [{ name: "proteus" }, { name: "profile:backend" }, { name: "difficulty:standard" }], body: `Owned: src/t${n}.js\nReview: light` });
 const SHA = (c) => c.repeat(40);
 const pr = (n, ticket, sha, checks = []) => ({ number: n, headRefName: `proteus-work/r1/${ticket}`, headRefOid: sha, body: `Closes #${ticket}`, isDraft: false, statusCheckRollup: checks, diff: `diff --git a/src/t${ticket}.js b/src/t${ticket}.js\n+change ${sha.slice(0, 4)}\n` });
 const RED = { __typename: "StatusContext", context: "proteus/security", state: "FAILURE" };

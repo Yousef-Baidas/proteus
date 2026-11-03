@@ -144,8 +144,8 @@ if (process.env.FAKE_GH_STATE && require("fs").existsSync(process.env.FAKE_GH_ST
   }
   if (a === "api repos/o/r/rules/branches/proteus%2Fprobe") out((s.rulesets || []).filter((r) => r.conditions.ref_name.include.includes("refs/heads/proteus/*")).flatMap((r) => r.rules));
 }
-// FAKE_GH_PR (a JSON file {head, branch, base, files, routing, statuses: {<sha>: [...]}, fail}) answers a PR's head, its branch and
-// base, its changed files, the base's teams/ROUTING.md (routing, as text) and its commit statuses, and records a posted status
+// FAKE_GH_PR (a JSON file {head, branch, base, files, commits, routing, statuses: {<sha>: [...]}, fail}) answers a PR's head, its
+// branch and base, its changed files, its commits (oldest first), the base's teams/ROUTING.md (routing, as text) and its commit statuses, and records a posted status
 // (newest first, as GitHub lists them, with the GH_TOKEN it was posted under); fail names a call that errors
 if (process.env.FAKE_GH_PR) {
   const fs = require("fs"), file = process.env.FAKE_GH_PR;
@@ -164,6 +164,7 @@ if (process.env.FAKE_GH_PR) {
   }
   if ((m = new RegExp(`^api repos/${R}/commits/([0-9a-f]{40})/statuses$`).exec(a))) { no("statuses"); out((s.statuses || {})[m[1]] || []); }
   if (new RegExp(`^api --paginate repos/${R}/pulls/\\d+/files --jq `).test(a)) { no("files"); process.stdout.write((s.files || []).join("\n") + "\n"); process.exit(0); }
+  if (new RegExp(`^api --paginate repos/${R}/pulls/\\d+/commits --jq `).test(a)) { no("commits"); process.stdout.write((s.commits || []).join("\n") + "\n"); process.exit(0); }
   if ((m = new RegExp(`^api repos/${R}/commits/([0-9a-f]{40})/status$`).exec(a))) {
     const seen = new Set();
     out({ statuses: ((s.statuses || {})[m[1]] || []).filter((x) => !seen.has(x.context) && seen.add(x.context)) });

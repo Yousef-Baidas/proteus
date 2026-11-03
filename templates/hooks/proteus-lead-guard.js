@@ -122,7 +122,7 @@ else lib.run((ev, ad) => {
     const why = modelDenial(lib.modelCaps(ev, root), ev.spawnModel, ev.spawnType);
     if (why) ad.deny(why + BYPASS);
     const ctx = ad.contextTokens(ev);
-    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: /handoff before dispatching more. Finish the step, log the position on the run log, /handoff, and let a fresh lead dispatch; workers in flight keep running.`);
+    if (ctx && ctx >= lib.handoffLines(ev, root).hard) ad.deny(`context at ${Math.round(ctx / 1000)}k: compact before dispatching more. Finish the step and log the position on the run log; the session compacts on its own (or the human runs /compact), then run next. Workers in flight keep running.`);
     if (lib.isPipelineAgent(ev.spawnType)) {
       const unsafe = bypassDenial(ev, `a ${ev.spawnType} spawn`);
       if (unsafe) ad.deny(unsafe);

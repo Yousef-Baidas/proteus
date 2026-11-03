@@ -23,7 +23,7 @@ ok("skill: a design, scope or trade-off choice planning missed is a planning que
   /misses a design, scope or trade-off choice \(a planning question, parking only the work it affects; `flow.md`\)/.test(skill));
 ok("skill: the build asks only the four cases", /After planning, ask only before an irreversible, security-sensitive or outside-the-repo action, or when the plan breaks/.test(skill));
 ok("skill: planning asks about scope, design, dependencies, repo additions and how the human runs it",
-  /\(e\) constraints on tools, data, budget, dependencies, files added to the repo, and how the human runs it/.test(skill));
+  /\(b\) how a human runs and checks it/.test(skill) && /\(e\) constraints on tools, data, budget, dependencies and files added to the repo/.test(skill));
 ok("flow: the ruling bullet keeps the same boundary", /\*\*Ruling\*\* \(an implementation detail inside a decision the human made; a new design, scope or trade-off choice is a planning question instead\)/.test(flow));
 ok("tracker: one rulings thread per run, each `what — why — cost if wrong`", /RULING <what> — <why> — <cost if wrong>/.test(tracker));
 ok("review: the milestone brief has how to try it and the rulings since the last review", /RULING` comments since the last review/.test(review) && /How to try it/.test(guide) && /\*\*Rulings\*\*/.test(guide));

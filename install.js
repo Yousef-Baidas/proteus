@@ -1142,6 +1142,13 @@ function setupRepo(root, o = {}) {
     lDirty = true;
     log(`status   -> .claude/settings.local.json (${dry ? "would add the statusLine" : "statusLine added"}${prof ? ", from the sandbox profile's copy" : ""})`);
   } else if (set) log(`status   -> ${set} (statusLine already set; left as it is)`);
+  // compaction is expected (#366): the lead compacts well before 200k unless the human set a window
+  const cc = require(path.join(HERE, "templates", "hooks", "proteus-harness-claude.js"));
+  if (!cc.hasCompactWindow(root)) {
+    l.autoCompactWindow = cc.LEAD_COMPACT_WINDOW;
+    lDirty = true;
+    log(`compact  -> .claude/settings.local.json (${dry ? "would set" : "set"} autoCompactWindow ${cc.LEAD_COMPACT_WINDOW})`);
+  }
   if (lDirty && !dry) writeJson(localFile, l);
   if (prof && !dry) profileStatusLine(root, prof);
   if (dry) {

@@ -672,6 +672,12 @@ function parseSecurity(text) {
   if (!m) return null;
   return m[1].split(/\r?\n/).map((l) => l.replace(/(^|\s)#.*$/, "").trim()).filter(Boolean);
 }
+// a ticket's review path from its body's first `Review: light|full` line (#364): "light" only when it says so, so a
+// missing or unreadable line is "full", the verifier plus the security verifier
+const reviewOf = (body) => ((/^[\s*_>-]*review\b[*_:\s]*(light|full)\b/im.exec(String(body || "")) || [])[1] || "").toLowerCase() === "light" ? "light" : "full";
+// a proteus/security status the security verifier signed MERGE (proteus-signoff.js --security), or carried over a
+// whitespace-only push; CI's no-security-path success is not one
+const SECURITY_SIGNED = /^MERGE by the security verifier\b/;
 
 // a finding as the baseline ratchet stores it (proteus-baseline.js lines mode): ignore removed,
 // backslashes as /, every number as # (line numbers and timings move; the finding does not), spaces collapsed
@@ -3481,7 +3487,7 @@ function contextWindow(ev, root) {
   const known = [h.modelWindow ? h.modelWindow(model, ev) : 0, h.contextCap ? h.contextCap(ev, model) : 0, +proteusConfig().contextWindow].filter((n) => n > 0);
   return known.length ? Math.min(...known) : DEFAULT_WINDOW;
 }
-// at: the journal tells the lead to hand off; hard: the guard refuses new spawns. PROTEUS_HANDOFF_AT
+// at: the journal tells the lead to log its position; hard: the guard refuses new spawns until it compacts. PROTEUS_HANDOFF_AT
 // and PROTEUS_HANDOFF_HARD (tokens) override them.
 function handoffLines(ev, root) {
   const w = contextWindow(ev, root);
@@ -3740,7 +3746,7 @@ module.exports = {
   CURRENT, SCHEMES, schemeOf, runName, runRefs, runBranches, runTickets, milestoneOpen, reviewGateShut, reviewOpenDenial, prTicket, runLogOf, VERDICT_WORDS, verdictIs,
   WORKTREES_EXCLUDE, worktreesDir, worktreesUnder, oldWorktreeDirs,
   configFile, policyUserFile, proteusConfig, agentGhDir, installedEntry, verifierApp, appInstallation, apiBase, appJwt, appApi, appToken, relPath, gitRoot, runOpen, guestFile, defaultGuestDir, guestDir, docRoot, agentsLine, leadEdits, pentestTargets, pentestURL, pentestInScope, pentestDenial, PENTEST_TOOLS, leadEditDenial, ownedFile, ownedMatch, ownedDenial, isOwnedList, OWNED_RECORDS, isOwnedRecord, scratchDir, inScratch, TIERS, TIER_LINE, parseTiers, classifyTier, plannedTier, ROUTING_FILE, routingText, parseSecurity, normFinding, exactFinding, fenced, tierMatch, parseDeclared, tierOverrun, tailLines, redact, envInt, spawnArgv, git, gh,
-  NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, localPath, localMode, localCommon, localEnv, ghArgv, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
+  reviewOf, SECURITY_SIGNED, NULL_DEVICE, gitEnv, gitCall, gitRun, gitIn, gitAsync, gitTry, ghTry, ghEnv, ghRepo, localPath, localMode, localCommon, localEnv, ghArgv, trustedCommon, repoCommon, pinProject, checkoutOf, headOf, branchOf, ownRev, treeChanges, treeChangesAsync, homeGitDir, homeGit, sandboxScratch, realNative, within, homeDirs, homeAllows, homeOnly, profileWrites, homeWritable,
   which, procInfo, launchSettings, sandboxState, saveSandbox, sandboxSeen, saveLeadMode, leadModeSeen, sandboxLaunch,
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
