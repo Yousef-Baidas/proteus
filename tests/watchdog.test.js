@@ -30,7 +30,7 @@ const setBeat = (a, patch) => fs.writeFileSync(beatFile(a), JSON.stringify({ ...
 // the lead's spawns, recorded by its guard: only an agent with a lead spawn record is tracked (#179)
 const TP = path.join(W, "lead.jsonl");
 fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
-const spawn = (type, name) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "sonnet", subagent_type: type, prompt: "x", ...(name && { name }) } }, { cwd: REPO });
+const spawn = (type, name) => lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "sonnet", subagent_type: type, prompt: lib.spec(REPO), ...(name && { name }) } }, { cwd: REPO });
 for (const t of ["proteus-worker", "proteus-verifier", "proteus-backend-worker", "proteus-scout"]) {
   const s = spawn(t);
   if (s.code !== 0) ok(`spawn: the lead's ${t} spawn passes`, false, s.err);
@@ -108,7 +108,7 @@ ok("dispatch: an unrecorded name is not tracked", !beat("n3"));
 r = spawn("proteus-backend-worker", "work-9");
 tool("n3", "work-9");
 ok("dispatch: a named lead spawn is tracked under its subagent_type", r.code === 0 && beat("n3") && beat("n3").type === "proteus-backend-worker", r.err + JSON.stringify(beat("n3")));
-lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "sonnet", subagent_type: "proteus-worker", name: "nested-1", prompt: "x" }, agent_id: "n3", agent_type: "work-9" }, { cwd: REPO });
+lib.run(LG, { hook_event_name: "PreToolUse", session_id: "s1", cwd: REPO, transcript_path: TP, tool_name: "Agent", tool_input: { model: "sonnet", subagent_type: "proteus-worker", name: "nested-1", prompt: lib.spec(REPO) }, agent_id: "n3", agent_type: "work-9" }, { cwd: REPO });
 tool("n5", "nested-1");
 ok("dispatch: an agent a worker spawned itself is not tracked", !beat("n5"));
 tool("n4", "proteus-scout");

@@ -66,7 +66,7 @@ ok("memory: the lead's own Write there is refused", r.code === 2 && /the lead do
 {
   const TP = path.join(W, "opus-lead.jsonl");
   fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
-  r = run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: "proteus:proteus-qa-verifier", name: "qa-3", prompt: "x" } });
+  r = run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: "proteus:proteus-qa-verifier", name: "qa-3", prompt: lib.spec(REPO) } });
   ok("memory: the lead's named spawn passes", r.code === 0, r.err);
   r = write(path.join(MEM, "proteus-qa-verifier", "MEMORY.md"), as("qa-3"));
   ok("memory: a named verifier writes its type's dir", r.code === 0, r.err);

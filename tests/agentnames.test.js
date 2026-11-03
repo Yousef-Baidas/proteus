@@ -71,7 +71,7 @@ ok("signoff, worker guard: bare and proteus: verifiers pass, evil: is refused",
 {
   const TP = path.join(W, "opus-lead.jsonl");
   fs.writeFileSync(TP, JSON.stringify({ type: "assistant", message: { role: "assistant", model: "claude-opus-5-5", content: [{ type: "text", text: "x" }], usage: { input_tokens: 1000 } } }) + "\n");
-  const spawnAs = (type, name, who = {}) => run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: type, name, prompt: "x" } }, who);
+  const spawnAs = (type, name, who = {}) => run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: type, name, prompt: lib.spec(REPO) } }, who);
   const rec = (name) => { try { return JSON.parse(fs.readFileSync(hl.spawnFile(path.join(REPO, ".git"), name), "utf8")); } catch { return null; } };
   let r = spawnAs("proteus:proteus-frontend-verifier", "verify-74");
   ok("named spawn: the lead's spawn passes and records name -> subagent_type",
@@ -92,7 +92,7 @@ ok("signoff, worker guard: bare and proteus: verifiers pass, evil: is refused",
   ok("named spawn: an unnamed verifier is unaffected", r.code === 0, r.err);
   // only the lead's main thread records: a subagent's Agent call writes nothing
   shell("ls", as("proteus:proteus-worker", "w3"));
-  run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: "proteus:proteus-verifier", name: "forged", prompt: "x" } }, as("proteus:proteus-worker", "w3"));
+  run({ tool_name: "Agent", transcript_path: TP, tool_input: { model: "sonnet", subagent_type: "proteus:proteus-verifier", name: "forged", prompt: lib.spec(REPO) } }, as("proteus:proteus-worker", "w3"));
   ok("named spawn: a subagent's spawn records nothing", rec("forged") === null);
   ok("agentTypeOf: the main thread and an event with no type keep their own",
     hl.agentTypeOf({ agentType: "verify-74", root: REPO }) === "verify-74" && hl.agentTypeOf({ agent: "a", agentType: "", root: REPO }) === "");
@@ -112,7 +112,7 @@ const BEATS = path.join(REPO, ".git", "proteus-lead", "beats");
 const beat = (a) => { try { return JSON.parse(fs.readFileSync(path.join(BEATS, `${a}.json`), "utf8")); } catch { return null; } };
 let n = 0;
 // only an agent the lead spawned is tracked (#179): record the lead's spawn of each form first
-for (const name of ["proteus-worker", "proteus-backend-verifier", "proteus-scout"]) for (const [t] of forms(name)) run({ tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: t } });
+for (const name of ["proteus-worker", "proteus-backend-verifier", "proteus-scout"]) for (const [t] of forms(name)) run({ tool_name: "Agent", tool_input: { model: "opus", prompt: lib.spec(REPO), subagent_type: t } });
 for (const name of ["proteus-worker", "proteus-backend-verifier"]) for (const [t, label, yes] of forms(name)) {
   const id = `b${n++}`;
   shell("ls", as(t, id));
@@ -136,7 +136,7 @@ fs.mkdirSync(TS, { recursive: true });
 fs.symlinkSync(path.join(SK, "alpha"), path.join(TS, "alpha"), process.platform === "win32" ? "junction" : "dir");
 fs.writeFileSync(path.join(REPO, "teams", "skills-lock.json"), JSON.stringify({ version: 1, skills: { alpha: { source: "o/r", hash: link.hashDir(path.join(SK, "alpha")) } } }) + "\n");
 fs.writeFileSync(path.join(SK, "alpha", "SKILL.md"), "alpha v2\n");
-const spawn = (type) => run({ tool_name: "Agent", tool_input: { model: "opus", prompt: "x", subagent_type: type } });
+const spawn = (type) => run({ tool_name: "Agent", tool_input: { model: "opus", prompt: lib.spec(REPO), subagent_type: type } });
 for (const name of ["proteus-worker", "proteus-backend-verifier"]) for (const [t, label, yes] of forms(name)) {
   const r = spawn(t);
   ok(`drift: a ${label} spawn ${yes ? "is refused" : "is not a Proteus pipeline spawn and passes"}`, yes ? r.code === 2 && r.err.includes(`no ${t} spawn`) : r.code === 0, r.err);

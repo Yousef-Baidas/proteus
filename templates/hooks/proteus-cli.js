@@ -65,7 +65,8 @@
 // why; when that verdict's review had a `Risks:` or `Tests:` list, a line naming it in <scratch>/risks- or
 // tests-<pr>[-security].md, for the verifier to reuse (#344). It writes where agents can, so it runs in the lead's
 // sandboxed shell: a SPAWN line names its brief command and next never runs it. A step:human ticket has no worker
-// brief: `DECIDE #<n> human step: no worker brief`, exit 1.
+// brief: `DECIDE #<n> human step: no worker brief`, exit 1. A verifier's prompt names the approved spec,
+// <scratch>/spec.md; none saved is `DECIDE #<n> brief: no source for requirement` (#365).
 // close gates step 8 on its final pass (#344) from the run log's close-passes lines and origin's tip: `close: ready
 // <why>`, exit 0, or `close: run <why>`, exit 1, on any doubt or failure too. It writes nothing but fetched objects.
 // Exit 0 with the list; 1 when the tracker cannot be read (result: proteus-merge.js's code; brief: also a DECIDE);
@@ -957,6 +958,8 @@ function brief(role, target, arg) {
       const view = parse(lib.gh(["pr", "view", String(pr), "--json", "reviews"], root, 30000));
       return recheckLines(w, { pr, branch: String(p.headRefName || ""), head, reviews: view && Array.isArray(view.reviews) ? view.reviews : [], scratch });
     });
+    // the approved spec the lead saved in the run's scratch dir (flow.md §2); the lead guard refuses a verifier spawn without it
+    ctx.spec = () => { const f = scratch() && path.join(scratch(), "spec.md"); return f && fs.existsSync(f) ? f : ""; };
     name = `verify-${pr}.md`;
     prompt = `verifier PR#${pr} head=${head.slice(0, 12)}`;
   } else {
@@ -970,6 +973,7 @@ function brief(role, target, arg) {
     text = render(block, ctx);
     // the worker's guards bind it to the worktree its spawn prompt names (lib.briefWorktree); a verifier names none
     if (role === "worker") prompt += ` worktree ${FILL["absolute path"](ctx)}`;
+    else prompt += ` requirement ${need("requirement", ctx.spec())}`;
   } catch (e) {
     if (!(e instanceof Decide)) throw e;
     return { code: 1, out: [`DECIDE ${n ? `#${n}` : `PR#${ctx.pr}`} brief: no source for ${e.message}`] };

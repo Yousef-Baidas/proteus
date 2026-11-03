@@ -149,10 +149,13 @@ fs.rmSync(briefFile("brief-5.md"), { force: true });
 r = run(["brief", "worker", "5"], {}, { ...STATEJSON, issues: [{ ...ISSUES[0], labels: labels("difficulty:standard", "step:human") }, ...ISSUES.slice(1)] });
 ok("human: a step:human ticket's worker brief is DECIDE and exit 1, nothing written", r.code === 1 && lines(r).join("|") === "DECIDE #5 human step: no worker brief" && !fs.existsSync(briefFile("brief-5.md")), r.out + r.err);
 
-// the verifier
+// the verifier: no approved spec saved in the run's scratch is a DECIDE (#365)
+r = run(["brief", "verifier", "12"]);
+ok("verifier: no spec.md in the run's scratch is DECIDE and exit 1", r.code === 1 && lines(r).join("|") === "DECIDE #5 brief: no source for requirement", r.out + r.err);
+fs.writeFileSync(briefFile("spec.md"), "# spec\n");
 r = run(["brief", "verifier", "12"]);
 b = read(briefFile("verify-12.md"));
-ok("verifier: exits 0 with the PROMPT line", r.code === 0 && lines(r).join("|") === `PROMPT Your brief is ${briefFile("verify-12.md")}; read it first. verifier PR#12 head=${SHA("b").slice(0, 12)}`, r.out + r.err);
+ok("verifier: exits 0 with the PROMPT line, which names the spec", r.code === 0 && lines(r).join("|") === `PROMPT Your brief is ${briefFile("verify-12.md")}; read it first. verifier PR#12 head=${SHA("b").slice(0, 12)} requirement ${briefFile("spec.md")}`, r.out + r.err);
 ok("verifier: the PROMPT line carries the PR and head next's spawn matching parses", JSON.stringify(spawnTarget("proteus-backend-verifier", lines(r)[0])) === JSON.stringify({ pr: 12, head: SHA("b").slice(0, 12) }), r.out);
 ok("verifier: the PROMPT line names no worktree, so no guard binds the verifier to one", lib2.briefWorktree(lines(r)[0], COMMON) === null, r.out);
 for (const l of [`Hooks: ${real}.`, "Team backend, debt issue #40, dupes tool fallow dupes. Caveman lite.", "Safety: run migrations only against the test database.", "Ticket #5, PR #12, scratch key r1-5.", `Then sign it on the head you read: proteus-signoff.js 12 ${SHA("b")} <WORD> (security verifier: --security).`, "MERGE #5"])

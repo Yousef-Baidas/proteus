@@ -6,7 +6,8 @@
 // turn ends waiting on a notification never wakes, --edit-last can overwrite another agent's comment, and those words are the human's.
 // Also proteus-signoff.js whatever the harness names the agent (this session is a worker's), and what
 // lib.secretDenial refuses: Read, Edit or a shell command naming the verifier App's key, a shell setting GH_TOKEN.
-// And the human's verdict post (proteus-verdict.js --post) and any reach for the human's gh login (lib.humanGhDenial).
+// And the human's verdict post (proteus-verdict.js --post) and any reach for the human's gh login (lib.humanGhDenial),
+// and any Read, Edit or shell command reaching the run's acceptance checks (lib.holdoutDenial, #365).
 // Then the project policy (proteus-policy.js guard, #307): a block or ask rule refuses (an ask with NEEDS), as do an
 // edit of the policy's files, its write, and any edit or shell write while a policy file is invalid.
 // A shell call it lets through gets the fingerprint proteus-shell-check.js compares after the call.

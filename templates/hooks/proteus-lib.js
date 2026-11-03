@@ -1382,7 +1382,7 @@ const envInt = (name, dflt) => { const n = parseInt(process.env[name], 10); retu
 const WAIT_MSG = "workers never wait on a background notification (it never arrives after your turn ends). Run it in the foreground with timeout up to 600000 ms, or start it detached (nohup … &) and poll its PID/log in this same turn.";
 const EDIT_LAST_MSG = "--edit-last edits the newest comment of the shared GitHub account, which may be another agent's or the lead's ruling. Post a new comment instead.";
 function workerDenial(ev) {
-  const secret = secretDenial(ev) || humanGhDenial(ev);
+  const secret = secretDenial(ev) || humanGhDenial(ev) || holdoutDenial(ev);
   if (secret) return secret;
   if (ev.tool === "monitor") return WAIT_MSG;
   if (ev.tool !== "shell") return null;
@@ -1487,6 +1487,39 @@ function secretDenial(ev) {
   if (ev.tool !== "shell") return null;
   if (app && namesKey(ev.command, app.keyPath)) return KEY_MSG(app.keyPath);
   return setsToken(ev.command) ? TOKEN_MSG : null;
+}
+// The run's acceptance checks (#365): proteus-acceptance writes them from the approved spec at planning into
+// <run scratch>/proteus-holdout/, outside the repo and every worktree, and the QA verifier runs them. Read or Edit of a
+// path with that segment, or a shell command naming it, is refused to every subagent but a verifier and
+// proteus-acceptance, and to a worker's own session always. A guard, not a boundary: a glob or an interpreter still reaches it.
+const HOLDOUT = "proteus-holdout";
+const ACCEPTANCE_AGENT = "proteus-acceptance";
+const HOLDOUT_MSG = "proteus: the run's acceptance checks are not a worker's to read; build to the ticket and its contract.";
+const foldName = (s) => (process.platform === "win32" || process.platform === "darwin" ? String(s).toLowerCase() : String(s));
+function holdoutDenial(ev) {
+  const type = ev.agent ? agentTypeOf(ev) : "";
+  if (type && (isVerifier(type) || agentName(type) === ACCEPTANCE_AGENT)) return null;
+  if (ev.tool === "shell") return String(ev.command || "").toLowerCase().includes(HOLDOUT) ? HOLDOUT_MSG : null;
+  if (ev.tool !== "read" && ev.tool !== "edit") return null;
+  const base = path.resolve(ev.cwd || projectRoot(ev));
+  for (const p of ev.paths && ev.paths.length ? ev.paths : [ev.path].filter(Boolean)) {
+    const abs = path.resolve(base, String(p));
+    if ([abs, realTarget(abs)].some((a) => a && a.split(/[\\/]/).some((s) => foldName(s) === HOLDOUT))) return HOLDOUT_MSG;
+  }
+  return null;
+}
+// the approved spec a verifier spawn names (#365): <scratch>/<key>/spec.md, a file, its path in the prompt; "" when none
+function specNamed(prompt, common) {
+  const text = foldName(prompt);
+  let keys = [];
+  try { keys = fs.readdirSync(scratchDir(common)); } catch {}
+  for (const k of keys) {
+    const f = path.join(scratchDir(common), k, "spec.md");
+    let file = false;
+    try { file = fs.statSync(f).isFile(); } catch {}
+    if (file && [f, realOr(f)].some((p) => text.includes(foldName(p)))) return f;
+  }
+  return "";
 }
 function namesKey(command, keyPath) {
   const fold = (s) => (process.platform === "win32" ? String(s).toLowerCase() : String(s));
@@ -3786,6 +3819,6 @@ module.exports = {
   RELEASE, newerThan, release, verifyRelease, changelog, releaseCheck,
   drivePath, expandPath, shellCwd, pluginAnchor, guardedWrite, guardedParent, treeTargets, findParts, patchPaths, registeredWorktrees, keyIn,
   ghConfigDir, humanGhDir, ghHuman, humanLogin, humanGhDenial, movesGhEnv, humanPost, postArgs, postsVerdict, postCommand, POST_SCRIPT, VERDICT_LINE, isVerdict, recordVerdict, verdictRecord, pendingVerdicts, recordPosted, humanVerdicts, reviewIssue,
-  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, isHelperAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, localModel, localChat, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
+  cmdShimCall, killTree, workerDenial, ALLOWS, allowFile, allowLines, addAllow, JUDGE_MS, TOO_COMPLEX, secretDenial, HOLDOUT, ACCEPTANCE_AGENT, holdoutDenial, specNamed, setsToken, editsLast, verdictPost, signsOff, signoffDenial, agentTypeOf, recordSpawn, spawnTarget, spawnRecord, spawnFile, MEMORY_LOCAL, ownMemory, SIGNOFF_MSG, VERIFIER, agentName, isVerifier, isPipelineAgent, isHelperAgent, shellCommands, branchDenial, agentShellDenial, writeTargets, unwrap, progName, bindFile, bound, briefWorktree, cwdWorktree, samePath, realOr, fileKey, AGENT_NEVER, POLICY_NEVER, rungOf, leadModel, saveLead, modelPolicy, modelCaps, contextWindow, handoffLines, localModel, localChat, syncFile, syncText, presetsFile, syncPresets, WAIT_MSG, EDIT_LAST_MSG,
 };
 try { harness(); } catch {}

@@ -9,6 +9,7 @@
   "license": "MIT",
   "skills": "./skills/",
   "agents": [
+    "./agents/proteus-acceptance.md",
     "./agents/proteus-backend-verifier.md",
     "./agents/proteus-backend-worker.md",
     "./agents/proteus-devops-worker.md",
