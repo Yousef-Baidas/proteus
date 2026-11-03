@@ -413,7 +413,9 @@ const HELD = {
   security: "it changes a path in the security block of teams/ROUTING.md; their `ACCEPT <sha12>` verdict for its head lets it merge",
   "unread-security": "gh could not read the base's security block or what this PR changes, so it counts as a security change; their `ACCEPT <sha12>` verdict for its head lets it merge",
   every: "the policy asks the human before every merge; their `ACCEPT <sha12>` comment for its head lets it merge",
-  deps: "it adds or upgrades a dependency no human approved; a `DEPENDENCY <name>` line for each in their verdict on it, or their `ACCEPT <sha12>` verdict for its head, lets it merge",  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
+  deps: "it adds or upgrades a dependency no human approved; a `DEPENDENCY <name>` line for each in their verdict on it, or their `ACCEPT <sha12>` verdict for its head, lets it merge",
+  "unread-deps": "the dependency check could not read its diff (gh pr diff failed), so it is held; their `ACCEPT <sha12>` verdict for its head lets it merge",
+  unread: "the policy asks before a change an ask rule covers, and gh could not list what this PR changes",
 };
 
 // what a hold says, proteus-merge.js's line and the stand-in's `pr merge` refusal
@@ -477,7 +479,7 @@ function unapprovedDeps(changes, names) {
 // them), until the human's newest verdict on the PR (lib.humanVerdicts) is ACCEPT <head sha12>; ask never holds none. In
 // local mode, where no host takes the human's merge or posts proteus/security, the recorded ACCEPT is that act: merge
 // human ("merge", with its sha) and a security change (securityHold) wait for it too, whatever the modes say. A PR
-// adding or upgrading a dependency ("deps") waits, whatever the modes
+// adding or upgrading a dependency ("deps", or "unread-deps" when gh cannot give its diff) waits, whatever the modes
 // say, until the human's verdicts on it approve each one (approvedDeps) or ACCEPT its head (#367). Here
 // rather than in proteus-merge.js so the stand-in's `pr merge` can load it: that script refuses to run from a copy
 function held(picked, root, policy) {
@@ -490,8 +492,10 @@ function held(picked, root, policy) {
     if (policy.merge === "human") return "merge";
     const risk = local ? securityHold(n, root) : "";
     if (risk) return risk;
-    // an unreadable diff fails open, as hooks do: the next round reads it again
-    const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000), deps = diff.ok ? depChanges(diff.out) : [];
+    // an unreadable diff holds: a dependency gate that opens on an error is none
+    const diff = lib.ghTry(["pr", "diff", String(n)], root, 30000);
+    if (!diff.ok) return "unread-deps";
+    const deps = depChanges(diff.out);
     if (deps.length && unapprovedDeps(deps, approvedDeps(view(n).said)).length) return "deps";
     if (!asking) return "";
     if (policy.ask === "every") return "every";

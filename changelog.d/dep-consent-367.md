@@ -4,4 +4,5 @@
   in a manifest or lockfile, known by file name across ecosystems, is held until the human's verdict on it carries
   a `DEPENDENCY <name>` line for each one, or their `ACCEPT <sha12>` for its head. Lockfile churn passes once a
   dependency is approved. The approval is the human's verdict as before: their own login's comment, or in local
-  mode the record only their approved post writes.
+  mode the record only their approved post writes. A diff gh cannot give holds the pull request too, with one line
+  saying the dependency check could not read it; their `ACCEPT <sha12>` releases it.

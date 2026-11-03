@@ -212,11 +212,12 @@ if (process.env.FAKE_GH_NEXT) {
     process.stdout.write(p.files.map((f) => f + "\n").join(""));
     process.exit(0);
   }
-  // a PR's whole diff, its "diff" (else the call fails), for the local security check
+  // a PR's whole diff, for the local security check and the dependency hold: its "diff", else a header per entry of
+  // its "files" (none: an empty diff); "diff": false, or no such PR, fails the call
   if ((m = /^pr diff (\d+)$/.exec(a))) {
     const p = (s.prs || []).find((x) => x.number === +m[1]);
-    if (!p || typeof p.diff !== "string") { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
-    process.stdout.write(p.diff);
+    if (!p || p.diff === false) { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
+    process.stdout.write(typeof p.diff === "string" ? p.diff : (Array.isArray(p.files) ? p.files : []).map((f) => `diff --git a/${f} b/${f}\n`).join(""));
     process.exit(0);
   }
   if ((m = /^pr view (\d+) --json comments,headRefOid$/.exec(a))) { const p = (s.prs || []).find((x) => x.number === +m[1]) || {}; out({ comments: p.comments || [], headRefOid: p.headRefOid || "" }); }
@@ -248,6 +249,13 @@ if (process.env.FAKE_GH_MERGE) {
   if (/^pr list --base \S+ --state open --json /.test(a)) out(s.prs.filter((p) => !p.merged).map((p) => ({ ...p, headRefOid: oid(p) })));
   if (a.startsWith("issue list --label proteus --state all --json number,state,body ")) out(s.issues || []);
   if ((m = /^pr view (\d+) --json mergeable -q \.mergeable$/.exec(a))) { process.stdout.write((s.prs.find((p) => p.number === +m[1]) || {}).mergeable || "MERGEABLE"); process.exit(0); }
+  // a PR's whole diff: its "diff", else base...head in origin; "diff": false, or no such PR, fails the call
+  if ((m = /^pr diff (\d+)$/.exec(a))) {
+    const p = s.prs.find((x) => x.number === +m[1]);
+    if (!p || p.diff === false) { process.stderr.write("could not find pull request diff\n"); process.exit(1); }
+    process.stdout.write(typeof p.diff === "string" ? p.diff : git("diff", `refs/heads/${p.baseRefName}...refs/heads/${p.headRefName}`).stdout);
+    process.exit(0);
+  }
   if ((m = /^pr view (\d+) --json headRefName,state$/.exec(a))) {
     const p = s.prs.find((x) => x.number === +m[1]);
     if (!p) { process.stderr.write(`GraphQL: Could not resolve to a PullRequest with the number of ${m[1]}.\n`); process.exit(1); }

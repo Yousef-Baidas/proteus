@@ -51,7 +51,7 @@ function setup(name, tickets, plant, env = {}) {
   fs.writeFileSync(state, JSON.stringify({
     origin,
     issues: tickets.map((k) => ({ number: k.t, state: "OPEN", body: k.deps ? `Depends on: ${k.deps.map((d) => `#${d}`).join(", ")}` : "" })),
-    prs: tickets.map((k) => ({ number: k.pr, headRefName: `proteus-work/r1/${k.t}`, baseRefName: "proteus/r1", body: `Closes #${k.t}`, isDraft: false, statusCheckRollup: k.checks || GREEN })),
+    prs: tickets.map((k) => ({ number: k.pr, headRefName: `proteus-work/r1/${k.t}`, baseRefName: "proteus/r1", body: `Closes #${k.t}`, isDraft: false, statusCheckRollup: k.checks || GREEN, diff: k.diff })),
   }));
   if (plant) plant(root, W, path.join(root, ".git"));
   const merge = (...more) => run(SCRIPT, "", { cwd: root, env: { FAKE_GH_MERGE: state, ...logged, ...env }, args: ["r1", "--suite", NEVER, ...more] });
@@ -155,6 +155,10 @@ ok("conflict: nothing after the conflict merged", s.merges[0] === "Merge pull re
 // nothing ready: nothing merges, nothing runs
 s = setup("none", [{ t: 1, pr: 10, files: { "b.txt": "b\n" }, checks: [GREEN[1]] }]);
 ok("none: a PR without proteus/verdict is not ready; exit 0", s.r.code === 0 && s.line === "merged none; suite not run" && !gone(s.root, 1), `${s.r.code} ${s.r.out} ${s.r.err}`);
+
+// a diff gh cannot give: the dependency check holds the PR rather than let it through (#367)
+s = setup("undiffed", [{ t: 1, pr: 10, files: { "b.txt": "b\n" }, diff: false }]);
+ok("undiffed: an unreadable diff holds the PR with one line naming the dependency check and ACCEPT", s.merges.length === 1 && /PR #10 held for the human: the dependency check could not read its diff.*`ACCEPT <sha12>`/.test(s.r.out) && !gone(s.root, 1), `${s.r.code} ${s.r.out} ${s.r.err}`);
 
 // the lead's checkout on the run branch: the script runs no git there; the lead fast-forwards it
 let leadAt;
