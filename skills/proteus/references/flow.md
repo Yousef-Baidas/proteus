@@ -9,7 +9,7 @@
 
 ## Asking the human
 
-- **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked.
+- **Picker** (the run cannot move without it: grilling, roster approval, the information gate): `AskUserQuestion`, one to four questions, concrete options, your recommendation first and marked (not in learn mode).
 - **Question issue** (SKILL.md's Asking the human, e.g. a dependency request with its OSV result, a `teams/` change): the `question` row of `tracker.md`. `PushNotification` once. One issue per decision, not per worker message.
 - **Ruling** (an implementation detail inside a decision the human made; a new design, scope or trade-off choice is a planning question instead): one run-log comment (`tracker.md`), no push, no wait.
 - An answer stating a standing rule becomes a `CONVENTIONS.md` line (the human's approval) or a lesson.
