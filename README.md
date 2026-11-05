@@ -1,5 +1,7 @@
 # Proteus
 
+> **On hiatus.** Proteus is paused until further notice. Benchmarks showed that plain Claude Code already matches it on build quality at a fraction of the cost, so the project stays here as a record of the attempt. Issues and pull requests are not being worked on.
+
 Proteus is a Claude Code skill that ships a large project with a team of agents.
 It works for software, video or audio editing, 3D, writing, research, and business plans.
 A lead plans and decides. Workers build in parallel. A verifier checks every ticket before it merges.
